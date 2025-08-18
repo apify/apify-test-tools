@@ -1,13 +1,13 @@
 {
-    "name": "apify-test-tools",
-    "version": "0.1.0",
+    "name": "@oklinov/public-actors-tools",
+    "version": "0.0.32",
     "type": "module",
     "description": "TBD",
     "engines": {
         "node": ">=18.0.0"
     },
     "bin": {
-        "apify-test-tools": "dist/bin/main.js"
+        "public-actors-tools": "dist/bin/main.js"
     },
     "types": "./dist/index.d.ts",
     "main": "./dist/lib/lib.js",

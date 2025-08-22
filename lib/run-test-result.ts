@@ -6,6 +6,7 @@ export class RunTestResult {
     private dataset: Dataset<unknown> | undefined;
     private statistics: SdkCrawlerStatistics | undefined;
     private runInfo: ActorRun | undefined;
+    private input: unknown | undefined;
 
     constructor(
         private readonly apifyClient: ApifyClient,
@@ -40,6 +41,15 @@ export class RunTestResult {
         this.dataset = { items };
         return this.dataset as Dataset<T>;
     };
+
+    getInput = async<T>(): Promise<T> => {
+        if (this.input) {
+            return this.input as T
+        }
+        const kvs = this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
+        const input = await kvs.getRecord('INPUT');
+        return input as T;
+    }
 
     getRunInfo = async (): Promise<ActorRun> => {
         if (this.runInfo) {

@@ -11,6 +11,7 @@ import {
 import type { ActorBuild, RunOptions } from './types';
 import { RunTestResult } from './run-test-result.js';
 import { extendExpect } from './extend-expect.js';
+import { getActorPrefilledInput } from './utils.js';
 
 const ACTOR_BUILDS = 'ACTOR_BUILDS';
 let actorBuilds: ActorBuild[] = [];
@@ -98,15 +99,24 @@ export const it = testActor;
 
 const createStartRunFn = <T>(actorNameOrId: string, { annotate, task }: TestContext) => {
     const actorConfig = config.get(actorNameOrId);
+    const build = actorConfig?.buildNumber;
+    const buildId = actorConfig?.buildId;
     return async (runOptions: RunOptions<T>) => {
-        // TODO prefill from repo's input schemas
         const {
             input,
+            options,
+            prefilledInput,
         } = runOptions;
         const actor = apifyClient.actor(actorNameOrId);
-        const run = await actor.call(input, {
-            build: actorConfig?.buildNumber,
-        });
+
+        const actorInput = {
+            ...(prefilledInput && await getActorPrefilledInput(apifyClient, actorNameOrId, buildId)),
+            ...input,
+        };
+        const run = await actor.call(
+            actorInput,
+            { build, ...options, },
+        );
 
         const runLink = `https://console.apify.com/view/runs/${run.id}`;
         await annotate(runLink, 'run_link');

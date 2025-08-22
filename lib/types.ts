@@ -1,3 +1,4 @@
+import { ActorCallOptions } from 'apify-client';
 import { Assertion } from 'vitest';
 
 export type ActorBuild = {
@@ -9,6 +10,8 @@ export type ActorBuild = {
 
 export type RunOptions<T> = {
     input: Omit<T, 'actorName'>
+    options?: ActorCallOptions
+    prefilledInput?: boolean
 }
 
 export type Dataset<T> = {

@@ -1,4 +1,5 @@
-import { ApifyClient } from 'apify-client';
+import { ActorRun, ApifyClient } from 'apify-client';
+import { TestContext } from 'vitest';
 
 /**
  * Gets prefilled values for a provided build or, if not provided, uses actor's
@@ -47,3 +48,7 @@ export const getActorPrefilledInput = async (
 
     return prefill;
 };
+
+export const sleep = async (ms: number) => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+}

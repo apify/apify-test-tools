@@ -2,7 +2,7 @@ import process from 'process';
 import { describe } from 'vitest';
 
 import { ApifyClient } from 'apify-client';
-import { testTestActor } from '../../lib/lib';
+import { testStandbyActor, testTestActor } from '../../lib/lib';
 import { RunTestResult } from '../../lib/run-test-result';
 
 type PpeEventType =
@@ -57,5 +57,29 @@ describe('custom-matchers', { timeout: 100_000 }, () => {
         expect(3).toEqual(3);
         expect.hard(5).toEqual(5);
         expect(10).toEqual(10);
+    });
+
+    testStandbyActor('ondrejklinovsky/contact-info', 'CDS standby', async ({ expect, callStandby }) => {
+        {
+            const { data, status } = await callStandby({
+                input: {
+                    startUrls: [{ url: 'https://apify.com' }],
+                    maxRequests: 3,
+                    aggregateContacts: true,
+                },
+            })
+            expect(status).toBe(200);
+            expect(data[0].domain).toEqual('apify.com');
+        }
+
+        const { data, status } = await callStandby({
+            input: {
+                startUrls: [{ url: 'https://apify.com' }],
+                maxRequests: 3,
+                aggregateContacts: true,
+            },
+        })
+        expect(status).toBe(200);
+        expect(data[0].domain).toEqual('apify.com');
     });
 });

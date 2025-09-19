@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import type {
     ActorConfig,
+    Commit,
     GitHubEvent,
 } from './types.js';
 
@@ -85,6 +86,19 @@ export const getHeadCommitSha = (githubEvent: GitHubEvent) => {
         ? githubEvent.pull_request.head.sha
         : githubEvent.head_commit.id;
 };
+
+export const parseCommitAsJson = (commitString: string): Commit => {
+    const [sha, author, date, message] = commitString.split('»¦«');
+    if (!sha || !author || !date || !message) {
+        throw new Error(`Failed to parse commit string: ${commitString}`);
+    }
+    return {
+        sha,
+        author,
+        date,
+        message,
+    };
+}
 
 export interface GetChangedActorsResult {
     actorsChanged: ActorConfig[];

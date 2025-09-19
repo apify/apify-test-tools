@@ -1,11 +1,12 @@
 import { Commit, Config } from './types';
-import { spawnCommandInGhWorkspace } from './utils.js';
+import { parseCommitAsJson, spawnCommandInGhWorkspace } from './utils.js';
 
-const GIT_LOG_FORMAT = `{"sha":"%H","author":"%aN<%aE>","date":"%aD","message":"%s"}`;
+const GIT_LOG_FORMAT = `%H»¦«%aN<%aE>»¦«%aD»¦«%s`;
 
 export const getBranchLastCommit = (branch: string): Commit => {
-    const lastCommit = JSON.parse(spawnCommandInGhWorkspace(`git log -1 --pretty=format:'${GIT_LOG_FORMAT}' ${branch}`)) as Commit;
-    return lastCommit;
+    const stringFormattedCommit = spawnCommandInGhWorkspace(`git log -1 --pretty=format:'${GIT_LOG_FORMAT}' ${branch}`);
+    const jsonParsedCommit = parseCommitAsJson(stringFormattedCommit);
+    return jsonParsedCommit;
 };
 
 export const getChangedFiles = (commits: Commit[]) => {
@@ -37,12 +38,12 @@ export const getCommits = ({
     const base = getBaseCommit(sourceBranchCommit, targetBranchCommit);
     const commitsStrings = spawnCommandInGhWorkspace(`git log --pretty=format:'${GIT_LOG_FORMAT}' ${base.sha}..${sourceBranchCommit.sha}`)
         .split('\n');
-    const commits = JSON.parse(`[${commitsStrings.join(',')}]`) as Commit[];
-    commits.reverse();
+    const commitsJsons = commitsStrings.map((commitString) => parseCommitAsJson(commitString)) as Commit[];
+    commitsJsons.reverse();
     const baseCommitIndex = baseCommit
-        ? commits.findIndex(({ sha }) => sha === baseCommit.sha)
+        ? commitsJsons.findIndex(({ sha }) => sha === baseCommit.sha)
         : -1;
-    return commits.slice(baseCommitIndex + 1);
+    return commitsJsons.slice(baseCommitIndex + 1);
 };
 
 export const getBaseCommit = (target: Commit, source: Commit): Commit => {
@@ -52,5 +53,7 @@ export const getBaseCommit = (target: Commit, source: Commit): Commit => {
 };
 
 export const getCommitInfo = (commitSha: string): Commit => {
-    return JSON.parse(spawnCommandInGhWorkspace(`git log -1 --pretty=format:'${GIT_LOG_FORMAT}' ${commitSha}`));
+    const stringParsedCommit = spawnCommandInGhWorkspace(`git log -1 --pretty=format:'${GIT_LOG_FORMAT}' ${commitSha}`);
+    const jsonParsedCommit = parseCommitAsJson(stringParsedCommit);
+    return jsonParsedCommit;
 };

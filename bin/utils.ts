@@ -7,8 +7,7 @@ import type {
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
     console.error(command, args.join(' '));
-    const ghWorkspace = getEnvVar('GITHUB_WORKSPACE');
-    const commandInGhWorkspace = `cd ${ghWorkspace}; ${command}`;
+    const commandInGhWorkspace = `cd ${process.cwd()}; ${command}`;
     const commandResult = spawnSync(commandInGhWorkspace, args, { shell: true, maxBuffer: 100 * 1024 * 1024 });
 
     if (commandResult.error) {
@@ -47,17 +46,16 @@ export const getRunUrlKvsKey = (runnerName: string) => {
  * This works locally if checkoutRepoLocally is called first
  */
 export const getRepoActors = async (): Promise<ActorConfig[]> => {
-    const ghWorkspace = getEnvVar('GITHUB_WORKSPACE');
     let actorDirs: string[];
     try {
-        actorDirs = (await fs.readdir(`${ghWorkspace}/actors`)).map((dir) => `actors/${dir}`);
+        actorDirs = (await fs.readdir(`${process.cwd()}/actors`)).map((dir) => `actors/${dir}`);
     } catch (err) {
         console.warn(`No /actors directory found in repo`);
         actorDirs = [];
     }
     let standaloneActorDirs: string[];
     try {
-        standaloneActorDirs = (await fs.readdir(`${ghWorkspace}/standalone-actors`)).map((dir) => `standalone-actors/${dir}`);
+        standaloneActorDirs = (await fs.readdir(`${process.cwd()}/standalone-actors`)).map((dir) => `standalone-actors/${dir}`);
     } catch (err) {
         console.warn(`No /standalone-actors directory found in repo`);
         standaloneActorDirs = [];
@@ -79,6 +77,15 @@ export const getRepoActors = async (): Promise<ActorConfig[]> => {
     console.error(`Standalone actors in repo: ${actorConfigs.filter(({ isStandalone }) => !!isStandalone).map(({ actorName }) => actorName).join(', ')}`);
     return actorConfigs;
 };
+
+export const setCwd = ({ workspace }: { workspace: string | undefined }) => {
+    if (workspace) {
+        process.chdir(workspace);
+        return;
+    }
+    const ghWorkspace = getEnvVar('GITHUB_WORKSPACE', process.cwd());
+    process.chdir(ghWorkspace);
+}
 
 export const getHeadCommitSha = (githubEvent: GitHubEvent) => {
     return githubEvent.type === 'pull_request'

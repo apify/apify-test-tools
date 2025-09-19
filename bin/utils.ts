@@ -5,9 +5,9 @@ import type {
     GitHubEvent,
 } from './types.js';
 
-export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
+export const spawnCommandInGhWorkspace = ({ command, workspace, args = [] }: { command: string, workspace?: string, args?: string[] }) => {
     console.error(command, args.join(' '));
-    const ghWorkspace = getEnvVar('GITHUB_WORKSPACE');
+    const ghWorkspace = workspace ?? getEnvVar('GITHUB_WORKSPACE', process.cwd());
     const commandInGhWorkspace = `cd ${ghWorkspace}; ${command}`;
     const commandResult = spawnSync(commandInGhWorkspace, args, { shell: true, maxBuffer: 100 * 1024 * 1024 });
 

@@ -2,6 +2,7 @@ export interface Config {
     targetBranch: string
     sourceBranch: string
     baseCommit?: string
+    workspace?: string
 }
 
 export type Commit = {

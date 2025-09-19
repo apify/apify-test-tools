@@ -50,9 +50,8 @@ await yargs()
         }
     })
     .command('get-changed-files', '', buildOptions, (args) => {
-        const { workspace } = args;
         const commits = getCommits(args);
-        const changedFiles = getChangedFiles(commits, workspace);
+        const changedFiles = getChangedFiles(commits);
         console.log(JSON.stringify(changedFiles));
     })
     .command('get-actor-configs', '', (_) => _, async () => {
@@ -60,9 +59,8 @@ await yargs()
         console.log(JSON.stringify(actorConfigs));
     })
     .command('get-affected-actors', '', buildOptions, async (args) => {
-        const { workspace } = args;
         const commits = getCommits(args);
-        const changedFiles = getChangedFiles(commits, workspace);
+        const changedFiles = getChangedFiles(commits);
         const actorConfigs = await getRepoActors();
         const { actorsChanged } = getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest: false });
         console.log(JSON.stringify(actorsChanged));
@@ -84,9 +82,8 @@ await yargs()
         (args) => buildOptions(args)
             .option('dry-run', { type: 'boolean', default: false }),
         async (args) => {
-            const { workspace } = args;
             const commits = getCommits(args);
-            const changedFiles = getChangedFiles(commits, workspace);
+            const changedFiles = getChangedFiles(commits);
             const actorConfigs = await getRepoActors();
             const { actorsChanged } = getChangedActors({
                 filepathsChanged: changedFiles,
@@ -94,7 +91,7 @@ await yargs()
             });
             // https://github.com/apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
             // git@github.com:apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
-            const repoUrl = spawnCommandInGhWorkspace({ command: `git remote get-url origin`, workspace })
+            const repoUrl = spawnCommandInGhWorkspace(`git remote get-url origin`)
                 .replace(/^https:\/\/github\.com\//, 'git@github.com:');
 
             const builds = await runBuilds({

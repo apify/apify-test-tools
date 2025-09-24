@@ -1,7 +1,7 @@
 import { Commit, Config } from './types';
 import { spawnCommandInGhWorkspace } from './utils.js';
 
-const GIT_FORMAT_SEPARATOR = '»¦«';
+export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
 
 
@@ -60,7 +60,7 @@ export const getCommitInfo = (commitSha: string): Commit => {
     return commit;
 };
 
-const parseCommit = (commitString: string): Commit => {
+export const parseCommit = (commitString: string): Commit => {
     const splits = commitString.split(GIT_FORMAT_SEPARATOR);
     if (splits.length !== 4) {
         throw new Error(`Failed to parse commit string: ${commitString}`);

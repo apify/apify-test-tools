@@ -1,7 +1,9 @@
 import { Commit, Config } from './types';
-import { parseCommit, spawnCommandInGhWorkspace } from './utils.js';
+import { spawnCommandInGhWorkspace } from './utils.js';
 
-const GIT_LOG_FORMAT = `%H»¦«%aN<%aE>»¦«%aD»¦«%s`;
+const GIT_FORMAT_SEPARATOR = '»¦«';
+const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
+
 
 export const getBranchLastCommit = (branch: string): Commit => {
     const commitString = spawnCommandInGhWorkspace(`git log -1 --pretty=format:'${GIT_LOG_FORMAT}' ${branch}`);
@@ -57,3 +59,16 @@ export const getCommitInfo = (commitSha: string): Commit => {
     const commit = parseCommit(commitString);
     return commit;
 };
+
+const parseCommit = (commitString: string): Commit => {
+    const [sha, author, date, message] = commitString.split(GIT_FORMAT_SEPARATOR);
+    if (!sha || !author || !date || !message) {
+        throw new Error(`Failed to parse commit string: ${commitString}`);
+    }
+    return {
+        sha,
+        author,
+        date,
+        message,
+    };
+}

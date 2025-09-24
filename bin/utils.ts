@@ -87,19 +87,6 @@ export const getHeadCommitSha = (githubEvent: GitHubEvent) => {
         : githubEvent.head_commit.id;
 };
 
-export const parseCommit = (commitString: string): Commit => {
-    const [sha, author, date, message] = commitString.split('»¦«');
-    if (!sha || !author || !date || !message) {
-        throw new Error(`Failed to parse commit string: ${commitString}`);
-    }
-    return {
-        sha,
-        author,
-        date,
-        message,
-    };
-}
-
 export interface GetChangedActorsResult {
     actorsChanged: ActorConfig[];
     codeChanged: boolean;

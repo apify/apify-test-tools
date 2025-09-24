@@ -61,10 +61,11 @@ export const getCommitInfo = (commitSha: string): Commit => {
 };
 
 const parseCommit = (commitString: string): Commit => {
-    const [sha, author, date, message] = commitString.split(GIT_FORMAT_SEPARATOR);
-    if (!sha || !author || !date || !message) {
+    const splits = commitString.split(GIT_FORMAT_SEPARATOR);
+    if (splits.length !== 4) {
         throw new Error(`Failed to parse commit string: ${commitString}`);
     }
+    const [sha, author, date, message] = splits;
     return {
         sha,
         author,

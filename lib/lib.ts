@@ -86,10 +86,10 @@ export const testActor = <T>(
  *
  * Using task is just current shortcoming of standby feature but ideally we would use Actor directly
  */
-export const testStandbyActor = <T>(
+export const testStandbyActor = <I = any, O = any>(
     actorName: string,
     testName: string,
-    fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<T>> }>,
+    fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
     testOptions?: TestOptions,
 ) => {
     const options = {
@@ -103,11 +103,15 @@ export const testStandbyActor = <T>(
         const standbyTask = await createStandbyTask(actorName, config.get(actorName)?.buildNumber);
         const { annotate } = context;
         const { expect, ...rest } = context;
-        await fn({
-            expect: extendExpect(expect),
-            callStandby: createStartStandbyFn(standbyTask),
-            ...rest,
-        });
+
+        // NOTE: we need to wrap `fn` in try-catch so that we can always clean up (delete the task) afterwards
+        try {
+            await fn({
+                expect: extendExpect(expect),
+                callStandby: createStartStandbyFn(standbyTask),
+                ...rest,
+            });
+        } catch {}
 
         const { taskId } = standbyTask;
         const runs = (await apifyClient.task(taskId).runs().list()).items
@@ -144,9 +148,9 @@ export const it = testActor;
  * Creates a function the accepts input for a standby actor and sends request containing input
  * to the task's standby url.
  */
-const createStartStandbyFn = <T>(standbyTask: StandbyTask) => {
+const createStartStandbyFn = <I, O>(standbyTask: StandbyTask) => {
     const { standbyUrl } = standbyTask;
-    return async ({ input }: Pick<RunOptions<T>, 'input'>) => {
+    return async ({ input }: Pick<RunOptions<I>, 'input'>) => {
         const response = await fetch(standbyUrl, {
             headers: {
                 Authorization: `Bearer ${apifyClient.token}`,
@@ -155,7 +159,7 @@ const createStartStandbyFn = <T>(standbyTask: StandbyTask) => {
             body: JSON.stringify(input),
         });
 
-        const data = await response.json();
+        const data = await response.json() as O;
         return {
             data,
             status: response.status,

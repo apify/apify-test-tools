@@ -7,17 +7,16 @@ import type {
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
     console.error(command, args.join(' '));
-    const commandInGhWorkspace = `cd ${process.cwd()}; ${command}`;
-    const commandResult = spawnSync(commandInGhWorkspace, args, { shell: true, maxBuffer: 100 * 1024 * 1024 });
+    const commandResult = spawnSync(command, args, { shell: true, maxBuffer: 100 * 1024 * 1024 });
 
     if (commandResult.error) {
-        throw new Error(`[Command failed]: ${commandInGhWorkspace}\n${commandResult.error}`);
+        throw new Error(`[Command failed]: ${command}\n${commandResult.error}`);
     }
 
     if (commandResult.stderr.toString().length > 0) {
         // For some reason 'git' command prints stderr when checking out to detached HEAD state (we only use detached HEAD for testing though)
         if (!commandResult.stderr.toString().includes(`You are in 'detached HEAD' state`)) {
-            throw new Error(`[Command printed stderr]: ${commandInGhWorkspace}\n${commandResult.stderr.toString()}`);
+            throw new Error(`[Command printed stderr]: ${command}\n${commandResult.stderr.toString()}`);
         }
     }
 
@@ -48,14 +47,14 @@ export const getRunUrlKvsKey = (runnerName: string) => {
 export const getRepoActors = async (): Promise<ActorConfig[]> => {
     let actorDirs: string[];
     try {
-        actorDirs = (await fs.readdir(`${process.cwd()}/actors`)).map((dir) => `actors/${dir}`);
+        actorDirs = (await fs.readdir(`./actors`)).map((dir) => `actors/${dir}`);
     } catch (err) {
         console.warn(`No /actors directory found in repo`);
         actorDirs = [];
     }
     let standaloneActorDirs: string[];
     try {
-        standaloneActorDirs = (await fs.readdir(`${process.cwd()}/standalone-actors`)).map((dir) => `standalone-actors/${dir}`);
+        standaloneActorDirs = (await fs.readdir(`./standalone-actors`)).map((dir) => `standalone-actors/${dir}`);
     } catch (err) {
         console.warn(`No /standalone-actors directory found in repo`);
         standaloneActorDirs = [];

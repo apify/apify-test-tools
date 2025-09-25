@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import type {
     ActorConfig,
+    Commit,
     GitHubEvent,
 } from './types.js';
 

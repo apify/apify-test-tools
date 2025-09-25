@@ -8,12 +8,18 @@ import {
     getRepoActors,
     getChangedActors,
     spawnCommandInGhWorkspace,
+    setCwd,
 } from './utils.js';
 import { runBuilds } from './build.js';
 import { getChangedFiles, getCommits } from './git.js';
 import { getPushData } from './github.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestRestuls } from './test-report.js';
+
+/**
+ * Middlewares to be run before every command execution
+ */
+const middlewares = [setCwd];
 
 const buildOptions = (y: yargs.Argv) => {
     return y
@@ -27,7 +33,7 @@ const buildOptions = (y: yargs.Argv) => {
         })
         .option('base-commit', {
             type: 'string',
-        });
+        })
 };
 
 await yargs()
@@ -36,6 +42,10 @@ await yargs()
         type: 'boolean',
         default: false,
     })
+    .option('workspace', {
+        type: 'string',
+    })
+    .middleware(middlewares)
     .command('get-commits', '', buildOptions, (args) => {
         const commits = getCommits(args);
         console.log(JSON.stringify(commits));

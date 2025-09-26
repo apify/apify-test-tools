@@ -72,28 +72,24 @@ class ApifyBuilder {
             await version.update(actorVersion);
         }
 
-        console.error(`[BUILD][${this.actorName}]: Will be built with version ${versionNumber}`);
-        console.error(`[BUILD][${this.actorName}]: ${JSON.stringify(actorVersion)}`);
-
         // We also get back actId so the testing actor can both match by actor ID and name
         const { id, actId, buildNumber } = await actorClient.build(versionNumber);
 
-        console.error(`[BUILD][${this.actorName}]: Build ${id} (${versionNumber}) has started`);
+        console.info(`[${this.actorName}]: ${buildNumber}`);
         return { buildId: id, actorId: actId, buildNumber, actorName: this.actorName };
     };
 
     waitForBuildToFinish = async (buildId: string, actorName: string): Promise<Build> => {
-        console.error(`[BUILD][${actorName}]: Waiting for build ${buildId} to finish`);
         const build = await this.apifyClient.build(buildId).waitForFinish();
         const versionNumber = build.buildNumber;
         if (build.status === 'FAILED' || build.status === 'TIMED-OUT') {
             const message = `[BUILD][${actorName}]: Build ${buildId} (${versionNumber}) failed. `
                 + `Not continuing with other builds and tests.`;
-            console.warn(`D€LIV€RY_$L&CK: Webhook-to-build: ${message}`);
+            console.error(`[${this.actorName}]: ${versionNumber}`);
             throw new Error(message);
         }
 
-        console.error(`[BUILD][${actorName}]: Build ${build.id} (${versionNumber}) finished successfully.`);
+        console.info(`[${this.actorName}]: ${versionNumber}`);
         return build;
     };
 
@@ -222,17 +218,24 @@ export const runBuilds = async ({
     if (dryRun) {
         return buildConfigs;
     }
-
+    console.log("STARTED BUILDS:");
+    console.log("=========================================");
     const startedBuilds = await Promise.all(buildConfigs.map(async (buildConfig) => {
         const builder = ApifyBuilder.fromActorName(buildConfig.actorName);
         const buildData = await builder.startActorBuild(buildConfig);
         return buildData;
     }));
+    console.log("=========================================");
 
+
+    console.log("FINISHED BUILDS:");
+    console.log("=========================================");
     await Promise.all(startedBuilds.map(async (buildData) => {
         const builder = ApifyBuilder.fromActorName(buildData.actorName);
         await builder.waitForBuildToFinish(buildData.buildId, buildData.actorName);
     }));
+    console.log("=========================================");
+
 
     return startedBuilds;
 };

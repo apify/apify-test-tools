@@ -75,7 +75,7 @@ class ApifyBuilder {
         // We also get back actId so the testing actor can both match by actor ID and name
         const { id, actId, buildNumber } = await actorClient.build(versionNumber);
 
-        console.info(`[${this.actorName}]: ${buildNumber}`);
+        console.info(`[${this.actorName}]: ${id} (${buildNumber})`);
         return { buildId: id, actorId: actId, buildNumber, actorName: this.actorName };
     };
 
@@ -218,18 +218,15 @@ export const runBuilds = async ({
     if (dryRun) {
         return buildConfigs;
     }
-    console.log("STARTED BUILDS:");
     console.log("=========================================");
+    console.log("STARTED BUILDS:");
     const startedBuilds = await Promise.all(buildConfigs.map(async (buildConfig) => {
         const builder = ApifyBuilder.fromActorName(buildConfig.actorName);
         const buildData = await builder.startActorBuild(buildConfig);
         return buildData;
     }));
     console.log("=========================================");
-
-
     console.log("FINISHED BUILDS:");
-    console.log("=========================================");
     await Promise.all(startedBuilds.map(async (buildData) => {
         const builder = ApifyBuilder.fromActorName(buildData.actorName);
         await builder.waitForBuildToFinish(buildData.buildId, buildData.actorName);

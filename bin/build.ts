@@ -89,7 +89,7 @@ class ApifyBuilder {
             throw new Error(message);
         }
 
-        console.error(`[${this.actorName}]: ${versionNumber}`);
+        // console.error(`[${this.actorName}]: ${versionNumber}`);
         return build;
     };
 
@@ -226,13 +226,17 @@ export const runBuilds = async ({
         return buildData;
     }));
     console.error("=========================================");
-    console.error("FINISHED BUILDS:");
+
     await Promise.all(startedBuilds.map(async (buildData) => {
         const builder = ApifyBuilder.fromActorName(buildData.actorName);
         await builder.waitForBuildToFinish(buildData.buildId, buildData.actorName);
     }));
-    console.error("=========================================");
 
+    console.error("FINISHED BUILDS:");
+    for (const buildData of startedBuilds.sort((a, b) => a.actorName.localeCompare(b.actorName))) {
+        console.error(`[${buildData.actorName}]: ${buildData.buildId}`);
+    }
+    console.error("=========================================");
 
     return startedBuilds;
 };

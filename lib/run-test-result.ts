@@ -48,7 +48,8 @@ export class RunTestResult {
         }
         const kvs = this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
         const input = await kvs.getRecord('INPUT');
-        return input as T;
+        this.input = input?.value;
+        return this.input as T;
     }
 
     getRunInfo = async (): Promise<ActorRun> => {

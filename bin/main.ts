@@ -10,7 +10,7 @@ import {
     spawnCommandInGhWorkspace,
     setCwd,
 } from './utils.js';
-import { runBuilds } from './build.js';
+import {getAllDefaultBuilds, runBuilds} from './build.js';
 import { getChangedFiles, getCommits } from './git.js';
 import { getPushData } from './github.js';
 import { notifyToSlack } from './slack.js';
@@ -107,7 +107,17 @@ await yargs()
                 branch: args.sourceBranch.replace('origin/', ''),
                 dryRun: args.dryRun,
             });
-            console.log(JSON.stringify(builds));
+
+            if (args.dryRun) {
+                console.log(JSON.stringify([...builds]));
+                return;
+            }
+
+            // add a build entry even if no build was triggered to run the tests on all actors
+            const remainingActors = actorConfigs.filter((a) => !actorsChanged.find((ac) => ac.actorName === a.actorName))
+            const existingBuilds = await getAllDefaultBuilds(remainingActors)
+
+            console.log(JSON.stringify([...builds, ...existingBuilds]));
         })
     .command(
         'release',

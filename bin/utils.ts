@@ -117,6 +117,11 @@ const isIgnoredTopLevelFile = (lowercaseFilePath: string) => {
     return IGNORED_TOP_LEVEL_FILES.some((ignoredFile) => sanitizedLowercaseFilePath.startsWith(ignoredFile));
 };
 
+const isIgnoredTestFile = (lowercaseFilePath: string) => {
+    const sanitizedLowercaseFilePath = lowercaseFilePath.replace(/^code\//, '').replace(/^shared\//, '');
+    return sanitizedLowercaseFilePath.startsWith('tests/');
+}
+
 const isLatestBuildOnlyFile = (lowercaseFilePath: string) => {
     if (lowercaseFilePath.endsWith('changelog.md')) {
         return true;
@@ -145,7 +150,7 @@ export const getChangedActors = (
     const lowercaseFiles = filepathsChanged.map((file) => file.toLowerCase());
 
     for (const lowercaseFilePath of lowercaseFiles) {
-        if (isIgnoredTopLevelFile(lowercaseFilePath)) {
+        if (isIgnoredTopLevelFile(lowercaseFilePath) || isIgnoredTestFile(lowercaseFilePath)) {
             continue;
         }
         // First we check for specific actors that have configs in /actors or standalone actors in /standalone-actors

@@ -174,6 +174,13 @@ class ApifyBuilder {
             await this.apifyClient.build(build.id).delete();
         }
     }
+
+    async getDefaultBuilt() {
+        const client = this.apifyClient.actor(this.actorName)
+        const { defaultVersionNumber } = await this.getDefaultVersionAndTag()
+        const { id, actId, buildNumber } = await client.build(defaultVersionNumber)
+        return { buildId: id, actorId: actId, buildNumber, actorName: this.actorName };
+    }
 }
 
 type RunBuildsOptions = {
@@ -182,6 +189,15 @@ type RunBuildsOptions = {
     repoUrl: string
     branch: string
     dryRun: boolean
+}
+
+export const getAllDefaultBuilds = async (actorConfigs: ActorConfig[]) => {
+    const existingBuilds = await Promise.all(
+        actorConfigs.map(actor =>
+            ApifyBuilder.fromActorName(actor.actorName).getDefaultBuilt()
+        )
+    );
+    return existingBuilds;
 }
 
 export const runBuilds = async ({

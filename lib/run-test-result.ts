@@ -1,9 +1,10 @@
-import { ActorRun, ApifyClient } from 'apify-client';
+import { ActorRun, ApifyClient, KeyValueStoreClient} from 'apify-client';
 import type { Dataset, SdkCrawlerStatistics } from './types';
 
 export class RunTestResult {
     private log: string | undefined;
     private dataset: Dataset<unknown> | undefined;
+    private keyValueStoreClient: KeyValueStoreClient | undefined;
     private statistics: SdkCrawlerStatistics | undefined;
     private runInfo: ActorRun | undefined;
     private input: unknown | undefined;
@@ -40,6 +41,15 @@ export class RunTestResult {
         const items = (await dataset.listItems()).items as T[];
         this.dataset = { items };
         return this.dataset as Dataset<T>;
+    };
+
+    getKeyValueStoreClient = (): KeyValueStoreClient => {
+        if (this.keyValueStoreClient) {
+            return this.keyValueStoreClient;
+        }
+        const keyValueStoreClient = this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
+        this.keyValueStoreClient = keyValueStoreClient;
+        return keyValueStoreClient
     };
 
     getInput = async<T>(): Promise<T> => {

@@ -1,4 +1,4 @@
-import { ActorRun, ApifyClient, KeyValueStoreClient} from 'apify-client';
+import { ActorRun, ApifyClient, KeyValueStoreClient } from 'apify-client';
 import type { Dataset, SdkCrawlerStatistics } from './types';
 
 export class RunTestResult {

@@ -117,6 +117,8 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
                 ...userOptions,
             };
 
+            const failedAssertions: string[] = [];
+
             const diffs: Diffs = {
                 pass: true,
                 actual: ['Run:'],
@@ -125,9 +127,13 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
             {
                 const expected = options?.status;
                 const actual = received.status;
-                diffs.pass = expected === actual;
-                diffs.actual.push(`status=${actual}`);
-                diffs.expected.push(`status=${expected}`);
+                const statusTest = expected === actual;
+                if (statusTest === false) {
+                    diffs.pass = false;
+                    diffs.actual.push(`status=${actual}`);
+                    diffs.expected.push(`status=${expected}`);
+                    failedAssertions.push(`Failed status check.`);
+                }
             }
 
             const {
@@ -137,10 +143,19 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
             const datasetItemCount = (await received.getDataset()).items.length;
             const stats = (await received.getStatistics());
 
-            isWithinInterval(diffs, datasetItemCount, options, 'datasetItemCount');
-            isWithinInterval(diffs, durationMillis, options, 'duration');
+            const datasetItemCountTest = isWithinInterval(diffs, datasetItemCount, options, 'datasetItemCount');
+            if (datasetItemCountTest === false) {
+                failedAssertions.push(`Failed dataset item count check.`);
+            }
+            const durationTest = isWithinInterval(diffs, durationMillis, options, 'duration');
+            if (durationTest === false) {
+                failedAssertions.push(`Failed duration check.`);
+            }
             isWithinInterval(diffs, stats?.requestsFailed, options, 'failedRequests');
-            isWithinInterval(diffs, stats?.requestsRetries, options, 'requestsRetries');
+            const requestsRetriesTest = isWithinInterval(diffs, stats?.requestsRetries, options, 'requestsRetries');
+            if (requestsRetriesTest === false) {
+                failedAssertions.push(`Failed requests retries check.`);
+            }
 
             const ppeDiffs: Diffs = {
                 pass: true,
@@ -175,9 +190,12 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
                     isWithinInterval(ppeDiffs, actual[ppeEvent], expected, ppeEvent as PpeEvent);
                 }
 
-                diffs.pass = ppeDiffs.pass;
-                diffs.actual.push(ppeDiffs.actual.join('\n    '));
-                diffs.expected.push(ppeDiffs.expected.join('\n    '));
+                if (ppeDiffs.pass === false) {
+                    diffs.pass = ppeDiffs.pass;
+                    diffs.actual.push(ppeDiffs.actual.join('\n    '));
+                    diffs.expected.push(ppeDiffs.expected.join('\n    '));
+                    failedAssertions.push(`Failed PPE event counts check.`);
+                }
             }
 
             {
@@ -193,12 +211,13 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
                     diffs.pass = false;
                     diffs.actual.push(` logs=[${occuredLogs.join(', ')}]`);
                     diffs.expected.push(` logs=[]`);
+                    failedAssertions.push(`Failed forbidden logs check.`);
                 }
             }
 
             return {
                 pass: diffs.pass,
-                message: () => `Run ${received.id} didn't finish as expected`,
+                message: () => `Run did not finish as expected. Failed assertions: ${failedAssertions.join(' ',)}`,
                 actual: diffs.actual.join('\n  '),
                 expected: diffs.expected.join('\n  '),
             };
@@ -256,6 +275,7 @@ const isWithinInterval = <T extends string>(
             diffs.pass = false;
             diffs.actual.push(`${intervalOption}=${actual}`);
             diffs.expected.push(`${intervalOption}=${expected}`);
+            return false
         }
     } else if (typeof expected === 'object') {
         const { min, max } = expected;
@@ -263,6 +283,8 @@ const isWithinInterval = <T extends string>(
             diffs.pass = false;
             diffs.actual.push(`${intervalOption}=${actual}`);
             diffs.expected.push(`${intervalOption}=<${min ?? ''},${max ?? ''}>`);
+            return false
         }
     }
+    return
 };

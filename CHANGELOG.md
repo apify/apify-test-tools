@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.2
+
+### Cli
+
+- enhancement: make build logs prettier
+
+### Lib
+
+- feat: add `runResult.getKeyValueStoreClient()` method
+
 ## 0.2.1
 
 ### Lib

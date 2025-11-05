@@ -175,7 +175,7 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
                     isWithinInterval(ppeDiffs, actual[ppeEvent], expected, ppeEvent as PpeEvent);
                 }
 
-                diffs.pass = ppeDiffs.pass;
+                diffs.pass = diffs.pass && ppeDiffs.pass;
                 diffs.actual.push(ppeDiffs.actual.join('\n    '));
                 diffs.expected.push(ppeDiffs.expected.join('\n    '));
             }

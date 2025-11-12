@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.4
+
+### Lib
+
+- fix: make sure standby task's name is unique
+
 ## 0.2.3
 
 ### Lib

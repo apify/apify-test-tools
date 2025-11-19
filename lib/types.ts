@@ -46,6 +46,7 @@ export type ToFinishWithOptionsWithDefaults = {
     failedRequests: Interval | null
     requestsRetries: Interval | null
     forbiddenLogs: string[]
+    maxRetriesPerRequest: number | null
 }
 export type IntervalOption<PpeEvent extends string> = keyof Pick<
     ToFinishWithOptions<PpeEvent>,
@@ -123,6 +124,7 @@ export interface ActorMatchers<R = unknown> {
      * - `failedRequests` (default: `0`)
      * - `requestsRetries` (default: `{ max: 3 }`)
      * - `forbiddenLogs` (default: `['ReferenceError', 'TypeError']`)
+     * - `maxRetriesPerRequest` (not checked by default)
      * - `datasetItemCount` (required)
      * - `chargedEventCounts`
      */

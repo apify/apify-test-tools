@@ -196,6 +196,17 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
                 }
             }
 
+            if (options.maxRetriesPerRequest !== null) {
+                const { maxRetriesPerRequest } = options;
+                const requestRetryHistogram = stats?.requestRetryHistogram || [];
+                const maxRetriesObserved = requestRetryHistogram.length;
+                if (maxRetriesObserved > maxRetriesPerRequest) {
+                    diffs.pass = false;
+                    diffs.actual.push(`maxRetriesPerRequest=${maxRetriesObserved - 1}`);
+                    diffs.expected.push(`maxRetriesPerRequest=${maxRetriesPerRequest}`);
+                }
+            }
+
             return {
                 pass: diffs.pass,
                 message: () => `Run ${received.id} didn't finish as expected`,

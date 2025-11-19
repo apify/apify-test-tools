@@ -12,4 +12,5 @@ export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
         'ReferenceError',
         'TypeError',
     ],
+    maxRetriesPerRequest: null,
 };

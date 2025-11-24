@@ -198,11 +198,10 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
 
             if (options.maxRetriesPerRequest !== null) {
                 const { maxRetriesPerRequest } = options;
-                const requestRetryHistogram = stats?.requestRetryHistogram || [];
-                const maxRetriesObserved = requestRetryHistogram.length;
+                const maxRetriesObserved = (stats?.requestRetryHistogram ?? [0]).length - 1;
                 if (maxRetriesObserved > maxRetriesPerRequest) {
                     diffs.pass = false;
-                    diffs.actual.push(`maxRetriesPerRequest=${maxRetriesObserved - 1}`);
+                    diffs.actual.push(`maxRetriesPerRequest=${maxRetriesObserved}`);
                     diffs.expected.push(`maxRetriesPerRequest=${maxRetriesPerRequest}`);
                 }
             }

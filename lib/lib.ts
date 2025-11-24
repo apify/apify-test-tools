@@ -252,6 +252,7 @@ const createStartRunFn = <T>(actorNameOrId: string, testContext: TestContext) =>
         task.meta = {
             runId: run.id,
             runLink,
+            actorName: actorNameOrId,
         };
 
         // waiting for datasetItemCount and chargedEventCounts to sync

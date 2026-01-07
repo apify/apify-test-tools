@@ -132,7 +132,7 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
                     diffs.pass = false;
                     diffs.actual.push(`status=${actual}`);
                     diffs.expected.push(`status=${expected}`);
-                    failedAssertions.push(`Failed status check.`);
+                    failedAssertions.push(`Failed status check, expected "${expected}", got "${actual}".`);
                 }
             }
 

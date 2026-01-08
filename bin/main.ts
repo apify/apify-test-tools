@@ -123,6 +123,7 @@ await yargs()
                 commits,
                 changelog,
                 repository,
+                author,
             } = await getPushData(args.pushEventPath);
             const isLatest = true;
             const actorConfigs = await getRepoActors();
@@ -148,6 +149,7 @@ await yargs()
                 changelog,
                 repository,
                 dryRun,
+                author
             });
         })
     .strictCommands()

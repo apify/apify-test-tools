@@ -1,5 +1,5 @@
 import { ActorCallOptions } from 'apify-client';
-import { Assertion } from 'vitest';
+import { Assertion, TestOptions } from 'vitest';
 
 export type ActorBuild = {
     buildId: string;
@@ -132,6 +132,17 @@ export interface ActorMatchers<R = unknown> {
     toStartWith: (prefix: string) => R
     hard: <T>(actual: T, message?: string) => Assertion
 }
+
+export type ActorTestOptions = Omit<TestOptions, 'retry'> & {
+    /**
+     * Times to retry the test if fails. Useful for making flaky tests more stable.
+     * When retries is up, the last test error will be thrown.
+     *
+     * @default 1
+     */
+    // we are just extending the docs here to replace the default value, otherwise it's the exact same
+    retry?: TestOptions['retry'];
+};
 
 declare module 'vitest' {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

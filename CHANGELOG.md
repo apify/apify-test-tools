@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+### Lib
+
+- feat: prettify logs and slack reports of tests and releases
+- chore: update dependencies
+
 ## 0.2.4
 
 ### Lib

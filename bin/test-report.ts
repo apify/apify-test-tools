@@ -35,7 +35,7 @@ export const reportTestRestuls = async ({
         }
     }
 
-    const failedAssertions: string[] = [];
+    const failedAssertions: { message: string; runLink: string, actorName: string }[] = [];
 
     console.error();
     console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
@@ -55,11 +55,11 @@ export const reportTestRestuls = async ({
     console.error('**************************************************');
     console.error();
     for (const [i, aResult] of failed.entries()) {
-        const { failureMessages, fullName } = aResult;
+        const { failureMessages, fullName, meta } = aResult;
         if (failureMessages) {
-            failedAssertions.push(...failureMessages.map(message => message.split('\n')?.[0]));
+            failedAssertions.push(...failureMessages.map(message => ({ message: message.split('\n')?.[0], runLink: meta.runLink, actorName: meta.actorName })));
         }
-        console.error(`${i + 1}) ${fullName} ... ${aResult.meta.runLink}`);
+        console.error(`${i + 1}) ${fullName} ... ${meta.runLink}`);
         console.error();
     }
     console.error();
@@ -75,8 +75,8 @@ export const reportTestRestuls = async ({
     const jobLink = jobUrl ? ` Check <${jobUrl}|the job>.` : '';
     let slackMessage = `\`${workflowName ?? '-'}\`: *${repository ?? '-'}*`;
     slackMessage += `: has ${failedAssertions.length} failed assertions. Failing test suites: ${failed.length}/${total}.${jobLink}`;
-    slackMessage += `\n\n${failedAssertions[0]}`;
-    const blocks = failedAssertions.slice(1);
+    slackMessage += `\n\n${failedAssertions[0].message} --- <${failedAssertions[0].runLink}|${failedAssertions[0].actorName}>`;
+    const blocks = failedAssertions.slice(1).map(({ message, runLink, actorName }) => `• ${message} --- <${runLink}|${actorName}>`);
 
     if (!repository) {
         console.error(`Repository not provided, not sending slack notification`);
@@ -87,7 +87,7 @@ export const reportTestRestuls = async ({
     const channel = `#notif-${repository.replace(/[^/]+\//, '')}`;
     console.error(`Sending a notification to slack channel ${channel}`);
     console.error('SLACK:', slackMessage);
-    console.error('  blocks:', blocks.join('\n'));
+    console.error('\tblocks:', blocks.join('\n\t\t'));
     if (!dryRun) {
         const slackToken = getEnvVar('SLACK_TOKEN_TESTS_BOT');
         await sendSlackMessage(channel, slackMessage, blocks, slackToken);
@@ -109,6 +109,7 @@ interface JsonAssertionResult {
     meta: {
         runId: string
         runLink: string
+        actorName: string
     }
     duration?: Milliseconds | null
     failureMessages: Array<string> | null

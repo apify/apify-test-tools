@@ -8,6 +8,7 @@ export const getPushData = async (path: string) => {
     const {
         commits: ghCommits,
         repository: { ssh_url: repoUrl, name },
+        head_commit: { author }
     } = event;
     const commits: Commit[] = ghCommits.map(({ author, message, id, timestamp }) => ({
         author: author.username,
@@ -24,6 +25,7 @@ export const getPushData = async (path: string) => {
         repoUrl,
         changelog,
         repository: name,
+        author: author.name
     };
 };
 

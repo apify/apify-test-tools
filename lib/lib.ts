@@ -5,10 +5,9 @@ import {
     TestFunction,
     test as vitestTest,
     SuiteFactory,
-    TestOptions,
     TestContext,
 } from 'vitest';
-import type { ActorBuild, RunOptions } from './types';
+import type { ActorBuild, ActorTestOptions, RunOptions } from './types';
 import { RunTestResult } from './run-test-result.js';
 import { extendExpect } from './extend-expect.js';
 import { getActorPrefilledInput, sleep } from './utils.js';
@@ -38,7 +37,7 @@ export { ExpectStatic };
 const { TESTER_APIFY_TOKEN, RUN_PLATFORM_TESTS, RUN_ALL_PLATFORM_TESTS } = process.env;
 const apifyClient = new ApifyClient({ token: TESTER_APIFY_TOKEN });
 
-const DEFAULT_TEST_OPTIONS: TestOptions = {
+const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
     // we want to run tests concurrently
     concurrent: true,
     // test should finish within 1 hour
@@ -48,12 +47,12 @@ const DEFAULT_TEST_OPTIONS: TestOptions = {
 export const describe = (
     name: string,
     fn?: SuiteFactory<object>,
-    options: TestOptions = DEFAULT_TEST_OPTIONS,
+    options: ActorTestOptions = DEFAULT_TEST_OPTIONS,
 ) => {
     vitestDescribe.runIf(!!RUN_PLATFORM_TESTS || !!RUN_ALL_PLATFORM_TESTS)(name, options, fn);
 };
 
-const DEFAULT_TEST_ACTOR_OPTIONS: TestOptions = {
+const DEFAULT_TEST_ACTOR_OPTIONS: ActorTestOptions = {
     retry: 1,
 };
 
@@ -61,7 +60,7 @@ export const testActor = <T>(
     actorName: string,
     testName: string,
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
-    testOptions?: TestOptions,
+    testOptions?: ActorTestOptions,
 ) => {
     const options = {
         ...DEFAULT_TEST_ACTOR_OPTIONS,
@@ -90,7 +89,7 @@ export const testStandbyActor = <I = any, O = any>(
     actorName: string,
     testName: string,
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
-    testOptions?: TestOptions,
+    testOptions?: ActorTestOptions,
 ) => {
     const options = {
         ...DEFAULT_TEST_ACTOR_OPTIONS,

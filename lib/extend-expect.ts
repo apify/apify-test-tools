@@ -145,7 +145,7 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
 
             const checkInterval = (
                 value: number | undefined,
-                key: ['datasetItemCount', 'duration', 'failedRequests', 'requestsRetries'][number],
+                key: ['datasetItemCount', 'duration', 'failedRequests', 'requestsRetries', 'maxRetriesPerRequest'][number],
                 label: string,
             ) => {
                 const result = isWithinInterval(diffs, value, options, key);
@@ -158,6 +158,8 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
             checkInterval(durationMillis, 'duration', 'duration');
             checkInterval(stats?.requestsFailed, 'failedRequests', 'failed requests');
             checkInterval(stats?.requestsRetries, 'requestsRetries', 'requests retries');
+            const maxRetriesObserved = (stats?.requestRetryHistogram ?? [0]).length - 1;
+            checkInterval(maxRetriesObserved, 'maxRetriesPerRequest', 'max retries per request');
 
             const ppeDiffs: Diffs = {
                 pass: true,
@@ -214,16 +216,6 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
                     diffs.actual.push(` logs=[${occuredLogs.join(', ')}]`);
                     diffs.expected.push(` logs=[]`);
                     failedAssertions.push(`Failed forbidden logs check, expected [] but got [${occuredLogs.join(', ')}].`);
-                }
-            }
-
-            if (options.maxRetriesPerRequest !== null) {
-                const { maxRetriesPerRequest } = options;
-                const maxRetriesObserved = (stats?.requestRetryHistogram ?? [0]).length - 1;
-                if (maxRetriesObserved > maxRetriesPerRequest) {
-                    diffs.pass = false;
-                    diffs.actual.push(`maxRetriesPerRequest=${maxRetriesObserved}`);
-                    diffs.expected.push(`maxRetriesPerRequest=${maxRetriesPerRequest}`);
                 }
             }
 

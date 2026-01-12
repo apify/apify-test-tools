@@ -2,13 +2,10 @@ import process from 'process';
 import { describe } from 'vitest';
 
 import { ApifyClient } from 'apify-client';
-import { testStandbyActor, testTestActor } from '../../lib/lib';
-import { RunTestResult } from '../../lib/run-test-result';
+import { testStandbyActor, testTestActor } from '../../lib/lib.js';
+import { RunTestResult } from '../../lib/run-test-result.js';
 
-type PpeEventType =
-    | 'actor-start'
-    | 'search-page-scraped'
-    | 'ads-scraped'
+type PpeEventType = 'actor-start' | 'search-page-scraped' | 'ads-scraped';
 enum PpeEventEnum {
     ACTOR_START = 'actor-start',
     SEARCH_PAGE_SCRAPED = 'search-page-scraped',
@@ -45,7 +42,7 @@ describe('custom-matchers', { timeout: 100_000 }, () => {
             },
         });
 
-        await expect(runResult).toFinishWith<typeof PPE_EVENT_CONST[keyof typeof PPE_EVENT_CONST]>({
+        await expect(runResult).toFinishWith<(typeof PPE_EVENT_CONST)[keyof typeof PPE_EVENT_CONST]>({
             datasetItemCount: { min: 1, max: 20 },
             chargedEventCounts: {
                 'actor-start': 1,
@@ -67,7 +64,7 @@ describe('custom-matchers', { timeout: 100_000 }, () => {
                     maxRequests: 3,
                     aggregateContacts: true,
                 },
-            })
+            });
             expect(status).toBe(200);
             expect(data[0].domain).toEqual('apify.com');
         }
@@ -78,7 +75,7 @@ describe('custom-matchers', { timeout: 100_000 }, () => {
                 maxRequests: 3,
                 aggregateContacts: true,
             },
-        })
+        });
         expect(status).toBe(200);
         expect(data[0].domain).toEqual('apify.com');
     });

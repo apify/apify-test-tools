@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { GIT_FORMAT_SEPARATOR, parseCommit } from '../../bin/git';
+import { GIT_FORMAT_SEPARATOR, parseCommit } from '../../bin/git.js';
 
 describe('parseCommit', () => {
-
     describe('valid commit strings', () => {
         it('should parse a basic commit string correctly', () => {
             const commitString = `abc123${GIT_FORMAT_SEPARATOR}John Doe<john@example.com>${GIT_FORMAT_SEPARATOR}Mon, 25 Dec 2023 10:30:00 +0100${GIT_FORMAT_SEPARATOR}Add new feature`;
@@ -13,7 +12,7 @@ describe('parseCommit', () => {
                 sha: 'abc123',
                 author: 'John Doe<john@example.com>',
                 date: 'Mon, 25 Dec 2023 10:30:00 +0100',
-                message: 'Add new feature'
+                message: 'Add new feature',
             });
         });
 
@@ -26,7 +25,7 @@ describe('parseCommit', () => {
                 sha: 'def456',
                 author: 'Jane Smith<jane@example.com>',
                 date: 'Tue, 26 Dec 2023 14:15:00 +0100',
-                message: 'test: commit with double quotes: \"'
+                message: 'test: commit with double quotes: "',
             });
         });
 
@@ -39,7 +38,7 @@ describe('parseCommit', () => {
                 sha: 'jkl012',
                 author: 'María García<maria@example.com>',
                 date: 'Thu, 28 Dec 2023 16:20:00 +0100',
-                message: 'Add émojis 🚀 and "special" chars'
+                message: 'Add émojis 🚀 and "special" chars',
             });
         });
 
@@ -52,7 +51,7 @@ describe('parseCommit', () => {
                 sha: 'mno345',
                 author: 'Test User<test@example.com>',
                 date: 'Fri, 29 Dec 2023 11:00:00 +0100',
-                message: ''
+                message: '',
             });
         });
     });

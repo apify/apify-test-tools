@@ -1,7 +1,7 @@
 import type { Assertion, ExpectStatic } from 'vitest';
 
 import { TO_FINISH_WITH_OPTIONS } from './consts.js';
-import type { Interval, ToFinishWithOptions } from './types';
+import type { Interval, ToFinishWithOptions } from './types.js';
 import { RunTestResult } from './run-test-result.js';
 
 export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
@@ -110,7 +110,7 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
         },
         toFinishWith: async <PpeEvent extends string>(
             received: RunTestResult,
-            userOptions: ToFinishWithOptions<PpeEvent>,
+            userOptions: ToFinishWithOptions<PpeEvent>
         ) => {
             const options = {
                 ...TO_FINISH_WITH_OPTIONS,
@@ -146,11 +146,13 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
             const checkInterval = (
                 value: number | undefined,
                 key: ['datasetItemCount', 'duration', 'failedRequests', 'requestsRetries'][number],
-                label: string,
+                label: string
             ) => {
                 const result = isWithinInterval(diffs, value, options, key);
                 if (result === false) {
-                    failedAssertions.push(`Failed ${label} check, expected ${JSON.stringify(options[key])}, got ${value}.`);
+                    failedAssertions.push(
+                        `Failed ${label} check, expected ${JSON.stringify(options[key])}, got ${value}.`
+                    );
                 }
             };
 
@@ -166,7 +168,9 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
                         diffs.pass = false;
                         diffs.actual.push(`maxRetriesPerRequest=${maxRetriesPerRequestObserved}`);
                         diffs.expected.push(`maxRetriesPerRequest<=${options.maxRetriesPerRequest}`);
-                        failedAssertions.push(`Failed max retries observed check, expected <=${options.maxRetriesPerRequest}, got ${maxRetriesPerRequestObserved}.`);
+                        failedAssertions.push(
+                            `Failed max retries observed check, expected <=${options.maxRetriesPerRequest}, got ${maxRetriesPerRequestObserved}.`
+                        );
                     }
                 }
             }
@@ -186,12 +190,7 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
 
                 for (const ppeEvent of uniquePpeEvents) {
                     if (!(ppeEvent in expected)) {
-                        isWithinInterval(
-                            ppeDiffs,
-                            actual[ppeEvent],
-                            { [ppeEvent]: 0 },
-                            ppeEvent,
-                        );
+                        isWithinInterval(ppeDiffs, actual[ppeEvent], { [ppeEvent]: 0 }, ppeEvent);
                         continue;
                     }
                     if (!(ppeEvent in actual)) {
@@ -207,7 +206,11 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
                     diffs.pass = ppeDiffs.pass;
                     diffs.actual.push(ppeDiffs.actual.join('\n    '));
                     diffs.expected.push(ppeDiffs.expected.join('\n    '));
-                    failedAssertions.push(`Failed PPE event counts check, expected ${JSON.stringify(options.chargedEventCounts)}, got ${JSON.stringify(chargedEventCounts)}.`);
+                    failedAssertions.push(
+                        `Failed PPE event counts check, expected ${JSON.stringify(
+                            options.chargedEventCounts
+                        )}, got ${JSON.stringify(chargedEventCounts)}.`
+                    );
                 }
             }
 
@@ -224,13 +227,15 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
                     diffs.pass = false;
                     diffs.actual.push(` logs=[${occuredLogs.join(', ')}]`);
                     diffs.expected.push(` logs=[]`);
-                    failedAssertions.push(`Failed forbidden logs check, expected [] but got [${occuredLogs.join(', ')}].`);
+                    failedAssertions.push(
+                        `Failed forbidden logs check, expected [] but got [${occuredLogs.join(', ')}].`
+                    );
                 }
             }
 
             return {
                 pass: diffs.pass,
-                message: () => `Run did not finish as expected. Failed assertions: ${failedAssertions.join(' ',)}`,
+                message: () => `Run did not finish as expected. Failed assertions: ${failedAssertions.join(' ')}`,
                 actual: diffs.actual.join('\n  '),
                 expected: diffs.expected.join('\n  '),
             };
@@ -266,17 +271,16 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
 };
 
 type Diffs = {
-    pass: boolean
-    actual: string[]
-    expected: string[]
-
-}
+    pass: boolean;
+    actual: string[];
+    expected: string[];
+};
 
 const isWithinInterval = <T extends string>(
     diffs: Diffs,
     actual: number | undefined,
     options: Record<T, Interval | null>,
-    intervalOption: T,
+    intervalOption: T
 ) => {
     const expected = options[intervalOption];
     if (expected === null) {
@@ -288,7 +292,7 @@ const isWithinInterval = <T extends string>(
             diffs.pass = false;
             diffs.actual.push(`${intervalOption}=${actual}`);
             diffs.expected.push(`${intervalOption}=${expected}`);
-            return false
+            return false;
         }
     } else if (typeof expected === 'object') {
         const { min, max } = expected;
@@ -296,8 +300,8 @@ const isWithinInterval = <T extends string>(
             diffs.pass = false;
             diffs.actual.push(`${intervalOption}=${actual}`);
             diffs.expected.push(`${intervalOption}=<${min ?? ''},${max ?? ''}>`);
-            return false
+            return false;
         }
     }
-    return
+    return;
 };

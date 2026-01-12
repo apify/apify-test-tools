@@ -2,19 +2,15 @@
     "extends": "@apify/tsconfig",
     "compilerOptions": {
         "declaration": true,
-        "module": "ES2022",
+        "module": "nodenext",
+        "moduleResolution": "nodenext",
         "target": "ES2022",
         "outDir": "dist",
         "noUnusedLocals": false,
         "strict": true,
         "esModuleInterop": true,
         "lib": ["DOM", "es2021"],
-        "skipLibCheck": true,
+        "skipLibCheck": true
     },
-    "include": [
-        "./index.ts",
-        "./bin/**/*",
-        "./lib/**/*",
-        "./test/**/*",
-    ]
+    "include": ["./index.ts", "./bin/**/*", "./lib/**/*", "./test/**/*"]
 }

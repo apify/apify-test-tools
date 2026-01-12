@@ -1,5 +1,5 @@
 import { ActorRun, ApifyClient, KeyValueStoreClient } from 'apify-client';
-import type { Dataset, SdkCrawlerStatistics } from './types';
+import type { Dataset, SdkCrawlerStatistics } from './types.js';
 
 export class RunTestResult {
     private log: string | undefined;
@@ -9,10 +9,9 @@ export class RunTestResult {
     private runInfo: ActorRun | undefined;
     private input: unknown | undefined;
 
-    constructor(
-        private readonly apifyClient: ApifyClient,
-        private readonly run: ActorRun,
-    ) { /**/ }
+    constructor(private readonly apifyClient: ApifyClient, private readonly run: ActorRun) {
+        /**/
+    }
 
     getStatistics = async (): Promise<SdkCrawlerStatistics | undefined> => {
         if (this.statistics) {
@@ -33,7 +32,7 @@ export class RunTestResult {
         return runLog as string;
     };
 
-    getDataset = async<T>(): Promise<Dataset<T>> => {
+    getDataset = async <T>(): Promise<Dataset<T>> => {
         if (this.dataset) {
             return this.dataset as Dataset<T>;
         }
@@ -49,18 +48,18 @@ export class RunTestResult {
         }
         const keyValueStoreClient = this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
         this.keyValueStoreClient = keyValueStoreClient;
-        return keyValueStoreClient
+        return keyValueStoreClient;
     };
 
-    getInput = async<T>(): Promise<T> => {
+    getInput = async <T>(): Promise<T> => {
         if (this.input) {
-            return this.input as T
+            return this.input as T;
         }
         const kvs = this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
         const input = await kvs.getRecord('INPUT');
         this.input = input?.value;
         return this.input as T;
-    }
+    };
 
     getRunInfo = async (): Promise<ActorRun> => {
         if (this.runInfo) {

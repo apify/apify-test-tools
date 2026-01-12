@@ -1,4 +1,4 @@
-import type { ToFinishWithOptionsWithDefaults } from './types';
+import type { ToFinishWithOptionsWithDefaults } from './types.js';
 
 export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
     status: 'SUCCEEDED',
@@ -8,9 +8,6 @@ export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
     },
     failedRequests: 0,
     requestsRetries: { max: 3 },
-    forbiddenLogs: [
-        'ReferenceError',
-        'TypeError',
-    ],
     maxRetriesPerRequest: null,
+    forbiddenLogs: ['ReferenceError', 'TypeError'],
 };

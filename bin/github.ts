@@ -1,5 +1,5 @@
 import fs from 'fs/promises';
-import { Commit, GitHubEventPush } from './types';
+import { Commit, GitHubEventPush } from './types.js';
 import { spawnCommandInGhWorkspace } from './utils.js';
 
 export const getPushData = async (path: string) => {
@@ -8,7 +8,7 @@ export const getPushData = async (path: string) => {
     const {
         commits: ghCommits,
         repository: { ssh_url: repoUrl, name },
-        head_commit: { author }
+        head_commit: { author },
     } = event;
     const commits: Commit[] = ghCommits.map(({ author, message, id, timestamp }) => ({
         author: author.username,
@@ -25,7 +25,7 @@ export const getPushData = async (path: string) => {
         repoUrl,
         changelog,
         repository: name,
-        author: author.name
+        author: author.name,
     };
 };
 
@@ -39,22 +39,13 @@ const getChangedFiles = ({ after, before }: GitHubEventPush): string[] => {
     return changedFiles.split('\n');
 };
 
-export const getChangelogChanges = (
-    changedFiles: string[],
-    event: GitHubEventPush,
-): string | null => {
+export const getChangelogChanges = (changedFiles: string[], event: GitHubEventPush): string | null => {
     const changelogPath = 'CHANGELOG.md';
     if (!changedFiles.includes(changelogPath)) {
         return null;
     }
     const { after, before } = event;
-    const diff = spawnCommandInGhWorkspace('git', [
-        'diff',
-        before,
-        after,
-        '--',
-        changelogPath,
-    ]);
+    const diff = spawnCommandInGhWorkspace('git', ['diff', before, after, '--', changelogPath]);
 
     const added: string[] = [];
     let startedChangelog = false;

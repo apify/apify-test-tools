@@ -1,15 +1,15 @@
 import { WebClient } from '@slack/web-api';
-import { Commit } from './types';
+import { Commit } from './types.js';
 import { getEnvVar } from './utils.js';
 
 type NotifyToSlackOptions = {
-    repository: string
-    changedFiles: string[]
-    changelog: string | null
-    commits: Commit[]
-    dryRun: boolean
-    author: string
-}
+    repository: string;
+    changedFiles: string[];
+    changelog: string | null;
+    commits: Commit[];
+    dryRun: boolean;
+    author: string;
+};
 
 export const notifyToSlack = async ({
     changedFiles,
@@ -17,7 +17,7 @@ export const notifyToSlack = async ({
     changelog,
     repository,
     dryRun,
-    author
+    author,
 }: NotifyToSlackOptions) => {
     const slack = new WebClient(getEnvVar('SLACK_TOKEN_RELEASES_BOT'));
 
@@ -42,7 +42,9 @@ export const notifyToSlack = async ({
         }
     }
 
-    const commitsMessage = `${commits.map(({ author, message }, index) => `${index + 1}. Commit message: ${message}\n\tAuthor: ${author}.`).join('\n')}`;
+    const commitsMessage = `${commits
+        .map(({ author, message }, index) => `${index + 1}. Commit message: ${message}\n\tAuthor: ${author}.`)
+        .join('\n')}`;
     const changedFilesMessage = `**Files changed**: ${changedFiles.join(', ')}`;
     const longMessage = `${shortMessage}\n**Commit list**:\n${commitsMessage}\n\n${changedFilesMessage}`;
 
@@ -59,12 +61,7 @@ export const notifyToSlack = async ({
     }
 };
 
-export const sendSlackMessage = async (
-    channel: string,
-    text: string,
-    blocks: string[],
-    token: string,
-) => {
+export const sendSlackMessage = async (channel: string, text: string, blocks: string[], token: string) => {
     const slack = new WebClient(token);
     const { ts } = await slack.chat.postMessage({ text, channel });
     if (blocks.length > 0 && ts) {

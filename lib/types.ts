@@ -6,58 +6,57 @@ export type ActorBuild = {
     actorId: string;
     buildNumber: string;
     actorName: string;
-}
+};
 
 export type RunOptions<T> = {
-    input: Omit<T, 'actorName'>
-    options?: ActorCallOptions
-    prefilledInput?: boolean
+    input: Omit<T, 'actorName'>;
+    options?: ActorCallOptions;
+    prefilledInput?: boolean;
     /**
      * If you specify `runId`, all the other options will be ignored and this run's data will
      * be downloaded instead.
      *
      * This is usefull for testing your tests on existing runs
      */
-    runId?: string
-}
+    runId?: string;
+};
 
 export type Dataset<T> = {
-    items: T[]
-}
+    items: T[];
+};
 
-export type OpenInterval = {
-    min: number
-    max?: undefined
-} | {
-    min?: undefined
-    max: number
-}
+export type OpenInterval =
+    | {
+          min: number;
+          max?: undefined;
+      }
+    | {
+          min?: undefined;
+          max: number;
+      };
 
 export type ClosedInterval = {
-    min: number
-    max: number
-}
+    min: number;
+    max: number;
+};
 
-export type Interval = number | OpenInterval | ClosedInterval
+export type Interval = number | OpenInterval | ClosedInterval;
 
 export type ToFinishWithOptionsWithDefaults = {
-    status: RunStatus
-    duration: Interval | null
-    failedRequests: Interval | null
-    requestsRetries: Interval | null
-    forbiddenLogs: string[]
-    maxRetriesPerRequest: number | null
-}
+    status: RunStatus;
+    duration: Interval | null;
+    failedRequests: Interval | null;
+    requestsRetries: Interval | null;
+    forbiddenLogs: string[];
+    maxRetriesPerRequest: number | null;
+};
 export type IntervalOption<PpeEvent extends string> = keyof Pick<
     ToFinishWithOptions<PpeEvent>,
-    | 'datasetItemCount'
-    | 'requestsRetries'
-    | 'failedRequests'
-    | 'duration'
->
+    'datasetItemCount' | 'requestsRetries' | 'failedRequests' | 'duration'
+>;
 
 export type ToFinishWithOptions<PpeEvent extends string> = Partial<ToFinishWithOptionsWithDefaults> & {
-    datasetItemCount: Interval
+    datasetItemCount: Interval;
     /**
      * Define expected charged (PPE) event counts. You can also define count as `Interval`.
      *
@@ -72,26 +71,26 @@ export type ToFinishWithOptions<PpeEvent extends string> = Partial<ToFinishWithO
      * If you omit any PPE event, it's expected count will be 0.
      * Assertion will fail if `chargedEventCounts` doesn't contain some of the expected events.
      */
-    chargedEventCounts?: Record<PpeEvent, Interval>
+    chargedEventCounts?: Record<PpeEvent, Interval>;
 };
 
 export type SdkCrawlerStatistics = {
-    requestsFinished: number
-    requestsFailed: number
-    requestsRetries: number
-    requestsFailedPerMinute: number
-    requestsFinishedPerMinute: number
-    requestMinDurationMillis: number
-    requestMaxDurationMillis: number
-    requestRetryHistogram: number[]
-    requestTotalFailedDurationMillis: number
-    requestTotalFinishedDurationMillis: number
-    crawlerStartedAt: string
-    crawlerFinishedAt: string
-    statsPersistedAt: string
-    crawlerRuntimeMillis: number
-    crawlerLastStartTimestamp: number
-}
+    requestsFinished: number;
+    requestsFailed: number;
+    requestsRetries: number;
+    requestsFailedPerMinute: number;
+    requestsFinishedPerMinute: number;
+    requestMinDurationMillis: number;
+    requestMaxDurationMillis: number;
+    requestRetryHistogram: number[];
+    requestTotalFailedDurationMillis: number;
+    requestTotalFinishedDurationMillis: number;
+    crawlerStartedAt: string;
+    crawlerFinishedAt: string;
+    statsPersistedAt: string;
+    crawlerRuntimeMillis: number;
+    crawlerLastStartTimestamp: number;
+};
 
 export type RunStatus =
     | 'SUCCEEDED'
@@ -101,22 +100,22 @@ export type RunStatus =
     | 'ABORTING'
     | 'ABORTED'
     | 'TIMING-OUT'
-    | 'TIMED-OUT'
+    | 'TIMED-OUT';
 
 export interface ActorMatchers<R = unknown> {
-    toBeArray: () => R
-    toBeBoolean: () => R
-    toBeEmptyArray: () => R
-    toBeNonEmptyArray: () => R
-    toBeNonEmptyString: () => R
-    toBeNumber: () => R
-    toBeFalse: () => R
-    toBeTrue: () => R
-    toBeNonEmptyObject: () => R
-    toBeObject: () => R
-    toBeString: () => R
-    toBeWholeNumber: () => R
-    toBeWithinRange: (lower: number, upper: number) => R
+    toBeArray: () => R;
+    toBeBoolean: () => R;
+    toBeEmptyArray: () => R;
+    toBeNonEmptyArray: () => R;
+    toBeNonEmptyString: () => R;
+    toBeNumber: () => R;
+    toBeFalse: () => R;
+    toBeTrue: () => R;
+    toBeNonEmptyObject: () => R;
+    toBeObject: () => R;
+    toBeString: () => R;
+    toBeWholeNumber: () => R;
+    toBeWithinRange: (lower: number, upper: number) => R;
     /**
      * Validates the following properties of a run:
      * - `status` (default: `SUCCEEDED`)
@@ -128,9 +127,9 @@ export interface ActorMatchers<R = unknown> {
      * - `datasetItemCount` (required)
      * - `chargedEventCounts`
      */
-    toFinishWith: <PpeEvent extends string>(options: ToFinishWithOptions<PpeEvent>) => Promise<R>
-    toStartWith: (prefix: string) => R
-    hard: <T>(actual: T, message?: string) => Assertion
+    toFinishWith: <PpeEvent extends string>(options: ToFinishWithOptions<PpeEvent>) => Promise<R>;
+    toStartWith: (prefix: string) => R;
+    hard: <T>(actual: T, message?: string) => Assertion;
 }
 
 export type ActorTestOptions = Omit<TestOptions, 'retry'> & {
@@ -146,6 +145,8 @@ export type ActorTestOptions = Omit<TestOptions, 'retry'> & {
 
 declare module 'vitest' {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    interface Assertion<T = any> extends ActorMatchers<T> { }
-    interface AsymmetricMatchersContaining extends ActorMatchers { }
+    interface Assertion<T = any> extends ActorMatchers<T> {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    interface Matchers<T = any> extends ActorMatchers<T> {}
+    interface AsymmetricMatchersContaining extends ActorMatchers {}
 }

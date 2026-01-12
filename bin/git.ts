@@ -1,9 +1,8 @@
-import { Commit, Config } from './types';
+import { Commit, Config } from './types.js';
 import { spawnCommandInGhWorkspace } from './utils.js';
 
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
-
 
 export const getBranchLastCommit = (branch: string): Commit => {
     const commitString = spawnCommandInGhWorkspace(`git log -1 --pretty=format:'${GIT_LOG_FORMAT}' ${branch}`);
@@ -12,17 +11,14 @@ export const getBranchLastCommit = (branch: string): Commit => {
 };
 
 export const getChangedFiles = (commits: Commit[]) => {
-    const changedFiles = commits.length === 1
-        ? spawnCommandInGhWorkspace(`git show --pretty='format:' --name-only ${commits[0].sha}`)
-        : spawnCommandInGhWorkspace(`git diff --name-only ${commits[0].sha}..${commits[commits.length - 1].sha}`);
+    const changedFiles =
+        commits.length === 1
+            ? spawnCommandInGhWorkspace(`git show --pretty='format:' --name-only ${commits[0].sha}`)
+            : spawnCommandInGhWorkspace(`git diff --name-only ${commits[0].sha}..${commits[commits.length - 1].sha}`);
     return changedFiles.split('\n');
 };
 
-export const getCommits = ({
-    sourceBranch,
-    targetBranch,
-    baseCommit: baseCommitSha,
-}: Config): Commit[] => {
+export const getCommits = ({ sourceBranch, targetBranch, baseCommit: baseCommitSha }: Config): Commit[] => {
     const targetBranchCommit = getBranchLastCommit(targetBranch);
     const sourceBranchCommit = getBranchLastCommit(sourceBranch);
     let baseCommit: Commit | undefined;
@@ -38,13 +34,12 @@ export const getCommits = ({
     // console.log(`git log --pretty=format:"${gitOutputFormat}" ${targetBranch}..${sourceBranch}`);
     // return [];
     const base = getBaseCommit(sourceBranchCommit, targetBranchCommit);
-    const commitsStrings = spawnCommandInGhWorkspace(`git log --pretty=format:'${GIT_LOG_FORMAT}' ${base.sha}..${sourceBranchCommit.sha}`)
-        .split('\n');
+    const commitsStrings = spawnCommandInGhWorkspace(
+        `git log --pretty=format:'${GIT_LOG_FORMAT}' ${base.sha}..${sourceBranchCommit.sha}`
+    ).split('\n');
     const commits = commitsStrings.map((commitString) => parseCommit(commitString)) as Commit[];
     commits.reverse();
-    const baseCommitIndex = baseCommit
-        ? commits.findIndex(({ sha }) => sha === baseCommit.sha)
-        : -1;
+    const baseCommitIndex = baseCommit ? commits.findIndex(({ sha }) => sha === baseCommit.sha) : -1;
     return commits.slice(baseCommitIndex + 1);
 };
 
@@ -72,4 +67,4 @@ export const parseCommit = (commitString: string): Commit => {
         date,
         message,
     };
-}
+};

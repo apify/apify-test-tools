@@ -28,6 +28,9 @@
         "typescript": "^5.7",
         "vitest": "^3.2.4"
     },
+    "peerDependencies": {
+        "vitest": ">=3.2.4"
+    },
     "scripts": {
         "start": "npm run dist/bin/main.js",
         "start:dev": "GITHUB_WORKSPACE=local-clone tsx bin/main.ts",

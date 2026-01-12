@@ -1,15 +1,10 @@
 #!/usr/bin/env node
 
 import process from 'process';
-import yargs from 'yargs';
+import yargs, { type Argv } from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
-import {
-    getRepoActors,
-    getChangedActors,
-    spawnCommandInGhWorkspace,
-    setCwd,
-} from './utils.js';
+import { getRepoActors, getChangedActors, spawnCommandInGhWorkspace, setCwd } from './utils.js';
 import { runBuilds } from './build.js';
 import { getChangedFiles, getCommits } from './git.js';
 import { getPushData } from './github.js';
@@ -21,7 +16,7 @@ import { reportTestRestuls } from './test-report.js';
  */
 const middlewares = [setCwd];
 
-const buildOptions = (y: yargs.Argv) => {
+const buildOptions = (y: Argv) => {
     return y
         .option('target-branch', {
             type: 'string',
@@ -33,7 +28,7 @@ const buildOptions = (y: yargs.Argv) => {
         })
         .option('base-commit', {
             type: 'string',
-        })
+        });
 };
 
 await yargs()
@@ -61,10 +56,15 @@ await yargs()
         const changedFiles = getChangedFiles(commits);
         console.log(JSON.stringify(changedFiles));
     })
-    .command('get-actor-configs', '', (_) => _, async () => {
-        const actorConfigs = await getRepoActors();
-        console.log(JSON.stringify(actorConfigs));
-    })
+    .command(
+        'get-actor-configs',
+        '',
+        (_) => _,
+        async () => {
+            const actorConfigs = await getRepoActors();
+            console.log(JSON.stringify(actorConfigs));
+        }
+    )
     .command('get-affected-actors', '', buildOptions, async (args) => {
         const commits = getCommits(args);
         const changedFiles = getChangedFiles(commits);
@@ -75,19 +75,20 @@ await yargs()
     .command(
         'report-tests',
         '',
-        (args) => args
-            .option('report-file', { type: 'string', demandOption: true })
-            .option('job-url', { type: 'string' })
-            .option('workflow-name', { type: 'string' })
-            .option('repository', { type: 'string' }),
+        (args) =>
+            args
+                .option('report-file', { type: 'string', demandOption: true })
+                .option('job-url', { type: 'string' })
+                .option('workflow-name', { type: 'string' })
+                .option('repository', { type: 'string' }),
         async (args) => {
             await reportTestRestuls(args);
-        })
+        }
+    )
     .command(
         'build',
         '',
-        (args) => buildOptions(args)
-            .option('dry-run', { type: 'boolean', default: false }),
+        (args) => buildOptions(args).option('dry-run', { type: 'boolean', default: false }),
         async (args) => {
             const commits = getCommits(args);
             const changedFiles = getChangedFiles(commits);
@@ -98,8 +99,10 @@ await yargs()
             });
             // https://github.com/apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
             // git@github.com:apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
-            const repoUrl = spawnCommandInGhWorkspace(`git remote get-url origin`)
-                .replace(/^https:\/\/github\.com\//, 'git@github.com:');
+            const repoUrl = spawnCommandInGhWorkspace(`git remote get-url origin`).replace(
+                /^https:\/\/github\.com\//,
+                'git@github.com:'
+            );
 
             const builds = await runBuilds({
                 repoUrl,
@@ -108,23 +111,19 @@ await yargs()
                 dryRun: args.dryRun,
             });
             console.log(JSON.stringify(builds));
-        })
+        }
+    )
     .command(
         'release',
         '',
-        (args) => args
-            .option('push-event-path', { type: 'string', demandOption: true })
-            .option('dry-run', { type: 'boolean', default: false }),
+        (args) =>
+            args
+                .option('push-event-path', { type: 'string', demandOption: true })
+                .option('dry-run', { type: 'boolean', default: false }),
         async (args) => {
-            const {
-                branch,
-                changedFiles,
-                repoUrl,
-                commits,
-                changelog,
-                repository,
-                author,
-            } = await getPushData(args.pushEventPath);
+            const { branch, changedFiles, repoUrl, commits, changelog, repository, author } = await getPushData(
+                args.pushEventPath
+            );
             const isLatest = true;
             const actorConfigs = await getRepoActors();
             const { actorsChanged } = getChangedActors({
@@ -149,9 +148,10 @@ await yargs()
                 changelog,
                 repository,
                 dryRun,
-                author
+                author,
             });
-        })
+        }
+    )
     .strictCommands()
     .demandCommand(1, 'Command is required')
     .parse(hideBin(process.argv));

@@ -111,7 +111,7 @@ export const testStandbyActor = <I = any, O = any>(
         const runs = (await apifyClient.task(taskId).runs().list()).items;
         for (const run of runs) {
             const runLink = generateRunLink(run);
-            await annotate(runLink, 'run_link');
+            await annotate(`${name} - ${runLink}`, 'run_link');
         }
 
         if (taskId) {
@@ -253,7 +253,7 @@ const createStartRunFn = <T>(actorNameOrId: string, testContext: TestContext) =>
         const run = await actor.call(actorInput, { build, ...options });
 
         const runLink = generateRunLink(run);
-        await annotate(runLink, 'run_link');
+        await annotate(`${task.name} - ${runLink}`, 'run_link');
         // @ts-expect-error: `TaskMeta` cannot be retyped
         task.meta = {
             runId: run.id,

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2
+
+fix: file diffs between commits
+feat: annotate runs with test names
+
 ## 0.5.1
 
 fix: properly check on maxRetriesPerRequest

@@ -1,6 +1,6 @@
 {
     "name": "apify-test-tools",
-    "version": "0.5.3",
+    "version": "0.5.4",
     "type": "module",
     "description": "TBD",
     "engines": {

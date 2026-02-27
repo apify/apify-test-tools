@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.5
+
+fix: disable logs from actor.call
+
+## 0.5.4
+
+fix: make createStandbyTask work again (clean API object)
+
 ## 0.5.2
 
 fix: file diffs between commits

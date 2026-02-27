@@ -253,7 +253,7 @@ const createStartRunFn = <T>(actorNameOrId: string, testContext: TestContext) =>
             ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorNameOrId, buildId))),
             ...input,
         };
-        const run = await actor.call(actorInput, { build, ...options });
+        const run = await actor.call(actorInput, { build, log: null, ...options });
 
         const runLink = generateRunLink(run);
         await annotate(`${task.name} - ${runLink}`, 'run_link');

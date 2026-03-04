@@ -95,7 +95,6 @@ export const getHeadCommitSha = (githubEvent: GitHubEvent) => {
 
 export interface GetChangedActorsResult {
     actorsChanged: ActorConfig[];
-    codeChanged: boolean;
 }
 
 interface ShouldBuildAndTestOptions {
@@ -103,6 +102,12 @@ interface ShouldBuildAndTestOptions {
     actorConfigs: ActorConfig[];
     // Just for logging
     isLatest?: boolean;
+    /**
+     * Set of lowercase file paths (JSON files in actor folders) where only non-functional
+     * fields like title/description/example changed — these should only trigger a latest build,
+     * not tests.
+     */
+    nonfunctionalOnlyJsonFiles?: Set<string>;
 }
 
 /**
@@ -117,13 +122,17 @@ const isIgnoredTopLevelFile = (lowercaseFilePath: string) => {
     return IGNORED_TOP_LEVEL_FILES.some((ignoredFile) => sanitizedLowercaseFilePath.startsWith(ignoredFile));
 };
 
-const isLatestBuildOnlyFile = (lowercaseFilePath: string) => {
+const isReleaseOnlyFile = (lowercaseFilePath: string, nonfunctionalOnlyJsonFiles?: Set<string>) => {
     if (lowercaseFilePath.endsWith('changelog.md')) {
         return true;
     }
 
     // Either in /actors or /standalone-actors, we need to rebuild readme but we don't rebuild top-level dev-only readme
     if ((lowercaseFilePath.startsWith('actors/') || lowercaseFilePath.startsWith('standalone-actors/')) && lowercaseFilePath.endsWith('readme.md')) {
+        return true;
+    }
+
+    if (nonfunctionalOnlyJsonFiles?.has(lowercaseFilePath)) {
         return true;
     }
 
@@ -134,9 +143,8 @@ const isLatestBuildOnlyFile = (lowercaseFilePath: string) => {
  * Latest and devel are the same except that for latest we also rebuild with README and CHANGELOG files
  */
 export const getChangedActors = (
-    { filepathsChanged, actorConfigs, isLatest = false }: ShouldBuildAndTestOptions,
+    { filepathsChanged, actorConfigs, isLatest = false, nonfunctionalOnlyJsonFiles }: ShouldBuildAndTestOptions,
 ): GetChangedActorsResult => {
-    let codeChanged = false;
     // folder -> ActorConfig
     const actorsChangedMap = new Map<string, ActorConfig>();
 
@@ -164,9 +172,7 @@ export const getChangedActors = (
 
             console.error(`actorConfigChanged ${actorConfigChanged.actorName}: sanitizedActorName ${sanitizedActorName} ${lowercaseFilePath} `);
             // These can be nested at various folders inside the actor folder
-            if (isLatest || !isLatestBuildOnlyFile(lowercaseFilePath)) {
-                // We assume other files will are either actor.json or input_schema.json and those needs to be tested
-                // TODO: Check what changed in schema, we don't need to test description changes
+            if (isLatest || !isReleaseOnlyFile(lowercaseFilePath, nonfunctionalOnlyJsonFiles)) {
                 actorsChangedMap.set(actorConfigChanged.folder, actorConfigChanged);
             }
             continue;
@@ -174,8 +180,8 @@ export const getChangedActors = (
 
         // We check top level files (formerly in /code and /shared folders) that are shared among all non-standalone Actors
         // Standalone actors are always handled separately by name via changedActorConfigMatch
-        if (isLatest || !isLatestBuildOnlyFile(lowercaseFilePath)) {
-            codeChanged = !isLatest; // NOTE: code is changed only in PR
+        if (isLatest || !isReleaseOnlyFile(lowercaseFilePath, nonfunctionalOnlyJsonFiles)) {
+            // If there is any functional change in shared files, we rebuild and retest all non-standalone Actors since they all depend on shared code
             for (const actorConfig of actorConfigsWithoutStandalone) {
                 actorsChangedMap.set(actorConfig.folder, actorConfig);
             }
@@ -188,12 +194,8 @@ export const getChangedActors = (
     const ignoredFilesChanged = lowercaseFiles.filter((file) => isIgnoredTopLevelFile(file));
     console.error(`[DIFF]: Top level files changed that we ignore (don't trigger test or build): ${ignoredFilesChanged.join(', ')}`);
 
-    const onlyLatestFilesChanged = lowercaseFiles.filter((file) => isLatestBuildOnlyFile(file));
-    console.error(`[DIFF]: Files changed that only trigger latest build: ${onlyLatestFilesChanged.join(', ')}`);
-
-    if (!isLatest && codeChanged) {
-        console.error(`[DIFF]: All non-standalone Actors need to be built and tested (changes in top-level code)`);
-    }
+    const onlyReleaseFilesChanged = lowercaseFiles.filter((file) => isReleaseOnlyFile(file, nonfunctionalOnlyJsonFiles));
+    console.error(`[DIFF]: Files changed that only trigger release build: ${onlyReleaseFilesChanged.join(', ')}`);
 
     if (actorsChanged.length > 0) {
         const miniactors = actorsChanged.filter((config) => !config.isStandalone).map((config) => config.actorName);
@@ -206,6 +208,5 @@ export const getChangedActors = (
 
     return {
         actorsChanged,
-        codeChanged,
     };
 };

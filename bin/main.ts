@@ -7,6 +7,7 @@ import { hideBin } from 'yargs/helpers';
 import { getRepoActors, getChangedActors, spawnCommandInGhWorkspace, setCwd } from './utils.js';
 import { runBuilds } from './build.js';
 import { getChangedFiles, getCommits } from './git.js';
+import { findFilesWithNonfunctionalChanges } from './diff.js';
 import { getPushData } from './github.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestRestuls } from './test-report.js';
@@ -69,7 +70,8 @@ await yargs()
         const commits = getCommits(args);
         const changedFiles = getChangedFiles(commits);
         const actorConfigs = await getRepoActors();
-        const { actorsChanged } = getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest: false });
+        const nonfunctionalOnlyJsonFiles = findFilesWithNonfunctionalChanges(commits, changedFiles);
+        const { actorsChanged } = getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest: false, nonfunctionalOnlyJsonFiles });
         console.log(JSON.stringify(actorsChanged));
     })
     .command(
@@ -93,9 +95,11 @@ await yargs()
             const commits = getCommits(args);
             const changedFiles = getChangedFiles(commits);
             const actorConfigs = await getRepoActors();
+            const nonfunctionalOnlyJsonFiles = findFilesWithNonfunctionalChanges(commits, changedFiles);
             const { actorsChanged } = getChangedActors({
                 filepathsChanged: changedFiles,
                 actorConfigs,
+                nonfunctionalOnlyJsonFiles,
             });
             // https://github.com/apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
             // git@github.com:apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
@@ -126,10 +130,12 @@ await yargs()
             );
             const isLatest = true;
             const actorConfigs = await getRepoActors();
+            const nonfunctionalOnlyJsonFiles = findFilesWithNonfunctionalChanges(commits, changedFiles);
             const { actorsChanged } = getChangedActors({
                 filepathsChanged: changedFiles,
                 actorConfigs,
                 isLatest,
+                nonfunctionalOnlyJsonFiles,
             });
             const { dryRun } = args;
             const builds = await runBuilds({

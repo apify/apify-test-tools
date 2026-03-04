@@ -26,46 +26,41 @@ describe('Should build and test parser', () => {
     test('Ignores dev-only readme', async () => {
         const FILES = ['README.md', 'code/README.md', 'shared/README.md'];
 
-        const { actorsChanged, codeChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
+        const { actorsChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
 
         expect(actorsChanged).toEqual([]);
-        expect(codeChanged).toBe(false);
     });
 
     test('Ignores other ignored files and folders', async () => {
         const FILES = ['.vscode/', '.gitignore', '.husky/', '.eslintrc', '.editorconfig', '.actor/'];
 
-        const { actorsChanged, codeChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
+        const { actorsChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
 
         expect(actorsChanged).toEqual([]);
-        expect(codeChanged).toBe(false);
     });
 
     test('Only builds latest for all Actors', async () => {
         const FILES = ['shared/CHANGELOG.md', 'CHANGELOG.md'];
 
-        const { actorsChanged, codeChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: true, filepathsChanged: FILES });
+        const { actorsChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: true, filepathsChanged: FILES });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.filter(({ isStandalone }) => !isStandalone));
-        expect(codeChanged).toBe(false);
     });
 
     test('Code updated, tests miniactors', async () => {
         const FILES = ['code/src/main.ts', 'package.json'];
 
-        const { actorsChanged, codeChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
+        const { actorsChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.filter(({ isStandalone }) => !isStandalone));
-        expect(codeChanged).toBe(true);
     });
 
     test('Specific Actor functionality configs updated', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json', 'standalone-actors/lukaskrivka_test-standalone/Dockerfile'];
 
-        const { actorsChanged, codeChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
+        const { actorsChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0], ACTOR_CONFIGS[2]]);
-        expect(codeChanged).toBe(false);
     });
 
     test('src/main.ts updated', async () => {
@@ -73,10 +68,9 @@ describe('Should build and test parser', () => {
             'src/main.ts',
         ];
 
-        const { actorsChanged, codeChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: true, filepathsChanged: FILES });
+        const { actorsChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: true, filepathsChanged: FILES });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
-        expect(codeChanged).toBe(false);
     });
 
     test('Miniactor, Code and standalone actor updated,', async () => {
@@ -86,19 +80,91 @@ describe('Should build and test parser', () => {
             'standalone-actors/lukaskrivka_test-standalone/Dockerfile',
         ];
 
-        const { actorsChanged, codeChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
+        const { actorsChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS);
-        expect(codeChanged).toBe(true);
     });
 
     test('Specific Actor non-functional configs updated', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-2/.actor/README.md', 'standalone-actors/lukaskrivka_test-standalone/CHANGELOG.md'];
 
-        const { actorsChanged, codeChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
+        const { actorsChanged } = await getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES });
 
         expect(actorsChanged).toEqual([]);
-        expect(codeChanged).toBe(false);
+    });
+
+    test('JSON file with nonfunctional-only changes in PR context (isLatest=false) skips tests', async () => {
+        const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
+        const nonfunctionalOnlyJsonFiles = new Set(FILES.map((f) => f.toLowerCase()));
+
+        const { actorsChanged } = await getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            nonfunctionalOnlyJsonFiles,
+        });
+
+        expect(actorsChanged).toEqual([]);
+    });
+
+    test('JSON file with nonfunctional-only changes in latest context still triggers build', async () => {
+        const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
+        const nonfunctionalOnlyJsonFiles = new Set(FILES.map((f) => f.toLowerCase()));
+
+        const { actorsChanged } = await getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: true,
+            filepathsChanged: FILES,
+            nonfunctionalOnlyJsonFiles,
+        });
+
+        expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
+    });
+
+    test('JSON file not in nonfunctionalOnlyJsonFiles still triggers tests', async () => {
+        const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
+
+        const { actorsChanged } = await getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            // nonfunctionalOnlyJsonFiles not provided
+        });
+
+        expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
+    });
+
+    test('Mix: one actor has nonfunctional-only JSON change, another has functional JSON change', async () => {
+        const FILES = [
+            'actors/lukaskrivka_testing-github-integration-1/.actor/actor.json',
+            'actors/lukaskrivka_testing-github-integration-2/.actor/input_schema.json',
+        ];
+        // Only the first actor's file is nonfunctional-only
+        const nonfunctionalOnlyJsonFiles = new Set([FILES[0].toLowerCase()]);
+
+        const { actorsChanged } = await getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            nonfunctionalOnlyJsonFiles,
+        });
+
+        // Only the second actor (functional change) should be built and tested
+        expect(actorsChanged).toEqual([ACTOR_CONFIGS[1]]);
+    });
+
+    test('Standalone actor with nonfunctional-only JSON change in PR context skips tests', async () => {
+        const FILES = ['standalone-actors/lukaskrivka_test-standalone/.actor/actor.json'];
+        const nonfunctionalOnlyJsonFiles = new Set(FILES.map((f) => f.toLowerCase()));
+
+        const { actorsChanged } = await getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            nonfunctionalOnlyJsonFiles,
+        });
+
+        expect(actorsChanged).toEqual([]);
     });
 
     test('Google Maps real user-case that had undefined', async () => {
@@ -156,11 +222,10 @@ describe('Should build and test parser', () => {
             },
         ];
 
-        const { actorsChanged, codeChanged } = await getChangedActors({
+        const { actorsChanged } = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS_GOOGLE_MAPS, isLatest: false, filepathsChanged: FILES,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS_GOOGLE_MAPS.filter(({ isStandalone }) => !isStandalone));
-        expect(codeChanged).toBe(true);
     });
 });

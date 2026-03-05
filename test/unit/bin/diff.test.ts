@@ -141,6 +141,26 @@ describe('isNonfunctionalJsonChange', () => {
         expect(isNonfunctionalJsonChange(old, next)).toBe(true);
     });
 
+    test('returns true when fields under properties are reordered', () => {
+        const old = JSON.stringify({
+            type: 'object',
+            properties: {
+                fieldA: { type: 'string' },
+                fieldB: { type: 'integer' },
+                fieldC: { type: 'boolean' },
+            },
+        });
+        const next = JSON.stringify({
+            type: 'object',
+            properties: {
+                fieldC: { type: 'boolean' },
+                fieldA: { type: 'string' },
+                fieldB: { type: 'integer' },
+            },
+        });
+        expect(isNonfunctionalJsonChange(old, next)).toBe(true);
+    });
+
     test('returns false for a realistic actor.json with version change', () => {
         const old = JSON.stringify({
             actorSpecification: 1,

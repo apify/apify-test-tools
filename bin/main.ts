@@ -9,7 +9,7 @@ import { runBuilds } from './build.js';
 import { getChangedFiles, getCommits } from './git.js';
 import { getPushData } from './github.js';
 import { notifyToSlack } from './slack.js';
-import { reportTestRestuls } from './test-report.js';
+import { reportTestResults } from './test-report.js';
 
 /**
  * Middlewares to be run before every command execution
@@ -78,11 +78,12 @@ await yargs()
         (args) =>
             args
                 .option('report-file', { type: 'string', demandOption: true })
+                .option('notify-slack', { type: 'boolean', default: false })
                 .option('job-url', { type: 'string' })
                 .option('workflow-name', { type: 'string' })
                 .option('repository', { type: 'string' }),
         async (args) => {
-            await reportTestRestuls(args);
+            await reportTestResults(args);
         }
     )
     .command(

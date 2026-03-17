@@ -2,21 +2,23 @@ import fs from 'fs/promises';
 import { sendSlackMessage } from './slack.js';
 import { getEnvVar } from './utils.js';
 
-interface ReportTestRestulsOptions {
+interface ReportTestResultsOptions {
     reportFile: string
     dryRun: boolean
+    notifySlack: boolean
     jobUrl?: string
     repository?: string
     workflowName?: string
 }
 
-export const reportTestRestuls = async ({
+export const reportTestResults = async ({
     dryRun,
+    notifySlack,
     reportFile: jsonResultsPath,
     jobUrl,
     workflowName,
     repository,
-}: ReportTestRestulsOptions) => {
+}: ReportTestResultsOptions) => {
     const results: JsonTestResults = JSON.parse((await fs.readFile(jsonResultsPath)).toString());
     const passed: JsonAssertionResult[] = [];
     const failed: JsonAssertionResult[] = [];
@@ -78,16 +80,21 @@ export const reportTestRestuls = async ({
     slackMessage += `\n\n${failedAssertions[0].message} --- <${failedAssertions[0].runLink}|${failedAssertions[0].actorName}>`;
     const blocks = failedAssertions.slice(1).map(({ message, runLink, actorName }) => `• ${message} --- <${runLink}|${actorName}>`);
 
-    if (!repository) {
-        console.error(`Repository not provided, not sending slack notification`);
-        return
-    }
-
-    // remove repository-owner part
-    const channel = `#notif-${repository.replace(/[^/]+\//, '')}`;
-    console.error(`Sending a notification to slack channel ${channel}`);
+    const channel = repository ? `#notif-${repository.replace(/[^/]+\//, '')}` : null;
+    console.error(`Slack channel: ${channel ?? '(no repository provided)'}`);
     console.error('SLACK:', slackMessage);
     console.error('\tblocks:', blocks.join('\n\t\t'));
+
+    if (!notifySlack) {
+        console.error(`Skipping slack notification. If you want to enable it, add --notify-slack flag and make sure SLACK_TOKEN_TESTS_BOT env variable is set.`);
+        return;
+    }
+
+    if (!channel) {
+        console.error(`Repository not provided, skipping slack notification`);
+        return;
+    }
+
     if (!dryRun) {
         const slackToken = getEnvVar('SLACK_TOKEN_TESTS_BOT');
         await sendSlackMessage(channel, slackMessage, blocks, slackToken);

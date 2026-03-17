@@ -120,7 +120,8 @@ await yargs()
         (args) =>
             args
                 .option('push-event-path', { type: 'string', demandOption: true })
-                .option('dry-run', { type: 'boolean', default: false }),
+                .option('dry-run', { type: 'boolean', default: false })
+                .option('notify-slack', { type: 'boolean', default: false }),
         async (args) => {
             const { branch, changedFiles, repoUrl, commits, changelog, repository, author } = await getPushData(
                 args.pushEventPath
@@ -132,7 +133,7 @@ await yargs()
                 actorConfigs,
                 isLatest,
             });
-            const { dryRun } = args;
+            const { dryRun, notifySlack } = args;
             const builds = await runBuilds({
                 isLatest,
                 repoUrl,
@@ -143,6 +144,7 @@ await yargs()
             console.error(JSON.stringify(builds));
 
             // TODO: build circle actors
+            if (!notifySlack) return;
             await notifyToSlack({
                 changedFiles,
                 commits,

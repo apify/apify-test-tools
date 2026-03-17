@@ -144,7 +144,11 @@ await yargs()
             console.error(JSON.stringify(builds));
 
             // TODO: build circle actors
-            if (!notifySlack) return;
+            
+            if (!notifySlack) {
+                console.error(`Skipping slack notification. If you want to enable it, add --notify-slack flag and make sure SLACK_TOKEN_RELEASES_BOT env variable is set.`);
+            };
+
             await notifyToSlack({
                 changedFiles,
                 commits,

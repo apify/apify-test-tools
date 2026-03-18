@@ -1,6 +1,6 @@
 {
     "name": "apify-test-tools",
-    "version": "0.5.5",
+    "version": "0.5.6",
     "type": "module",
     "description": "TBD",
     "engines": {
@@ -14,7 +14,7 @@
     "dependencies": {
         "@apify/consts": "^2.43.0",
         "@slack/web-api": "^7.9.2",
-        "apify-client": "^2.12.6",
+        "apify-client": "^2.22.2",
         "yargs": "^18.0.0"
     },
     "devDependencies": {

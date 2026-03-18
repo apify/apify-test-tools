@@ -35,8 +35,9 @@
         "start": "npm run dist/bin/main.js",
         "start:dev": "GITHUB_WORKSPACE=local-clone tsx bin/main.ts",
         "build": "tsc && chmod +x ./dist/bin/main.js",
-        "lint": "eslint ./src --ext .ts",
-        "lint:fix": "eslint ./src --ext .ts --fix",
+        "lint": "eslint ./bin ./lib ./test ./index.ts --ext .ts",
+        "lint:fix": "eslint ./bin ./lib ./test ./index.ts --ext .ts --fix",
+        "type-check": "tsc --noEmit",
         "test": "vitest run"
     },
     "author": "oklinov",

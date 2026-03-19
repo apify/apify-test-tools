@@ -5,19 +5,17 @@ import { getEnvVar } from './utils.js';
 interface ReportTestResultsOptions {
     reportFile: string
     dryRun: boolean
-    notifySlack: boolean
+    reportSlackChannel?: string
     jobUrl?: string
-    repository?: string
     workflowName?: string
 }
 
 export const reportTestResults = async ({
     dryRun,
-    notifySlack,
+    reportSlackChannel,
     reportFile: jsonResultsPath,
     jobUrl,
     workflowName,
-    repository,
 }: ReportTestResultsOptions) => {
     const results: JsonTestResults = JSON.parse((await fs.readFile(jsonResultsPath)).toString());
     const passed: JsonAssertionResult[] = [];
@@ -67,6 +65,11 @@ export const reportTestResults = async ({
     console.error();
     console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
     console.error();
+    
+    if (!reportSlackChannel) {
+        console.error(`Skipping slack notification. If you want to enable it, add --report-slack-channel flag and make sure SLACK_TOKEN_TESTS_BOT env variable is set.`);
+        return;
+    }
 
     if (failedAssertions.length === 0) {
         return;
@@ -75,29 +78,21 @@ export const reportTestResults = async ({
     // TODO: add slack profiles
     const total = failed.length + passed.length;
     const jobLink = jobUrl ? ` Check <${jobUrl}|the job>.` : '';
-    let slackMessage = `\`${workflowName ?? '-'}\`: *${repository ?? '-'}*`;
+    let slackMessage = `\`${workflowName ?? '-'}\``;
     slackMessage += `: has ${failedAssertions.length} failed assertions. Failing test suites: ${failed.length}/${total}.${jobLink}`;
     slackMessage += `\n\n${failedAssertions[0].message} --- <${failedAssertions[0].runLink}|${failedAssertions[0].actorName}>`;
     const blocks = failedAssertions.slice(1).map(({ message, runLink, actorName }) => `• ${message} --- <${runLink}|${actorName}>`);
 
-    const channel = repository ? `#notif-${repository.replace(/[^/]+\//, '')}` : null;
-    console.error(`Slack channel: ${channel ?? '(no repository provided)'}`);
     console.error('SLACK:', slackMessage);
     console.error('\tblocks:', blocks.join('\n\t\t'));
 
-    if (!notifySlack) {
-        console.error(`Skipping slack notification. If you want to enable it, add --notify-slack flag and make sure SLACK_TOKEN_TESTS_BOT env variable is set.`);
-        return;
-    }
-
-    if (!channel) {
-        console.error(`Repository not provided, skipping slack notification`);
+    if (!reportSlackChannel) {
         return;
     }
 
     if (!dryRun) {
         const slackToken = getEnvVar('SLACK_TOKEN_TESTS_BOT');
-        await sendSlackMessage(channel, slackMessage, blocks, slackToken);
+        await sendSlackMessage(reportSlackChannel, slackMessage, blocks, slackToken);
     }
 };
 

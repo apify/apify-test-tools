@@ -78,10 +78,9 @@ await yargs()
         (args) =>
             args
                 .option('report-file', { type: 'string', demandOption: true })
-                .option('notify-slack', { type: 'boolean', default: false })
+                .option('report-slack-channel', { type: 'string' })
                 .option('job-url', { type: 'string' })
-                .option('workflow-name', { type: 'string' })
-                .option('repository', { type: 'string' }),
+                .option('workflow-name', { type: 'string' }),
         async (args) => {
             await reportTestResults(args);
         }
@@ -121,7 +120,8 @@ await yargs()
             args
                 .option('push-event-path', { type: 'string', demandOption: true })
                 .option('dry-run', { type: 'boolean', default: false })
-                .option('notify-slack', { type: 'boolean', default: false }),
+                .option('report-slack-channel', { type: 'string' })
+                .option('release-slack-channel', { type: 'string' }),
         async (args) => {
             const { branch, changedFiles, repoUrl, commits, changelog, repository, author } = await getPushData(
                 args.pushEventPath
@@ -133,7 +133,7 @@ await yargs()
                 actorConfigs,
                 isLatest,
             });
-            const { dryRun, notifySlack } = args;
+            const { dryRun, reportSlackChannel, releaseSlackChannel } = args;
             const builds = await runBuilds({
                 isLatest,
                 repoUrl,
@@ -144,11 +144,6 @@ await yargs()
             console.error(JSON.stringify(builds));
 
             // TODO: build circle actors
-            
-            if (!notifySlack) {
-                console.error(`Skipping slack notification. If you want to enable it, add --notify-slack flag and make sure SLACK_TOKEN_RELEASES_BOT env variable is set.`);
-            };
-
             await notifyToSlack({
                 changedFiles,
                 commits,
@@ -156,6 +151,8 @@ await yargs()
                 repository,
                 dryRun,
                 author,
+                reportSlackChannel,
+                releaseSlackChannel,
             });
         }
     )

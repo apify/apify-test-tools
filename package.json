@@ -18,14 +18,17 @@
         "yargs": "^18.0.0"
     },
     "devDependencies": {
-        "@apify/eslint-config-ts": "^0.3.0",
-        "@apify/tsconfig": "^0.1.0",
+        "@apify/eslint-config": "^1.0.0",
+        "@apify/tsconfig": "^0.1.1",
+        "@types/node": "^24.0.0",
         "@types/yargs": "^17.0.33",
-        "@typescript-eslint/eslint-plugin": "^6.7.2",
-        "@typescript-eslint/parser": "^6.7.2",
-        "eslint": "^8.50.0",
-        "tsx": "^4.19.2",
-        "typescript": "^5.7",
+        "eslint": "^9.29.0",
+        "eslint-config-prettier": "^10.1.5",
+        "globals": "^17.0.0",
+        "prettier": "^3.5.3",
+        "tsx": "^4.20.3",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.34.1",
         "vitest": "^3.2.4"
     },
     "peerDependencies": {
@@ -35,8 +38,10 @@
         "start": "npm run dist/bin/main.js",
         "start:dev": "GITHUB_WORKSPACE=local-clone tsx bin/main.ts",
         "build": "tsc && chmod +x ./dist/bin/main.js",
-        "lint": "eslint ./bin ./lib ./test ./index.ts --ext .ts",
-        "lint:fix": "eslint ./bin ./lib ./test ./index.ts --ext .ts --fix",
+        "lint": "eslint",
+        "lint:fix": "eslint --fix",
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
         "type-check": "tsc --noEmit",
         "test": "vitest run"
     },

@@ -17,7 +17,8 @@ const PPE_EVENT_CONST = {
     ADS_SCRAPED: 'ads-scraped',
 } as const;
 
-describe('custom-matchers', { timeout: 100_000 }, () => {
+// TODO: Remake these tests. k5MNKmaDGHlABDn2I run doesn't exist and we probably don't want to depend on fixed run 
+describe.skip('custom-matchers', { timeout: 100_000 }, () => {
     testTestActor('basic', async ({ expect }) => {
         const apifyClient = new ApifyClient({ token: process.env.TESTER_APIFY_TOKEN });
         const run = await apifyClient.run('k5MNKmaDGHlABDn2I').get();

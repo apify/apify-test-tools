@@ -191,7 +191,6 @@ const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): P
         throw new Error(`Actor "${actorNameOrId} doesn't contain actorStandby options`);
     }
     const { isEnabled, ...defaultActorStandby } = actorInfo.actorStandby;
-    // @ts-expect-error This is not typed properly in ApifyClient, we need to remove it or API fails
     delete defaultActorStandby.disableStandbyFieldsOverride
 
     const build = buildNumber ?? defaultActorStandby.build;

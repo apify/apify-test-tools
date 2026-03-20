@@ -1,5 +1,22 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
+<!-- git-cliff-unreleased-start -->
+## 0.5.7 - **not yet released**
+
+### 🚀 Features
+
+- Make slack notification explictly opt in ([#60](https://github.com/apify/apify-test-tools/pull/60)) ([32fda72](https://github.com/apify/apify-test-tools/commit/32fda72726896d90c7a1444977b87e4aa8e8d247)) by [@ruocco-l](https://github.com/ruocco-l), closes [#55](https://github.com/apify/apify-test-tools/issues/55)
+
+### Debug
+
+- Bump version to test beta release ([1322d31](https://github.com/apify/apify-test-tools/commit/1322d31873b6d43e16a68e97bdc358752f813f79)) by [@metalwarrior665](https://github.com/metalwarrior665)
+
+
+<!-- git-cliff-unreleased-end -->
+# Changelog
+
 ## 0.5.5
 
 fix: disable logs from actor.call

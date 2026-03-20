@@ -1,8 +1,12 @@
 {
     "name": "apify-test-tools",
-    "version": "0.5.5",
+    "version": "0.6.0",
     "type": "module",
     "description": "TBD",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/apify/apify-test-tools.git"
+    },
     "engines": {
         "node": ">=18.0.0"
     },
@@ -14,19 +18,23 @@
     "dependencies": {
         "@apify/consts": "^2.43.0",
         "@slack/web-api": "^7.9.2",
-        "apify-client": "^2.12.6",
+        "apify-client": "^2.22.2",
         "yargs": "^18.0.0"
     },
     "devDependencies": {
-        "@apify/eslint-config-ts": "^0.3.0",
-        "@apify/tsconfig": "^0.1.0",
+        "@apify/eslint-config": "^1.0.0",
+        "@apify/tsconfig": "^0.1.1",
+        "@types/node": "^24.0.0",
         "@types/yargs": "^17.0.33",
-        "@typescript-eslint/eslint-plugin": "^6.7.2",
-        "@typescript-eslint/parser": "^6.7.2",
-        "eslint": "^8.50.0",
-        "tsx": "^4.19.2",
-        "typescript": "^5.7",
-        "vitest": "^3.2.4"
+        "eslint": "^9.29.0",
+        "eslint-config-prettier": "^10.1.5",
+        "globals": "^17.0.0",
+        "prettier": "^3.5.3",
+        "tsx": "^4.20.3",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.34.1",
+        "vitest": "^3.2.4",
+        "knip": "^5.65.0"
     },
     "peerDependencies": {
         "vitest": ">=3.2.4"
@@ -35,9 +43,13 @@
         "start": "npm run dist/bin/main.js",
         "start:dev": "GITHUB_WORKSPACE=local-clone tsx bin/main.ts",
         "build": "tsc && chmod +x ./dist/bin/main.js",
-        "lint": "eslint ./src --ext .ts",
-        "lint:fix": "eslint ./src --ext .ts --fix",
-        "test": "vitest run"
+        "lint": "eslint",
+        "lint:fix": "eslint --fix",
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "type-check": "tsc --noEmit",
+        "test": "vitest run",
+        "check-unused": "npx knip"
     },
     "author": "oklinov",
     "license": "ISC"

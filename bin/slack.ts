@@ -9,6 +9,8 @@ type NotifyToSlackOptions = {
     commits: Commit[];
     dryRun: boolean;
     author: string;
+    releaseSlackChannel?: string;
+    reportSlackChannel?: string;
 };
 
 export const notifyToSlack = async ({
@@ -18,6 +20,8 @@ export const notifyToSlack = async ({
     repository,
     dryRun,
     author,
+    releaseSlackChannel,
+    reportSlackChannel,
 }: NotifyToSlackOptions) => {
     const slack = new WebClient(getEnvVar('SLACK_TOKEN_RELEASES_BOT'));
 
@@ -28,15 +32,14 @@ export const notifyToSlack = async ({
     let shortMessage = `${repository} --- New release (by ${author}):\n\n`;
 
     // This one is just for broader public that only cares about public facing changes
-    if (changelog) {
-        console.error(`=========================================`);
+    if (changelog && releaseSlackChannel) {
         shortMessage += `**Additions to the changelog**:\n\n${changelog}\n`;
-        const channel = '#delivery-public-actors';
-        console.error(`**Sending slack message to channel**: ${channel}.\n\n${shortMessage}`);
+        console.error(`=========================================`);
+        console.error(`**Sending slack message to channel**: ${releaseSlackChannel}.\n\n${shortMessage}`);
         console.error(`=========================================`);
         if (!dryRun) {
             await slack.chat.postMessage({
-                channel,
+                channel: releaseSlackChannel,
                 text: shortMessage,
             });
         }
@@ -49,15 +52,16 @@ export const notifyToSlack = async ({
     const longMessage = `${shortMessage}\n**Commit list**:\n${commitsMessage}\n\n${changedFilesMessage}`;
 
     // This one is for devs and project managers that need to know more details
-    const notifChannel = `#notif-${repository.toLowerCase()}`;
-    console.error(`=========================================`);
-    console.error(`Sending slack message to channel: ${notifChannel}.\n\n${longMessage}`);
-    console.error(`=========================================`);
-    if (!dryRun) {
-        await slack.chat.postMessage({
-            text: longMessage,
-            channel: notifChannel,
-        });
+    if (reportSlackChannel) {
+        console.error(`=========================================`);
+        console.error(`Sending slack message to channel: ${reportSlackChannel}.\n\n${longMessage}`);
+        console.error(`=========================================`);
+        if (!dryRun) {
+            await slack.chat.postMessage({
+                text: longMessage,
+                channel: reportSlackChannel,
+            });
+        }
     }
 };
 

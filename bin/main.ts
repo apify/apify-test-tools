@@ -9,7 +9,7 @@ import { runBuilds } from './build.js';
 import { getChangedFiles, getCommits } from './git.js';
 import { getPushData } from './github.js';
 import { notifyToSlack } from './slack.js';
-import { reportTestRestuls } from './test-report.js';
+import { reportTestResults } from './test-report.js';
 
 /**
  * Middlewares to be run before every command execution
@@ -78,11 +78,11 @@ await yargs()
         (args) =>
             args
                 .option('report-file', { type: 'string', demandOption: true })
+                .option('report-slack-channel', { type: 'string' })
                 .option('job-url', { type: 'string' })
-                .option('workflow-name', { type: 'string' })
-                .option('repository', { type: 'string' }),
+                .option('workflow-name', { type: 'string' }),
         async (args) => {
-            await reportTestRestuls(args);
+            await reportTestResults(args);
         }
     )
     .command(
@@ -119,7 +119,9 @@ await yargs()
         (args) =>
             args
                 .option('push-event-path', { type: 'string', demandOption: true })
-                .option('dry-run', { type: 'boolean', default: false }),
+                .option('dry-run', { type: 'boolean', default: false })
+                .option('report-slack-channel', { type: 'string' })
+                .option('release-slack-channel', { type: 'string' }),
         async (args) => {
             const { branch, changedFiles, repoUrl, commits, changelog, repository, author } = await getPushData(
                 args.pushEventPath
@@ -131,7 +133,7 @@ await yargs()
                 actorConfigs,
                 isLatest,
             });
-            const { dryRun } = args;
+            const { dryRun, reportSlackChannel, releaseSlackChannel } = args;
             const builds = await runBuilds({
                 isLatest,
                 repoUrl,
@@ -149,6 +151,8 @@ await yargs()
                 repository,
                 dryRun,
                 author,
+                reportSlackChannel,
+                releaseSlackChannel,
             });
         }
     )

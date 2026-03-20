@@ -2,21 +2,21 @@ import fs from 'fs/promises';
 import { sendSlackMessage } from './slack.js';
 import { getEnvVar } from './utils.js';
 
-interface ReportTestRestulsOptions {
+interface ReportTestResultsOptions {
     reportFile: string
     dryRun: boolean
+    reportSlackChannel?: string
     jobUrl?: string
-    repository?: string
     workflowName?: string
 }
 
-export const reportTestRestuls = async ({
+export const reportTestResults = async ({
     dryRun,
+    reportSlackChannel,
     reportFile: jsonResultsPath,
     jobUrl,
     workflowName,
-    repository,
-}: ReportTestRestulsOptions) => {
+}: ReportTestResultsOptions) => {
     const results: JsonTestResults = JSON.parse((await fs.readFile(jsonResultsPath)).toString());
     const passed: JsonAssertionResult[] = [];
     const failed: JsonAssertionResult[] = [];
@@ -65,6 +65,11 @@ export const reportTestRestuls = async ({
     console.error();
     console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
     console.error();
+    
+    if (!reportSlackChannel) {
+        console.error(`Skipping slack notification. If you want to enable it, add --report-slack-channel flag and make sure SLACK_TOKEN_TESTS_BOT env variable is set.`);
+        return;
+    }
 
     if (failedAssertions.length === 0) {
         return;
@@ -73,24 +78,21 @@ export const reportTestRestuls = async ({
     // TODO: add slack profiles
     const total = failed.length + passed.length;
     const jobLink = jobUrl ? ` Check <${jobUrl}|the job>.` : '';
-    let slackMessage = `\`${workflowName ?? '-'}\`: *${repository ?? '-'}*`;
+    let slackMessage = `\`${workflowName ?? '-'}\``;
     slackMessage += `: has ${failedAssertions.length} failed assertions. Failing test suites: ${failed.length}/${total}.${jobLink}`;
     slackMessage += `\n\n${failedAssertions[0].message} --- <${failedAssertions[0].runLink}|${failedAssertions[0].actorName}>`;
     const blocks = failedAssertions.slice(1).map(({ message, runLink, actorName }) => `• ${message} --- <${runLink}|${actorName}>`);
 
-    if (!repository) {
-        console.error(`Repository not provided, not sending slack notification`);
-        return
-    }
-
-    // remove repository-owner part
-    const channel = `#notif-${repository.replace(/[^/]+\//, '')}`;
-    console.error(`Sending a notification to slack channel ${channel}`);
     console.error('SLACK:', slackMessage);
     console.error('\tblocks:', blocks.join('\n\t\t'));
+
+    if (!reportSlackChannel) {
+        return;
+    }
+
     if (!dryRun) {
         const slackToken = getEnvVar('SLACK_TOKEN_TESTS_BOT');
-        await sendSlackMessage(channel, slackMessage, blocks, slackToken);
+        await sendSlackMessage(reportSlackChannel, slackMessage, blocks, slackToken);
     }
 };
 

@@ -1,8 +1,8 @@
-import fs from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs/promises';
+
 import type {
     ActorConfig,
-    Commit,
     GitHubEvent,
 } from './types.js';
 
@@ -91,122 +91,4 @@ export const getHeadCommitSha = (githubEvent: GitHubEvent) => {
     return githubEvent.type === 'pull_request'
         ? githubEvent.pull_request.head.sha
         : githubEvent.head_commit.id;
-};
-
-export interface GetChangedActorsResult {
-    actorsChanged: ActorConfig[];
-}
-
-interface ShouldBuildAndTestOptions {
-    filepathsChanged: string[];
-    actorConfigs: ActorConfig[];
-    // Just for logging
-    isLatest?: boolean;
-    /**
-     * Set of lowercase file paths (JSON files in actor folders) where only non-functional
-     * fields like title/description/example changed — these should only trigger a latest build,
-     * not tests.
-     */
-    nonfunctionalOnlyJsonFiles?: Set<string>;
-}
-
-/**
- * Also works for folders
- */
-const isIgnoredTopLevelFile = (lowercaseFilePath: string) => {
-    // On top level, we should only have dev-only readme and .actor/ is just for apify push CLI (real Actor configs are in /actors)
-    const IGNORED_TOP_LEVEL_FILES = ['.vscode/', '.gitignore', 'readme.md', '.husky/', '.eslintrc', '.editorconfig', '.actor/'];
-    // Strip out deprecated /code and /shared folders, treat them as top-level code
-    const sanitizedLowercaseFilePath = lowercaseFilePath.replace(/^code\//, '').replace(/^shared\//, '');
-
-    return IGNORED_TOP_LEVEL_FILES.some((ignoredFile) => sanitizedLowercaseFilePath.startsWith(ignoredFile));
-};
-
-const isReleaseOnlyFile = (lowercaseFilePath: string, nonfunctionalOnlyJsonFiles?: Set<string>) => {
-    if (lowercaseFilePath.endsWith('changelog.md')) {
-        return true;
-    }
-
-    // Either in /actors or /standalone-actors, we need to rebuild readme but we don't rebuild top-level dev-only readme
-    if ((lowercaseFilePath.startsWith('actors/') || lowercaseFilePath.startsWith('standalone-actors/')) && lowercaseFilePath.endsWith('readme.md')) {
-        return true;
-    }
-
-    if (nonfunctionalOnlyJsonFiles?.has(lowercaseFilePath)) {
-        return true;
-    }
-
-    return false;
-};
-
-/**
- * Latest and devel are the same except that for latest we also rebuild with README and CHANGELOG files
- */
-export const getChangedActors = (
-    { filepathsChanged, actorConfigs, isLatest = false, nonfunctionalOnlyJsonFiles }: ShouldBuildAndTestOptions,
-): GetChangedActorsResult => {
-    // folder -> ActorConfig
-    const actorsChangedMap = new Map<string, ActorConfig>();
-
-    const actorConfigsWithoutStandalone = actorConfigs.filter(({ isStandalone }) => !isStandalone);
-
-    const lowercaseFiles = filepathsChanged.map((file) => file.toLowerCase());
-
-    for (const lowercaseFilePath of lowercaseFiles) {
-        if (isIgnoredTopLevelFile(lowercaseFilePath)) {
-            continue;
-        }
-        // First we check for specific actors that have configs in /actors or standalone actors in /standalone-actors
-        // This matches both actors/username_actorName and standalone-actors/username_actorName
-        const changedActorConfigMatch = lowercaseFilePath.match(/^(?:standalone-)?actors\/([^/]+)\/.+/);
-        if (changedActorConfigMatch) {
-            const sanitizedActorName = changedActorConfigMatch[1].replace('_', '/');
-            const actorConfigChanged = actorConfigs.find(({ actorName }) => actorName.toLowerCase() === sanitizedActorName);
-            if (actorConfigChanged === undefined) {
-                console.warn('changes was found in an actor folder which no longer exists in the current commit', {
-                    actorName: sanitizedActorName,
-                    actorFolderName: changedActorConfigMatch[1],
-                });
-                continue;
-            }
-
-            console.error(`actorConfigChanged ${actorConfigChanged.actorName}: sanitizedActorName ${sanitizedActorName} ${lowercaseFilePath} `);
-            // These can be nested at various folders inside the actor folder
-            if (isLatest || !isReleaseOnlyFile(lowercaseFilePath, nonfunctionalOnlyJsonFiles)) {
-                actorsChangedMap.set(actorConfigChanged.folder, actorConfigChanged);
-            }
-            continue;
-        }
-
-        // We check top level files (formerly in /code and /shared folders) that are shared among all non-standalone Actors
-        // Standalone actors are always handled separately by name via changedActorConfigMatch
-        if (isLatest || !isReleaseOnlyFile(lowercaseFilePath, nonfunctionalOnlyJsonFiles)) {
-            // If there is any functional change in shared files, we rebuild and retest all non-standalone Actors since they all depend on shared code
-            for (const actorConfig of actorConfigsWithoutStandalone) {
-                actorsChangedMap.set(actorConfig.folder, actorConfig);
-            }
-        }
-    }
-
-    const actorsChanged = Array.from(actorsChangedMap.values());
-
-    // All below here is just for logging
-    const ignoredFilesChanged = lowercaseFiles.filter((file) => isIgnoredTopLevelFile(file));
-    console.error(`[DIFF]: Top level files changed that we ignore (don't trigger test or build): ${ignoredFilesChanged.join(', ')}`);
-
-    const onlyReleaseFilesChanged = lowercaseFiles.filter((file) => isReleaseOnlyFile(file, nonfunctionalOnlyJsonFiles));
-    console.error(`[DIFF]: Files changed that only trigger release build: ${onlyReleaseFilesChanged.join(', ')}`);
-
-    if (actorsChanged.length > 0) {
-        const miniactors = actorsChanged.filter((config) => !config.isStandalone).map((config) => config.actorName);
-        const standaloneActors = actorsChanged.filter((config) => config.isStandalone).map((config) => config.actorName);
-        console.error(`[DIFF]: MiniActors to be built and tested: ${miniactors.join(', ')}`);
-        console.error(`[DIFF]: Standalone Actors to be built and tested: ${standaloneActors.join(', ')}`);
-    } else {
-        console.error(`[DIFF]: No relevant files changed, skipping builds and tests`);
-    }
-
-    return {
-        actorsChanged,
-    };
 };

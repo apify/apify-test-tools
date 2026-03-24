@@ -1,4 +1,4 @@
-import { Commit, Config } from './types.js';
+import type { Commit, Config } from './types.js';
 import { spawnCommandInGhWorkspace } from './utils.js';
 
 export const GIT_FORMAT_SEPARATOR = '»¦«';
@@ -8,11 +8,13 @@ const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR
  * Gets the list of changed files between the given commits (inclusive).
  */
 export const getChangedFiles = (commits: Commit[]) => {
-    const changedFiles = spawnCommandInGhWorkspace(
+    const changedFilesString = spawnCommandInGhWorkspace(
         `git diff --name-only ${commits[0].sha}~..${commits[commits.length - 1].sha}`,
     );
 
-    return changedFiles.split('\n');
+    const changedFiles = changedFilesString.split('\n');
+    console.error(`Changed files (up to 50): ${changedFiles.slice(0, 50).join(', ')}`);
+    return changedFiles;
 };
 
 /**
@@ -29,8 +31,15 @@ export const getCommits = ({ sourceBranch, targetBranch, baseCommit: baseCommitS
     const baseCommitIndex = commits.findIndex((commit) => commit.sha === baseCommitSha);
 
     const hasBaseCommit = baseCommitIndex !== -1;
-    if (hasBaseCommit) return commits.slice(baseCommitIndex + 1);
+    if (hasBaseCommit) {
+        const commitsUpToBaseCommit = commits.slice(baseCommitIndex + 1);
+        console.error(`Found base commit ${baseCommitSha} at index ${baseCommitIndex}, returning ${commitsUpToBaseCommit.length} commits after it`);
+        console.error(`Commits being returned: ${commitsUpToBaseCommit.map((c) => c.sha).join(', ')}`);
+        return commitsUpToBaseCommit;
+    }
 
+    console.error(`Base commit ${baseCommitSha} not found in the commit range, returning all ${commits.length} commits`);
+    console.error(`Commits being returned: ${commits.map((c) => c.sha).join(', ')}`);
     return commits;
 };
 

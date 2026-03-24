@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 
-import process from 'process';
+import process from 'node:process';
+
 import yargs, { type Argv } from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
-import { getRepoActors, getChangedActors, spawnCommandInGhWorkspace, setCwd } from './utils.js';
 import { runBuilds } from './build.js';
+import { getChangedActors } from './diff-changes.js';
 import { getChangedFiles, getCommits } from './git.js';
 import { getPushData } from './github.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
+import { getRepoActors, setCwd,spawnCommandInGhWorkspace } from './utils.js';
 
 /**
  * Middlewares to be run before every command execution
@@ -69,7 +71,7 @@ await yargs()
         const commits = getCommits(args);
         const changedFiles = getChangedFiles(commits);
         const actorConfigs = await getRepoActors();
-        const { actorsChanged } = getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest: false });
+        const actorsChanged = getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest: false, commits });
         console.log(JSON.stringify(actorsChanged));
     })
     .command(
@@ -93,9 +95,10 @@ await yargs()
             const commits = getCommits(args);
             const changedFiles = getChangedFiles(commits);
             const actorConfigs = await getRepoActors();
-            const { actorsChanged } = getChangedActors({
+            const actorsChanged = getChangedActors({
                 filepathsChanged: changedFiles,
                 actorConfigs,
+                commits,
             });
             // https://github.com/apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
             // git@github.com:apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
@@ -128,10 +131,11 @@ await yargs()
             );
             const isLatest = true;
             const actorConfigs = await getRepoActors();
-            const { actorsChanged } = getChangedActors({
+            const actorsChanged = getChangedActors({
                 filepathsChanged: changedFiles,
                 actorConfigs,
                 isLatest,
+                commits,
             });
             const { dryRun, reportSlackChannel, releaseSlackChannel } = args;
             const builds = await runBuilds({

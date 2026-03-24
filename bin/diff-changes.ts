@@ -11,7 +11,8 @@ interface ShouldBuildAndTestOptions {
 export const maybeParseActorFolder = (lowercaseFilePath: string): { isActorFolder: true, actorName: string } | { isActorFolder: false } => {
     const match = lowercaseFilePath.match(/^(?:standalone-)?actors\/([^/]+)\/.+/);
     if (match) {
-        return { isActorFolder: true, actorName: match[1].replace('_', '/') };
+        // Some usernames weirdly use underscores, e.g. google_maps_email_extractor_standby-contact-details-scraper so we only need replace the last one
+        return { isActorFolder: true, actorName: match[1].replace(/_(?=[^_]*$)/, '/') };
     }
     return { isActorFolder: false };
 }

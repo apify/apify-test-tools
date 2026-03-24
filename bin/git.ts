@@ -13,7 +13,7 @@ export const getChangedFiles = (commits: Commit[]) => {
     );
 
     const changedFiles = changedFilesString.split('\n');
-    console.error(`Changed files: ${changedFiles.join(', ')}`);
+    console.error(`Changed files (up to 50): ${changedFiles.slice(0, 50).join(', ')}`);
     return changedFiles;
 };
 

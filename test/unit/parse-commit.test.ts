@@ -1,4 +1,4 @@
-import { describe, expect,it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { GIT_FORMAT_SEPARATOR, parseCommit } from '../../bin/git.js';
 

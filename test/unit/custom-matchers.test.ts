@@ -1,7 +1,8 @@
-import process from 'process';
-import { describe } from 'vitest';
+import process from 'node:process';
 
 import { ApifyClient } from 'apify-client';
+import { describe } from 'vitest';
+
 import { testStandbyActor, testTestActor } from '../../lib/lib.js';
 import { RunTestResult } from '../../lib/run-test-result.js';
 
@@ -11,13 +12,13 @@ enum PpeEventEnum {
     SEARCH_PAGE_SCRAPED = 'search-page-scraped',
     ADS_SCRAPED = 'ads-scraped',
 }
-const PPE_EVENT_CONST = {
-    ACTOR_START: 'actor-start',
-    ITEM_PUSHED: 'search-page-scraped',
-    ADS_SCRAPED: 'ads-scraped',
-} as const;
+type PPE_EVENT_CONST = {
+    ACTOR_START: 'actor-start';
+    ITEM_PUSHED: 'search-page-scraped';
+    ADS_SCRAPED: 'ads-scraped';
+};
 
-// TODO: Remake these tests. k5MNKmaDGHlABDn2I run doesn't exist and we probably don't want to depend on fixed run 
+// TODO: Remake these tests. k5MNKmaDGHlABDn2I run doesn't exist and we probably don't want to depend on fixed run
 describe.skip('custom-matchers', { timeout: 100_000 }, () => {
     testTestActor('basic', async ({ expect }) => {
         const apifyClient = new ApifyClient({ token: process.env.TESTER_APIFY_TOKEN });
@@ -43,7 +44,7 @@ describe.skip('custom-matchers', { timeout: 100_000 }, () => {
             },
         });
 
-        await expect(runResult).toFinishWith<(typeof PPE_EVENT_CONST)[keyof typeof PPE_EVENT_CONST]>({
+        await expect(runResult).toFinishWith<PPE_EVENT_CONST[keyof PPE_EVENT_CONST]>({
             datasetItemCount: { min: 1, max: 20 },
             chargedEventCounts: {
                 'actor-start': 1,

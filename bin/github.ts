@@ -1,5 +1,6 @@
-import fs from 'fs/promises';
-import { Commit, GitHubEventPush } from './types.js';
+import fs from 'node:fs/promises';
+
+import type { Commit, GitHubEventPush } from './types.js';
 import { spawnCommandInGhWorkspace } from './utils.js';
 
 export const getPushData = async (path: string) => {
@@ -10,8 +11,8 @@ export const getPushData = async (path: string) => {
         repository: { ssh_url: repoUrl, name },
         head_commit: { author },
     } = event;
-    const commits: Commit[] = ghCommits.map(({ author, message, id, timestamp }) => ({
-        author: author.username,
+    const commits: Commit[] = ghCommits.map(({ author: commitAuthor, message, id, timestamp }) => ({
+        author: commitAuthor.username,
         sha: id,
         message,
         date: timestamp,
@@ -29,7 +30,7 @@ export const getPushData = async (path: string) => {
     };
 };
 
-export const loadGitHubEvent = async (path: string): Promise<GitHubEventPush> => {
+const loadGitHubEvent = async (path: string): Promise<GitHubEventPush> => {
     const pushEvent = JSON.parse((await fs.readFile(path)).toString()) as GitHubEventPush;
     return pushEvent;
 };
@@ -39,7 +40,7 @@ const getChangedFiles = ({ after, before }: GitHubEventPush): string[] => {
     return changedFiles.split('\n');
 };
 
-export const getChangelogChanges = (changedFiles: string[], event: GitHubEventPush): string | null => {
+const getChangelogChanges = (changedFiles: string[], event: GitHubEventPush): string | null => {
     const changelogPath = 'CHANGELOG.md';
     if (!changedFiles.includes(changelogPath)) {
         return null;

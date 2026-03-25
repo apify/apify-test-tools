@@ -1,13 +1,14 @@
-import fs from 'fs/promises';
+import fs from 'node:fs/promises';
+
 import { sendSlackMessage } from './slack.js';
 import { getEnvVar } from './utils.js';
 
 interface ReportTestResultsOptions {
-    reportFile: string
-    dryRun: boolean
-    reportSlackChannel?: string
-    jobUrl?: string
-    workflowName?: string
+    reportFile: string;
+    dryRun: boolean;
+    reportSlackChannel?: string;
+    jobUrl?: string;
+    workflowName?: string;
 }
 
 export const reportTestResults = async ({
@@ -35,7 +36,7 @@ export const reportTestResults = async ({
         }
     }
 
-    const failedAssertions: { message: string; runLink: string, actorName: string }[] = [];
+    const failedAssertions: { message: string; runLink: string; actorName: string }[] = [];
 
     console.error();
     console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
@@ -57,7 +58,13 @@ export const reportTestResults = async ({
     for (const [i, aResult] of failed.entries()) {
         const { failureMessages, fullName, meta } = aResult;
         if (failureMessages) {
-            failedAssertions.push(...failureMessages.map(message => ({ message: message.split('\n')?.[0], runLink: meta.runLink, actorName: meta.actorName })));
+            failedAssertions.push(
+                ...failureMessages.map((message) => ({
+                    message: message.split('\n')?.[0],
+                    runLink: meta.runLink,
+                    actorName: meta.actorName,
+                })),
+            );
         }
         console.error(`${i + 1}) ${fullName} ... ${meta.runLink}`);
         console.error();
@@ -65,9 +72,11 @@ export const reportTestResults = async ({
     console.error();
     console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
     console.error();
-    
+
     if (!reportSlackChannel) {
-        console.error(`Skipping slack notification. If you want to enable it, add --report-slack-channel flag and make sure SLACK_TOKEN_TESTS_BOT env variable is set.`);
+        console.error(
+            `Skipping slack notification. If you want to enable it, add --report-slack-channel flag and make sure SLACK_TOKEN_TESTS_BOT env variable is set.`,
+        );
         return;
     }
 
@@ -81,7 +90,9 @@ export const reportTestResults = async ({
     let slackMessage = `\`${workflowName ?? '-'}\``;
     slackMessage += `: has ${failedAssertions.length} failed assertions. Failing test suites: ${failed.length}/${total}.${jobLink}`;
     slackMessage += `\n\n${failedAssertions[0].message} --- <${failedAssertions[0].runLink}|${failedAssertions[0].actorName}>`;
-    const blocks = failedAssertions.slice(1).map(({ message, runLink, actorName }) => `• ${message} --- <${runLink}|${actorName}>`);
+    const blocks = failedAssertions
+        .slice(1)
+        .map(({ message, runLink, actorName }) => `• ${message} --- <${runLink}|${actorName}>`);
 
     console.error('SLACK:', slackMessage);
     console.error('\tblocks:', blocks.join('\n\t\t'));
@@ -96,52 +107,52 @@ export const reportTestResults = async ({
     }
 };
 
-type Status = 'passed' | 'failed' | 'skipped' | 'pending' | 'todo' | 'disabled'
-type Milliseconds = number
+type Status = 'passed' | 'failed' | 'skipped' | 'pending' | 'todo' | 'disabled';
+type Milliseconds = number;
 interface Callsite {
-    line: number
-    column: number
+    line: number;
+    column: number;
 }
 
 interface JsonAssertionResult {
-    ancestorTitles: Array<string>
-    fullName: string
-    status: Status
-    title: string
+    ancestorTitles: string[];
+    fullName: string;
+    status: Status;
+    title: string;
     meta: {
-        runId: string
-        runLink: string
-        actorName: string
-    }
-    duration?: Milliseconds | null
-    failureMessages: Array<string> | null
-    location?: Callsite | null
+        runId: string;
+        runLink: string;
+        actorName: string;
+    };
+    duration?: Milliseconds | null;
+    failureMessages: string[] | null;
+    location?: Callsite | null;
 }
 
 interface JsonTestResult {
-    message: string
-    name: string
-    status: 'failed' | 'passed'
-    startTime: number
-    endTime: number
-    assertionResults: Array<JsonAssertionResult>
+    message: string;
+    name: string;
+    status: 'failed' | 'passed';
+    startTime: number;
+    endTime: number;
+    assertionResults: JsonAssertionResult[];
     // summary: string
     // coverage: unknown
 }
 
 interface JsonTestResults {
-    numFailedTests: number
-    numFailedTestSuites: number
-    numPassedTests: number
-    numPassedTestSuites: number
-    numPendingTests: number
-    numPendingTestSuites: number
-    numTodoTests: number
-    numTotalTests: number
-    numTotalTestSuites: number
-    startTime: number
-    success: boolean
-    testResults: Array<JsonTestResult>
+    numFailedTests: number;
+    numFailedTestSuites: number;
+    numPassedTests: number;
+    numPassedTestSuites: number;
+    numPendingTests: number;
+    numPendingTestSuites: number;
+    numTodoTests: number;
+    numTotalTests: number;
+    numTotalTestSuites: number;
+    startTime: number;
+    success: boolean;
+    testResults: JsonTestResult[];
     // snapshot: SnapshotSummary
     // coverageMap?: CoverageMap | null | undefined
     // numRuntimeErrorTestSuites: number

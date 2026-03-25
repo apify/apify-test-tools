@@ -1,5 +1,5 @@
-import { ActorCallOptions } from 'apify-client';
-import { Assertion, TestOptions } from 'vitest';
+import type { ActorCallOptions } from 'apify-client';
+import type { Assertion, TestOptions } from 'vitest';
 
 export type ActorBuild = {
     buildId: string;
@@ -50,10 +50,6 @@ export type ToFinishWithOptionsWithDefaults = {
     forbiddenLogs: string[];
     maxRetriesPerRequest: number | null;
 };
-export type IntervalOption<PpeEvent extends string> = keyof Pick<
-    ToFinishWithOptions<PpeEvent>,
-    'datasetItemCount' | 'requestsRetries' | 'failedRequests' | 'duration'
->;
 
 export type ToFinishWithOptions<PpeEvent extends string> = Partial<ToFinishWithOptionsWithDefaults> & {
     datasetItemCount: Interval;
@@ -144,9 +140,10 @@ export type ActorTestOptions = Omit<TestOptions, 'retry'> & {
 };
 
 declare module 'vitest' {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type
     interface Assertion<T = any> extends ActorMatchers<T> {}
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type
     interface Matchers<T = any> extends ActorMatchers<T> {}
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     interface AsymmetricMatchersContaining extends ActorMatchers {}
 }

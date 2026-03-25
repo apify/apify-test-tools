@@ -1,5 +1,6 @@
 import { WebClient } from '@slack/web-api';
-import { Commit } from './types.js';
+
+import type { Commit } from './types.js';
 import { getEnvVar } from './utils.js';
 
 type NotifyToSlackOptions = {
@@ -46,7 +47,10 @@ export const notifyToSlack = async ({
     }
 
     const commitsMessage = `${commits
-        .map(({ author, message }, index) => `${index + 1}. Commit message: ${message}\n\tAuthor: ${author}.`)
+        .map(
+            ({ author: commitAuthor, message }, index) =>
+                `${index + 1}. Commit message: ${message}\n\tAuthor: ${commitAuthor}.`,
+        )
         .join('\n')}`;
     const changedFilesMessage = `**Files changed**: ${changedFiles.join(', ')}`;
     const longMessage = `${shortMessage}\n**Commit list**:\n${commitsMessage}\n\n${changedFilesMessage}`;

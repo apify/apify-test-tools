@@ -33,20 +33,18 @@ export const getCommits = ({ sourceBranch, targetBranch, baseCommit: baseCommitS
     const hasBaseCommit = baseCommitIndex !== -1;
     if (hasBaseCommit) {
         const commitsUpToBaseCommit = commits.slice(baseCommitIndex + 1);
-        console.error(`Found base commit ${baseCommitSha} at index ${baseCommitIndex}, returning ${commitsUpToBaseCommit.length} commits after it`);
+        console.error(
+            `Found base commit ${baseCommitSha} at index ${baseCommitIndex}, returning ${commitsUpToBaseCommit.length} commits after it`,
+        );
         console.error(`Commits being returned: ${commitsUpToBaseCommit.map((c) => c.sha).join(', ')}`);
         return commitsUpToBaseCommit;
     }
 
-    console.error(`Base commit ${baseCommitSha} not found in the commit range, returning all ${commits.length} commits`);
+    console.error(
+        `Base commit ${baseCommitSha} not found in the commit range, returning all ${commits.length} commits`,
+    );
     console.error(`Commits being returned: ${commits.map((c) => c.sha).join(', ')}`);
     return commits;
-};
-
-export const getCommitInfo = (commitSha: string): Commit => {
-    const commitString = spawnCommandInGhWorkspace(`git log -1 --pretty=format:'${GIT_LOG_FORMAT}' ${commitSha}`);
-    const commit = parseCommit(commitString);
-    return commit;
 };
 
 export const parseCommit = (commitString: string): Commit => {

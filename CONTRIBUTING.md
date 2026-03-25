@@ -1,6 +1,7 @@
 # Contributing
 
 The package consists of two parts:
+
 - cli located in `bin/`
 - test library located in `lib`
 
@@ -22,6 +23,7 @@ The package consists of two parts:
 ### Development setup
 
 1. Clone and build `apify-test-tools` repo:
+
 ```sh
 git clone git@github.com:apify-projects/apify-test-tools.git
 cd apify-test-tools
@@ -30,6 +32,7 @@ npm run build
 ```
 
 For testing purposes, we use `testing-repo-for-github-actions` repo so that we don't mess with the production repos:
+
 ```sh
 git clone git@github.com:apify-store/testing-repo-for-github-actions.git
 ```
@@ -37,6 +40,7 @@ git clone git@github.com:apify-store/testing-repo-for-github-actions.git
 #### Working on the CLI
 
 To work on the library, you just need to define `GITHUB_WORKSPACE` to tell the cli where you repo is located:
+
 ```sh
 export GITHUB_WORKSPACE=../path/to/testing-repo-for-github-actions # path to the repo
 npx tsx bin/main.ts --help
@@ -46,6 +50,7 @@ npx tsx bin/main.ts get-commits --target-branch master --source-branch feat/test
 #### Working on the library
 
 You need to istall the local version of `apify-test-tools` in your cloned `testing-repo-for-github-actions`:
+
 ```sh
 npm i -D ../path/to/apify-test-tools
 ```

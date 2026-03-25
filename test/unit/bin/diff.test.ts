@@ -17,9 +17,7 @@ describe('isCosmeticOnlyJsonSchemaChange', () => {
     });
 
     const mockGitCalls = (oldJson: string, newJson: string) => {
-        gitCommandSpy
-            .mockReturnValueOnce(oldJson)
-            .mockReturnValueOnce(newJson);
+        gitCommandSpy.mockReturnValueOnce(oldJson).mockReturnValueOnce(newJson);
     };
 
     test('returns true when nothing changed', () => {
@@ -69,10 +67,7 @@ describe('isCosmeticOnlyJsonSchemaChange', () => {
     });
 
     test('returns true when only sectionDescription changes', () => {
-        mockGitCalls(
-            JSON.stringify({ sectionDescription: 'Old' }),
-            JSON.stringify({ sectionDescription: 'New' }),
-        );
+        mockGitCalls(JSON.stringify({ sectionDescription: 'Old' }), JSON.stringify({ sectionDescription: 'New' }));
         expect(isCosmeticOnlyJsonSchemaChange(commits, 'actors/foo/actor.json')).toBe(true);
     });
 
@@ -85,18 +80,12 @@ describe('isCosmeticOnlyJsonSchemaChange', () => {
     });
 
     test('returns false when a functional field is added', () => {
-        mockGitCalls(
-            JSON.stringify({ title: 'My field' }),
-            JSON.stringify({ title: 'My field', type: 'string' }),
-        );
+        mockGitCalls(JSON.stringify({ title: 'My field' }), JSON.stringify({ title: 'My field', type: 'string' }));
         expect(isCosmeticOnlyJsonSchemaChange(commits, 'actors/foo/actor.json')).toBe(false);
     });
 
     test('returns false when a functional field is removed', () => {
-        mockGitCalls(
-            JSON.stringify({ type: 'string', title: 'My field' }),
-            JSON.stringify({ title: 'My field' }),
-        );
+        mockGitCalls(JSON.stringify({ type: 'string', title: 'My field' }), JSON.stringify({ title: 'My field' }));
         expect(isCosmeticOnlyJsonSchemaChange(commits, 'actors/foo/actor.json')).toBe(false);
     });
 
@@ -159,10 +148,7 @@ describe('isCosmeticOnlyJsonSchemaChange', () => {
     });
 
     test('returns false when array content changes (not under a non-functional key)', () => {
-        mockGitCalls(
-            JSON.stringify({ enum: [1, 2, 3] }),
-            JSON.stringify({ enum: [1, 2, 4] }),
-        );
+        mockGitCalls(JSON.stringify({ enum: [1, 2, 3] }), JSON.stringify({ enum: [1, 2, 4] }));
         expect(isCosmeticOnlyJsonSchemaChange(commits, 'actors/foo/actor.json')).toBe(false);
     });
 
@@ -176,8 +162,20 @@ describe('isCosmeticOnlyJsonSchemaChange', () => {
 
     test('returns true for a realistic actor.json with only title/description change', () => {
         mockGitCalls(
-            JSON.stringify({ actorSpecification: 1, name: 'my-actor', title: 'Old Title', description: 'Old description', version: '1.0' }),
-            JSON.stringify({ actorSpecification: 1, name: 'my-actor', title: 'New Title', description: 'New description', version: '1.0' }),
+            JSON.stringify({
+                actorSpecification: 1,
+                name: 'my-actor',
+                title: 'Old Title',
+                description: 'Old description',
+                version: '1.0',
+            }),
+            JSON.stringify({
+                actorSpecification: 1,
+                name: 'my-actor',
+                title: 'New Title',
+                description: 'New description',
+                version: '1.0',
+            }),
         );
         expect(isCosmeticOnlyJsonSchemaChange(commits, 'actors/foo/actor.json')).toBe(true);
     });

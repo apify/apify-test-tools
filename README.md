@@ -5,7 +5,7 @@
 ## Getting Started
 
 1. Install the package `npm i -D apify-test-tools`
-    - because it uses [annotate](https://vitest.dev/guide/test-context.html#annotate), `vitest` version to be at least `3.2.0` 
+    - because it uses [annotate](https://vitest.dev/guide/test-context.html#annotate), `vitest` version to be at least `3.2.0`
     - make sure that `target` and `module` in your `tsconfig.json`'s `compilerOptions` are set to `ES2022`
 2. create test directories: `mkdir -p test/platform/core`
     - core (hourly) tests should go to `test/platform/core`
@@ -13,6 +13,7 @@
 3. setup github worklows TODO
 
 File structure:
+
 ```
 google-maps
 ├── actors
@@ -20,7 +21,7 @@ google-maps
 └── test
     ├── unit
     └── platform
-        ├── core                  <- Core tests need to be inside core directory  
+        ├── core                  <- Core tests need to be inside core directory
         │   └── core.test.ts
         ├── some.test.ts          <- Other tests can be defined anywhere inside platform directory
         └── some-other.test.ts
@@ -73,7 +74,7 @@ name: PR Test
 
 on:
     pull_request:
-        branches: [ master ]
+        branches: [master]
 
 jobs:
     buildDevelAndTest:
@@ -88,7 +89,7 @@ name: Release latest
 
 on:
     push:
-        branches: [ master ]
+        branches: [master]
 
 jobs:
     buildLatest:
@@ -102,9 +103,10 @@ jobs:
 
 ### Test structure
 
-To run the tests concurrently, we had to start the run outside of `it` and then call `await` inside. This is now no longer needed and everything can be inside `it` aka `testActor`. 
+To run the tests concurrently, we had to start the run outside of `it` and then call `await` inside. This is now no longer needed and everything can be inside `it` aka `testActor`.
 
 Before:
+
 ```ts
 ({ it, xit, run, expect, expectAsync, input, describe }: TestSpecInputs) => {
 		describe('test', () => {
@@ -112,7 +114,7 @@ Before:
 		        const runPromise = run({ actorId, input })
 						it('actor test 1', async () => {
 						    const runResult = await runPromise;
-						    
+
 						    // your checks
 						});
 				}
@@ -121,25 +123,26 @@ Before:
 		        const runPromise = run({ actorId, input })
 						it('actor test 2', async () => {
 						    const runResult = await runPromise;
-						    
+
 						    // your checks
 						});
-				}		    
+				}
 		});
 })
 ```
 
 After:
+
 ```ts
 import { describe, testActor } from 'apify-test-tools';
 
 describe('test', () => {
 		testActor(actorId, 'actor test 1', async ({ expect, run }) => {
 				const runResult = await run({ input })
-				
+
 				// your checks
 		)};
-		
+
 		testActor(actorId, 'actor test 2', async ({ expect, run }) => {
 				const runResult = await run({ input })
 
@@ -155,6 +158,7 @@ describe('test', () => {
 ### Validating basic run attributes
 
 Before:
+
 ```ts
 await expectAsync(runResult).toHaveStatus('SUCCEEDED');
 
@@ -164,41 +168,36 @@ await expectAsync(runResult).withLog((log) => {
 });
 
 await expectAsync(runResult).withStatistics((stats) => {
-		expect(stats.requestsRetries)
-		    .withContext(runResult.format('Request retries'))
-		    .toBeLessThan(3);
-		expect(stats.crawlerRuntimeMillis)
-		    .withContext(runResult.format('Run time'))
-				.toBeWithinRange(600, 600_000)
-})
-		
+    expect(stats.requestsRetries).withContext(runResult.format('Request retries')).toBeLessThan(3);
+    expect(stats.crawlerRuntimeMillis).withContext(runResult.format('Run time')).toBeWithinRange(600, 600_000);
+});
+
 await expectAsync(runResult).withDataset(({ dataset }) => {
-    expect(dataset.items?.length)
-        .withContext(runResult.format('Dataset cleanItemCount'))
-        .toBe(100);
-})
+    expect(dataset.items?.length).withContext(runResult.format('Dataset cleanItemCount')).toBe(100);
+});
 ```
 
 After:
+
 ```ts
 await expect(runResult).toFinishWith({
-		datasetItemCount: 100,
-})
+    datasetItemCount: 100,
+});
 ```
 
 You can also specify a range:
 
 ```ts
 await expect(runResult).toFinishWith({
-		datasetItemCount: { min: 80, max: 120 },
-})
+    datasetItemCount: { min: 80, max: 120 },
+});
 ```
 
 Here is full example of what you can validate with `toFinishWith`
 
 ```ts
 await expect(runResult).toFinishWith({
-		// These are default
+    // These are default
     status: 'SUCCEEDED',
     duration: {
         min: 600, // 0.6 sec
@@ -206,20 +205,17 @@ await expect(runResult).toFinishWith({
     },
     failedRequests: 0,
     requestsRetries: { max: 3 },
-    forbiddenLogs: [
-        'ReferenceError',
-        'TypeError',
-    ],
+    forbiddenLogs: ['ReferenceError', 'TypeError'],
 
-		// only datasetItemCount is required 
-		datasetItemCount: { min: 80, max: 120 },
-    
+    // only datasetItemCount is required
+    datasetItemCount: { min: 80, max: 120 },
+
     // optional
     chargedEventCounts: {
-		    'actor-start': 1,
-		    'place-scraped': 9,
-		},
-})
+        'actor-start': 1,
+        'place-scraped': 9,
+    },
+});
 ```
 
 ---
@@ -227,15 +223,15 @@ await expect(runResult).toFinishWith({
 ### Custom validations
 
 Before:
+
 ```ts
-expect(place.title)
-		.withContext(runResult.format(`London Eye's title`))
-        .toEqual('lastminute.com London Eye')
+expect(place.title).withContext(runResult.format(`London Eye's title`)).toEqual('lastminute.com London Eye');
 ```
 
 After:
+
 ```ts
-expect(place.title, `London Eye's title`).toEqual('lastminute.com London Eye')
+expect(place.title, `London Eye's title`).toEqual('lastminute.com London Eye');
 ```
 
 ---

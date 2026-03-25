@@ -6,7 +6,7 @@ import tsEslint from 'typescript-eslint';
 
 // eslint-disable-next-line import/no-default-export
 export default [
-    { ignores: ['**/dist', 'eslint.config.mjs'] },
+    { ignores: ['**/dist', 'eslint.config.mjs', '.github'] },
     ...apify,
     prettier,
     {
@@ -25,6 +25,8 @@ export default [
         },
         rules: {
             'no-console': 0,
+            // This was used heavily, I don't have string opinion so turning it off for now, feel free to refactor later
+            'no-use-before-define': 'off',
         },
     },
 ];

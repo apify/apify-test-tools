@@ -1,10 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 
-import type {
-    ActorConfig,
-    GitHubEvent,
-} from './types.js';
+import type { ActorConfig, GitHubEvent } from './types.js';
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
     console.error(command, args.join(' '));
@@ -49,14 +46,14 @@ export const getRepoActors = async (): Promise<ActorConfig[]> => {
     let actorDirs: string[];
     try {
         actorDirs = (await fs.readdir(`./actors`)).map((dir) => `actors/${dir}`);
-    } catch (err) {
+    } catch {
         console.warn(`No /actors directory found in repo`);
         actorDirs = [];
     }
     let standaloneActorDirs: string[];
     try {
         standaloneActorDirs = (await fs.readdir(`./standalone-actors`)).map((dir) => `standalone-actors/${dir}`);
-    } catch (err) {
+    } catch {
         console.warn(`No /standalone-actors directory found in repo`);
         standaloneActorDirs = [];
     }
@@ -73,8 +70,18 @@ export const getRepoActors = async (): Promise<ActorConfig[]> => {
             isStandalone: folderType === 'standalone-actors',
         });
     }
-    console.error(`Actors in repo: ${actorConfigs.filter(({ isStandalone }) => !isStandalone).map(({ actorName }) => actorName).join(', ')}`);
-    console.error(`Standalone actors in repo: ${actorConfigs.filter(({ isStandalone }) => !!isStandalone).map(({ actorName }) => actorName).join(', ')}`);
+    console.error(
+        `Actors in repo: ${actorConfigs
+            .filter(({ isStandalone }) => !isStandalone)
+            .map(({ actorName }) => actorName)
+            .join(', ')}`,
+    );
+    console.error(
+        `Standalone actors in repo: ${actorConfigs
+            .filter(({ isStandalone }) => !!isStandalone)
+            .map(({ actorName }) => actorName)
+            .join(', ')}`,
+    );
     return actorConfigs;
 };
 
@@ -85,10 +92,8 @@ export const setCwd = ({ workspace }: { workspace: string | undefined }) => {
     }
     const ghWorkspace = getEnvVar('GITHUB_WORKSPACE', process.cwd());
     process.chdir(ghWorkspace);
-}
+};
 
 export const getHeadCommitSha = (githubEvent: GitHubEvent) => {
-    return githubEvent.type === 'pull_request'
-        ? githubEvent.pull_request.head.sha
-        : githubEvent.head_commit.id;
+    return githubEvent.type === 'pull_request' ? githubEvent.pull_request.head.sha : githubEvent.head_commit.id;
 };

@@ -5,18 +5,28 @@ import * as DiffJsonSchema from '../../../bin/diff-json-schema.js';
 import type { ActorConfig } from '../../../bin/types.js';
 
 const miniActor: ActorConfig = { actorName: 'foo/bar', folder: 'actors/foo_bar', isStandalone: false };
-const standaloneActor: ActorConfig = { actorName: 'standalone', folder: 'standalone-actors/standalone', isStandalone: true };
+const standaloneActor: ActorConfig = {
+    actorName: 'standalone',
+    folder: 'standalone-actors/standalone',
+    isStandalone: true,
+};
 const actorConfigs = [miniActor, standaloneActor];
 
 const commits = [{ sha: 'Commit1', author: '', date: '', message: '' }];
 
 describe('maybeParseActorFolder', () => {
     it('returns actorName for actors/ path', () => {
-        expect(maybeParseActorFolder('actors/foo_bar/actor.json')).toEqual({ isActorFolder: true, actorName: 'foo/bar' });
+        expect(maybeParseActorFolder('actors/foo_bar/actor.json')).toEqual({
+            isActorFolder: true,
+            actorName: 'foo/bar',
+        });
     });
 
     it('returns actorName for standalone-actors/ path', () => {
-        expect(maybeParseActorFolder('standalone-actors/my_actor/main.ts')).toEqual({ isActorFolder: true, actorName: 'my/actor' });
+        expect(maybeParseActorFolder('standalone-actors/my_actor/main.ts')).toEqual({
+            isActorFolder: true,
+            actorName: 'my/actor',
+        });
     });
 
     it('returns false for top-level file', () => {
@@ -153,10 +163,7 @@ describe('getChangedActors', () => {
 
     it('handles mixed changes: returns both mini and standalone actors', () => {
         const result = getChangedActors({
-            filepathsChanged: [
-                'actors/foo_bar/src/main.ts',
-                'standalone-actors/standalone/Dockerfile',
-            ],
+            filepathsChanged: ['actors/foo_bar/src/main.ts', 'standalone-actors/standalone/Dockerfile'],
             actorConfigs,
             commits,
         });

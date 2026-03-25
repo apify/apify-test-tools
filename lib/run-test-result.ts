@@ -1,4 +1,5 @@
-import { ActorRun, ApifyClient, KeyValueStoreClient } from 'apify-client';
+import type { ActorRun, ApifyClient, KeyValueStoreClient } from 'apify-client';
+
 import type { Dataset, SdkCrawlerStatistics } from './types.js';
 
 export class RunTestResult {
@@ -9,7 +10,10 @@ export class RunTestResult {
     private runInfo: ActorRun | undefined;
     private input: unknown | undefined;
 
-    constructor(private readonly apifyClient: ApifyClient, private readonly run: ActorRun) {
+    constructor(
+        private readonly apifyClient: ApifyClient,
+        private readonly run: ActorRun,
+    ) {
         /**/
     }
 

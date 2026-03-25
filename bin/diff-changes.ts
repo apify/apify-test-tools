@@ -8,35 +8,48 @@ interface ShouldBuildAndTestOptions {
     commits: Commit[];
 }
 
-export const maybeParseActorFolder = (lowercaseFilePath: string): { isActorFolder: true, actorName: string } | { isActorFolder: false } => {
+export const maybeParseActorFolder = (
+    lowercaseFilePath: string,
+): { isActorFolder: true; actorName: string } | { isActorFolder: false } => {
     const match = lowercaseFilePath.match(/^(?:standalone-)?actors\/([^/]+)\/.+/);
     if (match) {
         // Some usernames weirdly use underscores, e.g. google_maps_email_extractor_standby-contact-details-scraper so we only need replace the last one
         return { isActorFolder: true, actorName: match[1].replace(/_(?=[^_]*$)/, '/') };
     }
     return { isActorFolder: false };
-}
+};
 
 /**
  * Also works for folders
  */
 const isIgnoredTopLevelFile = (lowercaseFilePath: string) => {
     // On top level, we should only have dev-only readme and .actor/ is just for apify push CLI (real Actor configs are in /actors)
-    const IGNORED_TOP_LEVEL_FILES = ['.vscode/', '.gitignore', 'readme.md', '.husky/', '.eslintrc', 'eslint.config.mjs', '.prettierrc', '.editorconfig', '.actor/'];
+    const IGNORED_TOP_LEVEL_FILES = [
+        '.vscode/',
+        '.gitignore',
+        'readme.md',
+        '.husky/',
+        '.eslintrc',
+        'eslint.config.mjs',
+        '.prettierrc',
+        '.editorconfig',
+        '.actor/',
+    ];
     // Strip out deprecated /code and /shared folders, treat them as top-level code
     const sanitizedLowercaseFilePath = lowercaseFilePath.replace(/^code\//, '').replace(/^shared\//, '');
 
     return IGNORED_TOP_LEVEL_FILES.some((ignoredFile) => sanitizedLowercaseFilePath.startsWith(ignoredFile));
 };
 
-type FileChange = 
-    { impact: 'ignored' } |
+type FileChange =
+    | { impact: 'ignored' }
     // Only things that influence how the Actor looks - e.g. README and CHANGELOG files, schema titles, descriptions, reordering, etc. We only need to rebuild on release
-    { impact: 'cosmetic', includes: 'all-actors' | ActorConfig } |
+    | { impact: 'cosmetic'; includes: 'all-actors' | ActorConfig }
     // Influences how the Actor works - we need to run tests
-    {
-        impact: 'functional', includes: 'all-actors' | ActorConfig
-     };
+    | {
+          impact: 'functional';
+          includes: 'all-actors' | ActorConfig;
+      };
 
 const classifyFileChange = (lowercaseFilePath: string, actorConfigs: ActorConfig[], commits: Commit[]): FileChange => {
     if (isIgnoredTopLevelFile(lowercaseFilePath)) {
@@ -49,13 +62,18 @@ const classifyFileChange = (lowercaseFilePath: string, actorConfigs: ActorConfig
 
     const actorFolderInfo = maybeParseActorFolder(lowercaseFilePath);
     if (actorFolderInfo.isActorFolder) {
-        const actorConfigChanged = actorConfigs.find(({ actorName }) => actorName.toLowerCase() === actorFolderInfo.actorName);
+        const actorConfigChanged = actorConfigs.find(
+            ({ actorName }) => actorName.toLowerCase() === actorFolderInfo.actorName,
+        );
         // This is some super weird case that happened once in the past but I don't remember the context anymore
         if (actorConfigChanged === undefined) {
-            console.error('SHOULD NEVER HAPPEN: changes was found in an actor folder which no longer exists in the current commit, skipping this file', {
-                actorName: actorFolderInfo.actorName,
-                lowercaseFilePath,
-            });
+            console.error(
+                'SHOULD NEVER HAPPEN: changes was found in an actor folder which no longer exists in the current commit, skipping this file',
+                {
+                    actorName: actorFolderInfo.actorName,
+                    lowercaseFilePath,
+                },
+            );
             return { impact: 'ignored' };
         }
         if (lowercaseFilePath.endsWith('readme.md')) {
@@ -70,11 +88,14 @@ const classifyFileChange = (lowercaseFilePath: string, actorConfigs: ActorConfig
 
     // For any other files, we assume they can interact with the code
     return { impact: 'functional', includes: 'all-actors' };
-}
+};
 
-export const getChangedActors = (
-    { filepathsChanged, actorConfigs, isLatest = false, commits }: ShouldBuildAndTestOptions,
-): ActorConfig[] => {
+export const getChangedActors = ({
+    filepathsChanged,
+    actorConfigs,
+    isLatest = false,
+    commits,
+}: ShouldBuildAndTestOptions): ActorConfig[] => {
     // folder -> ActorConfig
     const actorsChangedMap = new Map<string, ActorConfig>();
 
@@ -105,23 +126,31 @@ export const getChangedActors = (
     const actorsChanged = Array.from(actorsChangedMap.values());
 
     // All below here is just for logging
-    const ignoredFilesChanged = lowercaseFiles.filter((file) => classifyFileChange(file, actorConfigs, commits).impact === 'ignored');
+    const ignoredFilesChanged = lowercaseFiles.filter(
+        (file) => classifyFileChange(file, actorConfigs, commits).impact === 'ignored',
+    );
     console.error(`[DIFF]: Ignored files (don't trigger test or build): ${ignoredFilesChanged.join(', ')}`);
 
-    const cosmeticFilesChanged = lowercaseFiles.filter((file) => classifyFileChange(file, actorConfigs, commits).impact === 'cosmetic');
+    const cosmeticFilesChanged = lowercaseFiles.filter(
+        (file) => classifyFileChange(file, actorConfigs, commits).impact === 'cosmetic',
+    );
     console.error(`[DIFF]: Cosmetic files (should only trigger release build): ${cosmeticFilesChanged.join(', ')}`);
 
-    const functionalFilesChanged = lowercaseFiles.filter((file) => classifyFileChange(file, actorConfigs, commits).impact === 'functional');
+    const functionalFilesChanged = lowercaseFiles.filter(
+        (file) => classifyFileChange(file, actorConfigs, commits).impact === 'functional',
+    );
     console.error(`[DIFF]: Functional files (trigger test & release build): ${functionalFilesChanged.join(', ')}`);
 
     if (actorsChanged.length > 0) {
         const miniactors = actorsChanged.filter((config) => !config.isStandalone).map((config) => config.actorName);
-        const standaloneActors = actorsChanged.filter((config) => config.isStandalone).map((config) => config.actorName);
+        const standaloneActors = actorsChanged
+            .filter((config) => config.isStandalone)
+            .map((config) => config.actorName);
         console.error(`[DIFF]: MiniActors to be built and tested: ${miniactors.join(', ')}`);
         console.error(`[DIFF]: Standalone Actors to be built and tested: ${standaloneActors.join(', ')}`);
     } else {
         console.error(`[DIFF]: No relevant files changed, skipping builds and tests`);
     }
-    
+
     return actorsChanged;
 };

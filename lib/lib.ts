@@ -1,15 +1,11 @@
-import { Actor, ActorRun, ActorRunListItem, ActorStandby, ApifyClient, Task } from 'apify-client';
-import {
-    describe as vitestDescribe,
-    ExpectStatic,
-    TestFunction,
-    test as vitestTest,
-    SuiteFactory,
-    TestContext,
-} from 'vitest';
-import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
-import { RunTestResult } from './run-test-result.js';
+import type { Actor, ActorRun, ActorRunListItem, ActorStandby, Task } from 'apify-client';
+import { ApifyClient } from 'apify-client';
+import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
+import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
+
 import { extendExpect } from './extend-expect.js';
+import { RunTestResult } from './run-test-result.js';
+import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
 import { getActorPrefilledInput, sleep } from './utils.js';
 
 const ACTOR_BUILDS = 'ACTOR_BUILDS';
@@ -56,7 +52,7 @@ export const testActor = <T>(
     actorName: string,
     testName: string,
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
-    testOptions?: ActorTestOptions
+    testOptions?: ActorTestOptions,
 ) => {
     const options = {
         ...DEFAULT_TEST_ACTOR_OPTIONS,
@@ -64,7 +60,7 @@ export const testActor = <T>(
     };
     const name = `${actorName}: ${testName}`;
     const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorName);
-    vitestTest.runIf(shouldRun)(name, options, async <T extends TestContext>(context: T) => {
+    vitestTest.runIf(shouldRun)(name, options, async <TYPE extends TestContext>(context: TYPE) => {
         const { expect, ...rest } = context;
         await fn({
             expect: extendExpect(expect),
@@ -80,11 +76,12 @@ export const testActor = <T>(
  *
  * Using task is just current shortcoming of standby feature but ideally we would use Actor directly
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const testStandbyActor = <I = any, O = any>(
     actorName: string,
     testName: string,
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
-    testOptions?: ActorTestOptions
+    testOptions?: ActorTestOptions,
 ) => {
     const options = {
         ...DEFAULT_TEST_ACTOR_OPTIONS,
@@ -105,7 +102,9 @@ export const testStandbyActor = <I = any, O = any>(
                 callStandby: createStartStandbyFn(standbyTask),
                 ...rest,
             });
-        } catch {}
+        } catch {
+            /* */
+        }
 
         const { taskId } = standbyTask;
         const runs = (await apifyClient.task(taskId).runs().list()).items;
@@ -122,13 +121,14 @@ export const testStandbyActor = <I = any, O = any>(
 
 export const testTestActor = <T>(
     testName: string,
-    fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>
+    fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
 ) => {
     vitestTest(testName, async (context) => {
         const { expect, ...rest } = context;
         await fn({
             expect: extendExpect(expect),
             // @ts-expect-error: this just to test custom matchers
+            // eslint-disable-next-line @typescript-eslint/no-empty-function
             run: () => {},
             ...rest,
         });
@@ -191,7 +191,7 @@ const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): P
         throw new Error(`Actor "${actorNameOrId} doesn't contain actorStandby options`);
     }
     const { isEnabled, ...defaultActorStandby } = actorInfo.actorStandby;
-    delete defaultActorStandby.disableStandbyFieldsOverride
+    delete defaultActorStandby.disableStandbyFieldsOverride;
 
     const build = buildNumber ?? defaultActorStandby.build;
 

@@ -1,5 +1,4 @@
-import { ActorRun, ApifyClient } from 'apify-client';
-import { TestContext } from 'vitest';
+import type { ApifyClient } from 'apify-client';
 
 /**
  * Gets prefilled values for a provided build or, if not provided, uses actor's
@@ -16,26 +15,29 @@ export const getActorPrefilledInput = async (
         const defaultBuildTag = actorInfo?.defaultRunOptions.build;
 
         const taggedBuild = actorInfo?.taggedBuilds?.[defaultBuildTag || ''];
+        // eslint-disable-next-line no-param-reassign --- I think here it is cleaner than creating dummy variable
         buildId = taggedBuild?.buildId;
 
         if (!buildId) {
             console.error(`Coudn't find default build for actor ${actorNameOrId}. Prefilled values will not be used.`);
-            return {}
+            return {};
         }
     }
 
     const buildInfo = await apifyClient.build(buildId).get();
 
-    const inputSchema = buildInfo?.actorDefinition?.input as {
-        properties: Record<string, { prefill?: unknown }>
-    } | undefined
+    const inputSchema = buildInfo?.actorDefinition?.input as
+        | {
+              properties: Record<string, { prefill?: unknown }>;
+          }
+        | undefined;
 
     if (!inputSchema) {
         console.error(
             `Coudn't find input schema definition for actor ${actorNameOrId}, build ${buildId}.`,
             'Prefilled values will not be used',
         );
-        return {}
+        return {};
     }
 
     const prefill: Record<string, unknown> = {};
@@ -50,5 +52,7 @@ export const getActorPrefilledInput = async (
 };
 
 export const sleep = async (ms: number) => {
-    await new Promise((resolve) => setTimeout(resolve, ms));
-}
+    await new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+};

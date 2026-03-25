@@ -2,7 +2,12 @@ import type { Commit } from './types.js';
 import { spawnCommandInGhWorkspace } from './utils.js';
 
 const COSMETIC_JSON_FIELD_NAMES = new Set([
-    'title', 'description', 'example', 'enumTitles', 'sectionCaption', 'sectionDescription',
+    'title',
+    'description',
+    'example',
+    'enumTitles',
+    'sectionCaption',
+    'sectionDescription',
 ]);
 
 const isPlainObject = (val: unknown): val is Record<string, unknown> =>
@@ -32,11 +37,13 @@ export const isCosmeticOnlyJsonSchemaChange = (commits: Commit[], changedFilepat
     try {
         const oldContent = spawnCommandInGhWorkspace(`git show ${oldRef}:${changedFilepath}`);
         const newContent = spawnCommandInGhWorkspace(`git show ${newRef}:${changedFilepath}`);
-        
+
         oldJson = JSON.parse(oldContent);
         newJson = JSON.parse(newContent);
     } catch {
-        console.error(`Failed to get or parse JSON content for ${changedFilepath} at refs ${oldRef} and ${newRef}, maybe it is new file or deleted? Treating it as a non-cosmetic change.`);
+        console.error(
+            `Failed to get or parse JSON content for ${changedFilepath} at refs ${oldRef} and ${newRef}, maybe it is new file or deleted? Treating it as a non-cosmetic change.`,
+        );
         return false;
     }
     return isCosmeticObjectChange(oldJson, newJson);

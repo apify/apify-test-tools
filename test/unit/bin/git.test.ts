@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
+import type { MockInstance } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { getChangedFiles, getCommits } from '../../../bin/git.js';
 import * as Utils from '../../../bin/utils.js';
 

@@ -3,6 +3,7 @@
 import process from 'node:process';
 
 import yargs, { type Argv } from 'yargs';
+// eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
 import { runBuilds } from './build.js';
@@ -11,7 +12,7 @@ import { getChangedFiles, getCommits } from './git.js';
 import { getPushData } from './github.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
-import { getRepoActors, setCwd,spawnCommandInGhWorkspace } from './utils.js';
+import { getRepoActors, setCwd, spawnCommandInGhWorkspace } from './utils.js';
 
 /**
  * Middlewares to be run before every command execution
@@ -65,13 +66,18 @@ await yargs()
         async () => {
             const actorConfigs = await getRepoActors();
             console.log(JSON.stringify(actorConfigs));
-        }
+        },
     )
     .command('get-affected-actors', '', buildOptions, async (args) => {
         const commits = getCommits(args);
         const changedFiles = getChangedFiles(commits);
         const actorConfigs = await getRepoActors();
-        const actorsChanged = getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest: false, commits });
+        const actorsChanged = getChangedActors({
+            filepathsChanged: changedFiles,
+            actorConfigs,
+            isLatest: false,
+            commits,
+        });
         console.log(JSON.stringify(actorsChanged));
     })
     .command(
@@ -85,7 +91,7 @@ await yargs()
                 .option('workflow-name', { type: 'string' }),
         async (args) => {
             await reportTestResults(args);
-        }
+        },
     )
     .command(
         'build',
@@ -104,7 +110,7 @@ await yargs()
             // git@github.com:apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
             const repoUrl = spawnCommandInGhWorkspace(`git remote get-url origin`).replace(
                 /^https:\/\/github\.com\//,
-                'git@github.com:'
+                'git@github.com:',
             );
 
             const builds = await runBuilds({
@@ -114,7 +120,7 @@ await yargs()
                 dryRun: args.dryRun,
             });
             console.log(JSON.stringify(builds));
-        }
+        },
     )
     .command(
         'release',
@@ -127,7 +133,7 @@ await yargs()
                 .option('release-slack-channel', { type: 'string' }),
         async (args) => {
             const { branch, changedFiles, repoUrl, commits, changelog, repository, author } = await getPushData(
-                args.pushEventPath
+                args.pushEventPath,
             );
             const isLatest = true;
             const actorConfigs = await getRepoActors();
@@ -158,7 +164,7 @@ await yargs()
                 reportSlackChannel,
                 releaseSlackChannel,
             });
-        }
+        },
     )
     .strictCommands()
     .demandCommand(1, 'Command is required')

@@ -40,7 +40,12 @@ describe('Should build and test parser', () => {
     test('Ignores dev-only readme', () => {
         const FILES = ['README.md', 'code/README.md', 'shared/README.md'];
 
-        const actorsChanged = getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES, commits });
+        const actorsChanged = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            commits,
+        });
 
         expect(actorsChanged).toEqual([]);
     });
@@ -48,7 +53,12 @@ describe('Should build and test parser', () => {
     test('Ignores other ignored files and folders', () => {
         const FILES = ['.vscode/', '.gitignore', '.husky/', '.eslintrc', '.editorconfig', '.actor/'];
 
-        const actorsChanged = getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES, commits });
+        const actorsChanged = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            commits,
+        });
 
         expect(actorsChanged).toEqual([]);
     });
@@ -56,7 +66,12 @@ describe('Should build and test parser', () => {
     test('Only builds latest for all Actors', () => {
         const FILES = ['shared/CHANGELOG.md', 'CHANGELOG.md'];
 
-        const actorsChanged = getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: true, filepathsChanged: FILES, commits });
+        const actorsChanged = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: true,
+            filepathsChanged: FILES,
+            commits,
+        });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.filter(({ isStandalone }) => !isStandalone));
     });
@@ -64,26 +79,42 @@ describe('Should build and test parser', () => {
     test('Code updated, tests miniactors', () => {
         const FILES = ['code/src/main.ts', 'package.json'];
 
-        const actorsChanged = getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES, commits });
+        const actorsChanged = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            commits,
+        });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.filter(({ isStandalone }) => !isStandalone));
     });
 
     test('Specific Actor functionality configs updated', () => {
-        const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json', 'standalone-actors/lukaskrivka_test-standalone/Dockerfile'];
+        const FILES = [
+            'actors/lukaskrivka_testing-github-integration-1/.actor/actor.json',
+            'standalone-actors/lukaskrivka_test-standalone/Dockerfile',
+        ];
         // Default mock returns false = functional change
 
-        const actorsChanged = getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES, commits });
+        const actorsChanged = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            commits,
+        });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0], ACTOR_CONFIGS[2]]);
     });
 
     test('src/main.ts updated', () => {
-        const FILES = [
-            'src/main.ts',
-        ];
+        const FILES = ['src/main.ts'];
 
-        const actorsChanged = getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: true, filepathsChanged: FILES, commits });
+        const actorsChanged = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: true,
+            filepathsChanged: FILES,
+            commits,
+        });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
     });
@@ -96,15 +127,28 @@ describe('Should build and test parser', () => {
         ];
         // Default mock returns false = functional change for the JSON file
 
-        const actorsChanged = getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES, commits });
+        const actorsChanged = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            commits,
+        });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS);
     });
 
     test('Specific Actor non-functional configs updated', () => {
-        const FILES = ['actors/lukaskrivka_testing-github-integration-2/.actor/README.md', 'standalone-actors/lukaskrivka_test-standalone/CHANGELOG.md'];
+        const FILES = [
+            'actors/lukaskrivka_testing-github-integration-2/.actor/README.md',
+            'standalone-actors/lukaskrivka_test-standalone/CHANGELOG.md',
+        ];
 
-        const actorsChanged = getChangedActors({ actorConfigs: ACTOR_CONFIGS, isLatest: false, filepathsChanged: FILES, commits });
+        const actorsChanged = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            commits,
+        });
 
         expect(actorsChanged).toEqual([]);
     });
@@ -157,8 +201,8 @@ describe('Should build and test parser', () => {
             'actors/lukaskrivka_testing-github-integration-2/.actor/input_schema.json',
         ];
         // Actor 1 JSON is cosmetic-only, actor 2 JSON is functional
-        isCosmeticOnlyJsonSchemaSpy.mockImplementation((_commits, filepath: string) =>
-            !filepath.includes('input_schema.json'),
+        isCosmeticOnlyJsonSchemaSpy.mockImplementation(
+            (_commits, filepath: string) => !filepath.includes('input_schema.json'),
         );
 
         const actorsChanged = getChangedActors({
@@ -187,10 +231,20 @@ describe('Should build and test parser', () => {
     });
 
     test('Google Maps real user-case that had undefined', () => {
-        const FILES = ['actors/compass_Google-Maps-Reviews-Scraper/.actor/INPUT_SCHEMA.json', 'actors/compass_crawler-google-places/.actor/INPUT_SCHEMA.json',
-            'code/src/consts.ts', 'code/src/crawlers/cheerio/routes.ts', 'code/src/detail_page_handle.ts', 'code/src/enqueue_places.ts',
-            'code/src/helper-classes/initialize-all.ts', 'code/src/helper-classes/stats.ts', 'code/src/helper-classes/unmatched-categories.ts',
-            'code/src/main.ts', 'code/src/typedefs/general.ts', 'code/src/utils/background-enqueue.ts'];
+        const FILES = [
+            'actors/compass_Google-Maps-Reviews-Scraper/.actor/INPUT_SCHEMA.json',
+            'actors/compass_crawler-google-places/.actor/INPUT_SCHEMA.json',
+            'code/src/consts.ts',
+            'code/src/crawlers/cheerio/routes.ts',
+            'code/src/detail_page_handle.ts',
+            'code/src/enqueue_places.ts',
+            'code/src/helper-classes/initialize-all.ts',
+            'code/src/helper-classes/stats.ts',
+            'code/src/helper-classes/unmatched-categories.ts',
+            'code/src/main.ts',
+            'code/src/typedefs/general.ts',
+            'code/src/utils/background-enqueue.ts',
+        ];
 
         const ACTOR_CONFIGS_GOOGLE_MAPS: ActorConfig[] = [
             {
@@ -242,7 +296,10 @@ describe('Should build and test parser', () => {
         ];
 
         const actorsChanged = getChangedActors({
-            actorConfigs: ACTOR_CONFIGS_GOOGLE_MAPS, isLatest: false, filepathsChanged: FILES, commits,
+            actorConfigs: ACTOR_CONFIGS_GOOGLE_MAPS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            commits,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS_GOOGLE_MAPS.filter(({ isStandalone }) => !isStandalone));

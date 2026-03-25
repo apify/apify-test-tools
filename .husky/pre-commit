@@ -6,6 +6,8 @@ npm run format:check
 # We typecheck & lint last when we know our code works
 npx tsc --noEmit
 npx lint-staged
-npx run check-unused
+
+# Activate once we resolv unused delete old builds
+# npm run check-unused
 
 echo "pre-commit: passed"

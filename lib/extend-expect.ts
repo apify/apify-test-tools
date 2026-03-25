@@ -283,7 +283,7 @@ const isWithinInterval = <T extends string>(
     const expected = options[intervalOption];
     if (expected === null) {
         // check is disabled if expected value is null
-        return;
+        return undefined;
     }
     if (typeof expected === 'number') {
         if (actual !== expected) {
@@ -305,4 +305,5 @@ const isWithinInterval = <T extends string>(
             return false;
         }
     }
+    return undefined;
 };

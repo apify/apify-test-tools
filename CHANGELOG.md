@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1](https://github.com/apify/apify-test-tools/releases/tag/v0.6.1) (2026-03-26)
+
+
 ## [0.6.0](https://github.com/apify/apify-test-tools/releases/tag/v0.6.0) (2026-03-26)
 
 ### 🚀 Features

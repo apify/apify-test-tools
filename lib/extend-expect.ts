@@ -291,7 +291,6 @@ const isWithinInterval = <T extends string>(
             diffs.pass = false;
             diffs.actual.push(`${intervalOption}=${actual}`);
             diffs.expected.push(`${intervalOption}=${expected}`);
-            // eslint-disable-next-line consistent-return
             return false;
         }
     } else if (typeof expected === 'object') {
@@ -301,7 +300,6 @@ const isWithinInterval = <T extends string>(
             diffs.pass = false;
             diffs.actual.push(`${intervalOption}=${actual}`);
             diffs.expected.push(`${intervalOption}=<${min ?? ''},${max ?? ''}>`);
-            // eslint-disable-next-line consistent-return
             return false;
         }
     }

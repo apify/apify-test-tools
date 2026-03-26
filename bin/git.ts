@@ -17,11 +17,35 @@ export const getChangedFiles = (commits: Commit[]) => {
     return changedFiles;
 };
 
+const SHA_REGEX = /^[0-9a-f]{40}$/i;
+
+/**
+ *
+ * @param shaOrCommit Supports both a SHA string or a Commit object in JSON format. Can be empty.
+ * @returns The SHA string if valid, otherwise throws an error.
+ */
+export const parseBaseCommit = (shaOrCommit: string | undefined): string | undefined => {
+    if (!shaOrCommit) return undefined;
+    let sha: string;
+    if (shaOrCommit.startsWith('{')) {
+        sha = (JSON.parse(shaOrCommit) as Commit).sha;
+    } else {
+        sha = shaOrCommit;
+    }
+    if (!SHA_REGEX.test(sha)) {
+        throw new Error(
+            `Invalid base commit SHA: "${sha}". It should be a 40-character hexadecimal string, instead got input: "${shaOrCommit}".`,
+        );
+    }
+    return sha;
+};
+
 /**
  * Gets the commits between sourceBranch and targetBranch (exclusive).
  * - If baseCommit is provided, only returns commits after the baseCommit.
  */
-export const getCommits = ({ sourceBranch, targetBranch, baseCommit: baseCommitSha }: Config): Commit[] => {
+export const getCommits = ({ sourceBranch, targetBranch, baseCommit }: Config): Commit[] => {
+    const baseCommitSha = parseBaseCommit(baseCommit);
     const commitsStrings = spawnCommandInGhWorkspace(
         `git log --pretty=format:'${GIT_LOG_FORMAT}' ${targetBranch}..${sourceBranch}`,
     ).split('\n');

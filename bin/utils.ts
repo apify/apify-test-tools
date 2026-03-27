@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 
-import type { ActorConfig, GitHubEvent } from './types.js';
+import type { ActorConfig } from './types.js';
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
     console.error(command, args.join(' '));
@@ -21,21 +21,12 @@ export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) 
     return commandResult.stdout.toString().trim();
 };
 
-export const getRepoName = (githubEvent: GitHubEvent) => {
-    const [, repoName] = githubEvent.repository.full_name.split('/');
-    return repoName;
-};
-
 export const getEnvVar = (varName: string, defaultValue?: string): string => {
     const value = process.env[varName] ?? defaultValue;
     if (!value) {
         throw new Error(`${varName} not defined`);
     }
     return value;
-};
-
-export const getRunUrlKvsKey = (runnerName: string) => {
-    return `RUN_URL-${runnerName}`;
 };
 
 /**
@@ -92,8 +83,4 @@ export const setCwd = ({ workspace }: { workspace: string | undefined }) => {
     }
     const ghWorkspace = getEnvVar('GITHUB_WORKSPACE', process.cwd());
     process.chdir(ghWorkspace);
-};
-
-export const getHeadCommitSha = (githubEvent: GitHubEvent) => {
-    return githubEvent.type === 'pull_request' ? githubEvent.pull_request.head.sha : githubEvent.head_commit.id;
 };

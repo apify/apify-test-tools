@@ -3,14 +3,15 @@
 All notable changes to this project will be documented in this file.
 
 <!-- git-cliff-unreleased-start -->
+
 ## 0.6.2 - **not yet released**
 
 ### 🚀 Features
 
 - Add delete-old-build that was present in previous testing system ([#71](https://github.com/apify/apify-test-tools/pull/71)) ([ad521a8](https://github.com/apify/apify-test-tools/commit/ad521a8242a81dd9f92285dc9a3bddaf98685db2)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
-
 <!-- git-cliff-unreleased-end -->
+
 ## [0.6.1](https://github.com/apify/apify-test-tools/releases/tag/v0.6.1) (2026-03-26)
 
 ## [0.6.0](https://github.com/apify/apify-test-tools/releases/tag/v0.6.0) (2026-03-26)

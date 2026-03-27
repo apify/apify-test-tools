@@ -6,7 +6,7 @@ import yargs, { type Argv } from 'yargs';
 // eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
-import { runBuilds } from './build.js';
+import { deleteOldBuilds, runBuilds } from './build.js';
 import { getChangedActors } from './diff-changes.js';
 import { getChangedFiles, getCommits } from './git.js';
 import { getPushData } from './github.js';
@@ -153,7 +153,6 @@ await yargs()
             });
             console.error(JSON.stringify(builds));
 
-            // TODO: build circle actors
             await notifyToSlack({
                 changedFiles,
                 commits,
@@ -164,6 +163,15 @@ await yargs()
                 reportSlackChannel,
                 releaseSlackChannel,
             });
+        },
+    )
+    .command(
+        'delete-old-builds',
+        '',
+        (_) => _,
+        async () => {
+            const actorConfigs = await getRepoActors();
+            await deleteOldBuilds(actorConfigs);
         },
     )
     .strictCommands()

@@ -5,8 +5,17 @@ import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vi
 
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
-import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
+import { getCurrentTrigger, shouldRunForTrigger } from './trigger.js';
+import type { ActorBuild, ActorTestOptions, AlertsConfig, RunOptions } from './types.js';
 import { getActorPrefilledInput, sleep } from './utils.js';
+
+export { getCurrentTrigger };
+
+/**
+ * Registry of alerts configs keyed by full test name (`"actorName: testName"`).
+ * Populated when tests are defined; read by the `report-tests` CLI after the run.
+ */
+export const alertsRegistry = new Map<string, AlertsConfig>();
 
 const ACTOR_BUILDS = 'ACTOR_BUILDS';
 let actorBuilds: ActorBuild[] = [];
@@ -41,7 +50,9 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
 };
 
 export const describe = (name: string, fn?: SuiteFactory<object>, options: ActorTestOptions = DEFAULT_TEST_OPTIONS) => {
-    vitestDescribe.runIf(!!RUN_PLATFORM_TESTS || !!RUN_ALL_PLATFORM_TESTS)(name, options, fn);
+    const { runWhen, alerts: _alerts, ...vitestOptions } = options;
+    const shouldRun = (!!RUN_PLATFORM_TESTS || !!RUN_ALL_PLATFORM_TESTS) && shouldRunForTrigger(runWhen);
+    vitestDescribe.runIf(shouldRun)(name, vitestOptions, fn);
 };
 
 const DEFAULT_TEST_ACTOR_OPTIONS: ActorTestOptions = {
@@ -54,13 +65,18 @@ export const testActor = <T>(
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    const options = {
+    const { runWhen, alerts, ...vitestOptions } = {
         ...DEFAULT_TEST_ACTOR_OPTIONS,
         ...testOptions,
     };
     const name = `${actorName}: ${testName}`;
-    const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorName);
-    vitestTest.runIf(shouldRun)(name, options, async <TYPE extends TestContext>(context: TYPE) => {
+    const shouldRun = (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(runWhen);
+
+    if (alerts) {
+        alertsRegistry.set(name, alerts);
+    }
+
+    vitestTest.runIf(shouldRun)(name, vitestOptions, async <TYPE extends TestContext>(context: TYPE) => {
         const { expect, ...rest } = context;
         await fn({
             expect: extendExpect(expect),
@@ -83,14 +99,18 @@ export const testStandbyActor = <I = any, O = any>(
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    const options = {
+    const { runWhen, alerts, ...vitestOptions } = {
         ...DEFAULT_TEST_ACTOR_OPTIONS,
         ...testOptions,
     };
     const name = `${actorName}: ${testName}`;
-    const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorName);
+    const shouldRun = (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(runWhen);
 
-    vitestTest.runIf(shouldRun)(name, options, async <T extends TestContext>(context: T) => {
+    if (alerts) {
+        alertsRegistry.set(name, alerts);
+    }
+
+    vitestTest.runIf(shouldRun)(name, vitestOptions, async <T extends TestContext>(context: T) => {
         const standbyTask = await createStandbyTask(actorName, config.get(actorName)?.buildNumber);
         const { annotate } = context;
         const { expect, ...rest } = context;

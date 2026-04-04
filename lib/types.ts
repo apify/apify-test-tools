@@ -98,6 +98,37 @@ export type RunStatus =
     | 'TIMING-OUT'
     | 'TIMED-OUT';
 
+/**
+ * All named trigger types that can gate a test or suite.
+ * The active trigger is supplied via the `TEST_TRIGGER` environment variable.
+ */
+export type TriggerType = 'hourly' | 'daily' | 'pullRequest' | 'locally';
+
+/**
+ * Controls which trigger types cause the test/suite to be included in the run.
+ * Omitting a key is equivalent to `false` for that trigger.
+ *
+ * Example:
+ * ```ts
+ * runWhen: { daily: true, pullRequest: true }
+ * ```
+ */
+export type RunWhenConfig = Partial<Record<TriggerType, boolean>>;
+
+/**
+ * Defines which alerting channels fire when this test/suite fails.
+ * Evaluated by the `report-tests` command after the run.
+ *
+ * Example:
+ * ```ts
+ * alerts: { slack: true, onCall: false }
+ * ```
+ */
+export type AlertsConfig = {
+    slack?: boolean;
+    onCall?: boolean;
+};
+
 export interface ActorMatchers<R = unknown> {
     toBeArray: () => R;
     toBeBoolean: () => R;
@@ -137,6 +168,29 @@ export type ActorTestOptions = Omit<TestOptions, 'retry'> & {
      */
     // we are just extending the docs here to replace the default value, otherwise it's the exact same
     retry?: TestOptions['retry'];
+
+    /**
+     * Restricts the test/suite to specific trigger types.
+     * When omitted the test always runs (backwards-compatible default).
+     * The active trigger is read from the `TEST_TRIGGER` environment variable.
+     *
+     * Example:
+     * ```ts
+     * testActor(actorId, 'smoke', fn, { runWhen: { hourly: true, pullRequest: true } });
+     * ```
+     */
+    runWhen?: RunWhenConfig;
+
+    /**
+     * Alerting behaviour when this test/suite fails.
+     * Evaluated by the `report-tests` CLI command; has no effect on test execution.
+     *
+     * Example:
+     * ```ts
+     * testActor(actorId, 'critical path', fn, { alerts: { slack: true, onCall: true } });
+     * ```
+     */
+    alerts?: AlertsConfig;
 };
 
 declare module 'vitest' {

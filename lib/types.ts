@@ -99,14 +99,15 @@ export type RunStatus =
     | 'TIMED-OUT';
 
 /**
- * All named trigger types that can gate a test or suite.
+ * Named trigger types that can gate a test or suite.
  * The active trigger is supplied via the `TEST_TRIGGER` environment variable.
  */
-export type TriggerType = 'hourly' | 'daily' | 'pullRequest' | 'locally';
+export type TriggerType = 'hourly' | 'daily' | 'pullRequest';
 
 /**
  * Controls which trigger types cause the test/suite to be included in the run.
  * Omitting a key is equivalent to `false` for that trigger.
+ * When `TEST_TRIGGER` is not set, all tests run regardless of `runWhen`.
  *
  * Example:
  * ```ts
@@ -118,15 +119,60 @@ export type RunWhenConfig = Partial<Record<TriggerType, boolean>>;
 /**
  * Defines which alerting channels fire when this test/suite fails.
  * Evaluated by the `report-tests` command after the run.
+ * Configs are merged hierarchically: describe-level alerts are inherited by
+ * all tests within and can be overridden per test.
  *
  * Example:
  * ```ts
- * alerts: { slack: true, onCall: false }
+ * alerts: { slack: true }
  * ```
  */
 export type AlertsConfig = {
     slack?: boolean;
-    onCall?: boolean;
+};
+
+export type ActorTestOptions = Omit<TestOptions, 'retry'> & {
+    /**
+     * Times to retry the test if fails. Useful for making flaky tests more stable.
+     * When retries is up, the last test error will be thrown.
+     *
+     * @default 1
+     */
+    // we are just extending the docs here to replace the default value, otherwise it's the exact same
+    retry?: TestOptions['retry'];
+};
+
+/**
+ * Config object passed as the first argument to `describe`.
+ * Merges hierarchically with parent describe configs.
+ *
+ * Example:
+ * ```ts
+ * describe({ name: 'my-actor', runWhen: { daily: true }, alerts: { slack: true } }, () => { ... });
+ * ```
+ */
+export type DescribeConfig = {
+    name: string;
+    runWhen?: RunWhenConfig;
+    alerts?: AlertsConfig;
+    timeout?: number;
+    concurrent?: boolean;
+    sequential?: boolean;
+};
+
+/**
+ * Config object passed as the second argument to `testActor` / `testStandbyActor`.
+ * Inherits and overrides `runWhen` and `alerts` from the enclosing `describe`.
+ *
+ * Example:
+ * ```ts
+ * testActor(actorId, { name: 'smoke', runWhen: { hourly: true } }, async ({ run }) => { ... });
+ * ```
+ */
+export type TestActorConfig = ActorTestOptions & {
+    name: string;
+    runWhen?: RunWhenConfig;
+    alerts?: AlertsConfig;
 };
 
 export interface ActorMatchers<R = unknown> {
@@ -158,40 +204,6 @@ export interface ActorMatchers<R = unknown> {
     toStartWith: (prefix: string) => R;
     hard: <T>(actual: T, message?: string) => Assertion;
 }
-
-export type ActorTestOptions = Omit<TestOptions, 'retry'> & {
-    /**
-     * Times to retry the test if fails. Useful for making flaky tests more stable.
-     * When retries is up, the last test error will be thrown.
-     *
-     * @default 1
-     */
-    // we are just extending the docs here to replace the default value, otherwise it's the exact same
-    retry?: TestOptions['retry'];
-
-    /**
-     * Restricts the test/suite to specific trigger types.
-     * When omitted the test always runs (backwards-compatible default).
-     * The active trigger is read from the `TEST_TRIGGER` environment variable.
-     *
-     * Example:
-     * ```ts
-     * testActor(actorId, 'smoke', fn, { runWhen: { hourly: true, pullRequest: true } });
-     * ```
-     */
-    runWhen?: RunWhenConfig;
-
-    /**
-     * Alerting behaviour when this test/suite fails.
-     * Evaluated by the `report-tests` CLI command; has no effect on test execution.
-     *
-     * Example:
-     * ```ts
-     * testActor(actorId, 'critical path', fn, { alerts: { slack: true, onCall: true } });
-     * ```
-     */
-    alerts?: AlertsConfig;
-};
 
 declare module 'vitest' {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type

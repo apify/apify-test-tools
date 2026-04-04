@@ -6,7 +6,15 @@ import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vi
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
 import { getCurrentTrigger, shouldRunForTrigger } from './trigger.js';
-import type { ActorBuild, ActorTestOptions, AlertsConfig, RunOptions } from './types.js';
+import type {
+    ActorBuild,
+    ActorTestOptions,
+    AlertsConfig,
+    DescribeConfig,
+    RunOptions,
+    RunWhenConfig,
+    TestActorConfig,
+} from './types.js';
 import { getActorPrefilledInput, sleep } from './utils.js';
 
 export { getCurrentTrigger };
@@ -16,6 +24,35 @@ export { getCurrentTrigger };
  * Populated when tests are defined; read by the `report-tests` CLI after the run.
  */
 export const alertsRegistry = new Map<string, AlertsConfig>();
+
+// ---------------------------------------------------------------------------
+// Hierarchical config stack
+// Describes push their runWhen/alerts onto the stack before collecting their
+// children; testActor reads the merged result at registration time.
+// Since vitest calls the suite factory synchronously, the stack is always
+// consistent during collection.
+// ---------------------------------------------------------------------------
+
+interface InheritedConfig {
+    runWhen?: RunWhenConfig;
+    alerts?: AlertsConfig;
+}
+
+const configStack: InheritedConfig[] = [];
+
+function getMergedConfig(): InheritedConfig {
+    return configStack.reduce<InheritedConfig>(
+        (merged, layer) => ({
+            // Innermost runWhen wins — child fully overrides parent
+            runWhen: layer.runWhen !== undefined ? layer.runWhen : merged.runWhen,
+            // Alerts shallow-merge — child keys override parent keys
+            alerts: layer.alerts !== undefined ? { ...merged.alerts, ...layer.alerts } : merged.alerts,
+        }),
+        {},
+    );
+}
+
+// ---------------------------------------------------------------------------
 
 const ACTOR_BUILDS = 'ACTOR_BUILDS';
 let actorBuilds: ActorBuild[] = [];
@@ -42,41 +79,98 @@ export { ExpectStatic };
 const { TESTER_APIFY_TOKEN, RUN_PLATFORM_TESTS, RUN_ALL_PLATFORM_TESTS } = process.env;
 const apifyClient = new ApifyClient({ token: TESTER_APIFY_TOKEN });
 
-const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
-    // we want to run tests concurrently
+const DEFAULT_DESCRIBE_OPTIONS: Omit<DescribeConfig, 'name'> = {
     concurrent: true,
-    // test should finish within 1 hour
     timeout: 60_000 * 60,
 };
 
-export const describe = (name: string, fn?: SuiteFactory<object>, options: ActorTestOptions = DEFAULT_TEST_OPTIONS) => {
-    const { runWhen, alerts: _alerts, ...vitestOptions } = options;
-    const shouldRun = (!!RUN_PLATFORM_TESTS || !!RUN_ALL_PLATFORM_TESTS) && shouldRunForTrigger(runWhen);
-    vitestDescribe.runIf(shouldRun)(name, vitestOptions, fn);
+/**
+ * Wraps a suite of actor tests. Conditionally runs based on environment flags
+ * and the `runWhen` trigger config.
+ *
+ * Preferred (new) style — config object with `name`:
+ * ```ts
+ * describe({ name: 'my-actor', runWhen: { daily: true }, alerts: { slack: true } }, () => { ... });
+ * ```
+ *
+ * Legacy style — still supported:
+ * ```ts
+ * describe('my-actor', () => { ... });
+ * describe('my-actor', () => { ... }, { timeout: 120_000 });
+ * ```
+ */
+export const describe = (
+    configOrName: DescribeConfig | string,
+    fn?: SuiteFactory<object>,
+    legacyOptions?: ActorTestOptions,
+) => {
+    const resolved: DescribeConfig =
+        typeof configOrName === 'string'
+            ? { name: configOrName, ...DEFAULT_DESCRIBE_OPTIONS, ...legacyOptions }
+            : { ...DEFAULT_DESCRIBE_OPTIONS, ...configOrName };
+
+    const { name, runWhen, alerts, ...vitestOptions } = resolved;
+
+    // Push this describe's trigger config onto the stack before collecting children
+    configStack.push({ runWhen, alerts });
+
+    const merged = getMergedConfig();
+    const shouldRun = (!!RUN_PLATFORM_TESTS || !!RUN_ALL_PLATFORM_TESTS) && shouldRunForTrigger(merged.runWhen);
+
+    vitestDescribe.runIf(shouldRun)(name, vitestOptions, (test) => {
+        fn?.(test);
+    });
+
+    // Pop after vitest has synchronously collected all children
+    configStack.pop();
 };
 
 const DEFAULT_TEST_ACTOR_OPTIONS: ActorTestOptions = {
     retry: 1,
 };
 
+/**
+ * Registers a platform actor test. Conditionally runs based on whether the
+ * actor was built and the `runWhen` trigger config (inherited from enclosing
+ * `describe` blocks and optionally overridden per test).
+ *
+ * Preferred (new) style — config object with `name`:
+ * ```ts
+ * testActor(actorId, { name: 'smoke', runWhen: { hourly: true } }, async ({ run, expect }) => { ... });
+ * ```
+ *
+ * Legacy style — still supported:
+ * ```ts
+ * testActor(actorId, 'smoke', async ({ run, expect }) => { ... });
+ * testActor(actorId, 'smoke', async ({ run, expect }) => { ... }, { retry: 2 });
+ * ```
+ */
 export const testActor = <T>(
     actorName: string,
-    testName: string,
+    configOrName: TestActorConfig | string,
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
-    testOptions?: ActorTestOptions,
+    legacyOptions?: ActorTestOptions,
 ) => {
-    const { runWhen, alerts, ...vitestOptions } = {
-        ...DEFAULT_TEST_ACTOR_OPTIONS,
-        ...testOptions,
-    };
-    const name = `${actorName}: ${testName}`;
-    const shouldRun = (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(runWhen);
+    const resolved: TestActorConfig =
+        typeof configOrName === 'string'
+            ? { name: configOrName, ...DEFAULT_TEST_ACTOR_OPTIONS, ...legacyOptions }
+            : { ...DEFAULT_TEST_ACTOR_OPTIONS, ...configOrName };
 
-    if (alerts) {
-        alertsRegistry.set(name, alerts);
+    const { name, runWhen, alerts, ...vitestOptions } = resolved;
+    const fullName = `${actorName}: ${name}`;
+
+    // Merge with inherited config from enclosing describe(s)
+    const inherited = getMergedConfig();
+    const effectiveRunWhen = runWhen !== undefined ? runWhen : inherited.runWhen;
+    const effectiveAlerts = alerts !== undefined ? { ...inherited.alerts, ...alerts } : inherited.alerts;
+
+    const shouldRun = (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(effectiveRunWhen);
+
+    if (effectiveAlerts) {
+        alertsRegistry.set(fullName, effectiveAlerts);
     }
 
-    vitestTest.runIf(shouldRun)(name, vitestOptions, async <TYPE extends TestContext>(context: TYPE) => {
+    vitestTest.runIf(shouldRun)(fullName, vitestOptions, async <TYPE extends TestContext>(context: TYPE) => {
         const { expect, ...rest } = context;
         await fn({
             expect: extendExpect(expect),
@@ -91,26 +185,43 @@ export const testActor = <T>(
  * `callStandby` function, which calls the task's `standbyUrl`.
  *
  * Using task is just current shortcoming of standby feature but ideally we would use Actor directly
+ *
+ * Preferred (new) style — config object with `name`:
+ * ```ts
+ * testStandbyActor(actorId, { name: 'CDS standby', runWhen: { daily: true } }, async ({ callStandby }) => { ... });
+ * ```
+ *
+ * Legacy style — still supported:
+ * ```ts
+ * testStandbyActor(actorId, 'CDS standby', async ({ callStandby }) => { ... });
+ * ```
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const testStandbyActor = <I = any, O = any>(
     actorName: string,
-    testName: string,
+    configOrName: TestActorConfig | string,
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
-    testOptions?: ActorTestOptions,
+    legacyOptions?: ActorTestOptions,
 ) => {
-    const { runWhen, alerts, ...vitestOptions } = {
-        ...DEFAULT_TEST_ACTOR_OPTIONS,
-        ...testOptions,
-    };
-    const name = `${actorName}: ${testName}`;
-    const shouldRun = (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(runWhen);
+    const resolved: TestActorConfig =
+        typeof configOrName === 'string'
+            ? { name: configOrName, ...DEFAULT_TEST_ACTOR_OPTIONS, ...legacyOptions }
+            : { ...DEFAULT_TEST_ACTOR_OPTIONS, ...configOrName };
 
-    if (alerts) {
-        alertsRegistry.set(name, alerts);
+    const { name, runWhen, alerts, ...vitestOptions } = resolved;
+    const fullName = `${actorName}: ${name}`;
+
+    const inherited = getMergedConfig();
+    const effectiveRunWhen = runWhen !== undefined ? runWhen : inherited.runWhen;
+    const effectiveAlerts = alerts !== undefined ? { ...inherited.alerts, ...alerts } : inherited.alerts;
+
+    const shouldRun = (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(effectiveRunWhen);
+
+    if (effectiveAlerts) {
+        alertsRegistry.set(fullName, effectiveAlerts);
     }
 
-    vitestTest.runIf(shouldRun)(name, vitestOptions, async <T extends TestContext>(context: T) => {
+    vitestTest.runIf(shouldRun)(fullName, vitestOptions, async <T extends TestContext>(context: T) => {
         const standbyTask = await createStandbyTask(actorName, config.get(actorName)?.buildNumber);
         const { annotate } = context;
         const { expect, ...rest } = context;
@@ -130,7 +241,7 @@ export const testStandbyActor = <I = any, O = any>(
         const runs = (await apifyClient.task(taskId).runs().list()).items;
         for (const run of runs) {
             const runLink = generateRunLink(run);
-            await annotate(`${name} - ${runLink}`, 'run_link');
+            await annotate(`${fullName} - ${runLink}`, 'run_link');
         }
 
         if (taskId) {

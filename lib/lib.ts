@@ -19,12 +19,6 @@ import { getActorPrefilledInput, sleep } from './utils.js';
 
 export { getCurrentTrigger };
 
-/**
- * Registry of alerts configs keyed by full test name (`"actorName: testName"`).
- * Populated when tests are defined; read by the `report-tests` CLI after the run.
- */
-export const alertsRegistry = new Map<string, AlertsConfig>();
-
 // ---------------------------------------------------------------------------
 // Hierarchical config stack
 // Describes push their runWhen/alerts onto the stack before collecting their
@@ -166,11 +160,12 @@ export const testActor = <T>(
 
     const shouldRun = (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(effectiveRunWhen);
 
-    if (effectiveAlerts) {
-        alertsRegistry.set(fullName, effectiveAlerts);
-    }
-
     vitestTest.runIf(shouldRun)(fullName, vitestOptions, async <TYPE extends TestContext>(context: TYPE) => {
+        // Embed alerts config in task.meta so the JSON reporter serializes it
+        // and report-tests can read it alongside runLink / actorName.
+        // @ts-expect-error: `TaskMeta` cannot be retyped
+        context.task.meta = { ...context.task.meta, alerts: effectiveAlerts };
+
         const { expect, ...rest } = context;
         await fn({
             expect: extendExpect(expect),
@@ -217,11 +212,10 @@ export const testStandbyActor = <I = any, O = any>(
 
     const shouldRun = (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(effectiveRunWhen);
 
-    if (effectiveAlerts) {
-        alertsRegistry.set(fullName, effectiveAlerts);
-    }
-
     vitestTest.runIf(shouldRun)(fullName, vitestOptions, async <T extends TestContext>(context: T) => {
+        // @ts-expect-error: `TaskMeta` cannot be retyped
+        context.task.meta = { ...context.task.meta, alerts: effectiveAlerts };
+
         const standbyTask = await createStandbyTask(actorName, config.get(actorName)?.buildNumber);
         const { annotate } = context;
         const { expect, ...rest } = context;

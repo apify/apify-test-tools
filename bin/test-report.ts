@@ -57,7 +57,10 @@ export const reportTestResults = async ({
     console.error();
     for (const [i, aResult] of failed.entries()) {
         const { failureMessages, fullName, meta } = aResult;
-        if (failureMessages) {
+        // Notify via Slack unless the test explicitly opted out with `alerts: { slack: false }`.
+        // Tests with no `alerts` config at all notify by default (backward-compatible).
+        const notifySlack = meta.alerts?.slack !== false;
+        if (failureMessages && notifySlack) {
             failedAssertions.push(
                 ...failureMessages.map((message) => ({
                     message: message.split('\n')?.[0],
@@ -123,6 +126,13 @@ interface JsonAssertionResult {
         runId: string;
         runLink: string;
         actorName: string;
+        /**
+         * Alerting config set by the test via `alerts` in `testActor`/`describe`.
+         * `undefined` means the test didn't opt in or out — treat as "notify" for
+         * backward compatibility.
+         * `slack: false` explicitly disables the Slack notification for that test.
+         */
+        alerts?: { slack?: boolean };
     };
     duration?: Milliseconds | null;
     failureMessages: string[] | null;

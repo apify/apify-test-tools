@@ -36,7 +36,12 @@ export const reportTestResults = async ({
         }
     }
 
-    const failedAssertions: { message: string; runLink: string; actorName: string }[] = [];
+    const failedAssertions: {
+        message: string;
+        runLink: string;
+        actorName: string;
+        alerts: JsonAssertionResult['meta']['alerts'];
+    }[] = [];
 
     console.error();
     console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
@@ -57,13 +62,13 @@ export const reportTestResults = async ({
     console.error();
     for (const [i, aResult] of failed.entries()) {
         const { failureMessages, fullName, meta } = aResult;
-        const notifySlack = shouldNotifySlack(meta.alerts);
-        if (failureMessages && notifySlack) {
+        if (failureMessages) {
             failedAssertions.push(
                 ...failureMessages.map((message) => ({
                     message: message.split('\n')?.[0],
                     runLink: meta.runLink,
                     actorName: meta.actorName,
+                    alerts: meta.alerts,
                 })),
             );
         }
@@ -81,7 +86,9 @@ export const reportTestResults = async ({
         return;
     }
 
-    if (failedAssertions.length === 0) {
+    const slackAssertions = failedAssertions.filter(({ alerts }) => shouldNotifySlack(alerts));
+
+    if (slackAssertions.length === 0) {
         return;
     }
 
@@ -89,18 +96,14 @@ export const reportTestResults = async ({
     const total = failed.length + passed.length;
     const jobLink = jobUrl ? ` Check <${jobUrl}|the job>.` : '';
     let slackMessage = `\`${workflowName ?? '-'}\``;
-    slackMessage += `: has ${failedAssertions.length} failed assertions. Failing test suites: ${failed.length}/${total}.${jobLink}`;
-    slackMessage += `\n\n${failedAssertions[0].message} --- <${failedAssertions[0].runLink}|${failedAssertions[0].actorName}>`;
-    const blocks = failedAssertions
+    slackMessage += `: has ${slackAssertions.length} failed assertions. Failing test suites: ${failed.length}/${total}.${jobLink}`;
+    slackMessage += `\n\n${slackAssertions[0].message} --- <${slackAssertions[0].runLink}|${slackAssertions[0].actorName}>`;
+    const blocks = slackAssertions
         .slice(1)
         .map(({ message, runLink, actorName }) => `• ${message} --- <${runLink}|${actorName}>`);
 
     console.error('SLACK:', slackMessage);
     console.error('\tblocks:', blocks.join('\n\t\t'));
-
-    if (!reportSlackChannel) {
-        return;
-    }
 
     if (!dryRun) {
         const slackToken = getEnvVar('SLACK_TOKEN_TESTS_BOT');

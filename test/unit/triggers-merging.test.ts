@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { mergeInheritedConfigs } from '../../lib/lib.js';
+import { mergeInheritedTriggers } from '../../lib/lib.js';
 
-describe('mergeInheritedConfigs', () => {
+describe('mergeInheritedTriggers', () => {
     describe('empty / no layers', () => {
         it('returns empty config for an empty stack', () => {
-            expect(mergeInheritedConfigs([])).toEqual({});
+            expect(mergeInheritedTriggers([])).toEqual({});
         });
 
         it('returns the single layer as-is', () => {
-            expect(mergeInheritedConfigs([{ runWhen: { daily: true } }])).toEqual({
+            expect(mergeInheritedTriggers([{ runWhen: { daily: true } }])).toEqual({
                 runWhen: { daily: true },
             });
         });
@@ -17,17 +17,17 @@ describe('mergeInheritedConfigs', () => {
 
     describe('runWhen — shallow merge, child keys override', () => {
         it('child runWhen is merged with parent runWhen field-by-field', () => {
-            const result = mergeInheritedConfigs([{ runWhen: { daily: true } }, { runWhen: { hourly: true } }]);
+            const result = mergeInheritedTriggers([{ runWhen: { daily: true } }, { runWhen: { hourly: true } }]);
             expect(result.runWhen).toEqual({ daily: true, hourly: true });
         });
 
         it('child can override a specific trigger set by parent', () => {
-            const result = mergeInheritedConfigs([{ runWhen: { daily: true } }, { runWhen: { daily: false } }]);
+            const result = mergeInheritedTriggers([{ runWhen: { daily: true } }, { runWhen: { daily: false } }]);
             expect(result.runWhen).toEqual({ daily: false });
         });
 
         it('grandchild merges across all ancestors', () => {
-            const result = mergeInheritedConfigs([
+            const result = mergeInheritedTriggers([
                 { runWhen: { daily: true } },
                 { runWhen: { hourly: true } },
                 { runWhen: { pullRequest: true } },
@@ -36,7 +36,7 @@ describe('mergeInheritedConfigs', () => {
         });
 
         it('inherits parent runWhen when child has none', () => {
-            const result = mergeInheritedConfigs([
+            const result = mergeInheritedTriggers([
                 { runWhen: { daily: true } },
                 { alerts: { slack: true } }, // no runWhen
             ]);
@@ -44,7 +44,7 @@ describe('mergeInheritedConfigs', () => {
         });
 
         it('child can disable a trigger set by grandparent via intermediate layer', () => {
-            const result = mergeInheritedConfigs([
+            const result = mergeInheritedTriggers([
                 { runWhen: { daily: true, hourly: true } },
                 {}, // intermediate — no runWhen
                 { runWhen: { hourly: false } },
@@ -55,18 +55,18 @@ describe('mergeInheritedConfigs', () => {
 
     describe('alerts — shallow merge, child keys override', () => {
         it('inherits parent alerts when child has none', () => {
-            const result = mergeInheritedConfigs([{ alerts: { slack: true } }, {}]);
+            const result = mergeInheritedTriggers([{ alerts: { slack: true } }, {}]);
             expect(result.alerts).toEqual({ slack: true });
         });
 
         it('child alerts override parent keys', () => {
-            const result = mergeInheritedConfigs([{ alerts: { slack: true } }, { alerts: { slack: false } }]);
+            const result = mergeInheritedTriggers([{ alerts: { slack: true } }, { alerts: { slack: false } }]);
             expect(result.alerts).toEqual({ slack: false });
         });
 
         it('accumulates alerts across layers when keys are disjoint', () => {
             // If we add more alert keys in future, they should accumulate
-            const result = mergeInheritedConfigs([
+            const result = mergeInheritedTriggers([
                 { alerts: { slack: true } },
                 { alerts: {} }, // empty override still triggers shallow merge
             ]);
@@ -75,7 +75,7 @@ describe('mergeInheritedConfigs', () => {
         });
 
         it('three layers — deepest alerts win per key', () => {
-            const result = mergeInheritedConfigs([
+            const result = mergeInheritedTriggers([
                 { alerts: { slack: true } },
                 { alerts: { slack: false } },
                 { alerts: { slack: true } },
@@ -89,7 +89,7 @@ describe('mergeInheritedConfigs', () => {
             // Outer describe: daily + slack
             // Inner describe: no extra config
             // testActor: add hourly without losing daily
-            const result = mergeInheritedConfigs([
+            const result = mergeInheritedTriggers([
                 { runWhen: { daily: true }, alerts: { slack: true } },
                 {},
                 { runWhen: { hourly: true } },
@@ -101,7 +101,7 @@ describe('mergeInheritedConfigs', () => {
         });
 
         it('testActor can disable a trigger from enclosing describe', () => {
-            const result = mergeInheritedConfigs([
+            const result = mergeInheritedTriggers([
                 { runWhen: { daily: true, pullRequest: true }, alerts: { slack: true } },
                 { runWhen: { pullRequest: false } }, // testActor opts out of pullRequest
             ]);
@@ -112,7 +112,7 @@ describe('mergeInheritedConfigs', () => {
         });
 
         it('testActor with no config inherits everything from enclosing describe', () => {
-            const result = mergeInheritedConfigs([
+            const result = mergeInheritedTriggers([
                 { runWhen: { pullRequest: true }, alerts: { slack: true } },
                 {}, // testActor with no overrides
             ]);

@@ -26,16 +26,16 @@ export { getCurrentTrigger };
 // consistent during collection.
 // ---------------------------------------------------------------------------
 
-const configStack: TriggerConfig[] = [];
+const triggersStack: TriggerConfig[] = [];
 
 /**
- * Merges a sequence of trigger config layers left-to-right (outermost → innermost).
+ * Merges a sequence of trigger layers left-to-right (outermost → innermost).
  * Both `runWhen` and `alerts` are shallow-merged field-by-field so children only
  * need to override the specific keys they want to change.
  *
  * Exported for unit testing.
  */
-export function mergeInheritedConfigs(layers: TriggerConfig[]): TriggerConfig {
+export function mergeInheritedTriggers(layers: TriggerConfig[]): TriggerConfig {
     return layers.reduce<TriggerConfig>(
         (merged, layer) => ({
             runWhen: layer.runWhen !== undefined ? { ...merged.runWhen, ...layer.runWhen } : merged.runWhen,
@@ -45,8 +45,8 @@ export function mergeInheritedConfigs(layers: TriggerConfig[]): TriggerConfig {
     );
 }
 
-function getMergedConfig(): TriggerConfig {
-    return mergeInheritedConfigs(configStack);
+function getMergedTriggers(): TriggerConfig {
+    return mergeInheritedTriggers(triggersStack);
 }
 
 // ---------------------------------------------------------------------------
@@ -108,10 +108,10 @@ export const describe = (
 
     const { name, triggers, options } = resolved;
 
-    // Push this describe's trigger config onto the stack before collecting children
-    configStack.push(triggers ?? {});
+    // Push this describe's triggers onto the stack before collecting children
+    triggersStack.push(triggers ?? {});
 
-    const merged = getMergedConfig();
+    const merged = getMergedTriggers();
     const shouldRun = (!!RUN_PLATFORM_TESTS || !!RUN_ALL_PLATFORM_TESTS) && shouldRunForTrigger(merged.runWhen);
 
     vitestDescribe.runIf(shouldRun)(name, options ?? {}, (test) => {
@@ -119,7 +119,7 @@ export const describe = (
     });
 
     // Pop after vitest has synchronously collected all children
-    configStack.pop();
+    triggersStack.pop();
 };
 
 const DEFAULT_TEST_ACTOR_OPTIONS = {
@@ -143,8 +143,8 @@ function resolveActorTestConfig(
     const { name, triggers, options } = resolved;
     const fullName = `${actorName}: ${name}`;
 
-    // Merge with inherited config from enclosing describe(s)
-    const effectiveTriggers = mergeInheritedConfigs([...configStack, triggers ?? {}]);
+    // Merge with inherited triggers from enclosing describe(s)
+    const effectiveTriggers = mergeInheritedTriggers([...triggersStack, triggers ?? {}]);
     const shouldRun =
         (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(effectiveTriggers.runWhen);
 

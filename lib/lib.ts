@@ -11,6 +11,7 @@ import type {
     ActorTestOptions,
     DescribeConfig,
     RunOptions,
+    RunWhenConfig,
     TestActorConfig,
     TriggerConfig,
 } from './types.js';
@@ -25,6 +26,13 @@ export { getCurrentTrigger };
 // Since vitest calls the suite factory synchronously, the stack is always
 // consistent during collection.
 // ---------------------------------------------------------------------------
+
+// Default trigger config — all current trigger types enabled.
+// `Required<RunWhenConfig>` ensures a compile error if a new TriggerType is added
+// without an explicit decision here (opt-in vs opt-out for existing tests).
+const DEFAULT_TRIGGERS: { runWhen: Required<RunWhenConfig> } = {
+    runWhen: { hourly: true, daily: true, pullRequest: true },
+};
 
 const triggersStack: TriggerConfig[] = [];
 
@@ -46,7 +54,7 @@ export function mergeInheritedTriggers(layers: TriggerConfig[]): TriggerConfig {
 }
 
 function getMergedTriggers(): TriggerConfig {
-    return mergeInheritedTriggers(triggersStack);
+    return mergeInheritedTriggers([DEFAULT_TRIGGERS, ...triggersStack]);
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +152,7 @@ function resolveActorTestConfig(
     const fullName = `${actorName}: ${name}`;
 
     // Merge with inherited triggers from enclosing describe(s)
-    const effectiveTriggers = mergeInheritedTriggers([...triggersStack, triggers ?? {}]);
+    const effectiveTriggers = mergeInheritedTriggers([DEFAULT_TRIGGERS, ...triggersStack, triggers ?? {}]);
     const shouldRun =
         (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(effectiveTriggers.runWhen);
 

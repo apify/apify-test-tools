@@ -28,12 +28,15 @@ export function getCurrentTrigger(): TriggerType | undefined {
  *
  * - If `runWhen` is omitted the test always runs (backwards-compatible default).
  * - If `TEST_TRIGGER` is not set, the test always runs (no filtering).
- * - All trigger fields default to `true` — set a field to `false` to explicitly opt out.
- *   e.g. `runWhen: { pullRequest: false }` disables only PR runs; hourly and daily still run.
+ * - Otherwise runs only when `runWhen[currentTrigger] === true`.
+ *
+ * The opt-out default behaviour (all triggers enabled unless explicitly set to `false`)
+ * comes from `DEFAULT_TRIGGERS` in lib.ts being prepended to the merge stack — not from
+ * this function. Here `runWhen` is already the fully-merged result.
  */
 export function shouldRunForTrigger(runWhen: RunWhenConfig | undefined): boolean {
     if (!runWhen) return true;
     const trigger = getCurrentTrigger();
     if (!trigger) return true;
-    return runWhen[trigger] !== false;
+    return runWhen[trigger] === true;
 }

@@ -106,15 +106,17 @@ export type TriggerType = 'hourly' | 'daily' | 'pullRequest';
 
 /**
  * Controls which trigger types cause the test/suite to be included in the run.
- * Omitting a key is equivalent to `false` for that trigger.
+ * Fields default to the values defined in `DEFAULT_TRIGGERS` in lib.ts — currently
+ * all existing triggers are `true` by default. Set a field to `false` to explicitly
+ * opt out of a trigger type.
  * When `TEST_TRIGGER` is not set, all tests run regardless of `runWhen`.
  *
  * Keys are merged field-by-field through the describe hierarchy, so a child
  * only needs to override the specific trigger it wants to change.
  *
- * Example:
+ * Example — disable only PR runs:
  * ```ts
- * runWhen: { daily: true, pullRequest: true }
+ * runWhen: { pullRequest: false }
  * ```
  */
 export type RunWhenConfig = Partial<Record<TriggerType, boolean>>;

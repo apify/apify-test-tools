@@ -47,43 +47,36 @@ describe('shouldRunForTrigger', () => {
 
     describe('TEST_TRIGGER not set', () => {
         it('runs regardless of runWhen when no trigger is set', () => {
-            expect(shouldRunForTrigger({ daily: false })).toBe(true);
+            expect(shouldRunForTrigger({ daily: true })).toBe(true);
             expect(shouldRunForTrigger({ hourly: false })).toBe(true);
             expect(shouldRunForTrigger({})).toBe(true);
         });
     });
 
-    describe('opt-out semantics — all triggers default to true', () => {
-        it('runs when runWhen is an empty object (all triggers default to true)', () => {
-            process.env[TRIGGER_ENV_VAR] = 'hourly';
-            expect(shouldRunForTrigger({})).toBe(true);
-        });
-
-        it('runs when the current trigger is not mentioned', () => {
-            process.env[TRIGGER_ENV_VAR] = 'hourly';
-            expect(shouldRunForTrigger({ daily: false })).toBe(true);
-        });
-
+    describe('trigger matches runWhen', () => {
         it('runs when the current trigger is explicitly true', () => {
             process.env[TRIGGER_ENV_VAR] = 'daily';
             expect(shouldRunForTrigger({ daily: true })).toBe(true);
         });
 
-        it('runs when multiple triggers are set and current one is not false', () => {
-            process.env[TRIGGER_ENV_VAR] = 'hourly';
-            expect(shouldRunForTrigger({ daily: false, pullRequest: false })).toBe(true);
+        it('runs when multiple triggers are enabled and current one is among them', () => {
+            process.env[TRIGGER_ENV_VAR] = 'pullRequest';
+            expect(shouldRunForTrigger({ daily: true, pullRequest: true })).toBe(true);
         });
     });
 
-    describe('explicit opt-out', () => {
+    describe('trigger not in runWhen', () => {
         it('does not run when the current trigger is explicitly false', () => {
             process.env[TRIGGER_ENV_VAR] = 'hourly';
             expect(shouldRunForTrigger({ hourly: false })).toBe(false);
         });
 
-        it('does not run when the current trigger is false among mixed values', () => {
-            process.env[TRIGGER_ENV_VAR] = 'pullRequest';
-            expect(shouldRunForTrigger({ daily: true, pullRequest: false })).toBe(false);
+        it('does not run when the current trigger is absent (undefined !== true)', () => {
+            process.env[TRIGGER_ENV_VAR] = 'hourly';
+            // Note: in practice the merge stack always prepends DEFAULT_TRIGGERS so the
+            // merged runWhen passed here will have all triggers explicitly set.
+            expect(shouldRunForTrigger({})).toBe(false);
+            expect(shouldRunForTrigger({ daily: true })).toBe(false);
         });
 
         it.each(['hourly', 'daily', 'pullRequest'] as const)(

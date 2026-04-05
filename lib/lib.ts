@@ -34,16 +34,25 @@ interface InheritedConfig {
 
 const configStack: InheritedConfig[] = [];
 
-function getMergedConfig(): InheritedConfig {
-    return configStack.reduce<InheritedConfig>(
+/**
+ * Merges a sequence of inherited config layers left-to-right (outermost → innermost).
+ * - `runWhen`: innermost layer that defines it wins entirely.
+ * - `alerts`: shallow-merged; inner keys override outer keys.
+ *
+ * Exported for unit testing.
+ */
+export function mergeInheritedConfigs(layers: InheritedConfig[]): InheritedConfig {
+    return layers.reduce<InheritedConfig>(
         (merged, layer) => ({
-            // Innermost runWhen wins — child fully overrides parent
             runWhen: layer.runWhen !== undefined ? layer.runWhen : merged.runWhen,
-            // Alerts shallow-merge — child keys override parent keys
             alerts: layer.alerts !== undefined ? { ...merged.alerts, ...layer.alerts } : merged.alerts,
         }),
         {},
     );
+}
+
+function getMergedConfig(): InheritedConfig {
+    return mergeInheritedConfigs(configStack);
 }
 
 // ---------------------------------------------------------------------------

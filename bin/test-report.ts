@@ -57,9 +57,7 @@ export const reportTestResults = async ({
     console.error();
     for (const [i, aResult] of failed.entries()) {
         const { failureMessages, fullName, meta } = aResult;
-        // Notify via Slack unless the test explicitly opted out with `alerts: { slack: false }`.
-        // Tests with no `alerts` config at all notify by default (backward-compatible).
-        const notifySlack = meta.alerts?.slack !== false;
+        const notifySlack = shouldNotifySlack(meta.alerts);
         if (failureMessages && notifySlack) {
             failedAssertions.push(
                 ...failureMessages.map((message) => ({
@@ -109,6 +107,18 @@ export const reportTestResults = async ({
         await sendSlackMessage(reportSlackChannel, slackMessage, blocks, slackToken);
     }
 };
+
+/**
+ * Returns `true` when a failing test should trigger a Slack notification.
+ * - `alerts` not set → notify (backward-compatible default).
+ * - `alerts.slack === false` → suppressed.
+ * - `alerts.slack === true` (or any other value) → notify.
+ *
+ * Exported for unit testing.
+ */
+export function shouldNotifySlack(alerts: { slack?: boolean } | undefined): boolean {
+    return alerts?.slack !== false;
+}
 
 type Status = 'passed' | 'failed' | 'skipped' | 'pending' | 'todo' | 'disabled';
 type Milliseconds = number;

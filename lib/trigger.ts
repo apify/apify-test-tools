@@ -28,11 +28,12 @@ export function getCurrentTrigger(): TriggerType | undefined {
  *
  * - If `runWhen` is omitted the test always runs (backwards-compatible default).
  * - If `TEST_TRIGGER` is not set, the test always runs (no filtering).
- * - Otherwise runs only when `runWhen[currentTrigger] === true`.
+ * - All trigger fields default to `true` — set a field to `false` to explicitly opt out.
+ *   e.g. `runWhen: { pullRequest: false }` disables only PR runs; hourly and daily still run.
  */
 export function shouldRunForTrigger(runWhen: RunWhenConfig | undefined): boolean {
     if (!runWhen) return true;
     const trigger = getCurrentTrigger();
     if (!trigger) return true;
-    return runWhen[trigger] === true;
+    return runWhen[trigger] !== false;
 }

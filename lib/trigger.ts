@@ -30,9 +30,8 @@ export function getCurrentTrigger(): TriggerType | undefined {
  * - If `TEST_TRIGGER` is not set, the test always runs (no filtering).
  * - Otherwise runs only when `runWhen[currentTrigger] === true`.
  *
- * The opt-out default behaviour (all triggers enabled unless explicitly set to `false`)
- * comes from `DEFAULT_TRIGGERS` in lib.ts being prepended to the merge stack — not from
- * this function. Here `runWhen` is already the fully-merged result.
+ * Note: callers are expected to pass the fully-merged `runWhen` (including
+ * inherited defaults), so all trigger keys should already be explicitly set.
  */
 export function shouldRunForTrigger(runWhen: RunWhenConfig | undefined): boolean {
     if (!runWhen) return true;

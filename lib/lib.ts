@@ -53,11 +53,9 @@ export function mergeInheritedTriggers(layers: TriggerConfig[]): TriggerConfig {
     );
 }
 
-function getMergedTriggers(): TriggerConfig {
-    return mergeInheritedTriggers([DEFAULT_TRIGGERS, ...triggersStack]);
+function getMergedTriggers(extra?: TriggerConfig): TriggerConfig {
+    return mergeInheritedTriggers([DEFAULT_TRIGGERS, ...triggersStack, ...(extra !== undefined ? [extra] : [])]);
 }
-
-// ---------------------------------------------------------------------------
 
 const ACTOR_BUILDS = 'ACTOR_BUILDS';
 let actorBuilds: ActorBuild[] = [];
@@ -95,7 +93,8 @@ const DEFAULT_DESCRIBE_OPTIONS = {
  *
  * Preferred (new) style — config object with `name`:
  * ```ts
- * describe({ name: 'my-actor', triggers: { runWhen: { daily: true }, alerts: { slack: true } } }, () => { ... });
+ * // All triggers enabled by default — opt out of specific ones:
+ * describe({ name: 'my-actor', triggers: { runWhen: { pullRequest: false }, alerts: { slack: true } } }, () => { ... });
  * ```
  *
  * Legacy style — still supported:
@@ -152,7 +151,7 @@ function resolveActorTestConfig(
     const fullName = `${actorName}: ${name}`;
 
     // Merge with inherited triggers from enclosing describe(s)
-    const effectiveTriggers = mergeInheritedTriggers([DEFAULT_TRIGGERS, ...triggersStack, triggers ?? {}]);
+    const effectiveTriggers = getMergedTriggers(triggers);
     const shouldRun =
         (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(effectiveTriggers.runWhen);
 
@@ -166,7 +165,8 @@ function resolveActorTestConfig(
  *
  * Preferred (new) style — config object with `name`:
  * ```ts
- * testActor(actorId, { name: 'smoke', triggers: { runWhen: { hourly: true } } }, async ({ run, expect }) => { ... });
+ * // Inherits triggers from enclosing describe; override only what differs:
+ * testActor(actorId, { name: 'smoke', triggers: { runWhen: { pullRequest: false } } }, async ({ run, expect }) => { ... });
  * ```
  *
  * Legacy style — still supported:
@@ -210,7 +210,7 @@ export const testActor = <T>(
  *
  * Preferred (new) style — config object with `name`:
  * ```ts
- * testStandbyActor(actorId, { name: 'CDS standby', triggers: { runWhen: { daily: true } } }, async ({ callStandby }) => { ... });
+ * testStandbyActor(actorId, { name: 'CDS standby', triggers: { runWhen: { pullRequest: false } } }, async ({ callStandby }) => { ... });
  * ```
  *
  * Legacy style — still supported:

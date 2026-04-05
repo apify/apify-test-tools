@@ -106,9 +106,7 @@ export type TriggerType = 'hourly' | 'daily' | 'pullRequest';
 
 /**
  * Controls which trigger types cause the test/suite to be included in the run.
- * Fields default to the values defined in `DEFAULT_TRIGGERS` in lib.ts — currently
- * all existing triggers are `true` by default. Set a field to `false` to explicitly
- * opt out of a trigger type.
+ * All trigger types are enabled by default — set a field to `false` to opt out.
  * When `TEST_TRIGGER` is not set, all tests run regardless of `runWhen`.
  *
  * Keys are merged field-by-field through the describe hierarchy, so a child

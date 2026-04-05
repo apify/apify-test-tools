@@ -15,19 +15,24 @@ describe('mergeInheritedConfigs', () => {
         });
     });
 
-    describe('runWhen — innermost wins entirely', () => {
-        it('child runWhen replaces parent runWhen completely', () => {
+    describe('runWhen — shallow merge, child keys override', () => {
+        it('child runWhen is merged with parent runWhen field-by-field', () => {
             const result = mergeInheritedConfigs([{ runWhen: { daily: true } }, { runWhen: { hourly: true } }]);
-            expect(result.runWhen).toEqual({ hourly: true });
+            expect(result.runWhen).toEqual({ daily: true, hourly: true });
         });
 
-        it('grandchild wins over both ancestors', () => {
+        it('child can override a specific trigger set by parent', () => {
+            const result = mergeInheritedConfigs([{ runWhen: { daily: true } }, { runWhen: { daily: false } }]);
+            expect(result.runWhen).toEqual({ daily: false });
+        });
+
+        it('grandchild merges across all ancestors', () => {
             const result = mergeInheritedConfigs([
                 { runWhen: { daily: true } },
                 { runWhen: { hourly: true } },
                 { runWhen: { pullRequest: true } },
             ]);
-            expect(result.runWhen).toEqual({ pullRequest: true });
+            expect(result.runWhen).toEqual({ daily: true, hourly: true, pullRequest: true });
         });
 
         it('inherits parent runWhen when child has none', () => {
@@ -38,13 +43,13 @@ describe('mergeInheritedConfigs', () => {
             expect(result.runWhen).toEqual({ daily: true });
         });
 
-        it('innermost explicit runWhen beats grandparent even if intermediate has none', () => {
+        it('child can disable a trigger set by grandparent via intermediate layer', () => {
             const result = mergeInheritedConfigs([
-                { runWhen: { daily: true } },
+                { runWhen: { daily: true, hourly: true } },
                 {}, // intermediate — no runWhen
-                { runWhen: { hourly: true } },
+                { runWhen: { hourly: false } },
             ]);
-            expect(result.runWhen).toEqual({ hourly: true });
+            expect(result.runWhen).toEqual({ daily: true, hourly: false });
         });
     });
 
@@ -83,15 +88,26 @@ describe('mergeInheritedConfigs', () => {
         it('resolves both independently across a realistic describe → testActor stack', () => {
             // Outer describe: daily + slack
             // Inner describe: no extra config
-            // testActor: hourly-only override
+            // testActor: add hourly without losing daily
             const result = mergeInheritedConfigs([
                 { runWhen: { daily: true }, alerts: { slack: true } },
                 {},
                 { runWhen: { hourly: true } },
             ]);
             expect(result).toEqual({
-                runWhen: { hourly: true }, // innermost wins
+                runWhen: { daily: true, hourly: true }, // merged field-by-field
                 alerts: { slack: true }, // inherited from outer describe
+            });
+        });
+
+        it('testActor can disable a trigger from enclosing describe', () => {
+            const result = mergeInheritedConfigs([
+                { runWhen: { daily: true, pullRequest: true }, alerts: { slack: true } },
+                { runWhen: { pullRequest: false } }, // testActor opts out of pullRequest
+            ]);
+            expect(result).toEqual({
+                runWhen: { daily: true, pullRequest: false },
+                alerts: { slack: true },
             });
         });
 

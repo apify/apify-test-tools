@@ -109,6 +109,9 @@ export type TriggerType = 'hourly' | 'daily' | 'pullRequest';
  * Omitting a key is equivalent to `false` for that trigger.
  * When `TEST_TRIGGER` is not set, all tests run regardless of `runWhen`.
  *
+ * Keys are merged field-by-field through the describe hierarchy, so a child
+ * only needs to override the specific trigger it wants to change.
+ *
  * Example:
  * ```ts
  * runWhen: { daily: true, pullRequest: true }
@@ -119,8 +122,7 @@ export type RunWhenConfig = Partial<Record<TriggerType, boolean>>;
 /**
  * Defines which alerting channels fire when this test/suite fails.
  * Evaluated by the `report-tests` command after the run.
- * Configs are merged hierarchically: describe-level alerts are inherited by
- * all tests within and can be overridden per test.
+ * Keys are merged field-by-field through the describe hierarchy.
  *
  * Example:
  * ```ts
@@ -129,6 +131,29 @@ export type RunWhenConfig = Partial<Record<TriggerType, boolean>>;
  */
 export type AlertsConfig = {
     slack?: boolean;
+};
+
+/**
+ * Trigger and alerting configuration, shared between `DescribeConfig` and
+ * `TestActorConfig`. Inherited and merged field-by-field down the describe
+ * hierarchy so children only need to override what they want to change.
+ */
+export type TriggerConfig = {
+    runWhen?: RunWhenConfig;
+    alerts?: AlertsConfig;
+};
+
+/** Vitest-level options for a `describe` suite. */
+export type DescribeOptions = {
+    timeout?: number;
+    concurrent?: boolean;
+    sequential?: boolean;
+};
+
+/** Vitest-level options for an individual `testActor` / `testStandbyActor`. */
+export type ActorOptions = {
+    retry?: number;
+    timeout?: number;
 };
 
 export type ActorTestOptions = Omit<TestOptions, 'retry'> & {
@@ -144,35 +169,40 @@ export type ActorTestOptions = Omit<TestOptions, 'retry'> & {
 
 /**
  * Config object passed as the first argument to `describe`.
- * Merges hierarchically with parent describe configs.
+ * `triggers` is inherited and merged with nested describes / testActors.
  *
  * Example:
  * ```ts
- * describe({ name: 'my-actor', runWhen: { daily: true }, alerts: { slack: true } }, () => { ... });
+ * describe({
+ *   name: 'my-actor',
+ *   triggers: { runWhen: { daily: true }, alerts: { slack: true } },
+ *   options: { concurrent: false },
+ * }, () => { ... });
  * ```
  */
 export type DescribeConfig = {
     name: string;
-    runWhen?: RunWhenConfig;
-    alerts?: AlertsConfig;
-    timeout?: number;
-    concurrent?: boolean;
-    sequential?: boolean;
+    triggers?: TriggerConfig;
+    options?: DescribeOptions;
 };
 
 /**
  * Config object passed as the second argument to `testActor` / `testStandbyActor`.
- * Inherits and overrides `runWhen` and `alerts` from the enclosing `describe`.
+ * `triggers` merges field-by-field with whatever was set on enclosing describes.
  *
  * Example:
  * ```ts
- * testActor(actorId, { name: 'smoke', runWhen: { hourly: true } }, async ({ run }) => { ... });
+ * testActor(actorId, {
+ *   name: 'smoke',
+ *   triggers: { runWhen: { hourly: true } },
+ *   options: { retry: 2 },
+ * }, async ({ run }) => { ... });
  * ```
  */
-export type TestActorConfig = ActorTestOptions & {
+export type TestActorConfig = {
     name: string;
-    runWhen?: RunWhenConfig;
-    alerts?: AlertsConfig;
+    triggers?: TriggerConfig;
+    options?: ActorOptions;
 };
 
 export interface ActorMatchers<R = unknown> {

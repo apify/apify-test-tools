@@ -76,7 +76,7 @@ function getEffectiveDefaults(): TriggerConfig {
     if (hourlyDir) {
         const callerFile = getCallerFile();
         if (callerFile && (callerFile.includes(`/${hourlyDir}/`) || callerFile.includes(`\\${hourlyDir}\\`))) {
-            return { runWhen: { ...DEFAULT_TRIGGERS.runWhen, hourly: true } };
+            return { ...DEFAULT_TRIGGERS, runWhen: { ...DEFAULT_TRIGGERS.runWhen, hourly: true } };
         }
     }
     return DEFAULT_TRIGGERS;
@@ -112,7 +112,7 @@ export function mergeInheritedTriggers(layers: TriggerConfig[]): TriggerConfig {
  * Preferred (new) style — config object with `name`:
  * ```ts
  * // All triggers enabled by default — opt out of specific ones:
- * describe({ name: 'my-actor', triggers: { runWhen: { pullRequest: false }, alerts: { slack: true } } }, () => { ... });
+ * describe({ name: 'my-actor', triggers: { runWhen: { pullRequest: false }, alerts: { slack: false } } }, () => { ... });
  * ```
  *
  * Legacy style — still supported:

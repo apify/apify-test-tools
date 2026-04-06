@@ -5,29 +5,27 @@
 ## Getting Started
 
 1. Install the package `npm i -D apify-test-tools`
-    - because it uses [annotate](https://vitest.dev/guide/test-context.html#annotate), `vitest` version to be at least `3.2.0`
-    - make sure that `target` and `module` in your `tsconfig.json`'s `compilerOptions` are set to `ES2022`
-2. create test directories: `mkdir -p test/platform/core`
-    - core (hourly) tests should go to `test/platform/core`
-    - daily tests should go to `test/platform`
-3. setup github worklows TODO
+    - requires [`vitest`](https://vitest.dev/) `>= 3.2.0` (uses [`annotate`](https://vitest.dev/guide/test-context.html#annotate))
+    - set `target` and `module` to `ES2022` in your `tsconfig.json` `compilerOptions`
+2. Create a test directory: `mkdir -p test/platform`
+3. Set up GitHub workflows (see below)
 
 File structure:
 
 ```
 google-maps
 ├── actors
-└── src
+├── src
 └── test
     ├── unit
     └── platform
-        ├── core                  <- Core tests need to be inside core directory
+        ├── core                  <- Tests that should also run hourly
         │   └── core.test.ts
-        ├── some.test.ts          <- Other tests can be defined anywhere inside platform directory
+        ├── some.test.ts
         └── some-other.test.ts
 ```
 
-## Github worklows
+## GitHub Workflows
 
 There should be 4 GH workflow files in `.github/workflows`.
 
@@ -46,7 +44,7 @@ jobs:
     platformTestsCore:
         uses: apify-store/github-actions-source/.github/workflows/platform-tests.yaml@new_master
         with:
-            subtest: core
+            backward_compatible_hourly_dir: core
         secrets: inherit
 ```
 
@@ -97,153 +95,141 @@ jobs:
         secrets: inherit
 ```
 
-## Differences in writing tests
+## Writing Tests
 
----
-
-### Test structure
-
-To run the tests concurrently, we had to start the run outside of `it` and then call `await` inside. This is now no longer needed and everything can be inside `it` aka `testActor`.
-
-Before:
-
-```ts
-({ it, xit, run, expect, expectAsync, input, describe }: TestSpecInputs) => {
-		describe('test', () => {
-				{
-		        const runPromise = run({ actorId, input })
-						it('actor test 1', async () => {
-						    const runResult = await runPromise;
-
-						    // your checks
-						});
-				}
-
-				{
-		        const runPromise = run({ actorId, input })
-						it('actor test 2', async () => {
-						    const runResult = await runPromise;
-
-						    // your checks
-						});
-				}
-		});
-})
-```
-
-After:
+### Basic usage
 
 ```ts
 import { describe, testActor } from 'apify-test-tools';
 
-describe('test', () => {
-		testActor(actorId, 'actor test 1', async ({ expect, run }) => {
-				const runResult = await run({ input })
+describe('google-maps', () => {
+    testActor(actorId, 'smoke test', async ({ run, expect }) => {
+        const result = await run({ input: { query: 'London Eye' } });
 
-				// your checks
-		)};
-
-		testActor(actorId, 'actor test 2', async ({ expect, run }) => {
-				const runResult = await run({ input })
-
-				// your checks
-		)};
-})
-```
-
-`testActor` extends `expect` with couple of custom matchers (e.g. `toFinishWith`) and provides `run` function call the correct actor, based on it’s first parameter
-
----
-
-### Validating basic run attributes
-
-Before:
-
-```ts
-await expectAsync(runResult).toHaveStatus('SUCCEEDED');
-
-await expectAsync(runResult).withLog((log) => {
-    expect(log).not.toContain('ReferenceError');
-    expect(log).not.toContain('TypeError');
-});
-
-await expectAsync(runResult).withStatistics((stats) => {
-    expect(stats.requestsRetries).withContext(runResult.format('Request retries')).toBeLessThan(3);
-    expect(stats.crawlerRuntimeMillis).withContext(runResult.format('Run time')).toBeWithinRange(600, 600_000);
-});
-
-await expectAsync(runResult).withDataset(({ dataset }) => {
-    expect(dataset.items?.length).withContext(runResult.format('Dataset cleanItemCount')).toBe(100);
+        await expect(result).toFinishWith({
+            datasetItemCount: { min: 1, max: 10 },
+        });
+    });
 });
 ```
 
-After:
+`testActor` provides a `run` function that calls the actor built in the current CI run, and extends `expect` with custom matchers (e.g. `toFinishWith`).
+
+### Validating run results
 
 ```ts
-await expect(runResult).toFinishWith({
-    datasetItemCount: 100,
-});
-```
-
-You can also specify a range:
-
-```ts
-await expect(runResult).toFinishWith({
-    datasetItemCount: { min: 80, max: 120 },
-});
-```
-
-Here is full example of what you can validate with `toFinishWith`
-
-```ts
-await expect(runResult).toFinishWith({
-    // These are default
+await expect(result).toFinishWith({
+    // all fields below are optional and have sensible defaults
     status: 'SUCCEEDED',
-    duration: {
-        min: 600, // 0.6 sec
-        max: 600_000, // 10 min
-    },
+    duration: { min: 600, max: 600_000 }, // ms
     failedRequests: 0,
     requestsRetries: { max: 3 },
     forbiddenLogs: ['ReferenceError', 'TypeError'],
 
-    // only datasetItemCount is required
+    // required — exact number or range
     datasetItemCount: { min: 80, max: 120 },
 
-    // optional
+    // optional — PPE event counts; any omitted event is expected to be 0
     chargedEventCounts: {
         'actor-start': 1,
-        'place-scraped': 9,
+        'place-scraped': { min: 9 },
     },
 });
 ```
 
----
+### Shared validation helpers
 
-### Custom validations
-
-Before:
+Create reusable helpers in e.g. `test/platform/utils.ts` and import them in test files:
 
 ```ts
-expect(place.title).withContext(runResult.format(`London Eye's title`)).toEqual('lastminute.com London Eye');
+import { ExpectStatic } from 'apify-test-tools';
+
+export const validatePlace = (expect: ExpectStatic, place: unknown) => {
+    expect(place.title, 'place title').toBeNonEmptyString();
+    expect(place.url, 'place url').toBeNonEmptyString();
+};
 ```
 
-After:
+## Trigger & Alert Configuration
+
+Tests default to running on `daily` and `pullRequest` triggers, with Slack alerts enabled. Use the `triggers` option on `describe` or `testActor` to override.
+
+### Opting out of a trigger
 
 ```ts
-expect(place.title, `London Eye's title`).toEqual('lastminute.com London Eye');
+// This suite only runs on daily and hourly, never on pull requests
+describe({
+    name: 'google-maps',
+    triggers: { runWhen: { pullRequest: false } },
+}, () => { ... });
 ```
 
----
-
-### Custom validation functions
-
-You can now create your own functions wrapping a common validation logic in e.g. `test/platform/utils.ts` and import it in test files.
+### Running only on specific triggers
 
 ```ts
-import { ExpectStatic } from 'apify-test-tools'
+// This test only runs hourly (opt out of daily and pullRequest)
+testActor(actorId, {
+    name: 'extended smoke',
+    triggers: { runWhen: { daily: false, pullRequest: false } },
+}, async ({ run, expect }) => { ... });
+```
 
-export const validateItem = (expect: ExpectStatic, item: any) {
-		expect(item.title, 'Item title').toBeString();
-}
+### Inheriting and overriding through the describe hierarchy
+
+`triggers` are merged field-by-field from outer to inner — children only need to override what they want to change:
+
+```ts
+describe(
+    {
+        name: 'google-maps',
+        triggers: { runWhen: { pullRequest: false } }, // disable PR runs for the whole suite
+    },
+    () => {
+        testActor(actorId, 'smoke', async ({ run, expect }) => {
+            // inherits pullRequest: false from the describe above
+        });
+
+        testActor(
+            actorId,
+            {
+                name: 'extended',
+                triggers: { runWhen: { daily: false } }, // additionally disable daily
+            },
+            async ({ run, expect }) => {
+                // effective: pullRequest: false, daily: false → runs hourly only
+            },
+        );
+    },
+);
+```
+
+### Disabling Slack alerts
+
+```ts
+describe({
+    name: 'experimental',
+    triggers: { alerts: { slack: false } },  // failures won't ping Slack
+}, () => { ... });
+```
+
+### Hourly tests (core directory)
+
+Tests inside the `core/` directory automatically run hourly when the workflow passes `BACKWARD_COMPATIBLE_HOURLY_DIR=core`. No changes needed in test files.
+
+For new tests that should run hourly, opt in explicitly instead:
+
+```ts
+testActor(actorId, {
+    name: 'smoke',
+    triggers: { runWhen: { hourly: true } },
+}, async ({ run, expect }) => { ... });
+```
+
+### Reading the current trigger at runtime
+
+```ts
+import { getCurrentTrigger, TRIGGER_ENV_VAR } from 'apify-test-tools';
+
+// Returns 'hourly' | 'daily' | 'pullRequest' | undefined
+const trigger = getCurrentTrigger();
 ```

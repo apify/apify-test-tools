@@ -81,6 +81,7 @@ const classifyFileChange = (originalFilePath: string, actorConfigs: ActorConfig[
         if (lowercaseFilePath.endsWith('readme.md')) {
             return { impact: 'cosmetic', includes: actorConfigChanged };
         }
+        // originalFilePath must be used here (not lowercaseFilePath) — git show is case-sensitive on Linux
         if (lowercaseFilePath.endsWith('.json') && isCosmeticOnlyJsonSchemaChange(commits, originalFilePath)) {
             return { impact: 'cosmetic', includes: actorConfigChanged };
         }

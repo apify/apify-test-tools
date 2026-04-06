@@ -51,8 +51,9 @@ type FileChange =
           includes: 'all-actors' | ActorConfig;
       };
 
-// originalFilePath preserves the exact case from git diff, needed for `git show` on case-sensitive filesystems
-const classifyFileChange = (lowercaseFilePath: string, originalFilePath: string, actorConfigs: ActorConfig[], commits: Commit[]): FileChange => {
+const classifyFileChange = (originalFilePath: string, actorConfigs: ActorConfig[], commits: Commit[]): FileChange => {
+    // Lowercase for case-insensitive matching; keep original for git show (case-sensitive on Linux)
+    const lowercaseFilePath = originalFilePath.toLowerCase();
     if (isIgnoredTopLevelFile(lowercaseFilePath)) {
         return { impact: 'ignored' };
     }
@@ -103,8 +104,7 @@ export const getChangedActors = ({
     const actorConfigsWithoutStandalone = actorConfigs.filter(({ isStandalone }) => !isStandalone);
 
     for (const originalFilePath of filepathsChanged) {
-        const lowercaseFilePath = originalFilePath.toLowerCase();
-        const fileChange = classifyFileChange(lowercaseFilePath, originalFilePath, actorConfigs, commits);
+        const fileChange = classifyFileChange(originalFilePath, actorConfigs, commits);
         if (fileChange.impact === 'ignored') {
             continue;
         }
@@ -127,17 +127,17 @@ export const getChangedActors = ({
 
     // All below here is just for logging
     const ignoredFilesChanged = filepathsChanged.filter(
-        (file) => classifyFileChange(file.toLowerCase(), file, actorConfigs, commits).impact === 'ignored',
+        (file) => classifyFileChange(file, actorConfigs, commits).impact === 'ignored',
     );
     console.error(`[DIFF]: Ignored files (don't trigger test or build): ${ignoredFilesChanged.join(', ')}`);
 
     const cosmeticFilesChanged = filepathsChanged.filter(
-        (file) => classifyFileChange(file.toLowerCase(), file, actorConfigs, commits).impact === 'cosmetic',
+        (file) => classifyFileChange(file, actorConfigs, commits).impact === 'cosmetic',
     );
     console.error(`[DIFF]: Cosmetic files (should only trigger release build): ${cosmeticFilesChanged.join(', ')}`);
 
     const functionalFilesChanged = filepathsChanged.filter(
-        (file) => classifyFileChange(file.toLowerCase(), file, actorConfigs, commits).impact === 'functional',
+        (file) => classifyFileChange(file, actorConfigs, commits).impact === 'functional',
     );
     console.error(`[DIFF]: Functional files (trigger test & release build): ${functionalFilesChanged.join(', ')}`);
 

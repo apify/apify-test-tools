@@ -71,10 +71,13 @@ function getCallerFile(): string | undefined {
  * under BACKWARD_COMPATIBLE_HOURLY_DIR. This allows a specific directory (e.g. core/)
  * to retain pre-config-system hourly behaviour without touching individual test files.
  */
-function getEffectiveDefaults(callerFile: string | undefined): TriggerConfig {
+function getEffectiveDefaults(): TriggerConfig {
     const hourlyDir = process.env.BACKWARD_COMPATIBLE_HOURLY_DIR;
-    if (hourlyDir && callerFile && (callerFile.includes(`/${hourlyDir}/`) || callerFile.includes(`\\${hourlyDir}\\`))) {
-        return { runWhen: { ...DEFAULT_TRIGGERS.runWhen, hourly: true } };
+    if (hourlyDir) {
+        const callerFile = getCallerFile();
+        if (callerFile && (callerFile.includes(`/${hourlyDir}/`) || callerFile.includes(`\\${hourlyDir}\\`))) {
+            return { runWhen: { ...DEFAULT_TRIGGERS.runWhen, hourly: true } };
+        }
     }
     return DEFAULT_TRIGGERS;
 }
@@ -129,10 +132,9 @@ export const describe = (
             : { options: DEFAULT_DESCRIBE_OPTIONS, ...configOrName };
 
     const { name, triggers, options } = resolved;
-    const callerFile = getCallerFile();
 
     triggersStack.push(triggers ?? {});
-    const merged = mergeInheritedTriggers([getEffectiveDefaults(callerFile), ...triggersStack]);
+    const merged = mergeInheritedTriggers([getEffectiveDefaults(), ...triggersStack]);
     const shouldRun = (!!RUN_PLATFORM_TESTS || !!RUN_ALL_PLATFORM_TESTS) && shouldRunForTrigger(merged.runWhen);
 
     vitestDescribe.runIf(shouldRun)(name, options ?? {}, (test) => {
@@ -157,10 +159,9 @@ function resolveActorTestConfig(
             : { ...configOrName, options: { ...DEFAULT_TEST_ACTOR_OPTIONS, ...configOrName.options } };
 
     const { name, triggers, options } = resolved;
-    const callerFile = getCallerFile();
 
     const effectiveTriggers = mergeInheritedTriggers([
-        getEffectiveDefaults(callerFile),
+        getEffectiveDefaults(),
         ...triggersStack,
         ...(triggers !== undefined ? [triggers] : []),
     ]);

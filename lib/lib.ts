@@ -1,50 +1,57 @@
 import { fileURLToPath } from 'node:url';
 
-import type { Actor, ActorRun, ActorRunListItem, ActorStandby, Task } from 'apify-client';
 import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
+import { DEFAULT_DESCRIBE_OPTIONS, DEFAULT_TEST_ACTOR_OPTIONS, DEFAULT_TRIGGERS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
-import { RunTestResult } from './run-test-result.js';
 import { shouldRunForTrigger } from './trigger.js';
-import type {
-    ActorBuild,
-    ActorTestOptions,
-    DescribeConfig,
-    RunOptions,
-    RunWhenConfig,
-    TestActorConfig,
-    TriggerConfig,
-} from './types.js';
-import { getActorPrefilledInput, sleep } from './utils.js';
+import type { ActorBuild, ActorTestOptions, DescribeConfig, TestActorConfig, TriggerConfig } from './types.js';
+import { createStandbyTask, createStartRunFn, createStartStandbyFn, generateRunLink } from './utils.js';
 
 export { getCurrentTrigger, TRIGGER_ENV_VAR } from './trigger.js';
+export { ExpectStatic };
 
 // ---------------------------------------------------------------------------
-// Hierarchical config stack
+// Actor builds — loaded once at startup from the ACTOR_BUILDS env var
+// ---------------------------------------------------------------------------
+
+let actorBuilds: ActorBuild[] = [];
+try {
+    const raw = process.env.ACTOR_BUILDS;
+    if (raw) {
+        actorBuilds = JSON.parse(raw);
+        if (!Array.isArray(actorBuilds)) {
+            throw new Error(`ACTOR_BUILDS env variable should contain a JSON array, got ${typeof actorBuilds}`);
+        }
+    }
+} catch (err) {
+    throw new Error(`Failed to parse actor builds: ${err}`);
+}
+
+const actorConfig = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
+    map.set(cfg.actorName, cfg);
+    map.set(cfg.actorId, cfg);
+    return map;
+}, new Map());
+
+const { TESTER_APIFY_TOKEN, RUN_PLATFORM_TESTS, RUN_ALL_PLATFORM_TESTS } = process.env;
+const apifyClient = new ApifyClient({ token: TESTER_APIFY_TOKEN });
+
+// ---------------------------------------------------------------------------
+// Hierarchical trigger stack
 // Describes push their triggers onto the stack before collecting their
 // children; testActor reads the merged result at registration time.
 // Since vitest calls the suite factory synchronously, the stack is always
 // consistent during collection.
 // ---------------------------------------------------------------------------
 
-// Default trigger config.
-// `Required<RunWhenConfig>` ensures a compile error when a new TriggerType is added,
-// forcing an explicit opt-in/opt-out decision for existing tests.
-// hourly is false by default — only specific directories (e.g. core/) run hourly,
-// controlled via BACKWARD_COMPATIBLE_HOURLY_DIR.
-const DEFAULT_TRIGGERS: { runWhen: Required<RunWhenConfig> } = {
-    runWhen: { hourly: false, daily: true, pullRequest: true },
-};
-
 // Strip the extension so the comparison works for both .ts (source maps) and .js (compiled).
 const THIS_FILE_BASE = fileURLToPath(import.meta.url).replace(/\.[jt]s$/, '');
 
-export const { BACKWARD_COMPATIBLE_HOURLY_DIR } = process.env;
-
 /**
- * Returns the file path of the first call-stack frame that is outside this library file.
+ * Returns the file path of the first call-stack frame outside this library file.
  * Used at describe/testActor registration time to detect which test file is calling.
  */
 function getCallerFile(): string | undefined {
@@ -60,18 +67,13 @@ function getCallerFile(): string | undefined {
 }
 
 /**
- * Returns DEFAULT_TRIGGERS, with hourly promoted to true when the caller file
- * is under BACKWARD_COMPATIBLE_HOURLY_DIR. This allows a specific directory
- * (e.g. core/) to retain its pre-config-system hourly behaviour without any
- * changes to individual test files.
+ * Returns DEFAULT_TRIGGERS, with hourly promoted to true when the caller file is
+ * under BACKWARD_COMPATIBLE_HOURLY_DIR. This allows a specific directory (e.g. core/)
+ * to retain pre-config-system hourly behaviour without touching individual test files.
  */
 function getEffectiveDefaults(callerFile: string | undefined): TriggerConfig {
-    if (
-        BACKWARD_COMPATIBLE_HOURLY_DIR &&
-        callerFile &&
-        (callerFile.includes(`/${BACKWARD_COMPATIBLE_HOURLY_DIR}/`) ||
-            callerFile.includes(`\\${BACKWARD_COMPATIBLE_HOURLY_DIR}\\`))
-    ) {
+    const hourlyDir = process.env.BACKWARD_COMPATIBLE_HOURLY_DIR;
+    if (hourlyDir && callerFile && (callerFile.includes(`/${hourlyDir}/`) || callerFile.includes(`\\${hourlyDir}\\`))) {
         return { runWhen: { ...DEFAULT_TRIGGERS.runWhen, hourly: true } };
     }
     return DEFAULT_TRIGGERS;
@@ -96,35 +98,9 @@ export function mergeInheritedTriggers(layers: TriggerConfig[]): TriggerConfig {
     );
 }
 
-const ACTOR_BUILDS = 'ACTOR_BUILDS';
-let actorBuilds: ActorBuild[] = [];
-try {
-    const actorBuildsEnv = process.env[ACTOR_BUILDS];
-    if (actorBuildsEnv) {
-        actorBuilds = JSON.parse(actorBuildsEnv);
-        if (!Array.isArray(actorBuilds)) {
-            throw new Error(`${ACTOR_BUILDS} env variable should contain a JSON array, got ${typeof actorBuilds}`);
-        }
-    }
-} catch (err) {
-    throw new Error(`Failed to parse actor builds: ${err}`);
-}
-
-const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
-    map.set(cfg.actorName, cfg);
-    map.set(cfg.actorId, cfg);
-    return map;
-}, new Map<string, ActorBuild>());
-
-export { ExpectStatic };
-
-const { TESTER_APIFY_TOKEN, RUN_PLATFORM_TESTS, RUN_ALL_PLATFORM_TESTS } = process.env;
-const apifyClient = new ApifyClient({ token: TESTER_APIFY_TOKEN });
-
-const DEFAULT_DESCRIBE_OPTIONS = {
-    concurrent: true,
-    timeout: 60_000 * 60,
-};
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 /**
  * Wraps a suite of actor tests. Conditionally runs based on environment flags
@@ -155,9 +131,7 @@ export const describe = (
     const { name, triggers, options } = resolved;
     const callerFile = getCallerFile();
 
-    // Push this describe's triggers onto the stack before collecting children
     triggersStack.push(triggers ?? {});
-
     const merged = mergeInheritedTriggers([getEffectiveDefaults(callerFile), ...triggersStack]);
     const shouldRun = (!!RUN_PLATFORM_TESTS || !!RUN_ALL_PLATFORM_TESTS) && shouldRunForTrigger(merged.runWhen);
 
@@ -165,12 +139,7 @@ export const describe = (
         fn?.(test);
     });
 
-    // Pop after vitest has synchronously collected all children
     triggersStack.pop();
-};
-
-const DEFAULT_TEST_ACTOR_OPTIONS = {
-    retry: 1,
 };
 
 /**
@@ -188,19 +157,17 @@ function resolveActorTestConfig(
             : { ...configOrName, options: { ...DEFAULT_TEST_ACTOR_OPTIONS, ...configOrName.options } };
 
     const { name, triggers, options } = resolved;
-    const fullName = `${actorName}: ${name}`;
     const callerFile = getCallerFile();
 
-    // Merge with inherited triggers from enclosing describe(s)
     const effectiveTriggers = mergeInheritedTriggers([
         getEffectiveDefaults(callerFile),
         ...triggersStack,
         ...(triggers !== undefined ? [triggers] : []),
     ]);
     const shouldRun =
-        (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(effectiveTriggers.runWhen);
+        (!!RUN_ALL_PLATFORM_TESTS || actorConfig.has(actorName)) && shouldRunForTrigger(effectiveTriggers.runWhen);
 
-    return { fullName, effectiveTriggers, vitestOptions: options ?? {}, shouldRun };
+    return { fullName: `${actorName}: ${name}`, effectiveTriggers, vitestOptions: options ?? {}, shouldRun };
 }
 
 /**
@@ -241,17 +208,15 @@ export const testActor = <T>(
         const { expect, ...rest } = context;
         await fn({
             expect: extendExpect(expect),
-            run: createStartRunFn(actorName, context),
+            run: createStartRunFn(apifyClient, actorConfig, actorName, context),
             ...rest,
         });
     });
 };
 
 /**
- * This wrapper creates a new task with specific `build` of the standby actor and provides
- * `callStandby` function, which calls the task's `standbyUrl`.
- *
- * Using task is just current shortcoming of standby feature but ideally we would use Actor directly
+ * Creates a new task with a specific build of the standby actor and provides
+ * a `callStandby` function that calls the task's standby URL.
  *
  * Preferred (new) style — config object with `name`:
  * ```ts
@@ -280,15 +245,15 @@ export const testStandbyActor = <I = any, O = any>(
         // @ts-expect-error: `TaskMeta` cannot be retyped
         context.task.meta = { ...context.task.meta, alerts: effectiveTriggers.alerts };
 
-        const standbyTask = await createStandbyTask(actorName, config.get(actorName)?.buildNumber);
+        const standbyTask = await createStandbyTask(apifyClient, actorName, actorConfig.get(actorName)?.buildNumber);
         const { annotate } = context;
         const { expect, ...rest } = context;
 
-        // NOTE: we need to wrap `fn` in try-catch so that we can always clean up (delete the task) afterwards
+        // NOTE: wrap `fn` in try-catch so the task is always cleaned up afterwards
         try {
             await fn({
                 expect: extendExpect(expect),
-                callStandby: createStartStandbyFn(standbyTask),
+                callStandby: createStartStandbyFn(apifyClient, standbyTask),
                 ...rest,
             });
         } catch {
@@ -298,8 +263,7 @@ export const testStandbyActor = <I = any, O = any>(
         const { taskId } = standbyTask;
         const runs = (await apifyClient.task(taskId).runs().list()).items;
         for (const run of runs) {
-            const runLink = generateRunLink(run);
-            await annotate(`${fullName} - ${runLink}`, 'run_link');
+            await annotate(`${fullName} - ${generateRunLink(run)}`, 'run_link');
         }
 
         if (taskId) {
@@ -325,140 +289,3 @@ export const testTestActor = <T>(
 };
 
 export const it = testActor;
-
-/**
- * Creates a function the accepts input for a standby actor and sends request containing input
- * to the task's standby url.
- */
-const createStartStandbyFn = <I, O>(standbyTask: StandbyTask) => {
-    const { standbyUrl } = standbyTask;
-    return async ({ input }: Pick<RunOptions<I>, 'input'>) => {
-        const response = await fetch(standbyUrl, {
-            headers: {
-                Authorization: `Bearer ${apifyClient.token}`,
-            },
-            method: 'POST',
-            body: JSON.stringify(input),
-        });
-
-        const data = (await response.json()) as O;
-        return {
-            data,
-            status: response.status,
-            headers: response.headers,
-        };
-    };
-};
-
-interface StandbyTask {
-    standbyUrl: string;
-    taskId: string;
-}
-
-const randomInt = (min: number, max: number) => {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-};
-
-/**
- * Creates a task with specific `build` - either `buildNumber` or default.
- *
- * @throws if actor doesn't exist or it doesn't support standby mode.
- */
-const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): Promise<StandbyTask> => {
-    const actor = apifyClient.actor(actorNameOrId);
-
-    const actorInfo = (await actor.get()) as Actor & { standbyUrl?: string };
-    if (!actorInfo) {
-        throw new Error(`Actor "${actorNameOrId}" not found`);
-    }
-
-    if (!actorInfo.standbyUrl) {
-        throw new Error(`Actor "${actorNameOrId}" doesn't support standby mode`);
-    }
-
-    if (!actorInfo.actorStandby) {
-        throw new Error(`Actor "${actorNameOrId} doesn't contain actorStandby options`);
-    }
-    const { isEnabled, ...defaultActorStandby } = actorInfo.actorStandby;
-    delete defaultActorStandby.disableStandbyFieldsOverride;
-
-    const build = buildNumber ?? defaultActorStandby.build;
-
-    const actorStandbyOptions: ActorStandby = {
-        ...defaultActorStandby,
-        build,
-    };
-
-    try {
-        const title = `Test task - ${build}:${actorNameOrId}`.slice(0, 62);
-        // we try to create unique task name containing only `a-z0-9-` characters and at most 63 characters long
-        const name = `${randomInt(1, 1_000_000)}${title
-            .toLowerCase()
-            .replaceAll(/\s+/g, '')
-            .replaceAll(/[^a-z0-9-]+/g, '-')}`.slice(0, 62);
-        const newTask = (await apifyClient.tasks().create({
-            actId: actorNameOrId,
-            actorStandby: actorStandbyOptions,
-            description: `Task for testing standby version ${build}`,
-            title,
-            name,
-        })) as Task & { standbyUrl?: string };
-
-        const { id, standbyUrl } = newTask;
-
-        if (!standbyUrl) {
-            throw new Error(`Task "${id} doesn't contain standbyUrl property`);
-        }
-
-        return {
-            standbyUrl,
-            taskId: id,
-        };
-    } catch (error) {
-        throw new Error(`Failed to create task: ${error}`);
-    }
-};
-
-const createStartRunFn = <T>(actorNameOrId: string, testContext: TestContext) => {
-    const { annotate, task } = testContext;
-    const actorConfig = config.get(actorNameOrId);
-    const build = actorConfig?.buildNumber;
-    const buildId = actorConfig?.buildId;
-    return async (runOptions: RunOptions<T>) => {
-        const { input, options, prefilledInput, runId } = runOptions;
-
-        if (runId) {
-            const run = await apifyClient.run(runId).get();
-            if (!run) {
-                throw new Error(`Run with id "${runId}" doesn't exist`);
-            }
-            return new RunTestResult(apifyClient, run);
-        }
-
-        const actor = apifyClient.actor(actorNameOrId);
-
-        const actorInput = {
-            ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorNameOrId, buildId))),
-            ...input,
-        };
-        const run = await actor.call(actorInput, { build, log: null, ...options });
-
-        const runLink = generateRunLink(run);
-        await annotate(`${task.name} - ${runLink}`, 'run_link');
-        // @ts-expect-error: `TaskMeta` cannot be retyped
-        task.meta = {
-            runId: run.id,
-            runLink,
-            actorName: actorNameOrId,
-        };
-
-        // waiting for datasetItemCount and chargedEventCounts to sync
-        await sleep(10_000);
-
-        return new RunTestResult(apifyClient, run);
-    };
-};
-
-const generateRunLink = (run: ActorRun | ActorRunListItem): string => {
-    return `https://console.apify.com/view/runs/${run.id}`;
-};

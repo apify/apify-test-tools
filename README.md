@@ -19,7 +19,7 @@ google-maps
 └── test
     ├── unit
     └── platform
-        ├── core                  <- Tests that should also run hourly
+        ├── core                  <- Legacy: hourly tests (see "Hourly tests" section)
         │   └── core.test.ts
         ├── some.test.ts
         └── some-other.test.ts
@@ -43,8 +43,6 @@ on:
 jobs:
     platformTestsCore:
         uses: apify-store/github-actions-source/.github/workflows/platform-tests.yaml@new_master
-        with:
-            backward_compatible_hourly_dir: core
         secrets: inherit
 ```
 
@@ -214,9 +212,7 @@ describe({
 
 ### Hourly tests (core directory)
 
-Tests inside the `core/` directory automatically run hourly when the workflow passes `BACKWARD_COMPATIBLE_HOURLY_DIR=core`. No changes needed in test files.
-
-For new tests that should run hourly, opt in explicitly instead:
+> **Legacy:** Tests inside `core/` were historically run hourly. This is supported for backward compatibility but new tests should opt in explicitly instead:
 
 ```ts
 testActor(actorId, {

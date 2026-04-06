@@ -1,12 +1,13 @@
-import type { RunWhenConfig, ToFinishWithOptionsWithDefaults } from './types.js';
+import type { AlertsConfig, RunWhenConfig, ToFinishWithOptionsWithDefaults } from './types.js';
 
 // Default trigger config.
-// `Required<RunWhenConfig>` ensures a compile error when a new TriggerType is added,
-// forcing an explicit opt-in/opt-out decision for existing tests.
+// `Required<...>` on both runWhen and alerts ensures a compile error when a new field is
+// added, forcing an explicit opt-in/opt-out decision for existing tests.
 // hourly is false by default — only specific directories (e.g. core/) run hourly,
 // controlled via BACKWARD_COMPATIBLE_HOURLY_DIR.
-export const DEFAULT_TRIGGERS: { runWhen: Required<RunWhenConfig> } = {
+export const DEFAULT_TRIGGERS: { runWhen: Required<RunWhenConfig>; alerts: Required<AlertsConfig> } = {
     runWhen: { hourly: false, daily: true, pullRequest: true },
+    alerts: { slack: true },
 };
 
 export const DEFAULT_DESCRIBE_OPTIONS = {

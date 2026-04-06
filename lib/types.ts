@@ -106,8 +106,11 @@ export type TriggerType = 'hourly' | 'daily' | 'pullRequest';
 
 /**
  * Controls which trigger types cause the test/suite to be included in the run.
- * All trigger types are enabled by default — set a field to `false` to opt out.
  * When `TEST_TRIGGER` is not set, all tests run regardless of `runWhen`.
+ *
+ * Each field defaults to the value set in `DEFAULT_TRIGGERS` (currently `daily` and
+ * `pullRequest` are true, `hourly` is false). Set a field to `false` to opt out of
+ * a trigger, or `true` to opt in.
  *
  * Keys are merged field-by-field through the describe hierarchy, so a child
  * only needs to override the specific trigger it wants to change.

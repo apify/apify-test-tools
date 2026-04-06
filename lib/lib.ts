@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import type { Actor, ActorRun, ActorRunListItem, ActorStandby, Task } from 'apify-client';
 import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
@@ -5,7 +7,7 @@ import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vi
 
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
-import { getCurrentTrigger, shouldRunForTrigger } from './trigger.js';
+import { shouldRunForTrigger } from './trigger.js';
 import type {
     ActorBuild,
     ActorTestOptions,
@@ -17,7 +19,7 @@ import type {
 } from './types.js';
 import { getActorPrefilledInput, sleep } from './utils.js';
 
-export { getCurrentTrigger };
+export { getCurrentTrigger, TRIGGER_ENV_VAR } from './trigger.js';
 
 // ---------------------------------------------------------------------------
 // Hierarchical config stack
@@ -27,12 +29,53 @@ export { getCurrentTrigger };
 // consistent during collection.
 // ---------------------------------------------------------------------------
 
-// Default trigger config — all current trigger types enabled.
-// `Required<RunWhenConfig>` ensures a compile error if a new TriggerType is added
-// without an explicit decision here (opt-in vs opt-out for existing tests).
+// Default trigger config.
+// `Required<RunWhenConfig>` ensures a compile error when a new TriggerType is added,
+// forcing an explicit opt-in/opt-out decision for existing tests.
+// hourly is false by default — only specific directories (e.g. core/) run hourly,
+// controlled via BACKWARD_COMPATIBLE_HOURLY_DIR.
 const DEFAULT_TRIGGERS: { runWhen: Required<RunWhenConfig> } = {
-    runWhen: { hourly: true, daily: true, pullRequest: true },
+    runWhen: { hourly: false, daily: true, pullRequest: true },
 };
+
+// Strip the extension so the comparison works for both .ts (source maps) and .js (compiled).
+const THIS_FILE_BASE = fileURLToPath(import.meta.url).replace(/\.[jt]s$/, '');
+
+export const { BACKWARD_COMPATIBLE_HOURLY_DIR } = process.env;
+
+/**
+ * Returns the file path of the first call-stack frame that is outside this library file.
+ * Used at describe/testActor registration time to detect which test file is calling.
+ */
+function getCallerFile(): string | undefined {
+    for (const line of (new Error().stack ?? '').split('\n').slice(1)) {
+        const match = line.match(/\((.+?):\d+:\d+\)/) ?? line.match(/^\s+at (.+?):\d+:\d+\s*$/);
+        if (!match) continue;
+        const filePath = match[1].replace(/^file:\/\//, '');
+        if (filePath.replace(/\.[jt]s$/, '') === THIS_FILE_BASE) continue;
+        if (filePath.startsWith('node:') || filePath.includes('node_modules')) continue;
+        return filePath;
+    }
+    return undefined;
+}
+
+/**
+ * Returns DEFAULT_TRIGGERS, with hourly promoted to true when the caller file
+ * is under BACKWARD_COMPATIBLE_HOURLY_DIR. This allows a specific directory
+ * (e.g. core/) to retain its pre-config-system hourly behaviour without any
+ * changes to individual test files.
+ */
+function getEffectiveDefaults(callerFile: string | undefined): TriggerConfig {
+    if (
+        BACKWARD_COMPATIBLE_HOURLY_DIR &&
+        callerFile &&
+        (callerFile.includes(`/${BACKWARD_COMPATIBLE_HOURLY_DIR}/`) ||
+            callerFile.includes(`\\${BACKWARD_COMPATIBLE_HOURLY_DIR}\\`))
+    ) {
+        return { runWhen: { ...DEFAULT_TRIGGERS.runWhen, hourly: true } };
+    }
+    return DEFAULT_TRIGGERS;
+}
 
 const triggersStack: TriggerConfig[] = [];
 
@@ -53,8 +96,8 @@ export function mergeInheritedTriggers(layers: TriggerConfig[]): TriggerConfig {
     );
 }
 
-function getMergedTriggers(extra?: TriggerConfig): TriggerConfig {
-    return mergeInheritedTriggers([DEFAULT_TRIGGERS, ...triggersStack, ...(extra !== undefined ? [extra] : [])]);
+function getMergedTriggers(extra?: TriggerConfig, base: TriggerConfig = DEFAULT_TRIGGERS): TriggerConfig {
+    return mergeInheritedTriggers([base, ...triggersStack, ...(extra !== undefined ? [extra] : [])]);
 }
 
 const ACTOR_BUILDS = 'ACTOR_BUILDS';
@@ -114,11 +157,12 @@ export const describe = (
             : { options: DEFAULT_DESCRIBE_OPTIONS, ...configOrName };
 
     const { name, triggers, options } = resolved;
+    const callerFile = getCallerFile();
 
     // Push this describe's triggers onto the stack before collecting children
     triggersStack.push(triggers ?? {});
 
-    const merged = getMergedTriggers();
+    const merged = getMergedTriggers(undefined, getEffectiveDefaults(callerFile));
     const shouldRun = (!!RUN_PLATFORM_TESTS || !!RUN_ALL_PLATFORM_TESTS) && shouldRunForTrigger(merged.runWhen);
 
     vitestDescribe.runIf(shouldRun)(name, options ?? {}, (test) => {
@@ -149,9 +193,10 @@ function resolveActorTestConfig(
 
     const { name, triggers, options } = resolved;
     const fullName = `${actorName}: ${name}`;
+    const callerFile = getCallerFile();
 
     // Merge with inherited triggers from enclosing describe(s)
-    const effectiveTriggers = getMergedTriggers(triggers);
+    const effectiveTriggers = getMergedTriggers(triggers, getEffectiveDefaults(callerFile));
     const shouldRun =
         (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(effectiveTriggers.runWhen);
 

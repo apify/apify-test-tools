@@ -1,4 +1,12 @@
-export { describe, testActor, testStandbyActor, ExpectStatic, getCurrentTrigger } from './lib/lib.js';
+export {
+    describe,
+    testActor,
+    testStandbyActor,
+    ExpectStatic,
+    getCurrentTrigger,
+    TRIGGER_ENV_VAR,
+    BACKWARD_COMPATIBLE_HOURLY_DIR,
+} from './lib/lib.js';
 export { RunTestResult } from './lib/run-test-result.js';
 export type {
     TriggerType,

@@ -96,10 +96,6 @@ export function mergeInheritedTriggers(layers: TriggerConfig[]): TriggerConfig {
     );
 }
 
-function getMergedTriggers(extra?: TriggerConfig, base: TriggerConfig = DEFAULT_TRIGGERS): TriggerConfig {
-    return mergeInheritedTriggers([base, ...triggersStack, ...(extra !== undefined ? [extra] : [])]);
-}
-
 const ACTOR_BUILDS = 'ACTOR_BUILDS';
 let actorBuilds: ActorBuild[] = [];
 try {
@@ -162,7 +158,7 @@ export const describe = (
     // Push this describe's triggers onto the stack before collecting children
     triggersStack.push(triggers ?? {});
 
-    const merged = getMergedTriggers(undefined, getEffectiveDefaults(callerFile));
+    const merged = mergeInheritedTriggers([getEffectiveDefaults(callerFile), ...triggersStack]);
     const shouldRun = (!!RUN_PLATFORM_TESTS || !!RUN_ALL_PLATFORM_TESTS) && shouldRunForTrigger(merged.runWhen);
 
     vitestDescribe.runIf(shouldRun)(name, options ?? {}, (test) => {
@@ -196,7 +192,11 @@ function resolveActorTestConfig(
     const callerFile = getCallerFile();
 
     // Merge with inherited triggers from enclosing describe(s)
-    const effectiveTriggers = getMergedTriggers(triggers, getEffectiveDefaults(callerFile));
+    const effectiveTriggers = mergeInheritedTriggers([
+        getEffectiveDefaults(callerFile),
+        ...triggersStack,
+        ...(triggers !== undefined ? [triggers] : []),
+    ]);
     const shouldRun =
         (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(effectiveTriggers.runWhen);
 

@@ -102,8 +102,14 @@ export const testStandbyActor = <I = any, O = any>(
                 ...rest,
             });
         } finally {
+            const { taskId } = standbyTask;
             // we want to delete the task at the end of the test
-            await apifyClient.task(standbyTask.taskId).delete();
+            await apifyClient
+                .task(taskId)
+                .delete()
+                .catch((error) => {
+                    console.error(`Failed to delete standby task "${taskId}": ${error}`);
+                });
         }
     });
 };

@@ -94,7 +94,7 @@ export const testStandbyActor = <I = any, O = any>(
         const standbyTask = await createStandbyTask(actorName, config.get(actorName)?.buildNumber);
         const { expect, ...rest } = context;
 
-        // NOTE: we need to wrap `fn` in try-catch so that we can always clean up (delete the task) afterwards
+        // NOTE: we wrap `fn` in try/finally so cleanup (deleting the task) always runs afterwards
         try {
             await fn({
                 expect: extendExpect(expect),

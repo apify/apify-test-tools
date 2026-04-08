@@ -184,7 +184,7 @@ interface StandbyTask {
  *
  * @throws if actor doesn't exist or it doesn't support standby mode.
  */
-export const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): Promise<StandbyTask> => {
+const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): Promise<StandbyTask> => {
     const actor = apifyClient.actor(actorNameOrId);
 
     const actorInfo = (await actor.get()) as Actor & { standbyUrl?: string };

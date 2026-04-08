@@ -47,6 +47,9 @@ const resolveChangedActors = async (
     // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
     // individually validated changes can have novel interactions when combined.
     if (hasMergeFromTarget(sourceBranch, targetBranch)) {
+        console.error(
+            '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
+        );
         const branchOnlyFiles = getBranchOnlyChangedFiles(sourceBranch, targetBranch);
         // Omit baseCommit to get full branch history. Validated functional commits can still interact with merged ones
         const allBranchCommits = getCommits({ sourceBranch, targetBranch, baseCommit: undefined });
@@ -56,9 +59,12 @@ const resolveChangedActors = async (
             commits: allBranchCommits,
         });
         if (branchOnlyActorsChanged.length === 0) {
-            console.error('[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping builds');
+            console.error('[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests');
             return [];
         }
+        console.error(
+            `[MERGE-FROM-TARGET-OPTIMIZATION]: Branch has ${branchOnlyActorsChanged.length} functional changes, cannot optimize, we continue with full check`,
+        );
     }
 
     // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply baseCommit and check merge commits (they might be functional or just cosmetic)

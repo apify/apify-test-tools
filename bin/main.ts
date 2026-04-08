@@ -8,10 +8,11 @@ import { hideBin } from 'yargs/helpers';
 
 import { deleteOldBuilds, runBuilds } from './build.js';
 import { getChangedActors } from './diff-changes.js';
-import { getChangedFiles, getCommits } from './git.js';
+import { getBranchOnlyChangedFiles, getChangedFiles, getCommits, hasMergeFromTarget } from './git.js';
 import { getPushData } from './github.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
+import type { Config } from './types.js';
 import { getRepoActors, setCwd, spawnCommandInGhWorkspace } from './utils.js';
 
 /**
@@ -32,6 +33,38 @@ const buildOptions = (y: Argv) => {
         .option('base-commit', {
             type: 'string',
         });
+};
+
+const resolveChangedActors = async (
+    { targetBranch, sourceBranch, baseCommit }: Config,
+    { isLatest }: { isLatest: boolean },
+) => {
+    const actorConfigs = await getRepoActors();
+
+    // This is an optimization for the common case where a branch only has cosmetic changes but had to merge in
+    // functional changes from master (being up-to-date is a CI requirement). Master is already validated, and
+    // since the branch has no functional changes of its own, there is nothing new to validate.
+    // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
+    // individually validated changes can have novel interactions when combined.
+    if (hasMergeFromTarget(sourceBranch, targetBranch)) {
+        const branchOnlyFiles = getBranchOnlyChangedFiles(sourceBranch, targetBranch);
+        // Omit baseCommit to get full branch history. Validated functional commits can still interact with merged ones
+        const allBranchCommits = getCommits({ sourceBranch, targetBranch, baseCommit: undefined });
+        const branchOnlyActorsChanged = getChangedActors({
+            filepathsChanged: branchOnlyFiles,
+            actorConfigs,
+            commits: allBranchCommits,
+        });
+        if (branchOnlyActorsChanged.length === 0) {
+            console.error('[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping builds');
+            return [];
+        }
+    }
+
+    // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply baseCommit and check merge commits (they might be functional or just cosmetic)
+    const commits = getCommits({ targetBranch, sourceBranch, baseCommit });
+    const changedFiles = getChangedFiles(commits);
+    return getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest, commits });
 };
 
 await yargs()
@@ -68,16 +101,11 @@ await yargs()
             console.log(JSON.stringify(actorConfigs));
         },
     )
-    .command('get-affected-actors', '', buildOptions, async (args) => {
-        const commits = getCommits(args);
-        const changedFiles = getChangedFiles(commits);
-        const actorConfigs = await getRepoActors();
-        const actorsChanged = getChangedActors({
-            filepathsChanged: changedFiles,
-            actorConfigs,
-            isLatest: false,
-            commits,
-        });
+    .command('get-affected-actors', '', buildOptions, async ({ targetBranch, sourceBranch, baseCommit }) => {
+        const actorsChanged = await resolveChangedActors(
+            { targetBranch, sourceBranch, baseCommit },
+            { isLatest: false },
+        );
         console.log(JSON.stringify(actorsChanged));
     })
     .command(
@@ -97,15 +125,11 @@ await yargs()
         'build',
         '',
         (args) => buildOptions(args).option('dry-run', { type: 'boolean', default: false }),
-        async (args) => {
-            const commits = getCommits(args);
-            const changedFiles = getChangedFiles(commits);
-            const actorConfigs = await getRepoActors();
-            const actorsChanged = getChangedActors({
-                filepathsChanged: changedFiles,
-                actorConfigs,
-                commits,
-            });
+        async ({ targetBranch, sourceBranch, baseCommit, dryRun }) => {
+            const actorsChanged = await resolveChangedActors(
+                { targetBranch, sourceBranch, baseCommit },
+                { isLatest: false },
+            );
             // https://github.com/apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
             // git@github.com:apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
             const repoUrl = spawnCommandInGhWorkspace(`git remote get-url origin`).replace(
@@ -116,8 +140,8 @@ await yargs()
             const builds = await runBuilds({
                 repoUrl,
                 actorConfigs: actorsChanged,
-                branch: args.sourceBranch.replace('origin/', ''),
-                dryRun: args.dryRun,
+                branch: sourceBranch.replace('origin/', ''),
+                dryRun,
             });
             console.log(JSON.stringify(builds));
         },

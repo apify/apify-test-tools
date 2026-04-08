@@ -127,7 +127,7 @@ export const testTestActor = <T>(
 export const it = testActor;
 
 /**
- * Creates a function the accepts input for a standby actor and sends request containing input
+ * Creates a function that accepts input for a standby actor and sends a request containing the input
  * to the task's standby url.
  */
 const createStartStandbyFn = <I, O>(standbyTask: StandbyTask, { annotate }: TestContext, testName: string) => {

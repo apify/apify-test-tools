@@ -163,10 +163,9 @@ const createStartStandbyFn = <I, O>(standbyTask: StandbyTask, { annotate }: Test
             body: JSON.stringify(input),
         });
 
-        const data = (await response.json()) as O;
-
         await annotateStandbyRuns();
 
+        const data = (await response.json()) as O;
         return {
             data,
             status: response.status,

@@ -92,29 +92,18 @@ export const testStandbyActor = <I = any, O = any>(
 
     vitestTest.runIf(shouldRun)(name, options, async <T extends TestContext>(context: T) => {
         const standbyTask = await createStandbyTask(actorName, config.get(actorName)?.buildNumber);
-        const { annotate } = context;
         const { expect, ...rest } = context;
 
         // NOTE: we need to wrap `fn` in try-catch so that we can always clean up (delete the task) afterwards
         try {
             await fn({
                 expect: extendExpect(expect),
-                callStandby: createStartStandbyFn(standbyTask),
+                callStandby: createStartStandbyFn(standbyTask, context, name),
                 ...rest,
             });
-        } catch {
-            /* */
-        }
-
-        const { taskId } = standbyTask;
-        const runs = (await apifyClient.task(taskId).runs().list()).items;
-        for (const run of runs) {
-            const runLink = generateRunLink(run);
-            await annotate(`${name} - ${runLink}`, 'run_link');
-        }
-
-        if (taskId) {
-            await apifyClient.task(taskId).delete();
+        } finally {
+            // we want to delete the task at the end of the test
+            await apifyClient.task(standbyTask.taskId).delete();
         }
     });
 };
@@ -129,7 +118,7 @@ export const testTestActor = <T>(
             expect: extendExpect(expect),
             // @ts-expect-error: this just to test custom matchers
             // eslint-disable-next-line @typescript-eslint/no-empty-function
-            run: () => {},
+            run: () => { },
             ...rest,
         });
     });
@@ -141,8 +130,25 @@ export const it = testActor;
  * Creates a function the accepts input for a standby actor and sends request containing input
  * to the task's standby url.
  */
-const createStartStandbyFn = <I, O>(standbyTask: StandbyTask) => {
-    const { standbyUrl } = standbyTask;
+const createStartStandbyFn = <I, O>(standbyTask: StandbyTask, { annotate }: TestContext, testName: string) => {
+    const { standbyUrl, taskId } = standbyTask;
+    const annotatedRuns = new Set<string>();
+
+    // We annotate all the runs of the task, though it will be only one run
+    // for most of the tests. To avoid annotating the same run multiple times
+    // (in case the test calls the standby more than once), we use `annotatedRuns`
+    // set to keep track of which runs have already been annotated.
+    const annotateStandbyRuns = async () => {
+        const runs = (await apifyClient.task(taskId).runs().list()).items;
+        for (const run of runs) {
+            if (!annotatedRuns.has(run.id)) {
+                const runLink = generateRunLink(run);
+                await annotate(`${testName} - ${runLink}`, 'run_link');
+            }
+            annotatedRuns.add(run.id);
+        }
+    };
+
     return async ({
         input,
         path = '',
@@ -158,6 +164,9 @@ const createStartStandbyFn = <I, O>(standbyTask: StandbyTask) => {
         });
 
         const data = (await response.json()) as O;
+
+        await annotateStandbyRuns();
+
         return {
             data,
             status: response.status,
@@ -171,16 +180,12 @@ interface StandbyTask {
     taskId: string;
 }
 
-const randomInt = (min: number, max: number) => {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-};
-
 /**
  * Creates a task with specific `build` - either `buildNumber` or default.
  *
  * @throws if actor doesn't exist or it doesn't support standby mode.
  */
-const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): Promise<StandbyTask> => {
+export const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): Promise<StandbyTask> => {
     const actor = apifyClient.actor(actorNameOrId);
 
     const actorInfo = (await actor.get()) as Actor & { standbyUrl?: string };
@@ -206,16 +211,15 @@ const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): P
     };
 
     try {
-        const title = `Test task - ${build}:${actorNameOrId}`.slice(0, 62);
+        const title = `Test task - ${build}`.slice(0, 62);
+        const randomValueLength = 15;
         // we try to create unique task name containing only `a-z0-9-` characters and at most 63 characters long
-        const name = `${randomInt(1, 1_000_000)}${title
-            .toLowerCase()
-            .replaceAll(/\s+/g, '')
-            .replaceAll(/[^a-z0-9-]+/g, '-')}`.slice(0, 62);
+        const randomValue = Math.random().toString(10).slice(2).padEnd(randomValueLength, '0');
+        const name = `test-${randomValue.slice(0, randomValueLength)}`;
         const newTask = (await apifyClient.tasks().create({
             actId: actorNameOrId,
             actorStandby: actorStandbyOptions,
-            description: `Task for testing standby version ${build}`,
+            description: `Task for testing standby version ${build} of actor "${actorNameOrId}"`,
             title,
             name,
         })) as Task & { standbyUrl?: string };

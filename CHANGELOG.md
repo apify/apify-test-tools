@@ -2,8 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-<!-- git-cliff-unreleased-start -->
-## 0.6.4 - **not yet released**
+## [0.7.0](https://github.com/apify/apify-test-tools/releases/tag/v0.7.0) (2026-04-10)
 
 ### 🚀 Features
 
@@ -18,7 +17,6 @@ All notable changes to this project will be documented in this file.
 - **bin:** Don&#x27;t test if we merge master into cosmetic only changes ([#78](https://github.com/apify/apify-test-tools/pull/78)) ([bc899eb](https://github.com/apify/apify-test-tools/commit/bc899eb550283862fbdc3c44a4fca6f682017c43)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 
-<!-- git-cliff-unreleased-end -->
 ## [0.6.3](https://github.com/apify/apify-test-tools/releases/tag/v0.6.3) (2026-04-06)
 
 ### 🐛 Bug Fixes

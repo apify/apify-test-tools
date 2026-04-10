@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
 
 - **testStandby:** Allow for custom paths and headers ([#77](https://github.com/apify/apify-test-tools/pull/77)) ([4e48329](https://github.com/apify/apify-test-tools/commit/4e4832973ebff4e97725e1abb0020887c874d347)) by [@JuanGalilea](https://github.com/JuanGalilea)
 
+### 🐛 Bug Fixes
+
+- Standby tests ([#76](https://github.com/apify/apify-test-tools/pull/76)) ([33cd89c](https://github.com/apify/apify-test-tools/commit/33cd89cf9e512f422704eeb8f6c46e4e2759a902)) by [@oklinov](https://github.com/oklinov)
+
 
 <!-- git-cliff-unreleased-end -->
 ## [0.6.3](https://github.com/apify/apify-test-tools/releases/tag/v0.6.3) (2026-04-06)

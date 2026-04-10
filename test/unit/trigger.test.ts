@@ -18,7 +18,7 @@ describe('getCurrentTrigger', () => {
         expect(getCurrentTrigger()).toBeUndefined();
     });
 
-    it.each(['hourly', 'daily', 'pullRequest'] as const)('returns %s when TEST_TRIGGER=%s', (trigger) => {
+    it.each(['hourly', 'daily', 'pullRequest'] as const)('returns $0 when TEST_TRIGGER=$0', (trigger) => {
         process.env[TRIGGER_ENV_VAR] = trigger;
         expect(getCurrentTrigger()).toBe(trigger);
     });
@@ -40,7 +40,6 @@ describe('shouldRunForTrigger', () => {
 
     describe('no runWhen config', () => {
         it('always runs when runWhen is undefined', () => {
-            process.env[TRIGGER_ENV_VAR] = 'hourly';
             expect(shouldRunForTrigger(undefined)).toBe(true);
         });
     });

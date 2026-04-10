@@ -290,3 +290,145 @@ export const testTestActor = <T>(
 };
 
 export const it = testActor;
+
+/**
+ * Creates a function the accepts input for a standby actor and sends request containing input
+ * to the task's standby url.
+ */
+const createStartStandbyFn = <I, O>(standbyTask: StandbyTask) => {
+    const { standbyUrl } = standbyTask;
+    return async ({
+        input,
+        path = '',
+        headers = {},
+    }: Pick<RunOptions<I>, 'input'> & { path?: string; headers?: Record<string, string> }) => {
+        const response = await fetch(standbyUrl + path, {
+            headers: {
+                ...headers,
+                Authorization: `Bearer ${apifyClient.token}`,
+            },
+            method: 'POST',
+            body: JSON.stringify(input),
+        });
+
+        const data = (await response.json()) as O;
+        return {
+            data,
+            status: response.status,
+            headers: response.headers,
+        };
+    };
+};
+
+interface StandbyTask {
+    standbyUrl: string;
+    taskId: string;
+}
+
+const randomInt = (min: number, max: number) => {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
+/**
+ * Creates a task with specific `build` - either `buildNumber` or default.
+ *
+ * @throws if actor doesn't exist or it doesn't support standby mode.
+ */
+const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): Promise<StandbyTask> => {
+    const actor = apifyClient.actor(actorNameOrId);
+
+    const actorInfo = (await actor.get()) as Actor & { standbyUrl?: string };
+    if (!actorInfo) {
+        throw new Error(`Actor "${actorNameOrId}" not found`);
+    }
+
+    if (!actorInfo.standbyUrl) {
+        throw new Error(`Actor "${actorNameOrId}" doesn't support standby mode`);
+    }
+
+    if (!actorInfo.actorStandby) {
+        throw new Error(`Actor "${actorNameOrId} doesn't contain actorStandby options`);
+    }
+    const { isEnabled, ...defaultActorStandby } = actorInfo.actorStandby;
+    delete defaultActorStandby.disableStandbyFieldsOverride;
+
+    const build = buildNumber ?? defaultActorStandby.build;
+
+    const actorStandbyOptions: ActorStandby = {
+        ...defaultActorStandby,
+        build,
+    };
+
+    try {
+        const title = `Test task - ${build}:${actorNameOrId}`.slice(0, 62);
+        // we try to create unique task name containing only `a-z0-9-` characters and at most 63 characters long
+        const name = `${randomInt(1, 1_000_000)}${title
+            .toLowerCase()
+            .replaceAll(/\s+/g, '')
+            .replaceAll(/[^a-z0-9-]+/g, '-')}`.slice(0, 62);
+        const newTask = (await apifyClient.tasks().create({
+            actId: actorNameOrId,
+            actorStandby: actorStandbyOptions,
+            description: `Task for testing standby version ${build}`,
+            title,
+            name,
+        })) as Task & { standbyUrl?: string };
+
+        const { id, standbyUrl } = newTask;
+
+        if (!standbyUrl) {
+            throw new Error(`Task "${id} doesn't contain standbyUrl property`);
+        }
+
+        return {
+            standbyUrl,
+            taskId: id,
+        };
+    } catch (error) {
+        throw new Error(`Failed to create task: ${error}`);
+    }
+};
+
+const createStartRunFn = <T>(actorNameOrId: string, testContext: TestContext) => {
+    const { annotate, task } = testContext;
+    const actorConfig = config.get(actorNameOrId);
+    const build = actorConfig?.buildNumber;
+    const buildId = actorConfig?.buildId;
+    return async (runOptions: RunOptions<T>) => {
+        const { input, options, prefilledInput, runId } = runOptions;
+
+        if (runId) {
+            const run = await apifyClient.run(runId).get();
+            if (!run) {
+                throw new Error(`Run with id "${runId}" doesn't exist`);
+            }
+            return new RunTestResult(apifyClient, run);
+        }
+
+        const actor = apifyClient.actor(actorNameOrId);
+
+        const actorInput = {
+            ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorNameOrId, buildId))),
+            ...input,
+        };
+        const run = await actor.call(actorInput, { build, log: null, ...options });
+
+        const runLink = generateRunLink(run);
+        await annotate(`${task.name} - ${runLink}`, 'run_link');
+        // @ts-expect-error: `TaskMeta` cannot be retyped
+        task.meta = {
+            runId: run.id,
+            runLink,
+            actorName: actorNameOrId,
+        };
+
+        // waiting for datasetItemCount and chargedEventCounts to sync
+        await sleep(10_000);
+
+        return new RunTestResult(apifyClient, run);
+    };
+};
+
+const generateRunLink = (run: ActorRun | ActorRunListItem): string => {
+    return `https://console.apify.com/view/runs/${run.id}`;
+};

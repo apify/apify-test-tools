@@ -262,7 +262,7 @@ export const testStandbyActor = <I = any, O = any>(
         try {
             await fn({
                 expect: extendExpect(expect),
-                callStandby: createStartStandbyFn(standbyTask, context, name),
+                callStandby: createStartStandbyFn(standbyTask, context, fullName),
                 ...rest,
             });
         } finally {
@@ -288,7 +288,7 @@ export const testTestActor = <T>(
             expect: extendExpect(expect),
             // @ts-expect-error: this just to test custom matchers
             // eslint-disable-next-line @typescript-eslint/no-empty-function
-            run: () => { },
+            run: () => {},
             ...rest,
         });
     });

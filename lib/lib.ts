@@ -1,14 +1,23 @@
 import { fileURLToPath } from 'node:url';
 
+import type { Actor, ActorRun, ActorRunListItem, ActorStandby, Task } from 'apify-client';
 import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
 import { DEFAULT_DESCRIBE_OPTIONS, DEFAULT_TEST_ACTOR_OPTIONS, DEFAULT_TRIGGERS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
+import { RunTestResult } from './run-test-result.js';
 import { shouldRunForTrigger } from './trigger.js';
-import type { ActorBuild, ActorTestOptions, DescribeConfig, TestActorConfig, TriggerConfig } from './types.js';
-import { createStandbyTask, createStartRunFn, createStartStandbyFn, generateRunLink } from './utils.js';
+import type {
+    ActorBuild,
+    ActorTestOptions,
+    DescribeConfig,
+    RunOptions,
+    TestActorConfig,
+    TriggerConfig,
+} from './types.js';
+import { getActorPrefilledInput, sleep } from './utils.js';
 
 export { getCurrentTrigger, TRIGGER_ENV_VAR } from './trigger.js';
 export { ExpectStatic };
@@ -30,7 +39,7 @@ try {
     throw new Error(`Failed to parse actor builds: ${err}`);
 }
 
-const actorConfig = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
+const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
     map.set(cfg.actorName, cfg);
     map.set(cfg.actorId, cfg);
     return map;
@@ -166,7 +175,7 @@ function resolveActorTestConfig(
         ...(triggers !== undefined ? [triggers] : []),
     ]);
     const shouldRun =
-        (!!RUN_ALL_PLATFORM_TESTS || actorConfig.has(actorName)) && shouldRunForTrigger(effectiveTriggers.runWhen);
+        (!!RUN_ALL_PLATFORM_TESTS || config.has(actorName)) && shouldRunForTrigger(effectiveTriggers.runWhen);
 
     return { fullName: `${actorName}: ${name}`, effectiveTriggers, vitestOptions: options ?? {}, shouldRun };
 }
@@ -209,7 +218,7 @@ export const testActor = <T>(
         const { expect, ...rest } = context;
         await fn({
             expect: extendExpect(expect),
-            run: createStartRunFn(apifyClient, actorConfig, actorName, context),
+            run: createStartRunFn(actorName, context),
             ...rest,
         });
     });
@@ -246,7 +255,7 @@ export const testStandbyActor = <I = any, O = any>(
         // @ts-expect-error: `TaskMeta` cannot be retyped
         context.task.meta = { ...context.task.meta, alerts: effectiveTriggers.alerts };
 
-        const standbyTask = await createStandbyTask(apifyClient, actorName, actorConfig.get(actorName)?.buildNumber);
+        const standbyTask = await createStandbyTask(actorName, config.get(actorName)?.buildNumber);
         const { annotate } = context;
         const { expect, ...rest } = context;
 
@@ -254,7 +263,7 @@ export const testStandbyActor = <I = any, O = any>(
         try {
             await fn({
                 expect: extendExpect(expect),
-                callStandby: createStartStandbyFn(apifyClient, standbyTask),
+                callStandby: createStartStandbyFn(standbyTask),
                 ...rest,
             });
         } catch {

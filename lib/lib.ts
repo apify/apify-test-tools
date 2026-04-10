@@ -143,9 +143,14 @@ export const it = testActor;
  */
 const createStartStandbyFn = <I, O>(standbyTask: StandbyTask) => {
     const { standbyUrl } = standbyTask;
-    return async ({ input }: Pick<RunOptions<I>, 'input'>) => {
-        const response = await fetch(standbyUrl, {
+    return async ({
+        input,
+        path = '',
+        headers = {},
+    }: Pick<RunOptions<I>, 'input'> & { path?: string; headers?: Record<string, string> }) => {
+        const response = await fetch(standbyUrl + path, {
             headers: {
+                ...headers,
                 Authorization: `Bearer ${apifyClient.token}`,
             },
             method: 'POST',

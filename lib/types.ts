@@ -141,7 +141,7 @@ export type ActorTestOptions = Omit<TestOptions, 'retry' | 'timeout'> & {
      * Timeout for the actor run in milliseconds. Zero value means there is no timeout.
      * - If `undefined`, the run uses timeout of the default Actor run configuration.
      *
-     * @default 60_000 * 60 // 1 hour
+     * @default 60 * 60 * 1000 // 1 hour
      */
     timeout?: ActorCallOptions['timeout'];
 };

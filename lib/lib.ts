@@ -3,6 +3,7 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
+import { DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
 import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
@@ -37,7 +38,7 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
     // we want to run tests concurrently
     concurrent: true,
     // test should finish within 1 hour
-    timeout: 60_000 * 60,
+    timeout: DEFAULT_TEST_RUN_DURATION_MS,
 };
 
 export const describe = (name: string, fn?: SuiteFactory<object>, options: ActorTestOptions = DEFAULT_TEST_OPTIONS) => {
@@ -46,6 +47,8 @@ export const describe = (name: string, fn?: SuiteFactory<object>, options: Actor
 
 const DEFAULT_TEST_ACTOR_OPTIONS: ActorTestOptions = {
     retry: 1,
+    // prevent orphaned runs
+    timeout: DEFAULT_TEST_RUN_DURATION_MS,
 };
 
 export const testActor = <T>(
@@ -124,7 +127,7 @@ export const testTestActor = <T>(
             expect: extendExpect(expect),
             // @ts-expect-error: this just to test custom matchers
             // eslint-disable-next-line @typescript-eslint/no-empty-function
-            run: () => { },
+            run: () => {},
             ...rest,
         });
     });

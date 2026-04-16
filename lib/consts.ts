@@ -1,5 +1,10 @@
 import type { AlertsConfig, RunWhenConfig, ToFinishWithOptionsWithDefaults } from './types.js';
 
+/**
+ * Both the test runs and the vitest test specs should finish in this time - 1 hour
+ */
+export const DEFAULT_TEST_RUN_DURATION_MS = 60 * 60 * 1000; // 1 hour
+
 // Default trigger config.
 // `Required<...>` on both runWhen and alerts ensures a compile error when a new field is
 // added, forcing an explicit opt-in/opt-out decision for existing tests.
@@ -12,11 +17,13 @@ export const DEFAULT_TRIGGERS: { runWhen: Required<RunWhenConfig>; alerts: Requi
 
 export const DEFAULT_DESCRIBE_OPTIONS = {
     concurrent: true,
-    timeout: 60_000 * 60,
+    timeout: DEFAULT_TEST_RUN_DURATION_MS,
 };
 
 export const DEFAULT_TEST_ACTOR_OPTIONS = {
     retry: 1,
+    // prevent orphaned runs
+    timeout: DEFAULT_TEST_RUN_DURATION_MS,
 };
 
 export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
@@ -30,8 +37,3 @@ export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
     maxRetriesPerRequest: null,
     forbiddenLogs: ['ReferenceError', 'TypeError'],
 };
-
-/**
- * Both the test runs and the vitest test specs should finish in this time - 1 hour
- */
-export const DEFAULT_TEST_RUN_DURATION_MS = 60 * 60 * 1000; // 1 hour

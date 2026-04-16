@@ -5,7 +5,7 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { DEFAULT_TEST_RUN_DURATION_MS, DEFAULT_DESCRIBE_OPTIONS, DEFAULT_TEST_ACTOR_OPTIONS, DEFAULT_TRIGGERS } from './consts.js';
+import { DEFAULT_DESCRIBE_OPTIONS, DEFAULT_TEST_ACTOR_OPTIONS, DEFAULT_TRIGGERS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
 import { shouldRunForTrigger } from './trigger.js';
@@ -47,13 +47,6 @@ const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
 
 const { TESTER_APIFY_TOKEN, RUN_PLATFORM_TESTS, RUN_ALL_PLATFORM_TESTS } = process.env;
 const apifyClient = new ApifyClient({ token: TESTER_APIFY_TOKEN });
-
-const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
-    // we want to run tests concurrently
-    concurrent: true,
-    // test should finish within 1 hour
-    timeout: DEFAULT_TEST_RUN_DURATION_MS,
-};
 
 // Strip the extension so the comparison works for both .ts (source maps) and .js (compiled).
 const THIS_FILE_BASE = fileURLToPath(import.meta.url).replace(/\.[jt]s$/, '');
@@ -157,12 +150,6 @@ export const describe = (
     });
 
     triggersStack.pop();
-}
-
-const DEFAULT_TEST_ACTOR_OPTIONS: ActorTestOptions = {
-    retry: 1,
-    // prevent orphaned runs
-    timeout: DEFAULT_TEST_RUN_DURATION_MS,
 };
 
 /**

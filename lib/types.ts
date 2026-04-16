@@ -159,17 +159,6 @@ export type ActorOptions = {
     timeout?: number;
 };
 
-export type ActorTestOptions = Omit<TestOptions, 'retry'> & {
-    /**
-     * Times to retry the test if fails. Useful for making flaky tests more stable.
-     * When retries is up, the last test error will be thrown.
-     *
-     * @default 1
-     */
-    // we are just extending the docs here to replace the default value, otherwise it's the exact same
-    retry?: TestOptions['retry'];
-};
-
 /**
  * Config object passed as the first argument to `describe`.
  * `triggers` is inherited and merged with nested describes / testActors.

@@ -17,6 +17,41 @@ export const getChangedFiles = (commits: Commit[]) => {
     return changedFiles;
 };
 
+/**
+ * Returns true if the branch contains a merge commit whose parent is reachable from targetBranch
+ * (i.e. a genuine "merge from target" commit, not a merge of some unrelated branch).
+ * Uses the full targetBranch..sourceBranch range, ignoring baseCommit.
+ */
+export const hasMergeFromTarget = (sourceBranch: string, targetBranch: string): boolean => {
+    const mergeShas = spawnCommandInGhWorkspace(`git log --merges --pretty=format:%H ${targetBranch}..${sourceBranch}`)
+        .split('\n')
+        .filter(Boolean);
+
+    for (const sha of mergeShas) {
+        const parents = spawnCommandInGhWorkspace(`git log -1 --pretty=format:%P ${sha}`).trim().split(' ');
+        for (const parent of parents) {
+            // git merge-base A B outputs the common ancestor.
+            // If that equals A, then A is an ancestor of B (i.e. parent is reachable from targetBranch).
+            const mergeBase = spawnCommandInGhWorkspace(`git merge-base ${parent} ${targetBranch}`);
+            if (mergeBase === parent) {
+                return true;
+            }
+        }
+    }
+    return false;
+};
+
+/**
+ * Returns all files touched by non-merge commits on the branch (full history, ignoring baseCommit).
+ * Used to check whether the branch itself has any functional changes, independent of what master merged in.
+ */
+export const getBranchOnlyChangedFiles = (sourceBranch: string, targetBranch: string): string[] => {
+    const output = spawnCommandInGhWorkspace(
+        `git log --no-merges --name-only --pretty=format: ${targetBranch}..${sourceBranch}`,
+    );
+    return output.split('\n').filter(Boolean);
+};
+
 const SHA_REGEX = /^[0-9a-f]{40}$/i;
 
 /**
@@ -40,17 +75,22 @@ export const parseBaseCommit = (shaOrCommit: string | undefined): string | undef
     return sha;
 };
 
+const fetchAllBranchCommits = (sourceBranch: string, targetBranch: string): Commit[] => {
+    const commitsStrings = spawnCommandInGhWorkspace(
+        `git log --pretty=format:'${GIT_LOG_FORMAT}' ${targetBranch}..${sourceBranch}`,
+    ).split('\n');
+    const commits = commitsStrings.map((commitString) => parseCommit(commitString));
+    commits.reverse();
+    return commits;
+};
+
 /**
  * Gets the commits between sourceBranch and targetBranch (exclusive).
  * - If baseCommit is provided, only returns commits after the baseCommit.
  */
 export const getCommits = ({ sourceBranch, targetBranch, baseCommit }: Config): Commit[] => {
     const baseCommitSha = parseBaseCommit(baseCommit);
-    const commitsStrings = spawnCommandInGhWorkspace(
-        `git log --pretty=format:'${GIT_LOG_FORMAT}' ${targetBranch}..${sourceBranch}`,
-    ).split('\n');
-    const commits = commitsStrings.map((commitString) => parseCommit(commitString));
-    commits.reverse();
+    const commits = fetchAllBranchCommits(sourceBranch, targetBranch);
 
     const baseCommitIndex = commits.findIndex((commit) => commit.sha === baseCommitSha);
 

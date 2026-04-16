@@ -238,6 +238,24 @@ export interface ActorMatchers<R = unknown> {
     hard: <T>(actual: T, message?: string) => Assertion;
 }
 
+export type ActorTestOptions = Omit<TestOptions, 'retry' | 'timeout'> & {
+    /**
+     * Times to retry the test if fails. Useful for making flaky tests more stable.
+     * When retries is up, the last test error will be thrown.
+     *
+     * @default 1
+     */
+    // we are just extending the docs here to replace the default value, otherwise it's the exact same
+    retry?: TestOptions['retry'];
+    /**
+     * Timeout for the actor run in milliseconds. Zero value means there is no timeout.
+     * - If `undefined`, the run uses timeout of the default Actor run configuration.
+     *
+     * @default 60 * 60 * 1000 // 1 hour
+     */
+    timeout?: ActorCallOptions['timeout'];
+};
+
 declare module 'vitest' {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type
     interface Assertion<T = any> extends ActorMatchers<T> {}

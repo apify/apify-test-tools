@@ -1,7 +1,13 @@
 import type { MockInstance } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getChangedFiles, getCommits, parseBaseCommit } from '../../../bin/git.js';
+import {
+    getBranchOnlyChangedFiles,
+    getChangedFiles,
+    getCommits,
+    hasMergeFromTarget,
+    parseBaseCommit,
+} from '../../../bin/git.js';
 import * as Utils from '../../../bin/utils.js';
 
 describe('getCommits', () => {
@@ -114,6 +120,86 @@ describe('getChangedFiles', () => {
 
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
         expect(gitCommandSpy).toHaveBeenCalledWith(`git diff --name-only ${onlySha}~..${onlySha}`);
+    });
+});
+
+describe('hasMergeFromTarget', () => {
+    const sourceBranch = 'feature-branch';
+    const targetBranch = 'main';
+    const mergeSha = 'f'.repeat(40);
+    const branchParentSha = 'b'.repeat(40);
+    const targetParentSha = 't'.repeat(40);
+
+    let gitCommandSpy: MockInstance;
+
+    beforeEach(() => {
+        gitCommandSpy = vi.spyOn(Utils, 'spawnCommandInGhWorkspace');
+    });
+
+    it('should return false when there are no merge commits on the branch', () => {
+        gitCommandSpy.mockImplementation((cmd: string) => {
+            if (cmd.includes('--merges')) return '';
+            return '';
+        });
+
+        expect(hasMergeFromTarget(sourceBranch, targetBranch)).toBe(false);
+        expect(gitCommandSpy).toHaveBeenCalledWith(
+            `git log --merges --pretty=format:%H ${targetBranch}..${sourceBranch}`,
+        );
+    });
+
+    it('should return true when a merge commit has a parent reachable from targetBranch', () => {
+        gitCommandSpy.mockImplementation((cmd: string) => {
+            if (cmd.includes('--merges')) return mergeSha;
+            if (cmd.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
+            if (cmd.startsWith(`git merge-base ${branchParentSha}`)) return branchParentSha; // not ancestor
+            if (cmd.startsWith(`git merge-base ${targetParentSha}`)) return targetParentSha; // is ancestor
+            return '';
+        });
+
+        expect(hasMergeFromTarget(sourceBranch, targetBranch)).toBe(true);
+    });
+
+    it('should return false when the merge commit parent is not reachable from targetBranch (unrelated branch merge)', () => {
+        const unrelatedSha = 'e'.repeat(40);
+        const differentMergeBase = '0'.repeat(40);
+        gitCommandSpy.mockImplementation((cmd: string) => {
+            if (cmd.includes('--merges')) return mergeSha;
+            if (cmd.includes('--pretty=format:%P')) return `${branchParentSha} ${unrelatedSha}`;
+            // merge-base returns something other than the parent — not an ancestor
+            if (cmd.startsWith('git merge-base')) return differentMergeBase;
+            return '';
+        });
+
+        expect(hasMergeFromTarget(sourceBranch, targetBranch)).toBe(false);
+    });
+});
+
+describe('getBranchOnlyChangedFiles', () => {
+    const sourceBranch = 'feature-branch';
+    const targetBranch = 'main';
+
+    let gitCommandSpy: MockInstance;
+
+    beforeEach(() => {
+        gitCommandSpy = vi.spyOn(Utils, 'spawnCommandInGhWorkspace');
+    });
+
+    it('should return files touched by non-merge commits', () => {
+        gitCommandSpy.mockReturnValue('README.md\n\nactors/foo_bar/src/main.ts\n');
+
+        const result = getBranchOnlyChangedFiles(sourceBranch, targetBranch);
+
+        expect(result).toStrictEqual(['README.md', 'actors/foo_bar/src/main.ts']);
+        expect(gitCommandSpy).toHaveBeenCalledWith(
+            `git log --no-merges --name-only --pretty=format: ${targetBranch}..${sourceBranch}`,
+        );
+    });
+
+    it('should return empty array when there are no non-merge commits', () => {
+        gitCommandSpy.mockReturnValue('');
+
+        expect(getBranchOnlyChangedFiles(sourceBranch, targetBranch)).toStrictEqual([]);
     });
 });
 

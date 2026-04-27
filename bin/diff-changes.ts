@@ -44,7 +44,7 @@ const isIgnoredTopLevelFile = (lowercaseFilePath: string) => {
 type FileChange =
     | { impact: 'ignored' }
     // Only things that influence how the Actor looks - e.g. README and CHANGELOG files, schema titles, descriptions, reordering, etc. We only need to rebuild on release
-    | { impact: 'cosmetic'; includes: 'all-actors' | ActorConfig }
+    | { impact: 'cosmetic'; semanticallyVerified: boolean; includes: 'all-actors' | ActorConfig }
     // Influences how the Actor works - we need to run tests
     | {
           impact: 'functional';
@@ -59,7 +59,7 @@ const classifyFileChange = (originalFilePath: string, actorConfigs: ActorConfig[
     }
 
     if (lowercaseFilePath.endsWith('changelog.md')) {
-        return { impact: 'cosmetic', includes: 'all-actors' };
+        return { impact: 'cosmetic', semanticallyVerified: false, includes: 'all-actors' };
     }
 
     const actorFolderInfo = maybeParseActorFolder(lowercaseFilePath);
@@ -79,11 +79,11 @@ const classifyFileChange = (originalFilePath: string, actorConfigs: ActorConfig[
             return { impact: 'ignored' };
         }
         if (lowercaseFilePath.endsWith('readme.md')) {
-            return { impact: 'cosmetic', includes: actorConfigChanged };
+            return { impact: 'cosmetic', semanticallyVerified: false, includes: actorConfigChanged };
         }
         // originalFilePath must be used here (not lowercaseFilePath) — git show is case-sensitive on Linux
         if (lowercaseFilePath.endsWith('.json') && isCosmeticOnlyJsonSchemaChange(commits, originalFilePath)) {
-            return { impact: 'cosmetic', includes: actorConfigChanged };
+            return { impact: 'cosmetic', semanticallyVerified: true, includes: actorConfigChanged };
         }
 
         return { impact: 'functional', includes: actorConfigChanged };
@@ -127,20 +127,32 @@ export const getChangedActors = ({
     const actorsChanged = Array.from(actorsChangedMap.values());
 
     // All below here is just for logging
+    const formatFiles = (files: string[]) => (files.length > 0 ? files.join(', ') : '<no files>');
+
     const ignoredFilesChanged = filepathsChanged.filter(
         (file) => classifyFileChange(file, actorConfigs, commits).impact === 'ignored',
     );
-    console.error(`[DIFF]: Ignored files (don't trigger test or build): ${ignoredFilesChanged.join(', ')}`);
+    console.error(`[DIFF]: Ignored files (don't trigger test or build): ${formatFiles(ignoredFilesChanged)}`);
 
-    const cosmeticFilesChanged = filepathsChanged.filter(
-        (file) => classifyFileChange(file, actorConfigs, commits).impact === 'cosmetic',
+    const cosmeticChanges = filepathsChanged
+        .map((file) => ({ file, change: classifyFileChange(file, actorConfigs, commits) }))
+        .filter(({ change }) => change.impact === 'cosmetic') as {
+        file: string;
+        change: Extract<FileChange, { impact: 'cosmetic' }>;
+    }[];
+    const semanticallyVerifiedFiles = cosmeticChanges.filter(({ change }) => change.semanticallyVerified).map(({ file }) => file);
+    const inherentlyCosmeticFiles = cosmeticChanges.filter(({ change }) => !change.semanticallyVerified).map(({ file }) => file);
+    console.error(
+        `[DIFF]: Cosmetic-only JSON schema changes (semantically verified, only trigger release build): ${formatFiles(semanticallyVerifiedFiles)}`,
     );
-    console.error(`[DIFF]: Cosmetic files (should only trigger release build): ${cosmeticFilesChanged.join(', ')}`);
+    console.error(
+        `[DIFF]: Inherently cosmetic files (README, CHANGELOG — only trigger release build): ${formatFiles(inherentlyCosmeticFiles)}`,
+    );
 
     const functionalFilesChanged = filepathsChanged.filter(
         (file) => classifyFileChange(file, actorConfigs, commits).impact === 'functional',
     );
-    console.error(`[DIFF]: Functional files (trigger test & release build): ${functionalFilesChanged.join(', ')}`);
+    console.error(`[DIFF]: Functional files (trigger test & release build): ${formatFiles(functionalFilesChanged)}`);
 
     if (actorsChanged.length > 0) {
         const miniactors = actorsChanged.filter((config) => !config.isStandalone).map((config) => config.actorName);

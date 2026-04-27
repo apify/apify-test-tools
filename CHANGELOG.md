@@ -2,15 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-<!-- git-cliff-unreleased-start -->
-## 0.7.1 - **not yet released**
+## [0.7.1](https://github.com/apify/apify-test-tools/releases/tag/v0.7.1) (2026-04-27)
 
 ### 🚀 Features
 
 - Add default 1 hour test run timeout ([#79](https://github.com/apify/apify-test-tools/pull/79)) ([c438350](https://github.com/apify/apify-test-tools/commit/c4383509b49228e251594b4b0a5c48fde94e71f7)) by [@Patai5](https://github.com/Patai5)
 
 
-<!-- git-cliff-unreleased-end -->
 ## [0.7.0](https://github.com/apify/apify-test-tools/releases/tag/v0.7.0) (2026-04-10)
 
 ### 🚀 Features

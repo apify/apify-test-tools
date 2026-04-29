@@ -98,6 +98,105 @@ export type RunStatus =
     | 'TIMING-OUT'
     | 'TIMED-OUT';
 
+/**
+ * Named trigger types that can gate a test or suite.
+ * The active trigger is supplied via the `TEST_TRIGGER` environment variable.
+ */
+export type TriggerType = 'hourly' | 'daily' | 'pullRequest';
+
+/**
+ * Controls which trigger types cause the test/suite to be included in the run.
+ * When `TEST_TRIGGER` is not set, all tests run regardless of `runWhen`.
+ *
+ * Each field defaults to the value set in `DEFAULT_TRIGGERS` (currently `daily` and
+ * `pullRequest` are true, `hourly` is false). Set a field to `false` to opt out of
+ * a trigger, or `true` to opt in.
+ *
+ * Keys are merged field-by-field through the describe hierarchy, so a child
+ * only needs to override the specific trigger it wants to change.
+ *
+ * Example — disable only PR runs:
+ * ```ts
+ * runWhen: { pullRequest: false }
+ * ```
+ */
+export type RunWhenConfig = Partial<Record<TriggerType, boolean>>;
+
+/**
+ * Defines which alerting channels fire when this test/suite fails.
+ * Evaluated by the `report-tests` command after the run.
+ * Keys are merged field-by-field through the describe hierarchy.
+ *
+ * Example:
+ * ```ts
+ * alerts: { slack: true }
+ * ```
+ */
+export type AlertsConfig = {
+    slack?: boolean;
+};
+
+/**
+ * Trigger and alerting configuration, shared between `DescribeConfig` and
+ * `TestActorConfig`. Inherited and merged field-by-field down the describe
+ * hierarchy so children only need to override what they want to change.
+ */
+export type TriggerConfig = {
+    runWhen?: RunWhenConfig;
+    alerts?: AlertsConfig;
+};
+
+/** Vitest-level options for a `describe` suite. */
+export type DescribeOptions = {
+    timeout?: number;
+    concurrent?: boolean;
+    sequential?: boolean;
+};
+
+/** Vitest-level options for an individual `testActor` / `testStandbyActor`. */
+export type ActorOptions = {
+    retry?: number;
+    timeout?: number;
+};
+
+/**
+ * Config object passed as the first argument to `describe`.
+ * `triggers` is inherited and merged with nested describes / testActors.
+ *
+ * Example:
+ * ```ts
+ * describe({
+ *   name: 'my-actor',
+ *   triggers: { runWhen: { daily: true }, alerts: { slack: true } },
+ *   options: { concurrent: false },
+ * }, () => { ... });
+ * ```
+ */
+export type DescribeConfig = {
+    name: string;
+    triggers?: TriggerConfig;
+    options?: DescribeOptions;
+};
+
+/**
+ * Config object passed as the second argument to `testActor` / `testStandbyActor`.
+ * `triggers` merges field-by-field with whatever was set on enclosing describes.
+ *
+ * Example:
+ * ```ts
+ * testActor(actorId, {
+ *   name: 'smoke',
+ *   triggers: { runWhen: { hourly: true } },
+ *   options: { retry: 2 },
+ * }, async ({ run }) => { ... });
+ * ```
+ */
+export type TestActorConfig = {
+    name: string;
+    triggers?: TriggerConfig;
+    options?: ActorOptions;
+};
+
 export interface ActorMatchers<R = unknown> {
     toBeArray: () => R;
     toBeBoolean: () => R;

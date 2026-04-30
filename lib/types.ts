@@ -144,6 +144,12 @@ export type ActorTestOptions = Omit<TestOptions, 'retry' | 'timeout'> & {
      * @default 60 * 60 * 1000 // 1 hour
      */
     timeout?: ActorCallOptions['timeout'];
+    /**
+     * Mark this test as expected to fail (wraps the underlying vitest test with `test.fails`).
+     * The test passes as long as it keeps failing, and alerts you (by failing) if it unexpectedly starts passing.
+     * Use this to keep a sentinel for known regressions without inverting assertions by hand.
+     */
+    fails?: boolean;
 };
 
 declare module 'vitest' {

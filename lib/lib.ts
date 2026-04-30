@@ -57,13 +57,14 @@ export const testActor = <T>(
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    const options = {
+    const { fails, ...restOptions } = {
         ...DEFAULT_TEST_ACTOR_OPTIONS,
         ...testOptions,
     };
     const name = `${actorName}: ${testName}`;
     const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorName);
-    vitestTest.runIf(shouldRun)(name, options, async <TYPE extends TestContext>(context: TYPE) => {
+    const vitestTestFn = fails && shouldRun ? vitestTest.fails : vitestTest.runIf(shouldRun);
+    vitestTestFn(name, restOptions, async <TYPE extends TestContext>(context: TYPE) => {
         const { expect, ...rest } = context;
         await fn({
             expect: extendExpect(expect),
@@ -86,14 +87,15 @@ export const testStandbyActor = <I = any, O = any>(
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    const options = {
+    const { fails, ...restOptions } = {
         ...DEFAULT_TEST_ACTOR_OPTIONS,
         ...testOptions,
     };
     const name = `${actorName}: ${testName}`;
     const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorName);
+    const vitestTestFn = fails && shouldRun ? vitestTest.fails : vitestTest.runIf(shouldRun);
 
-    vitestTest.runIf(shouldRun)(name, options, async <T extends TestContext>(context: T) => {
+    vitestTestFn(name, restOptions, async <T extends TestContext>(context: T) => {
         const standbyTask = await createStandbyTask(actorName, config.get(actorName)?.buildNumber);
         const { expect, ...rest } = context;
 

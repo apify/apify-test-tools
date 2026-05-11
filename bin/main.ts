@@ -30,6 +30,10 @@ const buildOptions = (y: Argv) => {
             type: 'string',
             demandOption: true,
         })
+        .option('use-docker-cache', {
+            type: 'boolean',
+            default: false,
+        })
         .option('base-commit', {
             type: 'string',
         });
@@ -131,7 +135,7 @@ await yargs()
         'build',
         '',
         (args) => buildOptions(args).option('dry-run', { type: 'boolean', default: false }),
-        async ({ targetBranch, sourceBranch, baseCommit, dryRun }) => {
+        async ({ targetBranch, sourceBranch, baseCommit, dryRun, useDockerCache }) => {
             const actorsChanged = await resolveChangedActors(
                 { targetBranch, sourceBranch, baseCommit },
                 { isLatest: false },
@@ -148,6 +152,7 @@ await yargs()
                 actorConfigs: actorsChanged,
                 branch: sourceBranch.replace('origin/', ''),
                 dryRun,
+                useDockerCache,
             });
             console.log(JSON.stringify(builds));
         },
@@ -160,7 +165,8 @@ await yargs()
                 .option('push-event-path', { type: 'string', demandOption: true })
                 .option('dry-run', { type: 'boolean', default: false })
                 .option('report-slack-channel', { type: 'string' })
-                .option('release-slack-channel', { type: 'string' }),
+                .option('release-slack-channel', { type: 'string' })
+                .option('use-docker-cache', { type: 'boolean', default: false }),
         async (args) => {
             const { branch, changedFiles, repoUrl, commits, changelog, repository, author } = await getPushData(
                 args.pushEventPath,
@@ -180,6 +186,7 @@ await yargs()
                 actorConfigs: actorsChanged,
                 branch,
                 dryRun,
+                useDockerCache: args.useDockerCache,
             });
             console.error(JSON.stringify(builds));
 

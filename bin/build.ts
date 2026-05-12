@@ -11,6 +11,7 @@ type BuildPrActorOptions = {
     versionNumber: string;
     gitRepoUrl: string;
     actorName: string;
+    useDockerCache: boolean;
 };
 class ApifyBuilder {
     private constructor(
@@ -51,7 +52,12 @@ class ApifyBuilder {
         return { defaultBuildNumber, defaultVersionNumber, defaultBuildTag };
     };
 
-    startActorBuild = async ({ buildTag, versionNumber, gitRepoUrl }: BuildPrActorOptions): Promise<BuildData> => {
+    startActorBuild = async ({
+        buildTag,
+        versionNumber,
+        gitRepoUrl,
+        useDockerCache,
+    }: BuildPrActorOptions): Promise<BuildData> => {
         const actorClient = this.apifyClient.actor(this.actorName);
         const actorInfo = await actorClient.get();
         if (!actorInfo) {
@@ -84,7 +90,7 @@ class ApifyBuilder {
         }
 
         // We also get back actId so the testing actor can both match by actor ID and name
-        const { id, actId, buildNumber } = await actorClient.build(versionNumber);
+        const { id, actId, buildNumber } = await actorClient.build(versionNumber, { useCache: useDockerCache });
 
         console.error(`[${this.actorName}]: ${id} (${buildNumber})`);
         return { buildId: id, actorId: actId, buildNumber, actorName: this.actorName };
@@ -224,9 +230,17 @@ type RunBuildsOptions = {
     repoUrl: string;
     branch: string;
     dryRun: boolean;
+    useDockerCache: boolean;
 };
 
-export const runBuilds = async ({ repoUrl, branch, actorConfigs, isLatest = false, dryRun }: RunBuildsOptions) => {
+export const runBuilds = async ({
+    repoUrl,
+    branch,
+    actorConfigs,
+    isLatest = false,
+    dryRun,
+    useDockerCache,
+}: RunBuildsOptions) => {
     const buildConfigs: BuildPrActorOptions[] = [];
 
     const circleActors = isLatest ? await findCircleApifyManaged(actorConfigs) : [];
@@ -249,7 +263,7 @@ export const runBuilds = async ({ repoUrl, branch, actorConfigs, isLatest = fals
         if (folder) {
             gitRepoUrl = `${gitRepoUrl}:${folder}`;
         }
-        buildConfigs.push({ actorName, gitRepoUrl, versionNumber, buildTag });
+        buildConfigs.push({ actorName, gitRepoUrl, versionNumber, buildTag, useDockerCache });
     }
 
     if (dryRun) {

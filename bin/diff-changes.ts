@@ -140,8 +140,12 @@ export const getChangedActors = ({
         file: string;
         change: Extract<FileChange, { impact: 'cosmetic' }>;
     }[];
-    const semanticallyVerifiedFiles = cosmeticChanges.filter(({ change }) => change.semanticallyVerified).map(({ file }) => file);
-    const inherentlyCosmeticFiles = cosmeticChanges.filter(({ change }) => !change.semanticallyVerified).map(({ file }) => file);
+    const semanticallyVerifiedFiles = cosmeticChanges
+        .filter(({ change }) => change.semanticallyVerified)
+        .map(({ file }) => file);
+    const inherentlyCosmeticFiles = cosmeticChanges
+        .filter(({ change }) => !change.semanticallyVerified)
+        .map(({ file }) => file);
     console.error(
         `[DIFF]: Cosmetic-only JSON schema changes (semantically verified, only trigger release build): ${formatFiles(semanticallyVerifiedFiles)}`,
     );

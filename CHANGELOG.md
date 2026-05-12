@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+<!-- git-cliff-unreleased-start -->
+## 0.7.2 - **not yet released**
+
+### 🚀 Features
+
+- Option to use docker cache on all builds ([#83](https://github.com/apify/apify-test-tools/pull/83)) ([33f518a](https://github.com/apify/apify-test-tools/commit/33f518a70e753649d4ad730d33cfc7b5ed8cc5af)) by [@metalwarrior665](https://github.com/metalwarrior665)
+
+
+<!-- git-cliff-unreleased-end -->
 ## [0.7.1](https://github.com/apify/apify-test-tools/releases/tag/v0.7.1) (2026-04-27)
 
 ### 🚀 Features

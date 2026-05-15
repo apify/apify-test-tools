@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 <!-- git-cliff-unreleased-start -->
 ## 0.8.1 - **not yet released**
 
+### 🐛 Bug Fixes
+
+- Use long commit SHA in release workflow [internal] ([#86](https://github.com/apify/apify-test-tools/pull/86)) ([123a8d0](https://github.com/apify/apify-test-tools/commit/123a8d008f730c1cf4a144e4a5367ad4075ee232)) by [@fnesveda](https://github.com/fnesveda)
+
 
 <!-- git-cliff-unreleased-end -->
 ## [0.8.0](https://github.com/apify/apify-test-tools/releases/tag/v0.8.0) (2026-05-12)

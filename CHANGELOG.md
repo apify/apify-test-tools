@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+<!-- git-cliff-unreleased-start -->
+## 0.8.1 - **not yet released**
+
+
+<!-- git-cliff-unreleased-end -->
 ## [0.8.0](https://github.com/apify/apify-test-tools/releases/tag/v0.8.0) (2026-05-12)
 
 ### 🚀 Features

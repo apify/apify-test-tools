@@ -2,8 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-<!-- git-cliff-unreleased-start -->
-## 0.8.1 - **not yet released**
+## [0.8.1](https://github.com/apify/apify-test-tools/releases/tag/v0.8.1) (2026-06-10)
 
 ### 🐛 Bug Fixes
 
@@ -11,7 +10,6 @@ All notable changes to this project will be documented in this file.
 - **cli:** GitHub action rerun ignores last validated commit and reruns all commits ([#92](https://github.com/apify/apify-test-tools/pull/92)) ([4200f76](https://github.com/apify/apify-test-tools/commit/4200f76d0502c8de96704b86e0384dd29ed3d1cb)) by [@metalwarrior665](https://github.com/metalwarrior665), closes [#91](https://github.com/apify/apify-test-tools/issues/91)
 
 
-<!-- git-cliff-unreleased-end -->
 ## [0.8.0](https://github.com/apify/apify-test-tools/releases/tag/v0.8.0) (2026-05-12)
 
 ### 🚀 Features

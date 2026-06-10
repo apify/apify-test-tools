@@ -119,12 +119,9 @@ describe('getChangedFiles', () => {
         expect(gitCommandSpy).toHaveBeenCalledWith(`git diff --name-only ${firstSha}~..${lastSha}`);
     });
 
-    it('should return empty array without running git when there are no commits (e.g. rerun where base commit is branch HEAD)', () => {
-        // Act
-        const changedFiles = getChangedFiles([]);
-
-        // Assert
-        expect(changedFiles).toStrictEqual([]);
+    it('should throw without running git when the commit list is empty', () => {
+        // Act & Assert
+        expect(() => getChangedFiles([])).toThrow('Cannot get changed files: the commit list is empty');
         expect(gitCommandSpy).not.toHaveBeenCalled();
     });
 

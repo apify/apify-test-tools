@@ -8,10 +8,10 @@ const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR
  * Gets the list of changed files between the given commits (inclusive).
  */
 export const getChangedFiles = (commits: Commit[]) => {
-    // Happens e.g. on a workflow rerun where the base (last validated) commit is already the branch HEAD
+    // getCommits never returns an empty list (the rerun check returns all commits when the base commit
+    // is the branch HEAD, and an empty git range throws when parsing), so this signals a programmer error
     if (commits.length === 0) {
-        console.error('No commits to diff, returning no changed files');
-        return [];
+        throw new Error('Cannot get changed files: the commit list is empty. This should never happen.');
     }
 
     const changedFilesString = spawnCommandInGhWorkspace(
@@ -103,7 +103,7 @@ export const getCommits = ({ sourceBranch, targetBranch, baseCommit }: Config): 
     const headSha = commits[commits.length - 1]?.sha;
     if (baseCommitSha !== undefined && baseCommitSha === headSha) {
         console.error(
-            `Detected rerun with the same commit (maybe force push), running without validated commit ${baseCommitSha}`,
+            `Detected rerun with the same commit that we already validated. This usually means the user wants to rerun the Action from scratch, ignoring last validated commit ${baseCommitSha} and returning all commits`,
         );
         console.error(`Commits being returned: ${commits.map((c) => c.sha).join(', ')}`);
         return commits;

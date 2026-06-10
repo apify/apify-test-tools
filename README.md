@@ -307,36 +307,49 @@ describe('standby tests', () => {
 
 ## CLI (`apify-test-tools` bin)
 
-The package includes a CLI binary used by CI workflows to build actors, detect changes, and report test results. You can also run it locally for debugging.
+The package includes a CLI binary used by CI workflows to build Actors, detect changes, and report test results. You can also run it locally.
 
 ### Running locally
 
-The main local flow is: **build** affected actors, then **run tests** against those builds.
+Running the testing library locally is useful when you only want to update the testing code in /test because you can iterate on it without pushing new code to the remote.
+
+If you don't need to change any source files and only iterate on /test code, you can skip steps 1-4. But if you want to test vs changed /src, you have to push that GitHub branch since it needs to build the Actors with that code.
+
+The main local flow is:
+1. Switch to a dummy branch that you will push and can later delete
+2. `npm i apify-test-tools@latest -D`
+3. Push your code (changes you want to test)
+4. Build Actors on Apify (with your new code)
+5. Run tests against those builds. You can change tests and run on the same builds.
 
 `cd` into the actor repository you want to work with (or use `--workspace`).
 
-#### 1. Build affected actors
+#### 4. Build affected Actors
 
-Requires `APIFY_TOKEN_<USERNAME>` for each actor owner. The username is derived from the actor name — uppercased with non-word chars replaced by `_` (e.g. actor `john.doe/my-actor` needs `APIFY_TOKEN_JOHN_DOE`).
+If you want to test vs existing src code, you can skip this and instead construct the output JSON manually from existing builds only for the Actors you need to test.
+
+Requires `APIFY_TOKEN_<USERNAME>` for all Apify users that own your Actors (`e.g. `apify`, `compass`, `lukaskrivka` users). The username is derived from the actor name — uppercased with non-word chars replaced by `_` (e.g. Actor `john.doe/my-actor` needs `APIFY_TOKEN_JOHN_DOE`).
 
 ```bash
 APIFY_TOKEN_JOHN_DOE=<token> \
 GITHUB_WORKSPACE=. \
   npx apify-test-tools build \
     --target-branch origin/master \
-    --source-branch HEAD \
+    --source-branch origin/my-dummy-branch \
     --dry-run
 ```
 
-Remove `--dry-run` to actually trigger builds. The command outputs a JSON array of build objects to stdout:
+Remove `--dry-run` to actually trigger builds and update the branch names/ The command outputs a JSON array of build objects to stdout:
 
 ```json
 [{ "buildId": "...", "actorId": "...", "buildNumber": "...", "actorName": "john.doe/my-actor" }]
 ```
 
-#### 2. Run tests against the builds
+#### 5. Run tests against the builds
 
-Pass the build output as `ACTOR_BUILDS` and provide `TESTER_APIFY_TOKEN` (the token used to call actors and read results):
+Pass the build output as `ACTOR_BUILDS` and provide `TESTER_APIFY_TOKEN`. The token can point to your own account (if you have enough memory) or you can use the testing account (xRGg9iAfJSymqartk).
+
+If you want to run only certain tests, change the `test/platform` to be more specific.
 
 ```bash
 ACTOR_BUILDS='<JSON output from build command>' \
@@ -353,7 +366,7 @@ BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
   GITHUB_WORKSPACE=. \
   npx apify-test-tools build \
     --target-branch origin/master \
-    --source-branch HEAD)
+    --source-branch origin/my-dummy-branch)
 
 # Run tests with the builds
 ACTOR_BUILDS="$BUILDS" \

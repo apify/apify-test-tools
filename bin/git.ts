@@ -8,6 +8,12 @@ const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR
  * Gets the list of changed files between the given commits (inclusive).
  */
 export const getChangedFiles = (commits: Commit[]) => {
+    // Happens e.g. on a workflow rerun where the base (last validated) commit is already the branch HEAD
+    if (commits.length === 0) {
+        console.error('No commits to diff, returning no changed files');
+        return [];
+    }
+
     const changedFilesString = spawnCommandInGhWorkspace(
         `git diff --name-only ${commits[0].sha}~..${commits[commits.length - 1].sha}`,
     );

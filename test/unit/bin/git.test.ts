@@ -107,6 +107,15 @@ describe('getChangedFiles', () => {
         expect(gitCommandSpy).toHaveBeenCalledWith(`git diff --name-only ${firstSha}~..${lastSha}`);
     });
 
+    it('should return empty array without running git when there are no commits (e.g. rerun where base commit is branch HEAD)', () => {
+        // Act
+        const changedFiles = getChangedFiles([]);
+
+        // Assert
+        expect(changedFiles).toStrictEqual([]);
+        expect(gitCommandSpy).not.toHaveBeenCalled();
+    });
+
     it('should handle only one commit', () => {
         // Arrange
         const onlySha = '1'.repeat(40);

@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 ### 🐛 Bug Fixes
 
 - Use long commit SHA in release workflow [internal] ([#86](https://github.com/apify/apify-test-tools/pull/86)) ([123a8d0](https://github.com/apify/apify-test-tools/commit/123a8d008f730c1cf4a144e4a5367ad4075ee232)) by [@fnesveda](https://github.com/fnesveda)
+- **cli:** GitHub action rerun ignores last validated commit and reruns all commits ([#92](https://github.com/apify/apify-test-tools/pull/92)) ([4200f76](https://github.com/apify/apify-test-tools/commit/4200f76d0502c8de96704b86e0384dd29ed3d1cb)) by [@metalwarrior665](https://github.com/metalwarrior665), closes [#91](https://github.com/apify/apify-test-tools/issues/91)
 
 
 <!-- git-cliff-unreleased-end -->

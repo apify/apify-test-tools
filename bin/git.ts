@@ -98,6 +98,17 @@ export const getCommits = ({ sourceBranch, targetBranch, baseCommit }: Config): 
     const baseCommitSha = parseBaseCommit(baseCommit);
     const commits = fetchAllBranchCommits(sourceBranch, targetBranch);
 
+    // The last validated (base) commit being the branch HEAD means nothing new was pushed since the last
+    // validation — the dev reran the workflow (or force-pushed to the same state) to trigger a clean test
+    const headSha = commits[commits.length - 1]?.sha;
+    if (baseCommitSha !== undefined && baseCommitSha === headSha) {
+        console.error(
+            `Detected rerun with the same commit (maybe force push), running without validated commit ${baseCommitSha}`,
+        );
+        console.error(`Commits being returned: ${commits.map((c) => c.sha).join(', ')}`);
+        return commits;
+    }
+
     const baseCommitIndex = commits.findIndex((commit) => commit.sha === baseCommitSha);
 
     const hasBaseCommit = baseCommitIndex !== -1;

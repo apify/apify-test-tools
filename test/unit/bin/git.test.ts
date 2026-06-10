@@ -63,6 +63,18 @@ describe('getCommits', () => {
         );
     });
 
+    it('should ignore the base commit and return all commits when it is the branch HEAD (rerun or force push)', () => {
+        // Act
+        const commits = getCommits({ sourceBranch, targetBranch, baseCommit: sha3 });
+
+        // Assert
+        expect(commits).toStrictEqual([
+            { sha: sha1, author: 'Author1', date: 'Date1', message: 'First Change On Feature' },
+            { sha: sha2, author: 'Author1', date: 'Date2', message: 'Second Change On Feature' },
+            { sha: sha3, author: 'Author1', date: 'Date3', message: 'Third Change On Feature' },
+        ]);
+    });
+
     it('should return all commits if base commit is not found', () => {
         // Act
         const commits = getCommits({ sourceBranch, targetBranch, baseCommit: 'a'.repeat(40) });

@@ -8,6 +8,12 @@ const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR
  * Gets the list of changed files between the given commits (inclusive).
  */
 export const getChangedFiles = (commits: Commit[]) => {
+    // getCommits never returns an empty list (the rerun check returns all commits when the base commit
+    // is the branch HEAD, and an empty git range throws when parsing), so this signals a programmer error
+    if (commits.length === 0) {
+        throw new Error('Cannot get changed files: the commit list is empty. This should never happen.');
+    }
+
     const changedFilesString = spawnCommandInGhWorkspace(
         `git diff --name-only ${commits[0].sha}~..${commits[commits.length - 1].sha}`,
     );
@@ -91,6 +97,17 @@ const fetchAllBranchCommits = (sourceBranch: string, targetBranch: string): Comm
 export const getCommits = ({ sourceBranch, targetBranch, baseCommit }: Config): Commit[] => {
     const baseCommitSha = parseBaseCommit(baseCommit);
     const commits = fetchAllBranchCommits(sourceBranch, targetBranch);
+
+    // The last validated (base) commit being the branch HEAD means nothing new was pushed since the last
+    // validation — the dev reran the workflow (or force-pushed to the same state) to trigger a clean test
+    const headSha = commits[commits.length - 1]?.sha;
+    if (baseCommitSha !== undefined && baseCommitSha === headSha) {
+        console.error(
+            `Detected rerun with the same commit that we already validated. This usually means the user wants to rerun the Action from scratch, ignoring last validated commit ${baseCommitSha} and returning all commits`,
+        );
+        console.error(`Commits being returned: ${commits.map((c) => c.sha).join(', ')}`);
+        return commits;
+    }
 
     const baseCommitIndex = commits.findIndex((commit) => commit.sha === baseCommitSha);
 

@@ -316,6 +316,7 @@ Running the testing library locally is useful when you only want to update the t
 If you don't need to change any source files and only iterate on /test code, you can skip steps 1-4. But if you want to test vs changed /src, you have to push that GitHub branch since it needs to build the Actors with that code.
 
 The main local flow is:
+
 1. Switch to a dummy branch that you will push and can later delete
 2. `npm i apify-test-tools@latest -D`
 3. Push your code (changes you want to test)
@@ -328,7 +329,7 @@ The main local flow is:
 
 If you want to test vs existing src code, you can skip this and instead construct the output JSON manually from existing builds only for the Actors you need to test.
 
-Requires `APIFY_TOKEN_<USERNAME>` for all Apify users that own your Actors (`e.g. `apify`, `compass`, `lukaskrivka` users). The username is derived from the actor name — uppercased with non-word chars replaced by `_` (e.g. Actor `john.doe/my-actor` needs `APIFY_TOKEN_JOHN_DOE`).
+Requires `APIFY_TOKEN_<USERNAME>` for all Apify users that own your Actors (e.g. `apify`, `compass`, `lukaskrivka` users). The username is derived from the actor name — uppercased with non-word chars replaced by `_` (e.g. Actor `john.doe/my-actor` needs `APIFY_TOKEN_JOHN_DOE`).
 
 ```bash
 APIFY_TOKEN_JOHN_DOE=<token> \

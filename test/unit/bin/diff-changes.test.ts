@@ -37,6 +37,13 @@ describe('maybeParseActorFolder', () => {
         expect(maybeParseActorFolder('actors/foo_bar')).toEqual({ isActorFolder: false });
     });
 
+    it('returns folder for ownerless actors/ path', () => {
+        expect(maybeParseActorFolder('actors/shopify/src/main.ts')).toEqual({
+            isActorFolder: true,
+            folder: 'actors/shopify',
+        });
+    });
+
     it('returns false for unrelated folder', () => {
         expect(maybeParseActorFolder('src/utils.ts')).toEqual({ isActorFolder: false });
     });
@@ -169,6 +176,39 @@ describe('getChangedActors', () => {
         });
         expect(result).toContainEqual(miniActor);
         expect(result).toContainEqual(standaloneActor);
+    });
+
+    it('matches ownerless folder where folder name differs from actor name', () => {
+        const ownerlessActor: ActorConfig = {
+            actorName: 'myteam/shopify-scraper',
+            folder: 'actors/shopify',
+            isStandalone: false,
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['actors/shopify/src/main.ts'],
+            actorConfigs: [ownerlessActor],
+            commits,
+        });
+        expect(result).toEqual([ownerlessActor]);
+    });
+
+    it('in single-actor repo, .actor/ changes trigger builds', () => {
+        const rootActor: ActorConfig = { actorName: 'myteam/my-actor', folder: '', isStandalone: false };
+        const result = getChangedActors({
+            filepathsChanged: ['.actor/actor.json'],
+            actorConfigs: [rootActor],
+            commits,
+        });
+        expect(result).toEqual([rootActor]);
+    });
+
+    it('in multi-actor repo, .actor/ changes are ignored', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['.actor/actor.json'],
+            actorConfigs,
+            commits,
+        });
+        expect(result).toEqual([]);
     });
 
     it('file paths are matched case-insensitively', () => {

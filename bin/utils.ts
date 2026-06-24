@@ -65,6 +65,29 @@ const resolveOwner = async (folderName: string): Promise<string> => {
     return resolveBuilderTokenUsername();
 };
 
+const resolveTokenEnvVar = (owner: string): string => {
+    const usernameInGitHubSecretsFormat = owner.replaceAll(/\W/g, '_').toUpperCase();
+    const usernameEnvVar = `APIFY_TOKEN_${usernameInGitHubSecretsFormat}`;
+    if (process.env[usernameEnvVar]) return usernameEnvVar;
+    if (process.env.BUILDER_APIFY_TOKEN) return 'BUILDER_APIFY_TOKEN';
+    throw new Error(
+        `Cannot find Apify API token for owner "${owner}". ` +
+            `Set either ${usernameEnvVar} or BUILDER_APIFY_TOKEN.`,
+    );
+};
+
+const validateActorExists = async (actorName: string, tokenEnvVar: string): Promise<void> => {
+    const client = new ApifyClient({ token: process.env[tokenEnvVar]! });
+    const actor = await client.actor(actorName).get();
+    if (!actor) {
+        throw new Error(
+            `Actor "${actorName}" not found using token from ${tokenEnvVar}. ` +
+                `If this is a new actor, create it on the Apify platform first. ` +
+                `Otherwise, check that the folder name matches the actual actor owner.`,
+        );
+    }
+};
+
 /**
  * Reads and parses all directories in `actors` directory
  * This works locally if checkoutRepoLocally is called first
@@ -92,8 +115,11 @@ export const getRepoActors = async (): Promise<ActorConfig[]> => {
             return [];
         }
         const owner = await resolveBuilderTokenUsername();
-        console.error(`Root .actor/ mode: single actor ${owner}/${actorName}`);
-        return [{ actorName: `${owner}/${actorName}`, folder: '', isStandalone: false }];
+        const fullName = `${owner}/${actorName}`;
+        const tokenEnvVar = resolveTokenEnvVar(owner);
+        await validateActorExists(fullName, tokenEnvVar);
+        console.error(`Root .actor/ mode: single actor ${fullName}`);
+        return [{ actorName: fullName, folder: '', isStandalone: false, tokenEnvVar }];
     }
 
     const actorConfigs: ActorConfig[] = [];
@@ -111,11 +137,15 @@ export const getRepoActors = async (): Promise<ActorConfig[]> => {
         const folderName = actorDir.split('/')[1];
         const folderType = actorDir.split('/')[0];
         const owner = await resolveOwner(folderName);
+        const fullName = `${owner}/${actorName}`;
+        const tokenEnvVar = resolveTokenEnvVar(owner);
+        await validateActorExists(fullName, tokenEnvVar);
 
         actorConfigs.push({
-            actorName: `${owner}/${actorName}`,
+            actorName: fullName,
             folder: actorDir,
             isStandalone: folderType === 'standalone-actors',
+            tokenEnvVar,
         });
     }
     console.error(

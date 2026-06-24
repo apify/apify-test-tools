@@ -89,6 +89,7 @@ export interface BuildData {
     buildId: string;
     actorId: string;
     actorName: string;
+    actorConfig: ActorConfig;
     // folder: string | undefined;
     buildNumber: string;
 }
@@ -97,4 +98,5 @@ export interface ActorConfig {
     actorName: string;
     folder: string;
     isStandalone: boolean;
+    tokenEnvVar: string;
 }

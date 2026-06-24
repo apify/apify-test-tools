@@ -12,16 +12,19 @@ describe('Should build and test parser', () => {
             actorName: 'lukaskrivka/testing-github-integration-1',
             folder: 'actors/lukaskrivka_testing-github-integration-1',
             isStandalone: false,
+            tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
         },
         {
             actorName: 'lukaskrivka/testing-github-integration-2',
             folder: 'actors/lukaskrivka_testing-github-integration-2',
             isStandalone: false,
+            tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
         },
         {
             actorName: 'lukaskrivka/test-standalone',
             folder: 'standalone-actors/lukaskrivka_test-standalone',
             isStandalone: true,
+            tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
         },
     ];
 
@@ -252,46 +255,55 @@ describe('Should build and test parser', () => {
                 actorName: 'compass/Google-Maps-Reviews-Scraper',
                 folder: 'actors/compass_Google-Maps-Reviews-Scraper',
                 isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
             },
             {
                 actorName: 'compass/crawler-google-places',
                 folder: 'actors/compass_crawler-google-places',
                 isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
             },
             {
                 actorName: 'compass/easy-google-maps',
                 folder: 'actors/compass_easy-google-maps',
                 isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
             },
             {
                 actorName: 'compass/google-maps-extractor',
                 folder: 'actors/compass_google-maps-extractor',
                 isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
             },
             {
                 actorName: 'compass/google-places-api',
                 folder: 'actors/compass_google-places-api',
                 isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
             },
             {
                 actorName: 'lukaskrivka/google-maps-with-contact-details',
                 folder: 'actors/lukaskrivka_google-maps-with-contact-details',
                 isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
             },
             {
                 actorName: 'natasha.lekh/gas-prices-scraper',
                 folder: 'actors/natasha.lekh_gas-prices-scraper',
                 isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_NATASHA_LEKH',
             },
             {
                 actorName: 'natasha.lekh/vegan-places-finder',
                 folder: 'actors/natasha.lekh_vegan-places-finder',
                 isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_NATASHA_LEKH',
             },
             {
                 actorName: 'lukaskrivka/google-maps-scraper-orchestrator',
                 folder: 'standalone-actors/lukaskrivka_google-maps-scraper-orchestrator',
                 isStandalone: true,
+                tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
             },
         ];
 

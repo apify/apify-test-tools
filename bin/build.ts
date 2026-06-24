@@ -10,7 +10,7 @@ type BuildPrActorOptions = {
     buildTag?: string;
     versionNumber: string;
     gitRepoUrl: string;
-    actorName: string;
+    actorConfig: ActorConfig;
     useDockerCache: boolean;
 };
 class ApifyBuilder {
@@ -56,6 +56,7 @@ class ApifyBuilder {
         buildTag,
         versionNumber,
         gitRepoUrl,
+        actorConfig,
         useDockerCache,
     }: BuildPrActorOptions): Promise<BuildData> => {
         const actorClient = this.apifyClient.actor(this.actorName);
@@ -93,7 +94,7 @@ class ApifyBuilder {
         const { id, actId, buildNumber } = await actorClient.build(versionNumber, { useCache: useDockerCache });
 
         console.error(`[${this.actorName}]: ${id} (${buildNumber})`);
-        return { buildId: id, actorId: actId, buildNumber, actorName: this.actorName };
+        return { buildId: id, actorId: actId, buildNumber, actorName: this.actorName, actorConfig };
     };
 
     waitForBuildToFinish = async (buildId: string, actorName: string): Promise<Build> => {
@@ -110,20 +111,10 @@ class ApifyBuilder {
         return build;
     };
 
-    /**
-     * Create ApifyBuilder with actor owner's token
-     */
-    static fromActorName = (actorName: string): ApifyBuilder => {
-        const username = actorName.split('/')[0];
-        // GitHub secrets only allow word characters (alphanum + underscore)
-        const usernameInGitHubSecretsFormat = username.replaceAll(/\W/g, '_').toUpperCase();
-        const usernameEnvVar = `APIFY_TOKEN_${usernameInGitHubSecretsFormat}`;
-        const token = process.env[usernameEnvVar] ?? process.env.BUILDER_APIFY_TOKEN;
+    static fromActorConfig = ({ actorName, tokenEnvVar }: ActorConfig): ApifyBuilder => {
+        const token = process.env[tokenEnvVar];
         if (!token) {
-            throw new Error(
-                `Cannot find Apify API token for username: ${username}. ` +
-                    `Have you set secret env var ${usernameEnvVar} or BUILDER_APIFY_TOKEN as a fallback?`,
-            );
+            throw new Error(`Env var ${tokenEnvVar} is not set (needed for actor "${actorName}").`);
         }
         const apifyClient = new ApifyClient({ token });
         return new ApifyBuilder(apifyClient, actorName);
@@ -173,9 +164,7 @@ class ApifyBuilder {
         const { items } = await this.apifyClient.actor(this.actorName).builds().list();
 
         // Deleting default build throws an error, so we skip it
-        const { defaultBuildNumber, defaultBuildTag } = await ApifyBuilder.fromActorName(
-            this.actorName,
-        ).getDefaultVersionAndTag();
+        const { defaultBuildNumber, defaultBuildTag } = await this.getDefaultVersionAndTag();
 
         const daysAgoUnixProd = Date.now() - DEFAULT_DAYS_BACK_PROD_VERSIONS * 24 * 60 * 60 * 1000;
         const daysAgoUnixDevel = Date.now() - DEFAULT_DAYS_BACK_DEVEL * 24 * 60 * 60 * 1000;
@@ -244,13 +233,13 @@ export const runBuilds = async ({
 
     const circleActors = isLatest ? await findCircleApifyManaged(actorConfigs) : [];
 
-    for (const { actorName, folder } of actorConfigs.concat(circleActors)) {
+    for (const actorConfig of actorConfigs.concat(circleActors)) {
         let versionNumber: string;
         let buildTag: string | undefined;
 
         if (isLatest) {
             const { defaultVersionNumber, defaultBuildTag } =
-                await ApifyBuilder.fromActorName(actorName).getDefaultVersionAndTag();
+                await ApifyBuilder.fromActorConfig(actorConfig).getDefaultVersionAndTag();
             versionNumber = defaultVersionNumber;
             buildTag = defaultBuildTag;
         } else {
@@ -259,10 +248,10 @@ export const runBuilds = async ({
 
         // Depending on if these are miniactors or standaloneActors
         let gitRepoUrl = `${repoUrl}#${branch}`;
-        if (folder) {
-            gitRepoUrl = `${gitRepoUrl}:${folder}`;
+        if (actorConfig.folder) {
+            gitRepoUrl = `${gitRepoUrl}:${actorConfig.folder}`;
         }
-        buildConfigs.push({ actorName, gitRepoUrl, versionNumber, buildTag, useDockerCache });
+        buildConfigs.push({ actorConfig, gitRepoUrl, versionNumber, buildTag, useDockerCache });
     }
 
     if (dryRun) {
@@ -272,7 +261,7 @@ export const runBuilds = async ({
     console.error('STARTED BUILDS:');
     const startedBuilds = await Promise.all(
         buildConfigs.map(async (buildConfig) => {
-            const builder = ApifyBuilder.fromActorName(buildConfig.actorName);
+            const builder = ApifyBuilder.fromActorConfig(buildConfig.actorConfig);
             const buildData = await builder.startActorBuild(buildConfig);
             return buildData;
         }),
@@ -281,7 +270,7 @@ export const runBuilds = async ({
     console.error('FINISHED BUILDS:');
     await Promise.all(
         startedBuilds.map(async (buildData) => {
-            const builder = ApifyBuilder.fromActorName(buildData.actorName);
+            const builder = ApifyBuilder.fromActorConfig(buildData.actorConfig);
             await builder.waitForBuildToFinish(buildData.buildId, buildData.actorName);
         }),
     );
@@ -296,8 +285,8 @@ export const runBuilds = async ({
 };
 
 export const deleteOldBuilds = async (actorConfigs: ActorConfig[]) => {
-    for (const { actorName } of actorConfigs) {
-        await ApifyBuilder.fromActorName(actorName).deleteOldBuilds();
+    for (const actorConfig of actorConfigs) {
+        await ApifyBuilder.fromActorConfig(actorConfig).deleteOldBuilds();
     }
 };
 
@@ -335,6 +324,7 @@ const findCircleApifyManaged = async (actorConfigs: ActorConfig[]): Promise<Acto
                     actorName: `${circleActor.username}/${circleActor.name}`,
                     folder: actorConfigFound.folder,
                     isStandalone: actorConfigFound.isStandalone,
+                    tokenEnvVar: 'APIFY_TOKEN_CIRC_LE',
                 };
             }
             return undefined;

@@ -6,7 +6,7 @@ import type { ActorConfig } from '../../../bin/types.js';
 
 const miniActor: ActorConfig = { actorName: 'foo/bar', folder: 'actors/foo_bar', isStandalone: false };
 const standaloneActor: ActorConfig = {
-    actorName: 'standalone',
+    actorName: 'owner/standalone',
     folder: 'standalone-actors/standalone',
     isStandalone: true,
 };
@@ -15,17 +15,17 @@ const actorConfigs = [miniActor, standaloneActor];
 const commits = [{ sha: 'Commit1', author: '', date: '', message: '' }];
 
 describe('maybeParseActorFolder', () => {
-    it('returns actorName for actors/ path', () => {
+    it('returns folder for actors/ path', () => {
         expect(maybeParseActorFolder('actors/foo_bar/actor.json')).toEqual({
             isActorFolder: true,
-            actorName: 'foo/bar',
+            folder: 'actors/foo_bar',
         });
     });
 
-    it('returns actorName for standalone-actors/ path', () => {
+    it('returns folder for standalone-actors/ path', () => {
         expect(maybeParseActorFolder('standalone-actors/my_actor/main.ts')).toEqual({
             isActorFolder: true,
-            actorName: 'my/actor',
+            folder: 'standalone-actors/my_actor',
         });
     });
 

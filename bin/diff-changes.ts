@@ -10,11 +10,10 @@ interface ShouldBuildAndTestOptions {
 
 export const maybeParseActorFolder = (
     lowercaseFilePath: string,
-): { isActorFolder: true; actorName: string } | { isActorFolder: false } => {
-    const match = lowercaseFilePath.match(/^(?:standalone-)?actors\/([^/]+)\/.+/);
+): { isActorFolder: true; folder: string } | { isActorFolder: false } => {
+    const match = lowercaseFilePath.match(/^((?:standalone-)?actors\/[^/]+)\/.+/);
     if (match) {
-        // Some usernames weirdly use underscores, e.g. google_maps_email_extractor_standby-contact-details-scraper so we only need replace the last one
-        return { isActorFolder: true, actorName: match[1].replace(/_(?=[^_]*$)/, '/') };
+        return { isActorFolder: true, folder: match[1] };
     }
     return { isActorFolder: false };
 };
@@ -70,14 +69,14 @@ const classifyFileChange = (
     const actorFolderInfo = maybeParseActorFolder(lowercaseFilePath);
     if (actorFolderInfo.isActorFolder) {
         const actorConfigChanged = actorConfigs.find(
-            ({ actorName }) => actorName.toLowerCase() === actorFolderInfo.actorName,
+            ({ folder }) => folder.toLowerCase() === actorFolderInfo.folder,
         );
         // This is some super weird case that happened once in the past but I don't remember the context anymore
         if (actorConfigChanged === undefined) {
             console.error(
                 'SHOULD NEVER HAPPEN: changes was found in an actor folder which no longer exists in the current commit, skipping this file',
                 {
-                    actorName: actorFolderInfo.actorName,
+                    folder: actorFolderInfo.folder,
                     lowercaseFilePath,
                 },
             );

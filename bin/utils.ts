@@ -48,6 +48,23 @@ export const resolveBuilderTokenUsername = async (): Promise<string> => {
     return cachedBuilderUsername;
 };
 
+const readActorName = async (actorJsonPath: string): Promise<string> => {
+    const actorJson: { name?: string } = JSON.parse(await fs.readFile(actorJsonPath, 'utf-8'));
+    if (!actorJson.name) {
+        throw new Error(
+            `Missing "name" field in "${actorJsonPath}". ` +
+                `Every actor folder must have .actor/actor.json with a "name" field.`,
+        );
+    }
+    return actorJson.name;
+};
+
+const resolveOwner = async (folderName: string): Promise<string> => {
+    const ownerMatch = folderName.match(/^(.+)_[^_]+$/);
+    if (ownerMatch) return ownerMatch[1];
+    return resolveBuilderTokenUsername();
+};
+
 /**
  * Reads and parses all directories in `actors` directory
  * This works locally if checkoutRepoLocally is called first
@@ -68,55 +85,35 @@ export const getRepoActors = async (): Promise<ActorConfig[]> => {
         standaloneActorDirs = [];
     }
     if (actorDirs.length === 0 && standaloneActorDirs.length === 0) {
-        const rootActorJsonPath = './.actor/actor.json';
-        let actorJson: { name?: string };
+        let actorName: string;
         try {
-            actorJson = JSON.parse(await fs.readFile(rootActorJsonPath, 'utf-8'));
+            actorName = await readActorName('./.actor/actor.json');
         } catch {
             return [];
         }
-        if (!actorJson.name) {
-            throw new Error(
-                `Missing "name" field in "${rootActorJsonPath}". ` +
-                    `The .actor/actor.json must have a "name" field.`,
-            );
-        }
         const owner = await resolveBuilderTokenUsername();
-        console.error(`Root .actor/ mode: single actor ${owner}/${actorJson.name}`);
-        return [{ actorName: `${owner}/${actorJson.name}`, folder: '', isStandalone: false }];
+        console.error(`Root .actor/ mode: single actor ${owner}/${actorName}`);
+        return [{ actorName: `${owner}/${actorName}`, folder: '', isStandalone: false }];
     }
 
     const actorConfigs: ActorConfig[] = [];
     for (const actorDir of [...actorDirs, ...standaloneActorDirs]) {
-        const actorJsonPath = `./${actorDir}/.actor/actor.json`;
-        let actorJson: { name?: string };
+        let actorName: string;
         try {
-            actorJson = JSON.parse(await fs.readFile(actorJsonPath, 'utf-8'));
+            actorName = await readActorName(`./${actorDir}/.actor/actor.json`);
         } catch {
             throw new Error(
                 `Missing or unreadable .actor/actor.json in "${actorDir}". ` +
                     `Every actor folder must contain .actor/actor.json with a "name" field.`,
             );
         }
-        if (!actorJson.name) {
-            throw new Error(
-                `Missing "name" field in "${actorJsonPath}". ` +
-                    `Every actor folder must have .actor/actor.json with a "name" field.`,
-            );
-        }
 
         const folderName = actorDir.split('/')[1];
         const folderType = actorDir.split('/')[0];
-        const ownerMatch = folderName.match(/^(.+)_[^_]+$/);
-        let owner: string;
-        if (ownerMatch) {
-            owner = ownerMatch[1];
-        } else {
-            owner = await resolveBuilderTokenUsername();
-        }
+        const owner = await resolveOwner(folderName);
 
         actorConfigs.push({
-            actorName: `${owner}/${actorJson.name}`,
+            actorName: `${owner}/${actorName}`,
             folder: actorDir,
             isStandalone: folderType === 'standalone-actors',
         });

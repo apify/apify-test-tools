@@ -22,8 +22,7 @@ export const maybeParseActorFolder = (
 /**
  * Also works for folders
  */
-const isIgnoredTopLevelFile = (lowercaseFilePath: string) => {
-    // On top level, we should only have dev-only readme and .actor/ is just for apify push CLI (real Actor configs are in /actors)
+const isIgnoredTopLevelFile = (lowercaseFilePath: string, isSingleActorRepo: boolean) => {
     const IGNORED_TOP_LEVEL_FILES = [
         '.vscode/',
         '.gitignore',
@@ -33,7 +32,8 @@ const isIgnoredTopLevelFile = (lowercaseFilePath: string) => {
         'eslint.config.mjs',
         '.prettierrc',
         '.editorconfig',
-        '.actor/',
+        // In root .actor/ mode, .actor/ changes must trigger builds
+        ...(isSingleActorRepo ? [] : ['.actor/']),
     ];
     // Strip out deprecated /code and /shared folders, treat them as top-level code
     const sanitizedLowercaseFilePath = lowercaseFilePath.replace(/^code\//, '').replace(/^shared\//, '');
@@ -51,10 +51,15 @@ type FileChange =
           includes: 'all-actors' | ActorConfig;
       };
 
-const classifyFileChange = (originalFilePath: string, actorConfigs: ActorConfig[], commits: Commit[]): FileChange => {
+const classifyFileChange = (
+    originalFilePath: string,
+    actorConfigs: ActorConfig[],
+    commits: Commit[],
+    isSingleActorRepo: boolean,
+): FileChange => {
     // Lowercase for case-insensitive matching; keep original for git show (case-sensitive on Linux)
     const lowercaseFilePath = originalFilePath.toLowerCase();
-    if (isIgnoredTopLevelFile(lowercaseFilePath)) {
+    if (isIgnoredTopLevelFile(lowercaseFilePath, isSingleActorRepo)) {
         return { impact: 'ignored' };
     }
 
@@ -101,11 +106,12 @@ export const getChangedActors = ({
 }: ShouldBuildAndTestOptions): ActorConfig[] => {
     // folder -> ActorConfig
     const actorsChangedMap = new Map<string, ActorConfig>();
+    const isSingleActorRepo = actorConfigs.some(({ folder }) => folder === '');
 
     const actorConfigsWithoutStandalone = actorConfigs.filter(({ isStandalone }) => !isStandalone);
 
     for (const originalFilePath of filepathsChanged) {
-        const fileChange = classifyFileChange(originalFilePath, actorConfigs, commits);
+        const fileChange = classifyFileChange(originalFilePath, actorConfigs, commits, isSingleActorRepo);
         if (fileChange.impact === 'ignored') {
             continue;
         }
@@ -130,12 +136,12 @@ export const getChangedActors = ({
     const formatFiles = (files: string[]) => (files.length > 0 ? files.join(', ') : '<no files>');
 
     const ignoredFilesChanged = filepathsChanged.filter(
-        (file) => classifyFileChange(file, actorConfigs, commits).impact === 'ignored',
+        (file) => classifyFileChange(file, actorConfigs, commits, isSingleActorRepo).impact === 'ignored',
     );
     console.error(`[DIFF]: Ignored files (don't trigger test or build): ${formatFiles(ignoredFilesChanged)}`);
 
     const cosmeticChanges = filepathsChanged
-        .map((file) => ({ file, change: classifyFileChange(file, actorConfigs, commits) }))
+        .map((file) => ({ file, change: classifyFileChange(file, actorConfigs, commits, isSingleActorRepo) }))
         .filter(({ change }) => change.impact === 'cosmetic') as {
         file: string;
         change: Extract<FileChange, { impact: 'cosmetic' }>;
@@ -154,7 +160,7 @@ export const getChangedActors = ({
     );
 
     const functionalFilesChanged = filepathsChanged.filter(
-        (file) => classifyFileChange(file, actorConfigs, commits).impact === 'functional',
+        (file) => classifyFileChange(file, actorConfigs, commits, isSingleActorRepo).impact === 'functional',
     );
     console.error(`[DIFF]: Functional files (trigger test & release build): ${formatFiles(functionalFilesChanged)}`);
 

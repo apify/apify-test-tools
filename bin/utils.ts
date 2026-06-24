@@ -67,6 +67,25 @@ export const getRepoActors = async (): Promise<ActorConfig[]> => {
         console.warn(`No /standalone-actors directory found in repo`);
         standaloneActorDirs = [];
     }
+    if (actorDirs.length === 0 && standaloneActorDirs.length === 0) {
+        const rootActorJsonPath = './.actor/actor.json';
+        let actorJson: { name?: string };
+        try {
+            actorJson = JSON.parse(await fs.readFile(rootActorJsonPath, 'utf-8'));
+        } catch {
+            return [];
+        }
+        if (!actorJson.name) {
+            throw new Error(
+                `Missing "name" field in "${rootActorJsonPath}". ` +
+                    `The .actor/actor.json must have a "name" field.`,
+            );
+        }
+        const owner = await resolveBuilderTokenUsername();
+        console.error(`Root .actor/ mode: single actor ${owner}/${actorJson.name}`);
+        return [{ actorName: `${owner}/${actorJson.name}`, folder: '', isStandalone: false }];
+    }
+
     const actorConfigs: ActorConfig[] = [];
     for (const actorDir of [...actorDirs, ...standaloneActorDirs]) {
         const actorJsonPath = `./${actorDir}/.actor/actor.json`;

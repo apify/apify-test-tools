@@ -115,19 +115,18 @@ class ApifyBuilder {
      */
     static fromActorName = (actorName: string): ApifyBuilder => {
         const username = actorName.split('/')[0];
-        // GitHib secrets only allow word characters (alphanum + underscore)
+        // GitHub secrets only allow word characters (alphanum + underscore)
         const usernameInGitHubSecretsFormat = username.replaceAll(/\W/g, '_').toUpperCase();
         const usernameEnvVar = `APIFY_TOKEN_${usernameInGitHubSecretsFormat}`;
-        const token = process.env[usernameEnvVar];
+        const token = process.env[usernameEnvVar] ?? process.env.BUILDER_APIFY_TOKEN;
         if (!token) {
             throw new Error(
                 `Cannot find Apify API token for username: ${username}. ` +
-                    `Have you set secret env var to this GitHub repo with key: ${usernameEnvVar}?`,
+                    `Have you set secret env var ${usernameEnvVar} or BUILDER_APIFY_TOKEN as a fallback?`,
             );
         }
         const apifyClient = new ApifyClient({ token });
-        const builder = new ApifyBuilder(apifyClient, actorName);
-        return builder;
+        return new ApifyBuilder(apifyClient, actorName);
     };
 
     /**

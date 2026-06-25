@@ -204,13 +204,13 @@ describe('getChangedActors', () => {
         expect(result).toEqual([rootActor]);
     });
 
-    it('in multi-actor repo, .actor/ changes are ignored', () => {
+    it('in multi-actor repo, .actor/ changes trigger builds for all non-standalone actors', () => {
         const result = getChangedActors({
             filepathsChanged: ['.actor/actor.json'],
             actorConfigs,
             commits,
         });
-        expect(result).toEqual([]);
+        expect(result).toEqual([miniActor]);
     });
 
     it('file paths are matched case-insensitively', () => {

@@ -54,7 +54,7 @@ describe('Should build and test parser', () => {
     });
 
     test('Ignores other ignored files and folders', () => {
-        const FILES = ['.vscode/', '.gitignore', '.husky/', '.eslintrc', '.editorconfig', '.actor/'];
+        const FILES = ['.vscode/', '.gitignore', '.husky/', '.eslintrc', '.editorconfig'];
 
         const actorsChanged = getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
@@ -64,6 +64,19 @@ describe('Should build and test parser', () => {
         });
 
         expect(actorsChanged).toEqual([]);
+    });
+
+    test('.actor/ changes always trigger builds for all non-standalone actors', () => {
+        const FILES = ['.actor/actor.json'];
+
+        const actorsChanged = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            commits,
+        });
+
+        expect(actorsChanged).toEqual(ACTOR_CONFIGS.filter(({ isStandalone }) => !isStandalone));
     });
 
     test('Only builds latest for all Actors', () => {

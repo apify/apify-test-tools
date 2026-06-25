@@ -73,16 +73,6 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
 
         const actorJsonPath = folder ? `${folder}/.actor/actor.json` : '.actor/actor.json';
 
-        if (folder) {
-            try {
-                await fs.access(folder);
-            } catch {
-                throw new Error(
-                    `Folder "${folder}" declared in "${CONFIG_FILE_NAME}" does not exist on disk.`,
-                );
-            }
-        }
-
         let actorJson: { name?: string };
         try {
             actorJson = JSON.parse(await fs.readFile(actorJsonPath, 'utf-8'));
@@ -158,7 +148,7 @@ export const generateConfigFile = async (options: GenerateConfigOptions = {}): P
     }
 
     const config: ActorConfigFile = { actors: entries };
-    await fs.writeFile(CONFIG_FILE_NAME, `$${JSON.stringify(config, null, 4)}`);
+    await fs.writeFile(CONFIG_FILE_NAME, JSON.stringify(config, null, 4));
     console.error(`Created "${CONFIG_FILE_NAME}" with ${entries.length} actor(s). Fill in the owner and tokenEnvVar fields.`);
 };
 

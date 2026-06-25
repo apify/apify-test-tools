@@ -4,7 +4,6 @@ import { ApifyClient } from 'apify-client';
 import { ACTOR_SOURCE_TYPES } from '@apify/consts';
 
 import type { ActorConfig, BuildData } from './types.js';
-import { getEnvVar } from './utils.js';
 
 type BuildPrActorOptions = {
     buildTag?: string;
@@ -231,9 +230,7 @@ export const runBuilds = async ({
 }: RunBuildsOptions) => {
     const buildConfigs: BuildPrActorOptions[] = [];
 
-    const circleActors = isLatest ? await findCircleApifyManaged(actorConfigs) : [];
-
-    for (const actorConfig of actorConfigs.concat(circleActors)) {
+    for (const actorConfig of actorConfigs) {
         let versionNumber: string;
         let buildTag: string | undefined;
 
@@ -288,57 +285,4 @@ export const deleteOldBuilds = async (actorConfigs: ActorConfig[]) => {
     for (const actorConfig of actorConfigs) {
         await ApifyBuilder.fromActorConfig(actorConfig).deleteOldBuilds();
     }
-};
-
-/**
- * We will read all Actors in the circ_le account and build those that match by name pattern
- * There are many ways to approach this, a more robust one would be to have a map of Actors
- * which would allow to have more than one special user per Actor
- * But since that use-case might never be needed, I went with the simplest solution that doesn't require maintaining the map
- * NOTE: One issue is that if any Actor is renamed, we will not match it in the circ_le account nor throw any error
- */
-const findCircleApifyManaged = async (actorConfigs: ActorConfig[]): Promise<ActorConfig[]> => {
-    // This token is hardcoded in the runner Actor, locally you have to inject it
-    const client = new ApifyClient({ token: getEnvVar('APIFY_TOKEN_CIRC_LE') });
-
-    const { items: circleActors } = await client.actors().list();
-
-    const actorsToBuild = circleActors
-        .map<ActorConfig | undefined>((circleActor) => {
-            // They prefix all with apify-managed---, I communicated with Jacques to keep doing that
-            let actorConfigFound = actorConfigs.find(
-                (actorConfig) =>
-                    circleActor.name.replace('apify-managed---', '') === actorConfig.actorName.split('/')[1],
-            );
-
-            // Hack for bad naming of circ_le/apify-managed-google-search, we don't want to rename now to break customers
-            if (!actorConfigFound && circleActor.name === 'apify-managed-google-search') {
-                actorConfigFound = actorConfigs.find(
-                    (actorConfig) => actorConfig.actorName.split('/')[1] === 'google-search-scraper',
-                );
-            }
-
-            if (actorConfigFound) {
-                return {
-                    // We point the circle Actor to the repo folder
-                    actorName: `${circleActor.username}/${circleActor.name}`,
-                    folder: actorConfigFound.folder,
-                    isStandalone: actorConfigFound.isStandalone,
-                    tokenEnvVar: 'APIFY_TOKEN_CIRC_LE',
-                };
-            }
-            return undefined;
-        })
-        .filter((config) => config !== undefined);
-
-    console.error(
-        `Found ${actorsToBuild.length} circ_le actors that match Actors we built out of total ${circleActors.length} circ_le actors`,
-    );
-    console.error(`All circ_le actors: ${circleActors.map((actor) => actor.name).join(', ')}`);
-    console.error(`circ_le Actors to build: ${actorsToBuild.map((actor) => actor.actorName).join(', ')}`);
-
-    if (actorsToBuild.length === 0) {
-        console.error('No circ_le actors to build');
-    }
-    return actorsToBuild;
 };

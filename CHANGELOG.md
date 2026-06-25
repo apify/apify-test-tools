@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.2](https://github.com/apify/apify-test-tools/releases/tag/v0.8.2) (2026-06-25)
+
+### Change
+
+- Stop autobuilding Actors on circ_le account ([#97](https://github.com/apify/apify-test-tools/pull/97)) ([39ce2e2](https://github.com/apify/apify-test-tools/commit/39ce2e225f0d13f3888deb6422cad90f2106190c)) by [@metalwarrior665](https://github.com/metalwarrior665)
+
+
 ## [0.8.1](https://github.com/apify/apify-test-tools/releases/tag/v0.8.1) (2026-06-10)
 
 ### 🐛 Bug Fixes

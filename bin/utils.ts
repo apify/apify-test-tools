@@ -1,7 +1,8 @@
-import { spawnSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
+import path from 'node:path';
 
-import type { ActorConfig, ActorConfigFile } from './types.js';
+import type { ActorConfig, ActorConfigFile, ActorConfigFileEntry } from './types.js';
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
     console.error(command, args.join(' '));
@@ -108,6 +109,57 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
     }
 
     return actorConfigs;
+};
+
+interface GenerateConfigOptions {
+    defaultOwner?: string;
+    defaultTokenVar?: string;
+}
+
+export const generateConfigFile = async (options: GenerateConfigOptions = {}): Promise<void> => {
+    try {
+        await fs.access(CONFIG_FILE_NAME);
+        throw new Error(
+            `Config file "${CONFIG_FILE_NAME}" already exists. ` +
+                `Remove it first if you want to regenerate.`,
+        );
+    } catch (err) {
+        if (err instanceof Error && err.message.includes('already exists')) throw err;
+    }
+
+    const trackedFiles = execSync('git ls-files', { encoding: 'utf-8' }).trim().split('\n');
+    const actorJsonFiles = trackedFiles.filter((f) => f.endsWith('.actor/actor.json'));
+
+    if (actorJsonFiles.length === 0) {
+        throw new Error('No .actor/actor.json files found in the repository.');
+    }
+
+    const hasRoot = actorJsonFiles.includes('.actor/actor.json');
+    const subfolderActorJsonFiles = actorJsonFiles.filter((f) => f !== '.actor/actor.json');
+
+    if (hasRoot && subfolderActorJsonFiles.length > 0) {
+        console.error(
+            `\nNote: Found a root-level .actor/actor.json alongside ${subfolderActorJsonFiles.length} subfolder actor(s).` +
+                `\nIf the root .actor/actor.json only exists to satisfy the Apify CLI and is not a real actor,` +
+                `\nconsider removing its entry from the generated config file.\n`,
+        );
+    }
+
+    const entries: ActorConfigFileEntry[] = [];
+
+    for (const actorJsonPath of actorJsonFiles) {
+        const folder = actorJsonPath === '.actor/actor.json' ? '' : path.dirname(path.dirname(actorJsonPath));
+
+        entries.push({
+            folder: folder || '.',
+            owner: options.defaultOwner ?? '<OWNER>',
+            tokenEnvVar: options.defaultTokenVar ?? '<TOKEN_ENV_VAR>',
+        });
+    }
+
+    const config: ActorConfigFile = { actors: entries };
+    await fs.writeFile(CONFIG_FILE_NAME, `$${JSON.stringify(config, null, 4)}`);
+    console.error(`Created "${CONFIG_FILE_NAME}" with ${entries.length} actor(s). Fill in the owner and tokenEnvVar fields.`);
 };
 
 export const setCwd = ({ workspace }: { workspace: string | undefined }) => {

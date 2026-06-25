@@ -4,28 +4,101 @@
 
 ## Getting Started
 
-1. Install the package `npm i -D apify-test-tools`
-    - because it uses [annotate](https://vitest.dev/guide/test-context.html#annotate), `vitest` version to be at least `3.2.0`
-    - make sure that `target` and `module` in your `tsconfig.json`'s `compilerOptions` are set to `ES2022`
-2. create test directories: `mkdir -p test/platform/core`
-    - core (hourly) tests should go to `test/platform/core`
-    - daily tests should go to `test/platform`
-3. setup github worklows TODO
+### 1. Install the package
 
-File structure:
+```bash
+npm i -D apify-test-tools
+```
+
+- Requires `vitest` version `3.2.0` or later (uses [annotate](https://vitest.dev/guide/test-context.html#annotate))
+- Make sure `target` and `module` in your `tsconfig.json`'s `compilerOptions` are set to `ES2022`
+
+### 2. Create the config file
+
+Every repo that uses `apify-test-tools` must have a `.test-tools-actors-config.json` file at the root. This file tells the tool which actors live in the repo, who owns them, and which token to use.
+
+You can generate a starter config automatically:
+
+```bash
+npx apify-test-tools init-config
+```
+
+This scans the repo for `.actor/actor.json` files and creates `.test-tools-actors-config.json` with placeholder values. You can also pass defaults:
+
+```bash
+npx apify-test-tools init-config --default-owner myteam --default-token-var APIFY_TOKEN_MYTEAM
+```
+
+The generated file looks like this:
+
+```json
+{
+    "actors": [
+        {
+            "folder": "actors/web-scraper",
+            "owner": "<OWNER>",
+            "tokenEnvVar": "<TOKEN_ENV_VAR>"
+        },
+        {
+            "folder": "actors/email-sender",
+            "owner": "<OWNER>",
+            "tokenEnvVar": "<TOKEN_ENV_VAR>",
+            "isStandalone": true
+        }
+    ]
+}
+```
+
+Each entry has:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `folder` | yes | Relative path from repo root to the actor directory. Use `"."` for a single-actor repo where `.actor/` is at the root. |
+| `owner` | yes | Apify username that owns the actor. Combined with the `name` from `<folder>/.actor/actor.json` to form the full actor name (`owner/name`). |
+| `tokenEnvVar` | yes | Name of the environment variable holding the Apify API token for this actor. No fallback — if the env var is not set at build time, the build fails. |
+| `isStandalone` | no | Defaults to `false`. Standalone actors are only built when their own folder changes, not when shared code changes. |
+
+The actor's `name` is always read from `<folder>/.actor/actor.json` — it is **not** duplicated in the config.
+
+### 3. Set up actor folders
+
+Each actor in the config must have a `.actor/actor.json` file with at least a `name` field:
 
 ```
-google-maps
+my-repo
+├── .test-tools-actors-config.json
 ├── actors
-└── src
+│   ├── web-scraper
+│   │   ├── .actor
+│   │   │   └── actor.json          <- { "name": "web-scraper" }
+│   │   └── src/
+│   └── email-sender
+│       ├── .actor
+│       │   └── actor.json          <- { "name": "email-sender" }
+│       └── src/
 └── test
     ├── unit
     └── platform
-        ├── core                  <- Core tests need to be inside core directory
+        ├── core                    <- Core (hourly) tests
         │   └── core.test.ts
-        ├── some.test.ts          <- Other tests can be defined anywhere inside platform directory
+        ├── some.test.ts            <- Daily tests can be anywhere inside platform/
         └── some-other.test.ts
 ```
+
+For a single-actor repo, set `"folder": "."` in the config and place `.actor/actor.json` at the repo root.
+
+### 4. Create test directories
+
+```bash
+mkdir -p test/platform/core
+```
+
+- Core (hourly) tests go in `test/platform/core`
+- Daily tests go anywhere in `test/platform`
+
+### 5. Set up GitHub workflows
+
+See the [GitHub workflows](#github-worklows) section below.
 
 ## Github worklows
 

@@ -85,6 +85,17 @@ export interface GithubCommit {
     modified: string[];
 }
 
+export interface ActorConfigFileEntry {
+    folder: string;
+    owner: string;
+    tokenEnvVar: string;
+    isStandalone?: boolean;
+}
+
+export interface ActorConfigFile {
+    actors: ActorConfigFileEntry[];
+}
+
 export interface BuildData {
     buildId: string;
     actorId: string;

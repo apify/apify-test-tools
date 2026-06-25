@@ -1,9 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 
-import { ApifyClient } from 'apify-client';
-
-import type { ActorConfig } from './types.js';
+import type { ActorConfig, ActorConfigFile } from './types.js';
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
     console.error(command, args.join(' '));
@@ -31,135 +29,84 @@ export const getEnvVar = (varName: string, defaultValue?: string): string => {
     return value;
 };
 
-let cachedBuilderUsername: string | undefined;
-
-export const resolveBuilderTokenUsername = async (): Promise<string> => {
-    if (cachedBuilderUsername) return cachedBuilderUsername;
-    const token = process.env.BUILDER_APIFY_TOKEN;
-    if (!token) {
-        throw new Error(
-            'BUILDER_APIFY_TOKEN is not set. Either use the "owner_actor-name" folder convention ' +
-                'or set the BUILDER_APIFY_TOKEN secret.',
-        );
-    }
-    const client = new ApifyClient({ token });
-    const user = await client.user().get();
-    cachedBuilderUsername = user.username!;
-    return cachedBuilderUsername;
-};
-
-const readActorName = async (actorJsonPath: string): Promise<string> => {
-    const actorJson: { name?: string } = JSON.parse(await fs.readFile(actorJsonPath, 'utf-8'));
-    if (!actorJson.name) {
-        throw new Error(
-            `Missing "name" field in "${actorJsonPath}". ` +
-                `Every actor folder must have .actor/actor.json with a "name" field.`,
-        );
-    }
-    return actorJson.name;
-};
-
-const resolveOwner = async (folderName: string): Promise<string> => {
-    const ownerMatch = folderName.match(/^(.+)_[^_]+$/);
-    if (ownerMatch) return ownerMatch[1];
-    return resolveBuilderTokenUsername();
-};
-
-const resolveTokenEnvVar = (owner: string): string => {
-    const usernameInGitHubSecretsFormat = owner.replaceAll(/\W/g, '_').toUpperCase();
-    const usernameEnvVar = `APIFY_TOKEN_${usernameInGitHubSecretsFormat}`;
-    if (process.env[usernameEnvVar]) return usernameEnvVar;
-    if (process.env.BUILDER_APIFY_TOKEN) return 'BUILDER_APIFY_TOKEN';
-    throw new Error(
-        `Cannot find Apify API token for owner "${owner}". ` +
-            `Set either ${usernameEnvVar} or BUILDER_APIFY_TOKEN.`,
-    );
-};
-
-const validateActorExists = async (actorName: string, tokenEnvVar: string): Promise<void> => {
-    const client = new ApifyClient({ token: process.env[tokenEnvVar]! });
-    const actor = await client.actor(actorName).get();
-    if (!actor) {
-        throw new Error(
-            `Actor "${actorName}" not found using token from ${tokenEnvVar}. ` +
-                `If this is a new actor, create it on the Apify platform first. ` +
-                `Otherwise, check that the folder name matches the actual actor owner.`,
-        );
-    }
-};
-
-/**
- * Reads and parses all directories in `actors` directory
- * This works locally if checkoutRepoLocally is called first
- */
 export const getRepoActors = async (): Promise<ActorConfig[]> => {
-    let actorDirs: string[];
+    return readConfigFile();
+};
+
+const CONFIG_FILE_NAME = '.test-tools-actors-config.json';
+
+export const readConfigFile = async (): Promise<ActorConfig[]> => {
+    let raw: string;
     try {
-        actorDirs = (await fs.readdir(`./actors`)).map((dir) => `actors/${dir}`);
+        raw = await fs.readFile(CONFIG_FILE_NAME, 'utf-8');
     } catch {
-        console.warn(`No /actors directory found in repo`);
-        actorDirs = [];
-    }
-    let standaloneActorDirs: string[];
-    try {
-        standaloneActorDirs = (await fs.readdir(`./standalone-actors`)).map((dir) => `standalone-actors/${dir}`);
-    } catch {
-        console.warn(`No /standalone-actors directory found in repo`);
-        standaloneActorDirs = [];
-    }
-    if (actorDirs.length === 0 && standaloneActorDirs.length === 0) {
-        let actorName: string;
-        try {
-            actorName = await readActorName('./.actor/actor.json');
-        } catch {
-            return [];
-        }
-        const owner = await resolveBuilderTokenUsername();
-        const fullName = `${owner}/${actorName}`;
-        const tokenEnvVar = resolveTokenEnvVar(owner);
-        await validateActorExists(fullName, tokenEnvVar);
-        console.error(`Root .actor/ mode: single actor ${fullName}`);
-        return [{ actorName: fullName, folder: '', isStandalone: false, tokenEnvVar }];
+        throw new Error(
+            `Config file "${CONFIG_FILE_NAME}" not found in the current directory. ` +
+                `Run "init-config" to generate one, then fill in the owner and tokenEnvVar fields.`,
+        );
     }
 
+    let config: ActorConfigFile;
+    try {
+        config = JSON.parse(raw);
+    } catch {
+        throw new Error(`Config file "${CONFIG_FILE_NAME}" contains invalid JSON.`);
+    }
+
+    if (!Array.isArray(config.actors)) {
+        throw new Error(`Config file "${CONFIG_FILE_NAME}" must have an "actors" array at the top level.`);
+    }
+
+    const seenFolders = new Set<string>();
     const actorConfigs: ActorConfig[] = [];
-    for (const actorDir of [...actorDirs, ...standaloneActorDirs]) {
-        let actorName: string;
+
+    for (const entry of config.actors) {
+        const folder = entry.folder === '.' ? '' : entry.folder;
+
+        if (seenFolders.has(folder)) {
+            throw new Error(
+                `Duplicate folder "${entry.folder}" in "${CONFIG_FILE_NAME}". Each actor must have a unique folder.`,
+            );
+        }
+        seenFolders.add(folder);
+
+        const actorJsonPath = folder ? `${folder}/.actor/actor.json` : '.actor/actor.json';
+
+        if (folder) {
+            try {
+                await fs.access(folder);
+            } catch {
+                throw new Error(
+                    `Folder "${folder}" declared in "${CONFIG_FILE_NAME}" does not exist on disk.`,
+                );
+            }
+        }
+
+        let actorJson: { name?: string };
         try {
-            actorName = await readActorName(`./${actorDir}/.actor/actor.json`);
+            actorJson = JSON.parse(await fs.readFile(actorJsonPath, 'utf-8'));
         } catch {
             throw new Error(
-                `Missing or unreadable .actor/actor.json in "${actorDir}". ` +
-                    `Every actor folder must contain .actor/actor.json with a "name" field.`,
+                `Cannot read "${actorJsonPath}". Every actor entry in "${CONFIG_FILE_NAME}" ` +
+                    `must have a corresponding .actor/actor.json file.`,
             );
         }
 
-        const folderName = actorDir.split('/')[1];
-        const folderType = actorDir.split('/')[0];
-        const owner = await resolveOwner(folderName);
-        const fullName = `${owner}/${actorName}`;
-        const tokenEnvVar = resolveTokenEnvVar(owner);
-        await validateActorExists(fullName, tokenEnvVar);
+        if (!actorJson.name) {
+            throw new Error(
+                `Missing "name" field in "${actorJsonPath}". ` +
+                    `Every actor must have a "name" in its .actor/actor.json.`,
+            );
+        }
 
         actorConfigs.push({
-            actorName: fullName,
-            folder: actorDir,
-            isStandalone: folderType === 'standalone-actors',
-            tokenEnvVar,
+            actorName: `${entry.owner}/${actorJson.name}`,
+            folder,
+            isStandalone: entry.isStandalone ?? false,
+            tokenEnvVar: entry.tokenEnvVar,
         });
     }
-    console.error(
-        `Actors in repo: ${actorConfigs
-            .filter(({ isStandalone }) => !isStandalone)
-            .map(({ actorName }) => actorName)
-            .join(', ')}`,
-    );
-    console.error(
-        `Standalone actors in repo: ${actorConfigs
-            .filter(({ isStandalone }) => !!isStandalone)
-            .map(({ actorName }) => actorName)
-            .join(', ')}`,
-    );
+
     return actorConfigs;
 };
 

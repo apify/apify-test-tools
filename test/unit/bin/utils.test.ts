@@ -41,7 +41,6 @@ describe('readConfigFile', () => {
             {
                 actorName: 'myteam/shopify-scraper',
                 folder: 'actors/shopify',
-                isStandalone: false,
                 tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
                 dockerContextDir: '',
                 overrideActorContext: undefined,
@@ -86,34 +85,15 @@ describe('readConfigFile', () => {
         expect(result[0].dockerContextDir).toBe('');
     });
 
-    it('defaults isStandalone to false when omitted', async () => {
-        mockFiles({
-            '.test-tools-actors-config.json': validConfig([
-                { folder: 'actors/web-scraper', actorName: 'apify/web-scraper', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
-            ]),
-            'actors/web-scraper/.actor/actor.json': actorJson({}),
-        });
-
-        const result = await readConfigFile();
-        expect(result[0].isStandalone).toBe(false);
-    });
-
-    it('respects isStandalone: true', async () => {
-        mockFiles({
-            '.test-tools-actors-config.json': validConfig([
-                { folder: 'standalone/orchestrator', actorName: 'apify/orchestrator', tokenEnvVar: 'APIFY_TOKEN_APIFY', isStandalone: true },
-            ]),
-            'standalone/orchestrator/.actor/actor.json': actorJson({}),
-        });
-
-        const result = await readConfigFile();
-        expect(result[0].isStandalone).toBe(true);
-    });
-
     it('passes through overrideActorContext', async () => {
         mockFiles({
             '.test-tools-actors-config.json': validConfig([
-                { folder: 'actors/shopify', actorName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN', overrideActorContext: ['actors/shopify', 'packages'] },
+                {
+                    folder: 'actors/shopify',
+                    actorName: 'myteam/shopify',
+                    tokenEnvVar: 'APIFY_TOKEN',
+                    overrideActorContext: ['actors/shopify', 'packages'],
+                },
             ]),
             'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '../../..' }),
         });
@@ -126,7 +106,11 @@ describe('readConfigFile', () => {
         mockFiles({
             '.test-tools-actors-config.json': validConfig([
                 { folder: 'actors/web-scraper', actorName: 'apify/web-scraper', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
-                { folder: 'actors/email-sender', actorName: 'other-team/email-sender', tokenEnvVar: 'APIFY_TOKEN_OTHER_TEAM', isStandalone: true },
+                {
+                    folder: 'actors/email-sender',
+                    actorName: 'other-team/email-sender',
+                    tokenEnvVar: 'APIFY_TOKEN_OTHER_TEAM',
+                },
             ]),
             'actors/web-scraper/.actor/actor.json': actorJson({}),
             'actors/email-sender/.actor/actor.json': actorJson({}),
@@ -136,7 +120,6 @@ describe('readConfigFile', () => {
         expect(result).toHaveLength(2);
         expect(result[0].actorName).toBe('apify/web-scraper');
         expect(result[1].actorName).toBe('other-team/email-sender');
-        expect(result[1].isStandalone).toBe(true);
     });
 
     it('throws when config file is missing', async () => {
@@ -224,7 +207,12 @@ describe('readConfigFile', () => {
     it('throws when overrideActorContext is not an array', async () => {
         mockFiles({
             '.test-tools-actors-config.json': validConfig([
-                { folder: 'actors/shopify', actorName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN', overrideActorContext: 'packages' },
+                {
+                    folder: 'actors/shopify',
+                    actorName: 'myteam/shopify',
+                    tokenEnvVar: 'APIFY_TOKEN',
+                    overrideActorContext: 'packages',
+                },
             ]),
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
@@ -235,7 +223,12 @@ describe('readConfigFile', () => {
     it('throws when overrideActorContext contains non-strings', async () => {
         mockFiles({
             '.test-tools-actors-config.json': validConfig([
-                { folder: 'actors/shopify', actorName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN', overrideActorContext: [123] },
+                {
+                    folder: 'actors/shopify',
+                    actorName: 'myteam/shopify',
+                    tokenEnvVar: 'APIFY_TOKEN',
+                    overrideActorContext: [123],
+                },
             ]),
             'actors/shopify/.actor/actor.json': actorJson({}),
         });

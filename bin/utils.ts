@@ -80,7 +80,10 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
         }
 
         if (entry.overrideActorContext !== undefined) {
-            if (!Array.isArray(entry.overrideActorContext) || !entry.overrideActorContext.every((p) => typeof p === 'string')) {
+            if (
+                !Array.isArray(entry.overrideActorContext) ||
+                !entry.overrideActorContext.every((p) => typeof p === 'string')
+            ) {
                 throw new Error(
                     `Invalid "overrideActorContext" for folder "${entry.folder}" in "${CONFIG_FILE_NAME}". ` +
                         `Must be an array of strings.`,
@@ -117,7 +120,6 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
         actorConfigs.push({
             actorName: entry.actorName,
             folder,
-            isStandalone: entry.isStandalone ?? false,
             tokenEnvVar: entry.tokenEnvVar,
             dockerContextDir: normalizedDockerContextDir,
             overrideActorContext: entry.overrideActorContext,
@@ -126,7 +128,6 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
 
     return actorConfigs;
 };
-
 
 export const setCwd = ({ workspace }: { workspace: string | undefined }) => {
     if (workspace) {

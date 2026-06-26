@@ -89,7 +89,6 @@ export interface ActorConfigFileEntry {
     folder: string;
     actorName: string;
     tokenEnvVar: string;
-    isStandalone?: boolean;
     overrideActorContext?: string[];
 }
 
@@ -108,7 +107,6 @@ export interface BuildData {
 export interface ActorConfig {
     actorName: string;
     folder: string;
-    isStandalone: boolean;
     tokenEnvVar: string;
     dockerContextDir: string;
     overrideActorContext?: string[];

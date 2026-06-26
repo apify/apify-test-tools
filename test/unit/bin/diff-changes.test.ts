@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getChangedActors } from '../../../bin/diff-changes.js';
 import * as DiffJsonSchema from '../../../bin/diff-json-schema.js';
+import * as Dockerignore from '../../../bin/dockerignore.js';
 import type { ActorConfig } from '../../../bin/types.js';
 
 const miniActor: ActorConfig = {
@@ -195,5 +196,154 @@ describe('getChangedActors', () => {
             commits,
         });
         expect(result).toEqual([miniActor]);
+    });
+
+    it('triggers actor with overrideActorContext when file matches an override path', () => {
+        const overrideActor: ActorConfig = {
+            actorName: 'team/override-actor',
+            folder: 'actors/override',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: 'actors/override',
+            overrideActorContext: ['actors/override', 'packages'],
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['packages/shared/utils.ts'],
+            actorConfigs: [overrideActor],
+            commits,
+        });
+        expect(result).toEqual([overrideActor]);
+    });
+
+    it('does not trigger actor with overrideActorContext when file is outside all override paths', () => {
+        const overrideActor: ActorConfig = {
+            actorName: 'team/override-actor',
+            folder: 'actors/override',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: 'actors/override',
+            overrideActorContext: ['actors/override', 'packages'],
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['other-dir/file.ts'],
+            actorConfigs: [overrideActor],
+            commits,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('broad-context actor skips files in sibling actor folders', () => {
+        const actorA: ActorConfig = {
+            actorName: 'team/actor-a',
+            folder: 'actors/a',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+        };
+        const actorB: ActorConfig = {
+            actorName: 'team/actor-b',
+            folder: 'actors/b',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['actors/b/src/main.ts'],
+            actorConfigs: [actorA, actorB],
+            commits,
+        });
+        expect(result).toEqual([actorB]);
+    });
+
+    it('root actor (folder="") is excluded from sibling actor folder files', () => {
+        const rootActor: ActorConfig = {
+            actorName: 'team/root',
+            folder: '',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+        };
+        const childActor: ActorConfig = {
+            actorName: 'team/child',
+            folder: 'actors/child',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: 'actors/child',
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['actors/child/src/main.ts'],
+            actorConfigs: [rootActor, childActor],
+            commits,
+        });
+        expect(result).not.toContainEqual(rootActor);
+        expect(result).toContainEqual(childActor);
+    });
+
+    it('root actor (folder="") sees files outside any actor folder', () => {
+        const rootActor: ActorConfig = {
+            actorName: 'team/root',
+            folder: '',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+        };
+        const childActor: ActorConfig = {
+            actorName: 'team/child',
+            folder: 'actors/child',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: 'actors/child',
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['lib/shared-utils.ts'],
+            actorConfigs: [rootActor, childActor],
+            commits,
+        });
+        expect(result).toContainEqual(rootActor);
+        expect(result).not.toContainEqual(childActor);
+    });
+
+    it('file matched by .dockerignore is treated as ignored', () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(
+            (filePath) => filePath === 'actors/foo_bar/node_modules/foo.js',
+        );
+        const result = getChangedActors({
+            filepathsChanged: ['actors/foo_bar/node_modules/foo.js'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('file not matched by .dockerignore is classified normally', () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue((filePath) => filePath.includes('node_modules'));
+        const result = getChangedActors({
+            filepathsChanged: ['actors/foo_bar/src/main.ts'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('JSON file in context but outside actor folder is functional (not checked for cosmetic)', () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
+        const result = getChangedActors({
+            filepathsChanged: ['lib/config.json'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('README outside actor folder but inside context is cosmetic', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['docs/README.md'],
+            actorConfigs: [miniActor],
+            commits,
+            isLatest: true,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('README outside actor folder but inside context is skipped when not isLatest', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['docs/README.md'],
+            actorConfigs: [miniActor],
+            commits,
+            isLatest: false,
+        });
+        expect(result).toEqual([]);
     });
 });

@@ -1,4 +1,5 @@
 import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
+import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
 import type { ActorConfig, Commit } from './types.js';
 
 interface ShouldBuildAndTestOptions {
@@ -47,15 +48,17 @@ const isFileInContext = (lowercaseFilePath: string, actor: ActorConfig): boolean
  * Steps (in order):
  * 1. Hardcoded ignore list (repo-level dev files) → ignored
  * 2. Context matching (dockerContextDir or overrideActorContext) → outside-context if no match
- * 3. README/CHANGELOG by filename → cosmetic (not semantically verified)
- * 4. .json inside the actor's own folder with only cosmetic schema diffs → cosmetic (semantically verified)
- * 5. Everything else → functional
+ * 3. .dockerignore filtering (patterns relative to dockerContextDir) → ignored if matched
+ * 4. README/CHANGELOG by filename → cosmetic (not semantically verified)
+ * 5. .json inside the actor's own folder with only cosmetic schema diffs → cosmetic (semantically verified)
+ * 6. Everything else → functional
  */
 const classifyFileChange = (
     originalFilePath: string,
     actor: ActorConfig,
     commits: Commit[],
     cosmeticCache: Map<string, boolean>,
+    dockerIgnoreMatcher: DockerIgnoreMatcher,
 ): FileChangeForActor => {
     const lowercaseFilePath = originalFilePath.toLowerCase();
 
@@ -65,6 +68,10 @@ const classifyFileChange = (
 
     if (!isFileInContext(lowercaseFilePath, actor)) {
         return { impact: 'outside-context' };
+    }
+
+    if (dockerIgnoreMatcher(originalFilePath)) {
+        return { impact: 'ignored' };
     }
 
     if (lowercaseFilePath.endsWith('readme.md') || lowercaseFilePath.endsWith('changelog.md')) {
@@ -135,6 +142,8 @@ export const getChangedActors = ({
     const fileImpacts = new Map<string, LoggableImpact>();
 
     for (const actor of actorConfigs) {
+        const dockerIgnoreMatcher = loadDockerIgnore(actor.dockerContextDir);
+
         for (const originalFilePath of filepathsChanged) {
             const lowercaseFilePath = originalFilePath.toLowerCase();
 
@@ -142,7 +151,7 @@ export const getChangedActors = ({
                 continue;
             }
 
-            const change = classifyFileChange(originalFilePath, actor, commits, cosmeticCache);
+            const change = classifyFileChange(originalFilePath, actor, commits, cosmeticCache, dockerIgnoreMatcher);
             updateFileImpact(fileImpacts, originalFilePath, change.impact);
 
             if (change.impact === 'ignored' || change.impact === 'outside-context') continue;

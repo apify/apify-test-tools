@@ -15,35 +15,21 @@ npm i -D apify-test-tools
 
 ### 2. Create the config file
 
-Every repo that uses `apify-test-tools` must have a `.test-tools-actors-config.json` file at the root. This file tells the tool which actors live in the repo, who owns them, and which token to use.
-
-You can generate a starter config automatically:
-
-```bash
-npx apify-test-tools init-config
-```
-
-This scans the repo for `.actor/actor.json` files and creates `.test-tools-actors-config.json` with placeholder values. You can also pass defaults:
-
-```bash
-npx apify-test-tools init-config --default-owner myteam --default-token-var APIFY_TOKEN_MYTEAM
-```
-
-The generated file looks like this:
+Every repo that uses `apify-test-tools` must have a `.test-tools-actors-config.json` file at the root. This file tells the tool which actors live in the repo, how to identify them, and which token to use.
 
 ```json
 {
     "actors": [
         {
             "folder": "actors/web-scraper",
-            "owner": "<OWNER>",
-            "tokenEnvVar": "<TOKEN_ENV_VAR>"
+            "actorName": "myteam/web-scraper",
+            "tokenEnvVar": "APIFY_TOKEN_MYTEAM"
         },
         {
             "folder": "actors/email-sender",
-            "owner": "<OWNER>",
-            "tokenEnvVar": "<TOKEN_ENV_VAR>",
-            "isStandalone": true
+            "actorName": "myteam/email-sender",
+            "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
+            "overrideActorContext": ["actors/email-sender", "packages/shared"]
         }
     ]
 }
@@ -51,18 +37,16 @@ The generated file looks like this:
 
 Each entry has:
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `folder` | yes | Relative path from repo root to the actor directory. Use `"."` for a single-actor repo where `.actor/` is at the root. |
-| `owner` | yes | Apify username that owns the actor. Combined with the `name` from `<folder>/.actor/actor.json` to form the full actor name (`owner/name`). |
-| `tokenEnvVar` | yes | Name of the environment variable holding the Apify API token for this actor. No fallback — if the env var is not set at build time, the build fails. |
-| `isStandalone` | no | Defaults to `false`. Standalone actors are only built when their own folder changes, not when shared code changes. |
-
-The actor's `name` is always read from `<folder>/.actor/actor.json` — it is **not** duplicated in the config.
+| Field                  | Required | Description                                                                                                                                                                                                                                                    |
+| ---------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `folder`               | yes      | Relative path from repo root to the actor directory. Use `"."` for a single-actor repo where `.actor/` is at the root.                                                                                                                                         |
+| `actorName`            | yes      | Full actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the actor name — the `name` field in `actor.json` is not used.                                                                                      |
+| `tokenEnvVar`          | yes      | Name of the environment variable holding the Apify API token for this actor. No fallback — if the env var is not set at build time, the build fails.                                                                                                           |
+| `overrideActorContext` | no       | Array of paths (relative to repo root) that define which files are relevant to this actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an actor depends on shared packages outside its Docker build context. |
 
 ### 3. Set up actor folders
 
-Each actor in the config must have a `.actor/actor.json` file with at least a `name` field:
+Each actor in the config must have a `.actor/actor.json` file. The `dockerContextDir` field in `actor.json` defines the build context boundary — this is what the tool uses to determine which files can affect the actor's build.
 
 ```
 my-repo
@@ -70,11 +54,11 @@ my-repo
 ├── actors
 │   ├── web-scraper
 │   │   ├── .actor
-│   │   │   └── actor.json          <- { "name": "web-scraper" }
+│   │   │   └── actor.json
 │   │   └── src/
 │   └── email-sender
 │       ├── .actor
-│       │   └── actor.json          <- { "name": "email-sender" }
+│       │   └── actor.json
 │       └── src/
 └── test
     ├── unit
@@ -86,6 +70,17 @@ my-repo
 ```
 
 For a single-actor repo, set `"folder": "."` in the config and place `.actor/actor.json` at the repo root.
+
+### Change detection
+
+When a PR is opened or code is pushed, the tool determines which actors need to be built and tested based on the changed files. For each changed file, for each actor:
+
+1. **Hardcoded ignore list** — repo-level dev files (`.vscode/`, `.gitignore`, `.husky/`, `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`, root `README.md`) are always ignored.
+2. **Context matching** — the file must fall within the actor's build context (`dockerContextDir` from `actor.json`, or `overrideActorContext` from config if set). Files outside the context are skipped.
+3. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior.
+4. **Sibling exclusion** — files inside another actor's `folder` are excluded. This prevents an actor with broad context from being triggered by changes that belong to a sibling actor.
+5. **Cosmetic classification** — `README.md` and `CHANGELOG.md` files, and `.json` files inside the actor's folder with only cosmetic schema changes (whitespace, key ordering), only trigger a release build (not tests).
+6. **Functional** — everything else triggers both build and tests.
 
 ### 4. Create test directories
 

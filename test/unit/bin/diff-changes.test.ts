@@ -4,12 +4,13 @@ import { getChangedActors, maybeParseActorFolder } from '../../../bin/diff-chang
 import * as DiffJsonSchema from '../../../bin/diff-json-schema.js';
 import type { ActorConfig } from '../../../bin/types.js';
 
-const miniActor: ActorConfig = { actorName: 'foo/bar', folder: 'actors/foo_bar', isStandalone: false, tokenEnvVar: 'APIFY_TOKEN_FOO' };
+const miniActor: ActorConfig = { actorName: 'foo/bar', folder: 'actors/foo_bar', isStandalone: false, tokenEnvVar: 'APIFY_TOKEN_FOO', dockerContextDir: '' };
 const standaloneActor: ActorConfig = {
     actorName: 'owner/standalone',
     folder: 'standalone-actors/standalone',
     isStandalone: true,
     tokenEnvVar: 'APIFY_TOKEN_OWNER',
+    dockerContextDir: 'standalone-actors/standalone',
 };
 const actorConfigs = [miniActor, standaloneActor];
 
@@ -185,6 +186,7 @@ describe('getChangedActors', () => {
             folder: 'actors/shopify',
             isStandalone: false,
             tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
+            dockerContextDir: '',
         };
         const result = getChangedActors({
             filepathsChanged: ['actors/shopify/src/main.ts'],
@@ -195,7 +197,7 @@ describe('getChangedActors', () => {
     });
 
     it('in single-actor repo, .actor/ changes trigger builds', () => {
-        const rootActor: ActorConfig = { actorName: 'myteam/my-actor', folder: '', isStandalone: false, tokenEnvVar: 'BUILDER_APIFY_TOKEN' };
+        const rootActor: ActorConfig = { actorName: 'myteam/my-actor', folder: '', isStandalone: false, tokenEnvVar: 'BUILDER_APIFY_TOKEN', dockerContextDir: '' };
         const result = getChangedActors({
             filepathsChanged: ['.actor/actor.json'],
             actorConfigs: [rootActor],

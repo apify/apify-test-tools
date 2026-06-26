@@ -1,8 +1,8 @@
-import { execSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import type { ActorConfig, ActorConfigFile, ActorConfigFileEntry } from './types.js';
+import type { ActorConfig, ActorConfigFile } from './types.js';
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
     console.error(command, args.join(' '));
@@ -43,7 +43,7 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
     } catch {
         throw new Error(
             `Config file "${CONFIG_FILE_NAME}" not found in the current directory. ` +
-                `Run "init-config" to generate one, then fill in the owner and tokenEnvVar fields.`,
+                `Please create one with the required actor entries.`,
         );
     }
 
@@ -71,9 +71,26 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
         }
         seenFolders.add(folder);
 
+        const nameParts = entry.actorName?.split('/');
+        if (!nameParts || nameParts.length !== 2 || !nameParts[0] || !nameParts[1]) {
+            throw new Error(
+                `Invalid "actorName" for folder "${entry.folder}" in "${CONFIG_FILE_NAME}". ` +
+                    `Must be in "owner/name" format (e.g. "apify/web-scraper").`,
+            );
+        }
+
+        if (entry.overrideActorContext !== undefined) {
+            if (!Array.isArray(entry.overrideActorContext) || !entry.overrideActorContext.every((p) => typeof p === 'string')) {
+                throw new Error(
+                    `Invalid "overrideActorContext" for folder "${entry.folder}" in "${CONFIG_FILE_NAME}". ` +
+                        `Must be an array of strings.`,
+                );
+            }
+        }
+
         const actorJsonPath = folder ? `${folder}/.actor/actor.json` : '.actor/actor.json';
 
-        let actorJson: { name?: string };
+        let actorJson: { dockerContextDir?: string };
         try {
             actorJson = JSON.parse(await fs.readFile(actorJsonPath, 'utf-8'));
         } catch {
@@ -83,74 +100,33 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
             );
         }
 
-        if (!actorJson.name) {
+        const actorDotDir = folder ? `${folder}/.actor` : '.actor';
+        const rawDockerContextDir = actorJson.dockerContextDir ?? '..';
+        const resolved = path.resolve(process.cwd(), actorDotDir, rawDockerContextDir);
+        const dockerContextDir = path.relative(process.cwd(), resolved);
+
+        if (dockerContextDir.startsWith('..')) {
             throw new Error(
-                `Missing "name" field in "${actorJsonPath}". ` +
-                    `Every actor must have a "name" in its .actor/actor.json.`,
+                `"dockerContextDir" for folder "${entry.folder}" resolves outside the repository root. ` +
+                    `Resolved path: "${dockerContextDir}".`,
             );
         }
 
+        const normalizedDockerContextDir = dockerContextDir === '.' ? '' : dockerContextDir;
+
         actorConfigs.push({
-            actorName: `${entry.owner}/${actorJson.name}`,
+            actorName: entry.actorName,
             folder,
             isStandalone: entry.isStandalone ?? false,
             tokenEnvVar: entry.tokenEnvVar,
+            dockerContextDir: normalizedDockerContextDir,
+            overrideActorContext: entry.overrideActorContext,
         });
     }
 
     return actorConfigs;
 };
 
-interface GenerateConfigOptions {
-    defaultOwner?: string;
-    defaultTokenVar?: string;
-}
-
-export const generateConfigFile = async (options: GenerateConfigOptions = {}): Promise<void> => {
-    try {
-        await fs.access(CONFIG_FILE_NAME);
-        throw new Error(
-            `Config file "${CONFIG_FILE_NAME}" already exists. ` +
-                `Remove it first if you want to regenerate.`,
-        );
-    } catch (err) {
-        if (err instanceof Error && err.message.includes('already exists')) throw err;
-    }
-
-    const trackedFiles = execSync('git ls-files', { encoding: 'utf-8' }).trim().split('\n');
-    const actorJsonFiles = trackedFiles.filter((f) => f.endsWith('.actor/actor.json'));
-
-    if (actorJsonFiles.length === 0) {
-        throw new Error('No .actor/actor.json files found in the repository.');
-    }
-
-    const hasRoot = actorJsonFiles.includes('.actor/actor.json');
-    const subfolderActorJsonFiles = actorJsonFiles.filter((f) => f !== '.actor/actor.json');
-
-    if (hasRoot && subfolderActorJsonFiles.length > 0) {
-        console.error(
-            `\nNote: Found a root-level .actor/actor.json alongside ${subfolderActorJsonFiles.length} subfolder actor(s).` +
-                `\nIf the root .actor/actor.json only exists to satisfy the Apify CLI and is not a real actor,` +
-                `\nconsider removing its entry from the generated config file.\n`,
-        );
-    }
-
-    const entries: ActorConfigFileEntry[] = [];
-
-    for (const actorJsonPath of actorJsonFiles) {
-        const folder = actorJsonPath === '.actor/actor.json' ? '' : path.dirname(path.dirname(actorJsonPath));
-
-        entries.push({
-            folder: folder || '.',
-            owner: options.defaultOwner ?? '<OWNER>',
-            tokenEnvVar: options.defaultTokenVar ?? '<TOKEN_ENV_VAR>',
-        });
-    }
-
-    const config: ActorConfigFile = { actors: entries };
-    await fs.writeFile(CONFIG_FILE_NAME, JSON.stringify(config, null, 4));
-    console.error(`Created "${CONFIG_FILE_NAME}" with ${entries.length} actor(s). Fill in the owner and tokenEnvVar fields.`);
-};
 
 export const setCwd = ({ workspace }: { workspace: string | undefined }) => {
     if (workspace) {

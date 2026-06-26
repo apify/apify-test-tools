@@ -87,9 +87,10 @@ export interface GithubCommit {
 
 export interface ActorConfigFileEntry {
     folder: string;
-    owner: string;
+    actorName: string;
     tokenEnvVar: string;
     isStandalone?: boolean;
+    overrideActorContext?: string[];
 }
 
 export interface ActorConfigFile {
@@ -101,7 +102,6 @@ export interface BuildData {
     actorId: string;
     actorName: string;
     actorConfig: ActorConfig;
-    // folder: string | undefined;
     buildNumber: string;
 }
 
@@ -110,4 +110,6 @@ export interface ActorConfig {
     folder: string;
     isStandalone: boolean;
     tokenEnvVar: string;
+    dockerContextDir: string;
+    overrideActorContext?: string[];
 }

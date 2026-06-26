@@ -13,7 +13,7 @@ import { getPushData } from './github.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
 import type { Config } from './types.js';
-import { generateConfigFile, getRepoActors, setCwd, spawnCommandInGhWorkspace } from './utils.js';
+import { getRepoActors, setCwd, spawnCommandInGhWorkspace } from './utils.js';
 
 /**
  * Middlewares to be run before every command execution
@@ -200,23 +200,6 @@ await yargs()
                 reportSlackChannel,
                 releaseSlackChannel,
             });
-        },
-    )
-    .command(
-        'init-config',
-        'Generate a starter config file by scanning the repo for .actor/actor.json files',
-        (args) =>
-            args
-                .option('default-owner', {
-                    type: 'string',
-                    description: 'Apify username to use as owner for all actors',
-                })
-                .option('default-token-var', {
-                    type: 'string',
-                    description: 'Env var name holding the Apify token for all actors',
-                }),
-        async ({ defaultOwner, defaultTokenVar }) => {
-            await generateConfigFile({ defaultOwner, defaultTokenVar });
         },
     )
     .command(

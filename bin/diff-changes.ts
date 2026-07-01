@@ -31,15 +31,11 @@ type FileChangeForActor =
     | { impact: 'cosmetic'; semanticallyVerified: boolean }
     | { impact: 'functional' };
 
-const isFileInContext = (lowercaseFilePath: string, actor: ActorConfig): boolean => {
-    if (actor.overrideActorContext) {
-        return actor.overrideActorContext.some((contextPath) => {
-            const lowerContextPath = contextPath.toLowerCase();
-            return lowerContextPath === '' || lowercaseFilePath.startsWith(`${lowerContextPath}/`);
-        });
-    }
-    const lowerDockerContext = actor.dockerContextDir.toLowerCase();
-    return lowerDockerContext === '' || lowercaseFilePath.startsWith(`${lowerDockerContext}/`);
+const isFileInActorContext = (lowercaseFilePath: string, contextPaths: string[]): boolean => {
+    return contextPaths.some((contextPath) => {
+        const lowerContextPath = contextPath.toLowerCase();
+        return lowerContextPath === '' || lowercaseFilePath.startsWith(`${lowerContextPath}/`);
+    });
 };
 
 /**
@@ -47,7 +43,7 @@ const isFileInContext = (lowercaseFilePath: string, actor: ActorConfig): boolean
  *
  * Steps (in order):
  * 1. Hardcoded ignore list (repo-level dev files) → ignored
- * 2. Context matching (dockerContextDir or overrideActorContext) → outside-context if no match
+ * 2. Context matching (actorConfig.contextPaths) → outside-context if no match
  * 3. .dockerignore filtering (patterns relative to dockerContextDir) → ignored if matched
  * 4. README/CHANGELOG by filename → cosmetic (not semantically verified)
  * 5. .json inside the actor's own folder with only cosmetic schema diffs → cosmetic (semantically verified)
@@ -66,7 +62,7 @@ const classifyFileChange = (
         return { impact: 'ignored' };
     }
 
-    if (!isFileInContext(lowercaseFilePath, actorConfig)) {
+    if (!isFileInActorContext(lowercaseFilePath, actorConfig.contextPaths)) {
         return { impact: 'outside-context' };
     }
 

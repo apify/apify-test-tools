@@ -10,12 +10,14 @@ const miniActor: ActorConfig = {
     folder: 'actors/foo_bar',
     tokenEnvVar: 'APIFY_TOKEN_FOO',
     dockerContextDir: '',
+    contextPaths: [''],
 };
 const standaloneActor: ActorConfig = {
     actorName: 'owner/standalone',
     folder: 'standalone-actors/standalone',
     tokenEnvVar: 'APIFY_TOKEN_OWNER',
     dockerContextDir: 'standalone-actors/standalone',
+    contextPaths: ['standalone-actors/standalone'],
 };
 const actorConfigs = [miniActor, standaloneActor];
 
@@ -156,6 +158,7 @@ describe('getChangedActors', () => {
             folder: 'actors/shopify',
             tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
             dockerContextDir: '',
+            contextPaths: [''],
         };
         const result = getChangedActors({
             filepathsChanged: ['actors/shopify/src/main.ts'],
@@ -171,6 +174,7 @@ describe('getChangedActors', () => {
             folder: '',
             tokenEnvVar: 'BUILDER_APIFY_TOKEN',
             dockerContextDir: '',
+            contextPaths: [''],
         };
         const result = getChangedActors({
             filepathsChanged: ['.actor/actor.json'],
@@ -198,13 +202,13 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('triggers actor with overrideActorContext when file matches an override path', () => {
+    it('triggers actor with contextPaths override when file matches an override path', () => {
         const overrideActor: ActorConfig = {
             actorName: 'team/override-actor',
             folder: 'actors/override',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: 'actors/override',
-            overrideActorContext: ['actors/override', 'packages'],
+            contextPaths: ['actors/override', 'packages'],
         };
         const result = getChangedActors({
             filepathsChanged: ['packages/shared/utils.ts'],
@@ -214,13 +218,13 @@ describe('getChangedActors', () => {
         expect(result).toEqual([overrideActor]);
     });
 
-    it('does not trigger actor with overrideActorContext when file is outside all override paths', () => {
+    it('does not trigger actor with contextPaths override when file is outside all override paths', () => {
         const overrideActor: ActorConfig = {
             actorName: 'team/override-actor',
             folder: 'actors/override',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: 'actors/override',
-            overrideActorContext: ['actors/override', 'packages'],
+            contextPaths: ['actors/override', 'packages'],
         };
         const result = getChangedActors({
             filepathsChanged: ['other-dir/file.ts'],
@@ -236,12 +240,14 @@ describe('getChangedActors', () => {
             folder: 'actors/a',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',
+            contextPaths: [''],
         };
         const actorB: ActorConfig = {
             actorName: 'team/actor-b',
             folder: 'actors/b',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',
+            contextPaths: [''],
         };
         const result = getChangedActors({
             filepathsChanged: ['actors/b/src/main.ts'],
@@ -257,12 +263,14 @@ describe('getChangedActors', () => {
             folder: '',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',
+            contextPaths: [''],
         };
         const childActor: ActorConfig = {
             actorName: 'team/child',
             folder: 'actors/child',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: 'actors/child',
+            contextPaths: ['actors/child'],
         };
         const result = getChangedActors({
             filepathsChanged: ['actors/child/src/main.ts'],
@@ -279,12 +287,14 @@ describe('getChangedActors', () => {
             folder: '',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',
+            contextPaths: [''],
         };
         const childActor: ActorConfig = {
             actorName: 'team/child',
             folder: 'actors/child',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: 'actors/child',
+            contextPaths: ['actors/child'],
         };
         const result = getChangedActors({
             filepathsChanged: ['lib/shared-utils.ts'],

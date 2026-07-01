@@ -30,10 +30,6 @@ export const getEnvVar = (varName: string, defaultValue?: string): string => {
     return value;
 };
 
-export const getRepoActors = async (): Promise<ActorConfig[]> => {
-    return readConfigFile();
-};
-
 const CONFIG_FILE_NAME = '.test-tools-actors-config.json';
 
 export const readConfigFile = async (): Promise<ActorConfig[]> => {
@@ -122,7 +118,7 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
             folder,
             tokenEnvVar: entry.tokenEnvVar,
             dockerContextDir: normalizedDockerContextDir,
-            overrideActorContext: entry.overrideActorContext,
+            contextPaths: entry.overrideActorContext ?? [normalizedDockerContextDir],
         });
     }
 

@@ -109,5 +109,5 @@ export interface ActorConfig {
     folder: string;
     tokenEnvVar: string;
     dockerContextDir: string;
-    overrideActorContext?: string[];
+    contextPaths: string[];
 }

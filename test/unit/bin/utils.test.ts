@@ -43,7 +43,7 @@ describe('readConfigFile', () => {
                 folder: 'actors/shopify',
                 tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
                 dockerContextDir: '',
-                overrideActorContext: undefined,
+                contextPaths: [''],
             },
         ]);
     });
@@ -71,6 +71,7 @@ describe('readConfigFile', () => {
 
         const result = await readConfigFile();
         expect(result[0].dockerContextDir).toBe('actors/web-scraper');
+        expect(result[0].contextPaths).toEqual(['actors/web-scraper']);
     });
 
     it('resolves dockerContextDir relative to .actor/ folder', async () => {
@@ -85,7 +86,7 @@ describe('readConfigFile', () => {
         expect(result[0].dockerContextDir).toBe('');
     });
 
-    it('passes through overrideActorContext', async () => {
+    it('resolves contextPaths from overrideActorContext', async () => {
         mockFiles({
             '.test-tools-actors-config.json': validConfig([
                 {
@@ -99,7 +100,7 @@ describe('readConfigFile', () => {
         });
 
         const result = await readConfigFile();
-        expect(result[0].overrideActorContext).toEqual(['actors/shopify', 'packages']);
+        expect(result[0].contextPaths).toEqual(['actors/shopify', 'packages']);
     });
 
     it('handles multiple actors', async () => {

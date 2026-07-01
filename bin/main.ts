@@ -13,7 +13,7 @@ import { getPushData } from './github.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
 import type { Config } from './types.js';
-import { getRepoActors, setCwd, spawnCommandInGhWorkspace } from './utils.js';
+import { readConfigFile, setCwd, spawnCommandInGhWorkspace } from './utils.js';
 
 /**
  * Middlewares to be run before every command execution
@@ -43,7 +43,7 @@ const resolveChangedActors = async (
     { targetBranch, sourceBranch, baseCommit }: Config,
     { isLatest }: { isLatest: boolean },
 ) => {
-    const actorConfigs = await getRepoActors();
+    const actorConfigs = await readConfigFile();
 
     // This is an optimization for the common case where a branch only has cosmetic changes but had to merge in
     // functional changes from master (being up-to-date is a CI requirement). Master is already validated, and
@@ -107,7 +107,7 @@ await yargs()
         '',
         (_) => _,
         async () => {
-            const actorConfigs = await getRepoActors();
+            const actorConfigs = await readConfigFile();
             console.log(JSON.stringify(actorConfigs));
         },
     )
@@ -172,7 +172,7 @@ await yargs()
                 args.pushEventPath,
             );
             const isLatest = true;
-            const actorConfigs = await getRepoActors();
+            const actorConfigs = await readConfigFile();
             const actorsChanged = getChangedActors({
                 filepathsChanged: changedFiles,
                 actorConfigs,
@@ -207,7 +207,7 @@ await yargs()
         '',
         (_) => _,
         async () => {
-            const actorConfigs = await getRepoActors();
+            const actorConfigs = await readConfigFile();
             await deleteOldBuilds(actorConfigs);
         },
     )

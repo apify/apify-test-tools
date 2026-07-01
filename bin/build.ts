@@ -44,6 +44,12 @@ class ApifyBuilder {
             );
         }
         // I reported that buildNumber should probably not be optional
+        if (!actorInfo.taggedBuilds?.[defaultBuildTag]?.buildNumber) {
+            throw new Error(
+                `[${this.actorName}] No build found for tag "${defaultBuildTag}". ` +
+                    `The first build must be triggered manually on the platform before CI can take over.`,
+            );
+        }
         const defaultBuildNumber = actorInfo.taggedBuilds![defaultBuildTag].buildNumber!;
         const defaultVersionNumber = defaultBuildNumber.match(/(\d+\.\d+)\.\d+/)![1];
         console.error(`Default version for ${this.actorName} is ${defaultVersionNumber}`);

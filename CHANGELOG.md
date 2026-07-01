@@ -2,15 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-<!-- git-cliff-unreleased-start -->
-## 0.8.3 - **not yet released**
+## [0.8.3](https://github.com/apify/apify-test-tools/releases/tag/v0.8.3) (2026-07-01)
 
 ### 🐛 Bug Fixes
 
 - Add error explaining to build manually ([#99](https://github.com/apify/apify-test-tools/pull/99)) ([20eb7f5](https://github.com/apify/apify-test-tools/commit/20eb7f5e0493ea77e8d93f94c350d425a43cd570)) by [@gytelio](https://github.com/gytelio), closes [#98](https://github.com/apify/apify-test-tools/issues/98)
 
 
-<!-- git-cliff-unreleased-end -->
 ## [0.8.2](https://github.com/apify/apify-test-tools/releases/tag/v0.8.2) (2026-06-25)
 
 ### Change

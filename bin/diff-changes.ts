@@ -55,7 +55,7 @@ const isFileInContext = (lowercaseFilePath: string, actor: ActorConfig): boolean
  */
 const classifyFileChange = (
     originalFilePath: string,
-    actor: ActorConfig,
+    actorConfig: ActorConfig,
     commits: Commit[],
     cosmeticCache: Map<string, boolean>,
     dockerIgnoreMatcher: DockerIgnoreMatcher,
@@ -66,7 +66,7 @@ const classifyFileChange = (
         return { impact: 'ignored' };
     }
 
-    if (!isFileInContext(lowercaseFilePath, actor)) {
+    if (!isFileInContext(lowercaseFilePath, actorConfig)) {
         return { impact: 'outside-context' };
     }
 
@@ -78,7 +78,7 @@ const classifyFileChange = (
         return { impact: 'cosmetic', semanticallyVerified: false };
     }
 
-    const lowerFolder = actor.folder.toLowerCase();
+    const lowerFolder = actorConfig.folder.toLowerCase();
     const isInActorFolder = lowerFolder === '' || lowercaseFilePath.startsWith(`${lowerFolder}/`);
     if (lowercaseFilePath.endsWith('.json') && isInActorFolder) {
         let isCosmetic = cosmeticCache.get(originalFilePath);
@@ -141,23 +141,29 @@ export const getChangedActors = ({
     const cosmeticCache = new Map<string, boolean>();
     const fileImpacts = new Map<string, LoggableImpact>();
 
-    for (const actor of actorConfigs) {
-        const dockerIgnoreMatcher = loadDockerIgnore(actor.dockerContextDir);
+    for (const actorConfig of actorConfigs) {
+        const dockerIgnoreMatcher = loadDockerIgnore(actorConfig.dockerContextDir);
 
         for (const originalFilePath of filepathsChanged) {
             const lowercaseFilePath = originalFilePath.toLowerCase();
 
-            if (isExcludedBySibling(lowercaseFilePath, actor, actorConfigs)) {
+            if (isExcludedBySibling(lowercaseFilePath, actorConfig, actorConfigs)) {
                 continue;
             }
 
-            const change = classifyFileChange(originalFilePath, actor, commits, cosmeticCache, dockerIgnoreMatcher);
+            const change = classifyFileChange(
+                originalFilePath,
+                actorConfig,
+                commits,
+                cosmeticCache,
+                dockerIgnoreMatcher,
+            );
             updateFileImpact(fileImpacts, originalFilePath, change.impact);
 
             if (change.impact === 'ignored' || change.impact === 'outside-context') continue;
             if (change.impact === 'cosmetic' && !isLatest) continue;
 
-            actorsChangedMap.set(actor.folder, actor);
+            actorsChangedMap.set(actorConfig.folder, actorConfig);
         }
     }
 

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, ActorConfigFile } from './types.js';
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
@@ -32,16 +33,15 @@ export const getEnvVar = (varName: string, defaultValue?: string): string => {
 
 const CONFIG_FILE_NAME = '.test-tools-actors-config.json';
 
-// `prefix` and `target` are both repo-root-relative paths ("" means repo root, which is a prefix of everything).
-const isPathPrefixOrEqual = (prefix: string, target: string): boolean =>
-    prefix === '' || target === prefix || target.startsWith(`${prefix}/`);
+// Strips a trailing slash so config-declared paths ("actors/shopify/" vs "actors/shopify") compare equal.
+const stripTrailingSlash = (pathValue: string): string => pathValue.replace(/\/+$/, '');
 
 const findOverlappingContextPaths = (contextPaths: string[]): [string, string] | undefined => {
     for (let i = 0; i < contextPaths.length; i++) {
         for (let j = i + 1; j < contextPaths.length; j++) {
             if (
-                isPathPrefixOrEqual(contextPaths[i], contextPaths[j]) ||
-                isPathPrefixOrEqual(contextPaths[j], contextPaths[i])
+                isPathWithinScope(contextPaths[i], contextPaths[j]) ||
+                isPathWithinScope(contextPaths[j], contextPaths[i])
             ) {
                 return [contextPaths[i], contextPaths[j]];
             }
@@ -76,7 +76,7 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
     const actorConfigs: ActorConfig[] = [];
 
     for (const entry of config.actors) {
-        const folder = entry.folder === '.' ? '' : entry.folder;
+        const folder = entry.folder === '.' ? '' : stripTrailingSlash(entry.folder);
 
         if (seenFolders.has(folder)) {
             throw new Error(
@@ -130,7 +130,7 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
         }
 
         const normalizedDockerContextDir = dockerContextDir === '.' ? '' : dockerContextDir;
-        const contextPaths = entry.overrideActorContext ?? [normalizedDockerContextDir];
+        const contextPaths = (entry.overrideActorContext ?? [normalizedDockerContextDir]).map(stripTrailingSlash);
 
         const overlap = findOverlappingContextPaths(contextPaths);
         if (overlap) {
@@ -140,7 +140,7 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
             );
         }
 
-        if (!contextPaths.some((contextPath) => isPathPrefixOrEqual(contextPath, folder))) {
+        if (!contextPaths.some((contextPath) => isPathWithinScope(folder, contextPath))) {
             throw new Error(
                 `Actor folder "${entry.folder}" in "${CONFIG_FILE_NAME}" is not reachable through its own ` +
                     `context paths (${contextPaths.join(', ')}). Add the actor's own folder to ` +

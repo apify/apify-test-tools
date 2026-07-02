@@ -3,6 +3,8 @@ import path from 'node:path';
 
 import ignore from 'ignore';
 
+import { hoistPath, isPathWithinScope } from './path-utils.js';
+
 export type DockerIgnoreMatcher = (repoRelativePath: string) => boolean;
 
 /**
@@ -28,16 +30,10 @@ export const loadDockerIgnore = (dockerContextDir: string): DockerIgnoreMatcher 
         const lowerPath = repoRelativePath.toLowerCase();
         const lowerContext = dockerContextDir.toLowerCase();
 
-        // Strip the dockerContextDir prefix to get a path relative to the context root
-        let relativePath: string;
-        if (lowerContext === '') {
-            relativePath = repoRelativePath;
-        } else if (lowerPath.startsWith(`${lowerContext}/`)) {
-            relativePath = repoRelativePath.slice(dockerContextDir.length + 1);
-        } else {
+        if (!isPathWithinScope(lowerPath, lowerContext)) {
             return false;
         }
 
-        return matcher.ignores(relativePath);
+        return matcher.ignores(hoistPath(repoRelativePath, dockerContextDir));
     };
 };

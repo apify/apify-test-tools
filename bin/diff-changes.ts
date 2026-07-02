@@ -1,5 +1,6 @@
 import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
 import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
+import { findContainingScope, hoistPath, isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, Commit } from './types.js';
 
 interface ShouldBuildAndTestOptions {
@@ -19,7 +20,7 @@ const IGNORED_TOP_LEVEL_FILES = [
     '.editorconfig',
 ];
 
-// Expects an already-hoisted path (relative to the matched context entry, see findMatchingContextPath).
+// Expects an already-hoisted path (relative to the matched context entry, see findContainingScope).
 const isIgnoredTopLevelFile = (hoistedLowercaseFilePath: string): boolean =>
     IGNORED_TOP_LEVEL_FILES.some((pattern) => hoistedLowercaseFilePath.startsWith(pattern));
 
@@ -28,16 +29,6 @@ type FileChangeForActor =
     | { impact: 'outside-context' }
     | { impact: 'cosmetic'; semanticallyVerified: boolean }
     | { impact: 'functional' };
-
-/**
- * Finds the single contextPaths entry a file falls under. `readConfigFile` validates that no entry is a
- * path-prefix of another entry in the same actor's contextPaths, so at most one entry can ever match.
- */
-const findMatchingContextPath = (lowercaseFilePath: string, contextPaths: string[]): string | undefined =>
-    contextPaths.find((contextPath) => {
-        const lowerContextPath = contextPath.toLowerCase();
-        return lowerContextPath === '' || lowercaseFilePath.startsWith(`${lowerContextPath}/`);
-    });
 
 /**
  * Classify a single file change for a single actor.
@@ -58,14 +49,14 @@ const classifyFileChange = (
     dockerIgnoreMatcher: DockerIgnoreMatcher,
 ): FileChangeForActor => {
     const lowercaseFilePath = originalFilePath.toLowerCase();
+    const lowercaseContextPaths = actorConfig.contextPaths.map((contextPath) => contextPath.toLowerCase());
 
-    const matchedContext = findMatchingContextPath(lowercaseFilePath, actorConfig.contextPaths);
+    const matchedContext = findContainingScope(lowercaseFilePath, lowercaseContextPaths);
     if (matchedContext === undefined) {
         return { impact: 'outside-context' };
     }
 
-    const hoistedFilePath =
-        matchedContext === '' ? lowercaseFilePath : lowercaseFilePath.slice(matchedContext.length + 1);
+    const hoistedFilePath = hoistPath(lowercaseFilePath, matchedContext);
     if (isIgnoredTopLevelFile(hoistedFilePath)) {
         return { impact: 'ignored' };
     }
@@ -75,7 +66,7 @@ const classifyFileChange = (
     }
 
     const lowerFolder = actorConfig.folder.toLowerCase();
-    const isInActorFolder = lowerFolder === '' || lowercaseFilePath.startsWith(`${lowerFolder}/`);
+    const isInActorFolder = isPathWithinScope(lowercaseFilePath, lowerFolder);
 
     if (lowercaseFilePath.endsWith('readme.md') || lowercaseFilePath.endsWith('changelog.md')) {
         return isInActorFolder ? { impact: 'cosmetic', semanticallyVerified: false } : { impact: 'ignored' };
@@ -104,7 +95,7 @@ const isExcludedBySibling = (lowercaseFilePath: string, actor: ActorConfig, allA
         (other) =>
             other.folder !== actor.folder &&
             other.folder !== '' &&
-            lowercaseFilePath.startsWith(`${other.folder.toLowerCase()}/`),
+            isPathWithinScope(lowercaseFilePath, other.folder.toLowerCase()),
     );
 };
 

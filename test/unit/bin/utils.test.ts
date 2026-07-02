@@ -285,6 +285,24 @@ describe('readConfigFile', () => {
         await expect(readConfigFile()).rejects.toThrow('not reachable through its own context paths');
     });
 
+    it('strips trailing slashes from folder and overrideActorContext entries', async () => {
+        mockFiles({
+            '.test-tools-actors-config.json': validConfig([
+                {
+                    folder: 'actors/shopify/',
+                    actorName: 'myteam/shopify',
+                    tokenEnvVar: 'APIFY_TOKEN',
+                    overrideActorContext: ['actors/shopify/', 'packages/'],
+                },
+            ]),
+            'actors/shopify/.actor/actor.json': actorJson({}),
+        });
+
+        const result = await readConfigFile();
+        expect(result[0].folder).toBe('actors/shopify');
+        expect(result[0].contextPaths).toEqual(['actors/shopify', 'packages']);
+    });
+
     it('allows overrideActorContext with disjoint sibling paths that all reach the actor folder via one entry', async () => {
         mockFiles({
             '.test-tools-actors-config.json': validConfig([

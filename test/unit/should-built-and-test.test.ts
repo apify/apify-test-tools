@@ -82,7 +82,7 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
     });
 
-    test('Only builds latest for all Actors', () => {
+    test('Root-level changelog outside any actor own folder is ignored, even on latest', () => {
         const FILES = ['shared/CHANGELOG.md', 'CHANGELOG.md'];
 
         const actorsChanged = getChangedActors({
@@ -92,7 +92,20 @@ describe('Should build and test parser', () => {
             commits,
         });
 
-        expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
+        expect(actorsChanged).toEqual([]);
+    });
+
+    test('Only builds latest for actor own changelog', () => {
+        const FILES = ['actors/lukaskrivka_testing-github-integration-1/CHANGELOG.md'];
+
+        const actorsChanged = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: true,
+            filepathsChanged: FILES,
+            commits,
+        });
+
+        expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
     });
 
     test('Code updated, tests broad-context actors', () => {

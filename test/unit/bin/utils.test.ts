@@ -236,4 +236,69 @@ describe('readConfigFile', () => {
 
         await expect(readConfigFile()).rejects.toThrow('Invalid "overrideActorContext"');
     });
+
+    it('throws when overrideActorContext entries overlap (one is a prefix of another)', async () => {
+        mockFiles({
+            '.test-tools-actors-config.json': validConfig([
+                {
+                    folder: 'actors/shopify',
+                    actorName: 'myteam/shopify',
+                    tokenEnvVar: 'APIFY_TOKEN',
+                    overrideActorContext: ['actors/shopify', 'actors'],
+                },
+            ]),
+            'actors/shopify/.actor/actor.json': actorJson({}),
+        });
+
+        await expect(readConfigFile()).rejects.toThrow(/overlap/);
+    });
+
+    it('throws when overrideActorContext contains the repo root alongside another entry', async () => {
+        mockFiles({
+            '.test-tools-actors-config.json': validConfig([
+                {
+                    folder: 'actors/shopify',
+                    actorName: 'myteam/shopify',
+                    tokenEnvVar: 'APIFY_TOKEN',
+                    overrideActorContext: ['', 'actors/shopify'],
+                },
+            ]),
+            'actors/shopify/.actor/actor.json': actorJson({}),
+        });
+
+        await expect(readConfigFile()).rejects.toThrow(/overlap/);
+    });
+
+    it('throws when overrideActorContext does not include the actor own folder', async () => {
+        mockFiles({
+            '.test-tools-actors-config.json': validConfig([
+                {
+                    folder: 'actors/shopify',
+                    actorName: 'myteam/shopify',
+                    tokenEnvVar: 'APIFY_TOKEN',
+                    overrideActorContext: ['code', 'shared'],
+                },
+            ]),
+            'actors/shopify/.actor/actor.json': actorJson({}),
+        });
+
+        await expect(readConfigFile()).rejects.toThrow('not reachable through its own context paths');
+    });
+
+    it('allows overrideActorContext with disjoint sibling paths that all reach the actor folder via one entry', async () => {
+        mockFiles({
+            '.test-tools-actors-config.json': validConfig([
+                {
+                    folder: 'actors/shopify',
+                    actorName: 'myteam/shopify',
+                    tokenEnvVar: 'APIFY_TOKEN',
+                    overrideActorContext: ['actors/shopify', 'code', 'shared'],
+                },
+            ]),
+            'actors/shopify/.actor/actor.json': actorJson({}),
+        });
+
+        const result = await readConfigFile();
+        expect(result[0].contextPaths).toEqual(['actors/shopify', 'code', 'shared']);
+    });
 });

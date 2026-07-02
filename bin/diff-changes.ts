@@ -9,21 +9,19 @@ interface ShouldBuildAndTestOptions {
     commits: Commit[];
 }
 
-const isIgnoredTopLevelFile = (lowercaseFilePath: string) => {
-    const IGNORED_TOP_LEVEL_FILES = [
-        '.vscode/',
-        '.gitignore',
-        'readme.md',
-        '.husky/',
-        '.eslintrc',
-        'eslint.config.mjs',
-        '.prettierrc',
-        '.editorconfig',
-    ];
-    // Strip deprecated code/ and shared/ prefixes — repos like apify-store/amazon use these
-    const sanitized = lowercaseFilePath.replace(/^code\//, '').replace(/^shared\//, '');
-    return IGNORED_TOP_LEVEL_FILES.some((pattern) => sanitized.startsWith(pattern));
-};
+const IGNORED_TOP_LEVEL_FILES = [
+    '.vscode/',
+    '.gitignore',
+    '.husky/',
+    '.eslintrc',
+    'eslint.config.mjs',
+    '.prettierrc',
+    '.editorconfig',
+];
+
+// Expects an already-hoisted path (relative to the matched context entry, see findMatchingContextPath).
+const isIgnoredTopLevelFile = (hoistedLowercaseFilePath: string): boolean =>
+    IGNORED_TOP_LEVEL_FILES.some((pattern) => hoistedLowercaseFilePath.startsWith(pattern));
 
 type FileChangeForActor =
     | { impact: 'ignored' }
@@ -31,21 +29,24 @@ type FileChangeForActor =
     | { impact: 'cosmetic'; semanticallyVerified: boolean }
     | { impact: 'functional' };
 
-const isFileInActorContext = (lowercaseFilePath: string, contextPaths: string[]): boolean => {
-    return contextPaths.some((contextPath) => {
+/**
+ * Finds the single contextPaths entry a file falls under. `readConfigFile` validates that no entry is a
+ * path-prefix of another entry in the same actor's contextPaths, so at most one entry can ever match.
+ */
+const findMatchingContextPath = (lowercaseFilePath: string, contextPaths: string[]): string | undefined =>
+    contextPaths.find((contextPath) => {
         const lowerContextPath = contextPath.toLowerCase();
         return lowerContextPath === '' || lowercaseFilePath.startsWith(`${lowerContextPath}/`);
     });
-};
 
 /**
  * Classify a single file change for a single actor.
  *
  * Steps (in order):
- * 1. Hardcoded ignore list (repo-level dev files) → ignored
- * 2. Context matching (actorConfig.contextPaths) → outside-context if no match
+ * 1. Context matching (actorConfig.contextPaths) → outside-context if no match
+ * 2. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
  * 3. .dockerignore filtering (patterns relative to dockerContextDir) → ignored if matched
- * 4. README/CHANGELOG by filename → cosmetic (not semantically verified)
+ * 4. README/CHANGELOG by filename → cosmetic if inside the actor's own folder, otherwise ignored
  * 5. .json inside the actor's own folder with only cosmetic schema diffs → cosmetic (semantically verified)
  * 6. Everything else → functional
  */
@@ -58,24 +59,28 @@ const classifyFileChange = (
 ): FileChangeForActor => {
     const lowercaseFilePath = originalFilePath.toLowerCase();
 
-    if (isIgnoredTopLevelFile(lowercaseFilePath)) {
-        return { impact: 'ignored' };
+    const matchedContext = findMatchingContextPath(lowercaseFilePath, actorConfig.contextPaths);
+    if (matchedContext === undefined) {
+        return { impact: 'outside-context' };
     }
 
-    if (!isFileInActorContext(lowercaseFilePath, actorConfig.contextPaths)) {
-        return { impact: 'outside-context' };
+    const hoistedFilePath =
+        matchedContext === '' ? lowercaseFilePath : lowercaseFilePath.slice(matchedContext.length + 1);
+    if (isIgnoredTopLevelFile(hoistedFilePath)) {
+        return { impact: 'ignored' };
     }
 
     if (dockerIgnoreMatcher(originalFilePath)) {
         return { impact: 'ignored' };
     }
 
-    if (lowercaseFilePath.endsWith('readme.md') || lowercaseFilePath.endsWith('changelog.md')) {
-        return { impact: 'cosmetic', semanticallyVerified: false };
-    }
-
     const lowerFolder = actorConfig.folder.toLowerCase();
     const isInActorFolder = lowerFolder === '' || lowercaseFilePath.startsWith(`${lowerFolder}/`);
+
+    if (lowercaseFilePath.endsWith('readme.md') || lowercaseFilePath.endsWith('changelog.md')) {
+        return isInActorFolder ? { impact: 'cosmetic', semanticallyVerified: false } : { impact: 'ignored' };
+    }
+
     if (lowercaseFilePath.endsWith('.json') && isInActorFolder) {
         let isCosmetic = cosmeticCache.get(originalFilePath);
         if (isCosmetic === undefined) {

@@ -32,6 +32,24 @@ export const getEnvVar = (varName: string, defaultValue?: string): string => {
 
 const CONFIG_FILE_NAME = '.test-tools-actors-config.json';
 
+// `prefix` and `target` are both repo-root-relative paths ("" means repo root, which is a prefix of everything).
+const isPathPrefixOrEqual = (prefix: string, target: string): boolean =>
+    prefix === '' || target === prefix || target.startsWith(`${prefix}/`);
+
+const findOverlappingContextPaths = (contextPaths: string[]): [string, string] | undefined => {
+    for (let i = 0; i < contextPaths.length; i++) {
+        for (let j = i + 1; j < contextPaths.length; j++) {
+            if (
+                isPathPrefixOrEqual(contextPaths[i], contextPaths[j]) ||
+                isPathPrefixOrEqual(contextPaths[j], contextPaths[i])
+            ) {
+                return [contextPaths[i], contextPaths[j]];
+            }
+        }
+    }
+    return undefined;
+};
+
 export const readConfigFile = async (): Promise<ActorConfig[]> => {
     let raw: string;
     try {
@@ -112,13 +130,30 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
         }
 
         const normalizedDockerContextDir = dockerContextDir === '.' ? '' : dockerContextDir;
+        const contextPaths = entry.overrideActorContext ?? [normalizedDockerContextDir];
+
+        const overlap = findOverlappingContextPaths(contextPaths);
+        if (overlap) {
+            throw new Error(
+                `Invalid context paths for folder "${entry.folder}" in "${CONFIG_FILE_NAME}": ` +
+                    `"${overlap[0]}" and "${overlap[1]}" overlap. Context paths must not be prefixes of one another.`,
+            );
+        }
+
+        if (!contextPaths.some((contextPath) => isPathPrefixOrEqual(contextPath, folder))) {
+            throw new Error(
+                `Actor folder "${entry.folder}" in "${CONFIG_FILE_NAME}" is not reachable through its own ` +
+                    `context paths (${contextPaths.join(', ')}). Add the actor's own folder to ` +
+                    `"overrideActorContext" or remove the override.`,
+            );
+        }
 
         actorConfigs.push({
             actorName: entry.actorName,
             folder,
             tokenEnvVar: entry.tokenEnvVar,
             dockerContextDir: normalizedDockerContextDir,
-            contextPaths: entry.overrideActorContext ?? [normalizedDockerContextDir],
+            contextPaths,
         });
     }
 

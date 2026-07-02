@@ -20,6 +20,13 @@ const standaloneActor: ActorConfig = {
     contextPaths: ['standalone-actors/standalone'],
 };
 const actorConfigs = [miniActor, standaloneActor];
+const amazonActor: ActorConfig = {
+    actorName: 'junglee/amazon-crawler',
+    folder: 'actors/junglee_Amazon-crawler',
+    tokenEnvVar: 'APIFY_TOKEN_JUNGLEE',
+    dockerContextDir: '',
+    contextPaths: ['actors/junglee_Amazon-crawler', 'code', 'shared'],
+};
 
 const commits = [{ sha: 'Commit1', author: '', date: '', message: '' }];
 
@@ -112,15 +119,14 @@ describe('getChangedActors', () => {
         expect(result).not.toContainEqual(standaloneActor);
     });
 
-    it('does not trigger narrow-context actor from root changelog', () => {
+    it('root-level changelog outside any actor folder is ignored, not cosmetic', () => {
         const result = getChangedActors({
             filepathsChanged: ['CHANGELOG.md'],
             actorConfigs,
             commits,
             isLatest: true,
         });
-        expect(result).toContainEqual(miniActor);
-        expect(result).not.toContainEqual(standaloneActor);
+        expect(result).toEqual([]);
     });
 
     it('triggers narrow-context actor when its own folder changes', () => {
@@ -337,9 +343,19 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('README outside actor folder but inside context is cosmetic', () => {
+    it('README outside actor folder but inside context is ignored (not cosmetic)', () => {
         const result = getChangedActors({
             filepathsChanged: ['docs/README.md'],
+            actorConfigs: [miniActor],
+            commits,
+            isLatest: true,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('README inside actor folder is cosmetic', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['actors/foo_bar/README.md'],
             actorConfigs: [miniActor],
             commits,
             isLatest: true,
@@ -347,12 +363,48 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('README outside actor folder but inside context is skipped when not isLatest', () => {
+    it('hoists a standalone actor own top-level dev file relative to its context before checking the ignore list', () => {
         const result = getChangedActors({
-            filepathsChanged: ['docs/README.md'],
+            filepathsChanged: ['standalone-actors/standalone/.eslintrc'],
+            actorConfigs,
+            commits,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('does not special-case code/ and shared/ prefixes anymore — must be declared via overrideActorContext', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['code/.eslintrc'],
             actorConfigs: [miniActor],
             commits,
-            isLatest: false,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('ignores code/.eslintrc when "code" is declared via overrideActorContext', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['code/.eslintrc'],
+            actorConfigs: [amazonActor],
+            commits,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('shared/Dockerfile declared via overrideActorContext is functional', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['shared/Dockerfile'],
+            actorConfigs: [amazonActor],
+            commits,
+        });
+        expect(result).toEqual([amazonActor]);
+    });
+
+    it('code/README.md declared via overrideActorContext is ignored (outside actor folder)', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['code/README.md'],
+            actorConfigs: [amazonActor],
+            commits,
+            isLatest: true,
         });
         expect(result).toEqual([]);
     });

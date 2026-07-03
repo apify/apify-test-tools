@@ -172,6 +172,26 @@ describe('readConfigFile', () => {
         await expect(readConfigFile()).rejects.toThrow('Cannot read');
     });
 
+    it('throws when folder is missing', async () => {
+        mockFiles({
+            '.test-tools-actors-config.json': validConfig([
+                { actorName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
+            ]),
+        });
+
+        await expect(readConfigFile()).rejects.toThrow(/Invalid "folder"/);
+    });
+
+    it('throws when folder is not a string', async () => {
+        mockFiles({
+            '.test-tools-actors-config.json': validConfig([
+                { folder: 123, actorName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
+            ]),
+        });
+
+        await expect(readConfigFile()).rejects.toThrow(/Invalid "folder"/);
+    });
+
     it('throws when actorName is missing', async () => {
         mockFiles({
             '.test-tools-actors-config.json': validConfig([

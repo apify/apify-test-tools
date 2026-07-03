@@ -75,7 +75,14 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
     const seenFolders = new Set<string>();
     const actorConfigs: ActorConfig[] = [];
 
-    for (const entry of config.actors) {
+    for (const [index, entry] of config.actors.entries()) {
+        if (typeof entry.folder !== 'string') {
+            throw new Error(
+                `Invalid "folder" for actor entry at index ${index} in "${CONFIG_FILE_NAME}". ` +
+                    `Must be a string (use "." for a single-actor repo).`,
+            );
+        }
+
         const folder = entry.folder === '.' ? '' : stripTrailingSlash(entry.folder);
 
         if (seenFolders.has(folder)) {

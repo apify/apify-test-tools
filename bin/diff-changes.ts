@@ -45,7 +45,6 @@ const classifyFileChange = (
     originalFilePath: string,
     actorConfig: ActorConfig,
     commits: Commit[],
-    cosmeticCache: Map<string, boolean>,
     dockerIgnoreMatcher: DockerIgnoreMatcher,
 ): FileChangeForActor => {
     const lowercaseFilePath = originalFilePath.toLowerCase();
@@ -75,11 +74,7 @@ const classifyFileChange = (
     const actorDotDir = lowerFolder ? `${lowerFolder}/.actor` : '.actor';
 
     if (lowercaseFilePath.endsWith('.json') && isPathWithinScope(lowercaseFilePath, actorDotDir)) {
-        let isCosmetic = cosmeticCache.get(originalFilePath);
-        if (isCosmetic === undefined) {
-            isCosmetic = isCosmeticOnlyJsonSchemaChange(commits, originalFilePath);
-            cosmeticCache.set(originalFilePath, isCosmetic);
-        }
+        const isCosmetic = isCosmeticOnlyJsonSchemaChange(commits, originalFilePath);
         if (isCosmetic) {
             return { impact: 'cosmetic', semanticallyVerified: true };
         }
@@ -132,7 +127,6 @@ export const getChangedActors = ({
     commits,
 }: ShouldBuildAndTestOptions): ActorConfig[] => {
     const actorsChangedMap = new Map<string, ActorConfig>();
-    const cosmeticCache = new Map<string, boolean>();
     const fileImpacts = new Map<string, LoggableImpact>();
 
     for (const actorConfig of actorConfigs) {
@@ -145,13 +139,7 @@ export const getChangedActors = ({
                 continue;
             }
 
-            const change = classifyFileChange(
-                originalFilePath,
-                actorConfig,
-                commits,
-                cosmeticCache,
-                dockerIgnoreMatcher,
-            );
+            const change = classifyFileChange(originalFilePath, actorConfig, commits, dockerIgnoreMatcher);
             updateFileImpact(fileImpacts, originalFilePath, change.impact);
 
             if (change.impact === 'ignored' || change.impact === 'outside-context') continue;

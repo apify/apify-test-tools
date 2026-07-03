@@ -96,27 +96,58 @@ const isExcludedBySibling = (lowercaseFilePath: string, actor: ActorConfig, allA
     );
 };
 
-type LoggableImpact = 'ignored' | 'cosmetic' | 'functional';
+type ActorChangeEntry = {
+    actorConfig: ActorConfig;
+    files: string[];
+};
 
-const IMPACT_PRIORITY: Record<string, number> = { functional: 3, cosmetic: 2, ignored: 1 };
+type ChangeGroup = { actorNames: string[]; files: string[] };
 
 /**
- * A file can be classified differently by different actors (e.g. functional for a broad-context
- * actor, outside-context for a narrow one). For logging we keep the most significant classification
- * across all actors: functional > cosmetic > ignored. Files that are outside-context for every
- * actor are treated as ignored.
+ * Maps each changed file to the set of actor names it triggered a change for.
  */
-const updateFileImpact = (
-    fileImpacts: Map<string, LoggableImpact>,
-    filePath: string,
-    impact: FileChangeForActor['impact'],
-): void => {
-    if (impact === 'outside-context') return;
+const buildFileToActorNamesMap = (actorsChangedMap: Map<string, ActorChangeEntry>): Map<string, Set<string>> => {
+    const fileToActorNames = new Map<string, Set<string>>();
+    for (const { actorConfig, files } of actorsChangedMap.values()) {
+        for (const file of files) {
+            const actorNames = fileToActorNames.get(file) ?? new Set<string>();
+            actorNames.add(actorConfig.actorName);
+            fileToActorNames.set(file, actorNames);
+        }
+    }
+    return fileToActorNames;
+};
 
-    const loggable = impact as LoggableImpact;
-    const current = fileImpacts.get(filePath);
-    if (!current || IMPACT_PRIORITY[loggable] > IMPACT_PRIORITY[current]) {
-        fileImpacts.set(filePath, loggable);
+/**
+ * Groups files by their identical actor-set (files triggering a change for the exact same
+ * actors are grouped together), then orders the groups by descending actor-set size
+ * (most-shared groups first), breaking ties alphabetically by actor names.
+ */
+const groupFilesByActorSet = (fileToActorNames: Map<string, Set<string>>): ChangeGroup[] => {
+    const groupsByKey = new Map<string, ChangeGroup>();
+    for (const [file, actorNamesSet] of fileToActorNames) {
+        const actorNames = Array.from(actorNamesSet).sort();
+        const key = actorNames.join(',');
+        const group = groupsByKey.get(key) ?? { actorNames, files: [] };
+        group.files.push(file);
+        groupsByKey.set(key, group);
+    }
+
+    return Array.from(groupsByKey.values()).sort((groupA, groupB) => {
+        if (groupB.actorNames.length !== groupA.actorNames.length) {
+            return groupB.actorNames.length - groupA.actorNames.length;
+        }
+        return groupA.actorNames.join(',').localeCompare(groupB.actorNames.join(','));
+    });
+};
+
+const logChangeGroups = (groups: ChangeGroup[]): void => {
+    for (const { actorNames, files } of groups) {
+        if (actorNames.length > 1) {
+            console.error(`[DIFF]: Shared changes for actors ${actorNames.join(', ')}: ${files.join(', ')}`);
+        } else {
+            console.error(`[DIFF]: Changes specific to actor ${actorNames[0]}: ${files.join(', ')}`);
+        }
     }
 };
 
@@ -126,8 +157,7 @@ export const getChangedActors = ({
     isLatest = false,
     commits,
 }: ShouldBuildAndTestOptions): ActorConfig[] => {
-    const actorsChangedMap = new Map<string, ActorConfig>();
-    const fileImpacts = new Map<string, LoggableImpact>();
+    const actorsChangedMap = new Map<string, ActorChangeEntry>();
 
     for (const actorConfig of actorConfigs) {
         const dockerIgnoreMatcher = loadDockerIgnore(actorConfig.dockerContextDir);
@@ -140,30 +170,23 @@ export const getChangedActors = ({
             }
 
             const change = classifyFileChange(originalFilePath, actorConfig, commits, dockerIgnoreMatcher);
-            updateFileImpact(fileImpacts, originalFilePath, change.impact);
 
             if (change.impact === 'ignored' || change.impact === 'outside-context') continue;
             if (change.impact === 'cosmetic' && !isLatest) continue;
 
-            actorsChangedMap.set(actorConfig.folder, actorConfig);
+            const entry = actorsChangedMap.get(actorConfig.folder) ?? { actorConfig, files: [] };
+            entry.files.push(originalFilePath);
+            actorsChangedMap.set(actorConfig.folder, entry);
         }
     }
 
-    const actorsChanged = Array.from(actorsChangedMap.values());
+    const actorsChanged = Array.from(actorsChangedMap.values()).map((entry) => entry.actorConfig);
 
-    // Logging
-    const formatFiles = (files: string[]) => (files.length > 0 ? files.join(', ') : '<no files>');
-
-    const ignoredFiles = filepathsChanged.filter((file) => {
-        const impact = fileImpacts.get(file);
-        return impact === 'ignored' || !impact;
-    });
-    const cosmeticFiles = filepathsChanged.filter((file) => fileImpacts.get(file) === 'cosmetic');
-    const functionalFiles = filepathsChanged.filter((file) => fileImpacts.get(file) === 'functional');
-
-    console.error(`[DIFF]: Ignored files (don't trigger test or build): ${formatFiles(ignoredFiles)}`);
-    console.error(`[DIFF]: Cosmetic files (only trigger release build): ${formatFiles(cosmeticFiles)}`);
-    console.error(`[DIFF]: Functional files (trigger test & release build): ${formatFiles(functionalFiles)}`);
+    // Log changes grouped by actor set, so changes shared across actors are logged once
+    // instead of being repeated per actor.
+    const fileToActorNames = buildFileToActorNamesMap(actorsChangedMap);
+    const groups = groupFilesByActorSet(fileToActorNames);
+    logChangeGroups(groups);
 
     if (actorsChanged.length > 0) {
         const actorNames = actorsChanged.map((config) => config.actorName);

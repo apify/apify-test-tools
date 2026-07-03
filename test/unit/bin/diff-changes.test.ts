@@ -432,3 +432,96 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 });
+
+describe('getChangedActors logging', () => {
+    beforeEach(() => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(false);
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+
+    it('logs a single "specific" group for a single actor with one functional file', () => {
+        getChangedActors({
+            filepathsChanged: ['actors/foo_bar/src/main.ts'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+
+        expect(console.error).toHaveBeenCalledWith(
+            '[DIFF]: Changes specific to actor foo/bar: actors/foo_bar/src/main.ts',
+        );
+        expect(console.error).toHaveBeenCalledWith('[DIFF]: Actors to be built and tested: foo/bar');
+    });
+
+    it('logs a single "shared" group when two actors are triggered by the exact same file', () => {
+        const actorA: ActorConfig = {
+            actorName: 'team/actor-a',
+            folder: 'actors/a',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: ['', 'shared'],
+        };
+        const actorB: ActorConfig = {
+            actorName: 'team/actor-b',
+            folder: 'actors/b',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: ['', 'shared'],
+        };
+
+        getChangedActors({
+            filepathsChanged: ['shared/shared.ts'],
+            actorConfigs: [actorA, actorB],
+            commits,
+        });
+
+        expect(console.error).toHaveBeenCalledWith(
+            '[DIFF]: Shared changes for actors team/actor-a, team/actor-b: shared/shared.ts',
+        );
+        expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('Changes specific to actor'));
+        expect(console.error).toHaveBeenCalledWith('[DIFF]: Actors to be built and tested: team/actor-a, team/actor-b');
+    });
+
+    it('logs shared and specific groups in descending-size order for partial overlap across actors', () => {
+        const actorA: ActorConfig = {
+            actorName: 'team/actor-a',
+            folder: 'actors/a',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: [''],
+        };
+        const actorB: ActorConfig = {
+            actorName: 'team/actor-b',
+            folder: 'actors/b',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: [''],
+        };
+
+        getChangedActors({
+            filepathsChanged: ['shared.ts', 'actors/a/a-only.ts', 'actors/b/b-only.ts'],
+            actorConfigs: [actorA, actorB],
+            commits,
+        });
+
+        const errorCalls = (console.error as unknown as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]);
+
+        expect(errorCalls).toEqual([
+            '[DIFF]: Shared changes for actors team/actor-a, team/actor-b: shared.ts',
+            '[DIFF]: Changes specific to actor team/actor-a: actors/a/a-only.ts',
+            '[DIFF]: Changes specific to actor team/actor-b: actors/b/b-only.ts',
+            '[DIFF]: Actors to be built and tested: team/actor-a, team/actor-b',
+        ]);
+    });
+
+    it('logs no group lines when zero actors changed', () => {
+        getChangedActors({
+            filepathsChanged: ['.gitignore', 'README.md'],
+            actorConfigs,
+            commits,
+        });
+
+        expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('Shared changes'));
+        expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('Changes specific to'));
+        expect(console.error).toHaveBeenCalledWith('[DIFF]: No relevant files changed, skipping builds and tests');
+    });
+});

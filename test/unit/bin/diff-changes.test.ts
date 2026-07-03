@@ -80,7 +80,7 @@ describe('getChangedActors', () => {
     it('returns actor when isLatest and JSON file has only cosmetic changes', () => {
         vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
         const result = getChangedActors({
-            filepathsChanged: ['actors/foo_bar/actor.json'],
+            filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
             commits,
             isLatest: true,
@@ -91,7 +91,7 @@ describe('getChangedActors', () => {
     it('does not return actor when not isLatest and JSON file has only cosmetic changes', () => {
         vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
         const result = getChangedActors({
-            filepathsChanged: ['actors/foo_bar/actor.json'],
+            filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
             commits,
             isLatest: false,
@@ -102,9 +102,32 @@ describe('getChangedActors', () => {
     it('returns actor when JSON file has functional changes', () => {
         vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(false);
         const result = getChangedActors({
-            filepathsChanged: ['actors/foo_bar/actor.json'],
+            filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
             commits,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('JSON file in actor folder but outside .actor/ is functional, not checked for cosmetic', () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
+        const result = getChangedActors({
+            filepathsChanged: ['actors/foo_bar/package.json'],
+            actorConfigs,
+            commits,
+            isLatest: false,
+        });
+        expect(result).toEqual([miniActor]);
+        expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).not.toHaveBeenCalled();
+    });
+
+    it('JSON file under .actor/ inside actor folder is checked for cosmetic changes', () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
+        const result = getChangedActors({
+            filepathsChanged: ['actors/foo_bar/.actor/input_schema.json'],
+            actorConfigs,
+            commits,
+            isLatest: true,
         });
         expect(result).toEqual([miniActor]);
     });

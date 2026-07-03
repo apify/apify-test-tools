@@ -38,7 +38,7 @@ type FileChangeForActor =
  * 2. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
  * 3. .dockerignore filtering (patterns relative to dockerContextDir) → ignored if matched
  * 4. README/CHANGELOG by filename → cosmetic if inside the actor's own folder, otherwise ignored
- * 5. .json inside the actor's own folder with only cosmetic schema diffs → cosmetic (semantically verified)
+ * 5. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
  * 6. Everything else → functional
  */
 const classifyFileChange = (
@@ -72,7 +72,9 @@ const classifyFileChange = (
         return isInActorFolder ? { impact: 'cosmetic', semanticallyVerified: false } : { impact: 'ignored' };
     }
 
-    if (lowercaseFilePath.endsWith('.json') && isInActorFolder) {
+    const actorDotDir = lowerFolder ? `${lowerFolder}/.actor` : '.actor';
+
+    if (lowercaseFilePath.endsWith('.json') && isPathWithinScope(lowercaseFilePath, actorDotDir)) {
         let isCosmetic = cosmeticCache.get(originalFilePath);
         if (isCosmetic === undefined) {
             isCosmetic = isCosmeticOnlyJsonSchemaChange(commits, originalFilePath);

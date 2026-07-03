@@ -31,7 +31,7 @@ export const getEnvVar = (varName: string, defaultValue?: string): string => {
     return value;
 };
 
-const CONFIG_FILE_NAME = '.test-tools-actors-config.json';
+export const CONFIG_FILE_NAME = 'apify-test-tools.config.json';
 
 // Strips a trailing slash so config-declared paths ("actors/shopify/" vs "actors/shopify") compare equal.
 const stripTrailingSlash = (pathValue: string): string => pathValue.replace(/\/+$/, '');

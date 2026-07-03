@@ -15,7 +15,7 @@ npm i -D apify-test-tools
 
 ### 2. Create the config file
 
-Every repo that uses `apify-test-tools` must have a `.test-tools-actors-config.json` file at the root. This file tells the tool which actors live in the repo, how to identify them, and which token to use.
+Every repo that uses `apify-test-tools` must have an `apify-test-tools.config.json` file at the root. This file tells the tool which actors live in the repo, how to identify them, and which token to use.
 
 ```json
 {
@@ -50,7 +50,7 @@ Each actor in the config must have a `.actor/actor.json` file. The `dockerContex
 
 ```
 my-repo
-├── .test-tools-actors-config.json
+├── apify-test-tools.config.json
 ├── actors
 │   ├── web-scraper
 │   │   ├── .actor

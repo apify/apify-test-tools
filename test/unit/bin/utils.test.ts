@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { readConfigFile } from '../../../bin/utils.js';
+import { CONFIG_FILE_NAME, readConfigFile } from '../../../bin/utils.js';
 
 const { fsMock } = vi.hoisted(() => ({
     fsMock: {
@@ -29,7 +29,7 @@ const mockFiles = (files: Record<string, string>) => {
 describe('readConfigFile', () => {
     it('returns correct ActorConfig[] for a valid config', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 { folder: 'actors/shopify', actorName: 'myteam/shopify-scraper', tokenEnvVar: 'APIFY_TOKEN_MYTEAM' },
             ]),
             'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '../../..' }),
@@ -50,7 +50,7 @@ describe('readConfigFile', () => {
 
     it('normalizes folder "." to ""', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 { folder: '.', actorName: 'apify/my-actor', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
             ]),
             '.actor/actor.json': actorJson({}),
@@ -63,7 +63,7 @@ describe('readConfigFile', () => {
 
     it('defaults dockerContextDir to actor folder when absent from actor.json', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 { folder: 'actors/web-scraper', actorName: 'apify/web-scraper', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
             ]),
             'actors/web-scraper/.actor/actor.json': actorJson({}),
@@ -76,7 +76,7 @@ describe('readConfigFile', () => {
 
     it('resolves dockerContextDir relative to .actor/ folder', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 { folder: 'actors/shopify', actorName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' },
             ]),
             'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '../../..' }),
@@ -88,7 +88,7 @@ describe('readConfigFile', () => {
 
     it('resolves contextPaths from overrideActorContext', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 {
                     folder: 'actors/shopify',
                     actorName: 'myteam/shopify',
@@ -105,7 +105,7 @@ describe('readConfigFile', () => {
 
     it('handles multiple actors', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 { folder: 'actors/web-scraper', actorName: 'apify/web-scraper', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
                 {
                     folder: 'actors/email-sender',
@@ -140,7 +140,7 @@ describe('readConfigFile', () => {
 
     it('throws on duplicate folders', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 { folder: 'actors/shopify', actorName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
                 { folder: 'actors/shopify', actorName: 'other/shopify', tokenEnvVar: 'APIFY_TOKEN_OTHER' },
             ]),
@@ -152,7 +152,7 @@ describe('readConfigFile', () => {
 
     it('throws on duplicate folders after normalization ("." and "")', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 { folder: '.', actorName: 'apify/actor-a', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
                 { folder: '', actorName: 'other/actor-b', tokenEnvVar: 'APIFY_TOKEN_OTHER' },
             ]),
@@ -164,7 +164,7 @@ describe('readConfigFile', () => {
 
     it('throws when actor.json is missing', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 { folder: 'actors/shopify', actorName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
             ]),
         });
@@ -174,9 +174,7 @@ describe('readConfigFile', () => {
 
     it('throws when folder is missing', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
-                { actorName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
-            ]),
+            [CONFIG_FILE_NAME]: validConfig([{ actorName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' }]),
         });
 
         await expect(readConfigFile()).rejects.toThrow(/Invalid "folder"/);
@@ -184,7 +182,7 @@ describe('readConfigFile', () => {
 
     it('throws when folder is not a string', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 { folder: 123, actorName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
             ]),
         });
@@ -194,9 +192,7 @@ describe('readConfigFile', () => {
 
     it('throws when actorName is missing', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
-                { folder: 'actors/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
-            ]),
+            [CONFIG_FILE_NAME]: validConfig([{ folder: 'actors/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' }]),
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
@@ -205,7 +201,7 @@ describe('readConfigFile', () => {
 
     it('throws when actorName has no slash', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 { folder: 'actors/shopify', actorName: 'shopify-scraper', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
             ]),
             'actors/shopify/.actor/actor.json': actorJson({}),
@@ -216,7 +212,7 @@ describe('readConfigFile', () => {
 
     it('throws when actorName has empty parts', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 { folder: 'actors/shopify', actorName: '/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
             ]),
             'actors/shopify/.actor/actor.json': actorJson({}),
@@ -227,7 +223,7 @@ describe('readConfigFile', () => {
 
     it('throws when overrideActorContext is not an array', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 {
                     folder: 'actors/shopify',
                     actorName: 'myteam/shopify',
@@ -243,7 +239,7 @@ describe('readConfigFile', () => {
 
     it('throws when overrideActorContext contains non-strings', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 {
                     folder: 'actors/shopify',
                     actorName: 'myteam/shopify',
@@ -259,7 +255,7 @@ describe('readConfigFile', () => {
 
     it('throws when overrideActorContext entries overlap (one is a prefix of another)', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 {
                     folder: 'actors/shopify',
                     actorName: 'myteam/shopify',
@@ -275,7 +271,7 @@ describe('readConfigFile', () => {
 
     it('throws when overrideActorContext contains the repo root alongside another entry', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 {
                     folder: 'actors/shopify',
                     actorName: 'myteam/shopify',
@@ -291,7 +287,7 @@ describe('readConfigFile', () => {
 
     it('throws when overrideActorContext does not include the actor own folder', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 {
                     folder: 'actors/shopify',
                     actorName: 'myteam/shopify',
@@ -307,7 +303,7 @@ describe('readConfigFile', () => {
 
     it('strips trailing slashes from folder and overrideActorContext entries', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 {
                     folder: 'actors/shopify/',
                     actorName: 'myteam/shopify',
@@ -325,7 +321,7 @@ describe('readConfigFile', () => {
 
     it('allows overrideActorContext with disjoint sibling paths that all reach the actor folder via one entry', async () => {
         mockFiles({
-            '.test-tools-actors-config.json': validConfig([
+            [CONFIG_FILE_NAME]: validConfig([
                 {
                     folder: 'actors/shopify',
                     actorName: 'myteam/shopify',

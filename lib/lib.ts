@@ -24,8 +24,8 @@ try {
 }
 
 const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
-    map.set(cfg.actorName, cfg);
-    map.set(cfg.actorId, cfg);
+    map.set(cfg.actorFullName, cfg);
+    map.set(cfg.actorRawId, cfg);
     return map;
 }, new Map<string, ActorBuild>());
 
@@ -51,8 +51,11 @@ const DEFAULT_TEST_ACTOR_OPTIONS: ActorTestOptions = {
     timeout: DEFAULT_TEST_RUN_DURATION_MS,
 };
 
+/**
+ * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
+ */
 export const testActor = <T>(
-    actorName: string,
+    actorId: string,
     testName: string,
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
     testOptions?: ActorTestOptions,
@@ -61,13 +64,13 @@ export const testActor = <T>(
         ...DEFAULT_TEST_ACTOR_OPTIONS,
         ...testOptions,
     };
-    const name = `${actorName}: ${testName}`;
-    const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorName);
+    const name = `${actorId}: ${testName}`;
+    const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorId);
     vitestTest.runIf(shouldRun)(name, options, async <TYPE extends TestContext>(context: TYPE) => {
         const { expect, ...rest } = context;
         await fn({
             expect: extendExpect(expect),
-            run: createStartRunFn(actorName, context),
+            run: createStartRunFn(actorId, context),
             ...rest,
         });
     });
@@ -79,9 +82,12 @@ export const testActor = <T>(
  *
  * Using task is just current shortcoming of standby feature but ideally we would use Actor directly
  */
+/**
+ * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const testStandbyActor = <I = any, O = any>(
-    actorName: string,
+    actorId: string,
     testName: string,
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
     testOptions?: ActorTestOptions,
@@ -90,11 +96,11 @@ export const testStandbyActor = <I = any, O = any>(
         ...DEFAULT_TEST_ACTOR_OPTIONS,
         ...testOptions,
     };
-    const name = `${actorName}: ${testName}`;
-    const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorName);
+    const name = `${actorId}: ${testName}`;
+    const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorId);
 
     vitestTest.runIf(shouldRun)(name, options, async <T extends TestContext>(context: T) => {
-        const standbyTask = await createStandbyTask(actorName, config.get(actorName)?.buildNumber);
+        const standbyTask = await createStandbyTask(actorId, config.get(actorId)?.buildNumber);
         const { expect, ...rest } = context;
 
         // NOTE: we wrap `fn` in try/finally so cleanup (deleting the task) always runs afterwards
@@ -193,20 +199,20 @@ interface StandbyTask {
  *
  * @throws if actor doesn't exist or it doesn't support standby mode.
  */
-const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): Promise<StandbyTask> => {
-    const actor = apifyClient.actor(actorNameOrId);
+const createStandbyTask = async (actorId: string, buildNumber?: string): Promise<StandbyTask> => {
+    const actor = apifyClient.actor(actorId);
 
     const actorInfo = (await actor.get()) as Actor & { standbyUrl?: string };
     if (!actorInfo) {
-        throw new Error(`Actor "${actorNameOrId}" not found`);
+        throw new Error(`Actor "${actorId}" not found`);
     }
 
     if (!actorInfo.standbyUrl) {
-        throw new Error(`Actor "${actorNameOrId}" doesn't support standby mode`);
+        throw new Error(`Actor "${actorId}" doesn't support standby mode`);
     }
 
     if (!actorInfo.actorStandby) {
-        throw new Error(`Actor "${actorNameOrId} doesn't contain actorStandby options`);
+        throw new Error(`Actor "${actorId} doesn't contain actorStandby options`);
     }
     const { isEnabled, ...defaultActorStandby } = actorInfo.actorStandby;
     delete defaultActorStandby.disableStandbyFieldsOverride;
@@ -225,9 +231,9 @@ const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): P
         const randomValue = Math.random().toString(10).slice(2).padEnd(randomValueLength, '0');
         const name = `test-${randomValue.slice(0, randomValueLength)}`;
         const newTask = (await apifyClient.tasks().create({
-            actId: actorNameOrId,
+            actId: actorId,
             actorStandby: actorStandbyOptions,
-            description: `Task for testing standby version ${build} of actor "${actorNameOrId}"`,
+            description: `Task for testing standby version ${build} of actor "${actorId}"`,
             title,
             name,
         })) as Task & { standbyUrl?: string };
@@ -247,9 +253,9 @@ const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): P
     }
 };
 
-const createStartRunFn = <T>(actorNameOrId: string, testContext: TestContext) => {
+const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
     const { annotate, task } = testContext;
-    const actorConfig = config.get(actorNameOrId);
+    const actorConfig = config.get(actorId);
     const build = actorConfig?.buildNumber;
     const buildId = actorConfig?.buildId;
     return async (runOptions: RunOptions<T>) => {
@@ -263,10 +269,10 @@ const createStartRunFn = <T>(actorNameOrId: string, testContext: TestContext) =>
             return new RunTestResult(apifyClient, run);
         }
 
-        const actor = apifyClient.actor(actorNameOrId);
+        const actor = apifyClient.actor(actorId);
 
         const actorInput = {
-            ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorNameOrId, buildId))),
+            ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorId, buildId))),
             ...input,
         };
         const run = await actor.call(actorInput, { build, log: null, ...options });
@@ -277,7 +283,7 @@ const createStartRunFn = <T>(actorNameOrId: string, testContext: TestContext) =>
         task.meta = {
             runId: run.id,
             runLink,
-            actorName: actorNameOrId,
+            actorId: actorConfig?.actorFullName ?? actorId,
         };
 
         // waiting for datasetItemCount and chargedEventCounts to sync

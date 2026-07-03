@@ -92,10 +92,10 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
         }
         seenFolders.add(folder);
 
-        const nameParts = entry.actorName?.split('/');
+        const nameParts = entry.actorFullName?.split('/');
         if (!nameParts || nameParts.length !== 2 || !nameParts[0] || !nameParts[1]) {
             throw new Error(
-                `Invalid "actorName" for folder "${entry.folder}" in "${CONFIG_FILE_NAME}". ` +
+                `Invalid "actorFullName" for folder "${entry.folder}" in "${CONFIG_FILE_NAME}". ` +
                     `Must be in "owner/name" format (e.g. "apify/web-scraper").`,
             );
         }
@@ -156,7 +156,7 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
         }
 
         actorConfigs.push({
-            actorName: entry.actorName,
+            actorFullName: entry.actorFullName,
             folder,
             tokenEnvVar: entry.tokenEnvVar,
             dockerContextDir: normalizedDockerContextDir,

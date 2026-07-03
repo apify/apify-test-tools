@@ -6,11 +6,11 @@ import type { ApifyClient } from 'apify-client';
  */
 export const getActorPrefilledInput = async (
     apifyClient: ApifyClient,
-    actorNameOrId: string,
+    actorId: string,
     buildId: string | undefined,
 ) => {
     if (!buildId) {
-        const actorInfo = await apifyClient.actor(actorNameOrId).get();
+        const actorInfo = await apifyClient.actor(actorId).get();
 
         const defaultBuildTag = actorInfo?.defaultRunOptions.build;
 
@@ -19,7 +19,7 @@ export const getActorPrefilledInput = async (
         buildId = taggedBuild?.buildId;
 
         if (!buildId) {
-            console.error(`Coudn't find default build for actor ${actorNameOrId}. Prefilled values will not be used.`);
+            console.error(`Coudn't find default build for actor ${actorId}. Prefilled values will not be used.`);
             return {};
         }
     }
@@ -34,7 +34,7 @@ export const getActorPrefilledInput = async (
 
     if (!inputSchema) {
         console.error(
-            `Coudn't find input schema definition for actor ${actorNameOrId}, build ${buildId}.`,
+            `Coudn't find input schema definition for actor ${actorId}, build ${buildId}.`,
             'Prefilled values will not be used',
         );
         return {};

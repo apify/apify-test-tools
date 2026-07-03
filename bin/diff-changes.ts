@@ -101,21 +101,21 @@ type ActorChangeEntry = {
     files: string[];
 };
 
-type ChangeGroup = { actorNames: string[]; files: string[] };
+type ChangeGroup = { actors: string[]; files: string[] };
 
 /**
  * Maps each changed file to the set of actor names it triggered a change for.
  */
-const buildFileToActorNamesMap = (actorsChangedMap: Map<string, ActorChangeEntry>): Map<string, Set<string>> => {
-    const fileToActorNames = new Map<string, Set<string>>();
+const buildFileToActorsMap = (actorsChangedMap: Map<string, ActorChangeEntry>): Map<string, Set<string>> => {
+    const fileToActors = new Map<string, Set<string>>();
     for (const { actorConfig, files } of actorsChangedMap.values()) {
         for (const file of files) {
-            const actorNames = fileToActorNames.get(file) ?? new Set<string>();
-            actorNames.add(actorConfig.actorName);
-            fileToActorNames.set(file, actorNames);
+            const actors = fileToActors.get(file) ?? new Set<string>();
+            actors.add(actorConfig.actorFullName);
+            fileToActors.set(file, actors);
         }
     }
-    return fileToActorNames;
+    return fileToActors;
 };
 
 /**
@@ -123,30 +123,30 @@ const buildFileToActorNamesMap = (actorsChangedMap: Map<string, ActorChangeEntry
  * actors are grouped together), then orders the groups by descending actor-set size
  * (most-shared groups first), breaking ties alphabetically by actor names.
  */
-const groupFilesByActorSet = (fileToActorNames: Map<string, Set<string>>): ChangeGroup[] => {
+const groupFilesByActorSet = (fileToActors: Map<string, Set<string>>): ChangeGroup[] => {
     const groupsByKey = new Map<string, ChangeGroup>();
-    for (const [file, actorNamesSet] of fileToActorNames) {
-        const actorNames = Array.from(actorNamesSet).sort();
-        const key = actorNames.join(',');
-        const group = groupsByKey.get(key) ?? { actorNames, files: [] };
+    for (const [file, actorsSet] of fileToActors) {
+        const actors = Array.from(actorsSet).sort();
+        const key = actors.join(',');
+        const group = groupsByKey.get(key) ?? { actors, files: [] };
         group.files.push(file);
         groupsByKey.set(key, group);
     }
 
     return Array.from(groupsByKey.values()).sort((groupA, groupB) => {
-        if (groupB.actorNames.length !== groupA.actorNames.length) {
-            return groupB.actorNames.length - groupA.actorNames.length;
+        if (groupB.actors.length !== groupA.actors.length) {
+            return groupB.actors.length - groupA.actors.length;
         }
-        return groupA.actorNames.join(',').localeCompare(groupB.actorNames.join(','));
+        return groupA.actors.join(',').localeCompare(groupB.actors.join(','));
     });
 };
 
 const logChangeGroups = (groups: ChangeGroup[]): void => {
-    for (const { actorNames, files } of groups) {
-        if (actorNames.length > 1) {
-            console.error(`[DIFF]: Shared changes for actors ${actorNames.join(', ')}: ${files.join(', ')}`);
+    for (const { actors, files } of groups) {
+        if (actors.length > 1) {
+            console.error(`[DIFF]: Shared changes for actors ${actors.join(', ')}: ${files.join(', ')}`);
         } else {
-            console.error(`[DIFF]: Changes specific to actor ${actorNames[0]}: ${files.join(', ')}`);
+            console.error(`[DIFF]: Changes specific to actor ${actors[0]}: ${files.join(', ')}`);
         }
     }
 };
@@ -184,13 +184,13 @@ export const getChangedActors = ({
 
     // Log changes grouped by actor set, so changes shared across actors are logged once
     // instead of being repeated per actor.
-    const fileToActorNames = buildFileToActorNamesMap(actorsChangedMap);
-    const groups = groupFilesByActorSet(fileToActorNames);
+    const fileToActors = buildFileToActorsMap(actorsChangedMap);
+    const groups = groupFilesByActorSet(fileToActors);
     logChangeGroups(groups);
 
     if (actorsChanged.length > 0) {
-        const actorNames = actorsChanged.map((config) => config.actorName);
-        console.error(`[DIFF]: Actors to be built and tested: ${actorNames.join(', ')}`);
+        const actors = actorsChanged.map((config) => config.actorFullName);
+        console.error(`[DIFF]: Actors to be built and tested: ${actors.join(', ')}`);
     } else {
         console.error(`[DIFF]: No relevant files changed, skipping builds and tests`);
     }

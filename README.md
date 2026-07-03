@@ -22,12 +22,12 @@ Every repo that uses `apify-test-tools` must have an `apify-test-tools.config.js
     "actors": [
         {
             "folder": "actors/web-scraper",
-            "actorName": "myteam/web-scraper",
+            "actorFullName": "myteam/web-scraper",
             "tokenEnvVar": "APIFY_TOKEN_MYTEAM"
         },
         {
             "folder": "actors/email-sender",
-            "actorName": "myteam/email-sender",
+            "actorFullName": "myteam/email-sender",
             "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
             "overrideActorContext": ["actors/email-sender", "packages/shared"]
         }
@@ -40,7 +40,7 @@ Each entry has:
 | Field                  | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `folder`               | yes      | Relative path from repo root to the actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`), the actor's README/CHANGELOG, and its source. Use `"."` for a single-actor repo where `.actor/` is at the root.                                                                                                                                                                                                                                |
-| `actorName`            | yes      | Full actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                                     |
+| `actorFullName`        | yes      | Full actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                                     |
 | `tokenEnvVar`          | yes      | Name of the environment variable holding the Apify API token for this actor. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                                          |
 | `overrideActorContext` | no       | Array of paths (relative to repo root) that define which files are relevant to this actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected), and the list must include a path that reaches the actor's own `folder` — otherwise the actor could never be detected as changed. |
 
@@ -412,7 +412,7 @@ GITHUB_WORKSPACE=. \
 Remove `--dry-run` to actually trigger builds and update the branch names/ The command outputs a JSON array of build objects to stdout:
 
 ```json
-[{ "buildId": "...", "actorId": "...", "buildNumber": "...", "actorName": "john.doe/my-actor" }]
+[{ "buildId": "...", "actorRawId": "...", "buildNumber": "...", "actorFullName": "john.doe/my-actor" }]
 ```
 
 #### 5. Run tests against the builds

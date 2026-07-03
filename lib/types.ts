@@ -3,9 +3,9 @@ import type { Assertion, TestOptions } from 'vitest';
 
 export type ActorBuild = {
     buildId: string;
-    actorId: string;
+    actorRawId: string;
     buildNumber: string;
-    actorName: string;
+    actorFullName: string;
 };
 
 export type RunOptions<T> = {

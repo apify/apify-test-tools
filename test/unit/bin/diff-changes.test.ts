@@ -6,14 +6,14 @@ import * as Dockerignore from '../../../bin/dockerignore.js';
 import type { ActorConfig } from '../../../bin/types.js';
 
 const miniActor: ActorConfig = {
-    actorName: 'foo/bar',
+    actorFullName: 'foo/bar',
     folder: 'actors/foo_bar',
     tokenEnvVar: 'APIFY_TOKEN_FOO',
     dockerContextDir: '',
     contextPaths: [''],
 };
 const standaloneActor: ActorConfig = {
-    actorName: 'owner/standalone',
+    actorFullName: 'owner/standalone',
     folder: 'standalone-actors/standalone',
     tokenEnvVar: 'APIFY_TOKEN_OWNER',
     dockerContextDir: 'standalone-actors/standalone',
@@ -21,7 +21,7 @@ const standaloneActor: ActorConfig = {
 };
 const actorConfigs = [miniActor, standaloneActor];
 const amazonActor: ActorConfig = {
-    actorName: 'junglee/amazon-crawler',
+    actorFullName: 'junglee/amazon-crawler',
     folder: 'actors/junglee_Amazon-crawler',
     tokenEnvVar: 'APIFY_TOKEN_JUNGLEE',
     dockerContextDir: '',
@@ -183,7 +183,7 @@ describe('getChangedActors', () => {
 
     it('matches folder where folder name differs from actor name', () => {
         const ownerlessActor: ActorConfig = {
-            actorName: 'myteam/shopify-scraper',
+            actorFullName: 'myteam/shopify-scraper',
             folder: 'actors/shopify',
             tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
             dockerContextDir: '',
@@ -199,7 +199,7 @@ describe('getChangedActors', () => {
 
     it('in single-actor repo, .actor/ changes trigger builds', () => {
         const rootActor: ActorConfig = {
-            actorName: 'myteam/my-actor',
+            actorFullName: 'myteam/my-actor',
             folder: '',
             tokenEnvVar: 'BUILDER_APIFY_TOKEN',
             dockerContextDir: '',
@@ -233,7 +233,7 @@ describe('getChangedActors', () => {
 
     it('triggers actor with contextPaths override when file matches an override path', () => {
         const overrideActor: ActorConfig = {
-            actorName: 'team/override-actor',
+            actorFullName: 'team/override-actor',
             folder: 'actors/override',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: 'actors/override',
@@ -249,7 +249,7 @@ describe('getChangedActors', () => {
 
     it('does not trigger actor with contextPaths override when file is outside all override paths', () => {
         const overrideActor: ActorConfig = {
-            actorName: 'team/override-actor',
+            actorFullName: 'team/override-actor',
             folder: 'actors/override',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: 'actors/override',
@@ -265,14 +265,14 @@ describe('getChangedActors', () => {
 
     it('broad-context actor skips files in sibling actor folders', () => {
         const actorA: ActorConfig = {
-            actorName: 'team/actor-a',
+            actorFullName: 'team/actor-a',
             folder: 'actors/a',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',
             contextPaths: [''],
         };
         const actorB: ActorConfig = {
-            actorName: 'team/actor-b',
+            actorFullName: 'team/actor-b',
             folder: 'actors/b',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',
@@ -288,14 +288,14 @@ describe('getChangedActors', () => {
 
     it('root actor (folder="") is excluded from sibling actor folder files', () => {
         const rootActor: ActorConfig = {
-            actorName: 'team/root',
+            actorFullName: 'team/root',
             folder: '',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',
             contextPaths: [''],
         };
         const childActor: ActorConfig = {
-            actorName: 'team/child',
+            actorFullName: 'team/child',
             folder: 'actors/child',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: 'actors/child',
@@ -312,14 +312,14 @@ describe('getChangedActors', () => {
 
     it('root actor (folder="") sees files outside any actor folder', () => {
         const rootActor: ActorConfig = {
-            actorName: 'team/root',
+            actorFullName: 'team/root',
             folder: '',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',
             contextPaths: [''],
         };
         const childActor: ActorConfig = {
-            actorName: 'team/child',
+            actorFullName: 'team/child',
             folder: 'actors/child',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: 'actors/child',
@@ -454,14 +454,14 @@ describe('getChangedActors logging', () => {
 
     it('logs a single "shared" group when two actors are triggered by the exact same file', () => {
         const actorA: ActorConfig = {
-            actorName: 'team/actor-a',
+            actorFullName: 'team/actor-a',
             folder: 'actors/a',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',
             contextPaths: ['', 'shared'],
         };
         const actorB: ActorConfig = {
-            actorName: 'team/actor-b',
+            actorFullName: 'team/actor-b',
             folder: 'actors/b',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',
@@ -483,14 +483,14 @@ describe('getChangedActors logging', () => {
 
     it('logs shared and specific groups in descending-size order for partial overlap across actors', () => {
         const actorA: ActorConfig = {
-            actorName: 'team/actor-a',
+            actorFullName: 'team/actor-a',
             folder: 'actors/a',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',
             contextPaths: [''],
         };
         const actorB: ActorConfig = {
-            actorName: 'team/actor-b',
+            actorFullName: 'team/actor-b',
             folder: 'actors/b',
             tokenEnvVar: 'APIFY_TOKEN_TEAM',
             dockerContextDir: '',

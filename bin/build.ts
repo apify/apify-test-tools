@@ -15,7 +15,7 @@ type BuildPrActorOptions = {
 class ApifyBuilder {
     private constructor(
         private readonly apifyClient: ApifyClient,
-        private readonly actorName: string,
+        private readonly actorFullName: string,
     ) {}
 
     // Usually 'latest' but not necessarily (can be e.g. 'version-0')
@@ -24,29 +24,29 @@ class ApifyBuilder {
         defaultVersionNumber: string;
         defaultBuildTag: string;
     }> => {
-        const actorClient = this.apifyClient.actor(this.actorName);
+        const actorClient = this.apifyClient.actor(this.actorFullName);
         const actorInfo = await actorClient.get();
 
         if (!actorInfo) {
             throw new Error(
-                `[${this.actorName}] not found. It is not published or we are missing token to access it privately or its name is misspelled`,
+                `[${this.actorFullName}] not found. It is not published or we are missing token to access it privately or its name is misspelled`,
             );
         }
 
         const defaultBuildTag = actorInfo.defaultRunOptions.build;
-        console.error(`Default build tag for ${this.actorName} is ${defaultBuildTag}`);
+        console.error(`Default build tag for ${this.actorFullName} is ${defaultBuildTag}`);
 
         // We could technically allow this but in most cases this is accidentally set wrongly and there is a workaround
         if (defaultBuildTag.match(/\d+\.\d+\.\d+/)) {
             throw new Error(
-                `[${this.actorName}] Default build is a build number, not a tag. While this could work, ` +
+                `[${this.actorFullName}] Default build is a build number, not a tag. While this could work, ` +
                     `we want to have a default as tag so this is often an accidental misconfiguration from the dev`,
             );
         }
         // I reported that buildNumber should probably not be optional
         const defaultBuildNumber = actorInfo.taggedBuilds![defaultBuildTag].buildNumber!;
         const defaultVersionNumber = defaultBuildNumber.match(/(\d+\.\d+)\.\d+/)![1];
-        console.error(`Default version for ${this.actorName} is ${defaultVersionNumber}`);
+        console.error(`Default version for ${this.actorFullName} is ${defaultVersionNumber}`);
 
         return { defaultBuildNumber, defaultVersionNumber, defaultBuildTag };
     };
@@ -58,11 +58,11 @@ class ApifyBuilder {
         actorConfig,
         useDockerCache,
     }: BuildPrActorOptions): Promise<BuildData> => {
-        const actorClient = this.apifyClient.actor(this.actorName);
+        const actorClient = this.apifyClient.actor(this.actorFullName);
         const actorInfo = await actorClient.get();
         if (!actorInfo) {
             throw new Error(
-                `No actor named '${this.actorName}' was found on the platform. If this` +
+                `No actor named '${this.actorFullName}' was found on the platform. If this` +
                     ' is unexpected, make sure the actor you are targeting is spelled the' +
                     ' same as the folder in the repository.',
             );
@@ -92,31 +92,31 @@ class ApifyBuilder {
         // We also get back actId so the testing actor can both match by actor ID and name
         const { id, actId, buildNumber } = await actorClient.build(versionNumber, { useCache: useDockerCache });
 
-        console.error(`[${this.actorName}]: ${id} (${buildNumber})`);
-        return { buildId: id, actorId: actId, buildNumber, actorName: this.actorName, actorConfig };
+        console.error(`[${this.actorFullName}]: ${id} (${buildNumber})`);
+        return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName, actorConfig };
     };
 
-    waitForBuildToFinish = async (buildId: string, actorName: string): Promise<Build> => {
+    waitForBuildToFinish = async (buildId: string, actorFullName: string): Promise<Build> => {
         const build = await this.apifyClient.build(buildId).waitForFinish();
         const versionNumber = build.buildNumber;
         if (build.status === 'FAILED' || build.status === 'TIMED-OUT') {
             const message =
-                `[BUILD][${actorName}]: Build ${buildId} (${versionNumber}) failed. ` +
+                `[BUILD][${actorFullName}]: Build ${buildId} (${versionNumber}) failed. ` +
                 `Not continuing with other builds and tests.`;
-            console.error(`[${this.actorName}]: ${versionNumber}`);
+            console.error(`[${this.actorFullName}]: ${versionNumber}`);
             throw new Error(message);
         }
-        console.error(`[${this.actorName}]: ${versionNumber}`);
+        console.error(`[${this.actorFullName}]: ${versionNumber}`);
         return build;
     };
 
-    static fromActorConfig = ({ actorName, tokenEnvVar }: ActorConfig): ApifyBuilder => {
+    static fromActorConfig = ({ actorFullName, tokenEnvVar }: ActorConfig): ApifyBuilder => {
         const token = process.env[tokenEnvVar];
         if (!token) {
-            throw new Error(`Env var ${tokenEnvVar} is not set (needed for actor "${actorName}").`);
+            throw new Error(`Env var ${tokenEnvVar} is not set (needed for actor "${actorFullName}").`);
         }
         const apifyClient = new ApifyClient({ token });
-        return new ApifyBuilder(apifyClient, actorName);
+        return new ApifyBuilder(apifyClient, actorFullName);
     };
 
     /**
@@ -148,7 +148,7 @@ class ApifyBuilder {
         const DEFAULT_DAYS_BACK_PROD_VERSIONS = 30;
         const DEFAULT_DAYS_BACK_DEVEL = 7;
 
-        const actorInfo = (await this.apifyClient.actor(this.actorName).get())!;
+        const actorInfo = (await this.apifyClient.actor(this.actorFullName).get())!;
 
         // 'devel' used to be hardcoded for testing version 0.99, once we get rid of this tag everywhere, we can remove this code
         const taggedDevelBuildNumber: string | undefined = actorInfo.taggedBuilds!.devel?.buildNumber;
@@ -160,7 +160,7 @@ class ApifyBuilder {
             tag,
         }));
 
-        const { items } = await this.apifyClient.actor(this.actorName).builds().list();
+        const { items } = await this.apifyClient.actor(this.actorFullName).builds().list();
 
         // Deleting default build throws an error, so we skip it
         const { defaultBuildNumber, defaultBuildTag } = await this.getDefaultVersionAndTag();
@@ -173,7 +173,7 @@ class ApifyBuilder {
         const buildsToDelete = (items as CorrectBuildColletionItem[]).filter((build) => {
             if (build.buildNumber === defaultBuildNumber) {
                 console.error(
-                    `[DELETE OLD BUILDS][${this.actorName}]: Skipping default build ${defaultBuildNumber} (${defaultBuildTag}). ` +
+                    `[DELETE OLD BUILDS][${this.actorFullName}]: Skipping default build ${defaultBuildNumber} (${defaultBuildTag}). ` +
                         `We never delete default builds`,
                 );
                 return false;
@@ -184,7 +184,7 @@ class ApifyBuilder {
             );
             if (protectedTagFound) {
                 console.error(
-                    `[DELETE OLD BUILDS][${this.actorName}]: Skipping protected build ${protectedTagFound.buildNumber} (${protectedTagFound.tag}).`,
+                    `[DELETE OLD BUILDS][${this.actorFullName}]: Skipping protected build ${protectedTagFound.buildNumber} (${protectedTagFound.tag}).`,
                 );
                 return false;
             }
@@ -193,7 +193,7 @@ class ApifyBuilder {
                 const shouldDeleteDevelBuild = build.startedAt.getTime() < daysAgoUnixDevel;
                 if (shouldDeleteDevelBuild) {
                     console.error(
-                        `[DELETE OLD BUILDS][${this.actorName}]: Removing olf devel build ${taggedDevelBuildNumber}.`,
+                        `[DELETE OLD BUILDS][${this.actorFullName}]: Removing olf devel build ${taggedDevelBuildNumber}.`,
                     );
                 }
                 return shouldDeleteDevelBuild;
@@ -202,7 +202,7 @@ class ApifyBuilder {
         });
 
         console.error(
-            `[DELETE OLD BUILDS][${this.actorName}]: Deleting ${buildsToDelete.length} old builds that are non-default and ` +
+            `[DELETE OLD BUILDS][${this.actorFullName}]: Deleting ${buildsToDelete.length} old builds that are non-default and ` +
                 `older than 30 days from total ${items.length}`,
         );
         for (const build of buildsToDelete) {
@@ -268,13 +268,13 @@ export const runBuilds = async ({
     await Promise.all(
         startedBuilds.map(async (buildData) => {
             const builder = ApifyBuilder.fromActorConfig(buildData.actorConfig);
-            await builder.waitForBuildToFinish(buildData.buildId, buildData.actorName);
+            await builder.waitForBuildToFinish(buildData.buildId, buildData.actorFullName);
         }),
     );
     console.error('=========================================');
     console.error('SUMMARY:');
-    for (const buildData of startedBuilds.sort((a, b) => a.actorName.localeCompare(b.actorName))) {
-        console.error(`[${buildData.actorName}]: ${buildData.buildNumber} `);
+    for (const buildData of startedBuilds.sort((a, b) => a.actorFullName.localeCompare(b.actorFullName))) {
+        console.error(`[${buildData.actorFullName}]: ${buildData.buildNumber} `);
     }
     console.error('=========================================');
 

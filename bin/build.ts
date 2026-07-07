@@ -28,7 +28,7 @@ type BuildPrActorOptions = {
     actorName: string;
     useDockerCache: boolean;
 };
-class ApifyBuilder {
+export class ApifyBuilder {
     private constructor(
         private readonly apifyClient: ApifyClient,
         private readonly actorName: string,
@@ -167,7 +167,7 @@ class ApifyBuilder {
         const keptFilePaths = await this.collectNonIgnoredFiles(collectRootDir, repoRoot);
 
         const sourceRootDir = isMonorepoActor
-            ? await this.flattenMonorepoContext(absActorDir, contextAbsDir!, actorJson, keptFilePaths)
+            ? await this.flattenMonorepoContext(absActorDir, contextAbsDir!, actorJson, keptFilePaths, repoRoot)
             : collectRootDir;
 
         try {
@@ -208,7 +208,8 @@ class ApifyBuilder {
     // collect the actor directory of a monorepo actor — the platform would reject any path
     // escaping it. Fix: create a temporary "flattened" directory where:
     //   - the Docker context's non-ignored files (repo root) are copied to the temp dir root
-    //   - the actor's .actor/ directory is overlaid at the temp dir root
+    //   - the actor's .actor/ directory is overlaid at the temp dir root (through the same
+    //     gitignore/secret-pattern filter as the rest of the context — see collectNonIgnoredFiles)
     //   - actor.json path fields are rewritten to be relative to the new location
     //
     // Result: the collected root IS the Docker context, .actor/ is at that root, and
@@ -219,6 +220,7 @@ class ApifyBuilder {
         contextAbsDir: string,
         actorJson: Record<string, unknown>,
         keptContextFiles: string[],
+        repoRoot: string,
     ): Promise<string> => {
         console.error(`[${this.actorName}]: monorepo actor detected — flattening from Docker context`);
 
@@ -235,12 +237,19 @@ class ApifyBuilder {
             }),
         );
 
-        // Step 2: overlay the actor's .actor/ directory at the temp dir root,
-        // overwriting anything that was copied from the context (unlikely but safe).
-        await fs.cp(path.join(absActorDir, '.actor'), path.join(tempDir, '.actor'), {
-            recursive: true,
-            force: true,
-        });
+        // Step 2: overlay the actor's .actor/ directory at the temp dir root, applying the same
+        // gitignore/secret-pattern filtering as step 1 instead of a raw copy — otherwise a stray
+        // secret file living inside .actor/ would ship unfiltered.
+        const actorMetaDir = path.join(absActorDir, '.actor');
+        const keptActorFiles = await this.collectNonIgnoredFiles(actorMetaDir, repoRoot);
+        await Promise.all(
+            keptActorFiles.map(async (absFilePath) => {
+                const relPath = path.relative(actorMetaDir, absFilePath);
+                const destPath = path.join(tempDir, '.actor', relPath);
+                await fs.mkdir(path.dirname(destPath), { recursive: true });
+                await fs.copyFile(absFilePath, destPath);
+            }),
+        );
 
         // Step 3: rewrite actor.json path fields so they resolve correctly from the new location.
         await this.rewriteActorJsonPaths(absActorDir, contextAbsDir, tempDir, actorJson);

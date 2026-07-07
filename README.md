@@ -358,11 +358,12 @@ GITHUB_WORKSPACE=. \
 
 Pass a hardcoded actor name via `--actors` to build only that Actor (comma-separate multiple names). Omit `--actors` to build all Actors in the repo, or add `--dry-run` to preview without building. It outputs the same JSON build array as `build`, so you run tests against it the same way as in step 5 below:
 
-````bash
+```bash
 # Build from local source and capture output
 BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
   GITHUB_WORKSPACE=. \
   npx apify-test-tools build-zip --actors apify/my-actor)
+```
 
 Since you already scoped the build to just the Actor(s) you care about, point vitest at a specific test file (or a `-t` name filter) instead of the whole `test/platform` directory — you get feedback on that one test without waiting for the full suite to run.
 
@@ -377,7 +378,7 @@ ACTOR_BUILDS='<JSON output from build command>' \
 TESTER_APIFY_TOKEN=<token> \
 RUN_PLATFORM_TESTS=1 \
   npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
-````
+```
 
 #### Full example
 

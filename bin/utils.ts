@@ -11,23 +11,41 @@ import type { ActorConfig } from './types.js';
 export const isOutsideDir = (childPath: string, parentPath: string): boolean =>
     path.relative(parentPath, childPath).startsWith('..');
 
-export const collectFilePaths = async (
-    rootDir: string,
-    skipDirs: Set<string>,
-    isSecretFile: (fileName: string) => boolean,
-): Promise<string[]> => {
+export const collectFilePaths = async (rootDir: string, skipDirs: Set<string>): Promise<string[]> => {
     const entries = await fs.readdir(rootDir, { withFileTypes: true });
     const filePaths: string[] = [];
     for (const entry of entries) {
         if (entry.isDirectory()) {
             if (skipDirs.has(entry.name)) continue;
-            filePaths.push(...(await collectFilePaths(path.join(rootDir, entry.name), skipDirs, isSecretFile)));
+            filePaths.push(...(await collectFilePaths(path.join(rootDir, entry.name), skipDirs)));
         } else if (entry.isFile()) {
-            if (isSecretFile(entry.name)) continue;
             filePaths.push(path.join(rootDir, entry.name));
         }
     }
     return filePaths;
+};
+
+/**
+ * Given paths relative to the repo root, returns the subset that `git` would exclude because of
+ * .gitignore rules (including nested .gitignore files, `.git/info/exclude`, and global excludes —
+ * anything `git` itself respects). Delegating to `git check-ignore` avoids re-implementing gitignore
+ * pattern matching.
+ */
+export const getGitignoredPaths = (relativePaths: string[]): Set<string> => {
+    if (relativePaths.length === 0) return new Set();
+
+    const result = spawnSync('git', ['check-ignore', '--stdin'], {
+        input: relativePaths.join('\n'),
+        maxBuffer: 100 * 1024 * 1024,
+    });
+
+    // Exit code 1 means none of the given paths are ignored - not an error. Anything else
+    // (e.g. 128 for "not a git repository") is a real failure.
+    if (result.status !== 0 && result.status !== 1) {
+        throw new Error(`[Command failed]: git check-ignore\n${result.stderr.toString()}`);
+    }
+
+    return new Set(result.stdout.toString().split('\n').filter(Boolean));
 };
 
 const isBinary = (buffer: Buffer): boolean => buffer.includes(0);

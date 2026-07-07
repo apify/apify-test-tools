@@ -8,29 +8,16 @@ import { ApifyClient } from 'apify-client';
 import { ACTOR_SOURCE_TYPES } from '@apify/consts';
 
 import type { ActorConfig, BuildData } from './types.js';
-import { collectFilePaths, isOutsideDir, toSourceFile } from './utils.js';
+import { collectFilePaths, getGitignoredPaths, isOutsideDir, toSourceFile } from './utils.js';
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'apify_storage', 'dist', 'build', 'out', '.next', '.cache']);
 
-// JUST IN CASE. Filenames that commonly hold credentials — never ship these into a build, regardless of sourceType.
-const SKIP_FILE_NAMES = new Set([
-    '.env',
-    '.env.local',
-    '.env.development',
-    '.env.testing',
-    '.env.production',
-    '.npmrc',
-    '.netrc',
-    '.pgpass',
-    'credentials.json',
-    'id_rsa',
-    'id_dsa',
-    'id_ecdsa',
-    'id_ed25519',
-]);
+// JUST IN CASE. File patterns that commonly hold credentials — never ship these into a build, regardless
+// of sourceType or of whether the repo's .gitignore happens to list them. Everything else that should be
+// excluded (build output, local overrides, project-specific secret files, ...) is expected to already be
+// in the repo's .gitignore — see getGitignoredPaths.
 const SKIP_FILE_PATTERNS = [/^\.env(\..+)?$/, /\.pem$/, /\.key$/, /\.pfx$/, /\.p12$/];
-const isSecretFile = (fileName: string): boolean =>
-    SKIP_FILE_NAMES.has(fileName) || SKIP_FILE_PATTERNS.some((pattern) => pattern.test(fileName));
+const isSecretFile = (fileName: string): boolean => SKIP_FILE_PATTERNS.some((pattern) => pattern.test(fileName));
 
 const MAX_SOURCE_FILES_BYTES = 3 * 1024 * 1024;
 
@@ -164,6 +151,7 @@ class ApifyBuilder {
     };
 
     collectSourceFiles = async (actorDir: string): Promise<ActorVersionSourceFile[]> => {
+        const repoRoot = process.cwd();
         const absActorDir = path.resolve(actorDir);
 
         // Read actor.json to check if this is a monorepo actor with an external dockerContextDir.
@@ -175,12 +163,17 @@ class ApifyBuilder {
         const contextAbsDir = rawContextDir ? path.resolve(absActorDir, '.actor', rawContextDir) : undefined;
         const isMonorepoActor = !!contextAbsDir && isOutsideDir(contextAbsDir, absActorDir);
 
+        const collectRootDir = isMonorepoActor ? contextAbsDir! : absActorDir;
+        const keptFilePaths = await this.collectNonIgnoredFiles(collectRootDir, repoRoot);
+
         const sourceRootDir = isMonorepoActor
-            ? await this.flattenMonorepoContext(absActorDir, contextAbsDir!, actorJson)
-            : absActorDir;
+            ? await this.flattenMonorepoContext(absActorDir, contextAbsDir!, actorJson, keptFilePaths)
+            : collectRootDir;
 
         try {
-            const filePaths = await collectFilePaths(sourceRootDir, SKIP_DIRS, isSecretFile);
+            // The flattened temp dir already contains exactly the files we want (kept files +
+            // the .actor/ overlay), so it's walked fresh; the non-monorepo case reuses keptFilePaths directly.
+            const filePaths = isMonorepoActor ? await collectFilePaths(sourceRootDir, SKIP_DIRS) : keptFilePaths;
             const sourceFiles = await Promise.all(
                 filePaths.map(async (filePath) => toSourceFile(filePath, sourceRootDir)),
             );
@@ -195,10 +188,26 @@ class ApifyBuilder {
         }
     };
 
+    // Walks `rootDir` and drops anything the repo's .gitignore excludes — nested .gitignore files,
+    // `.git/info/exclude`, and global excludes are all honored since this delegates to `git check-ignore`
+    // instead of re-implementing gitignore matching. Also drops files matching the hardcoded secret-pattern
+    // backstop (keys, certs, .env variants), which we never ship regardless of what .gitignore says.
+    collectNonIgnoredFiles = async (rootDir: string, repoRoot: string): Promise<string[]> => {
+        const candidatePaths = await collectFilePaths(rootDir, SKIP_DIRS);
+        const relativePaths = candidatePaths.map((absPath) =>
+            path.relative(repoRoot, absPath).split(path.sep).join('/'),
+        );
+        const ignoredPaths = getGitignoredPaths(relativePaths);
+
+        return candidatePaths.filter(
+            (absPath, i) => !ignoredPaths.has(relativePaths[i]) && !isSecretFile(path.basename(absPath)),
+        );
+    };
+
     // SOURCE_FILES always treats the collected root as the actor root, so we cannot simply
     // collect the actor directory of a monorepo actor — the platform would reject any path
     // escaping it. Fix: create a temporary "flattened" directory where:
-    //   - the Docker context contents (repo root) are copied to the temp dir root
+    //   - the Docker context's non-ignored files (repo root) are copied to the temp dir root
     //   - the actor's .actor/ directory is overlaid at the temp dir root
     //   - actor.json path fields are rewritten to be relative to the new location
     //
@@ -209,17 +218,22 @@ class ApifyBuilder {
         absActorDir: string,
         contextAbsDir: string,
         actorJson: Record<string, unknown>,
+        keptContextFiles: string[],
     ): Promise<string> => {
         console.error(`[${this.actorName}]: monorepo actor detected — flattening from Docker context`);
 
         const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `apify-build-${this.actorName.replace('/', '_')}-`));
 
-        // Step 1: copy the Docker context (repo root) into the temp dir, skipping
-        // generated/large directories and secret files so they never touch disk here.
-        await fs.cp(contextAbsDir, tempDir, {
-            recursive: true,
-            filter: (src) => !SKIP_DIRS.has(path.basename(src)) && !isSecretFile(path.basename(src)),
-        });
+        // Step 1: copy only the files that survived gitignore/secret filtering, preserving their
+        // position relative to the Docker context root.
+        await Promise.all(
+            keptContextFiles.map(async (absFilePath) => {
+                const relPath = path.relative(contextAbsDir, absFilePath);
+                const destPath = path.join(tempDir, relPath);
+                await fs.mkdir(path.dirname(destPath), { recursive: true });
+                await fs.copyFile(absFilePath, destPath);
+            }),
+        );
 
         // Step 2: overlay the actor's .actor/ directory at the temp dir root,
         // overwriting anything that was copied from the context (unlikely but safe).

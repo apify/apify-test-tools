@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+
 import type { MockInstance } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +11,10 @@ import {
     parseBaseCommit,
 } from '../../../bin/git.js';
 import * as Utils from '../../../bin/utils.js';
+
+vi.mock('node:child_process', () => ({
+    spawnSync: vi.fn(),
+}));
 
 describe('getCommits', () => {
     const sourceBranch = 'feature-branch';
@@ -248,5 +254,55 @@ describe('parseBaseCommit', () => {
     it('should throw when JSON contains an invalid sha field', () => {
         const badJson = JSON.stringify({ sha: 'bad', author: 'test', date: 'now', message: 'msg' });
         expect(() => parseBaseCommit(badJson)).toThrow('Invalid base commit SHA');
+    });
+});
+
+describe('getGitignoredPaths', () => {
+    beforeEach(() => {
+        vi.mocked(spawnSync).mockReset();
+    });
+
+    it('returns an empty set without calling git when given no paths', () => {
+        const result = Utils.getGitignoredPaths([]);
+
+        expect(result).toStrictEqual(new Set());
+        expect(spawnSync).not.toHaveBeenCalled();
+    });
+
+    it('returns the paths git reports as ignored, feeding all candidates via stdin', () => {
+        vi.mocked(spawnSync).mockReturnValue({
+            status: 0,
+            stdout: 'node_modules/foo.js\n.env\n',
+            stderr: '',
+        } as unknown as ReturnType<typeof spawnSync>);
+
+        const result = Utils.getGitignoredPaths(['node_modules/foo.js', 'bin/build.ts', '.env']);
+
+        expect(result).toStrictEqual(new Set(['node_modules/foo.js', '.env']));
+        expect(spawnSync).toHaveBeenCalledWith(
+            'git',
+            ['check-ignore', '--stdin'],
+            expect.objectContaining({ input: 'node_modules/foo.js\nbin/build.ts\n.env' }),
+        );
+    });
+
+    it('returns an empty set when git reports nothing is ignored (exit code 1)', () => {
+        vi.mocked(spawnSync).mockReturnValue({
+            status: 1,
+            stdout: '',
+            stderr: '',
+        } as unknown as ReturnType<typeof spawnSync>);
+
+        expect(Utils.getGitignoredPaths(['bin/build.ts'])).toStrictEqual(new Set());
+    });
+
+    it('throws on an unexpected git failure instead of silently including/excluding files', () => {
+        vi.mocked(spawnSync).mockReturnValue({
+            status: 128,
+            stdout: '',
+            stderr: 'fatal: not a git repository',
+        } as unknown as ReturnType<typeof spawnSync>);
+
+        expect(() => Utils.getGitignoredPaths(['bin/build.ts'])).toThrow('git check-ignore');
     });
 });

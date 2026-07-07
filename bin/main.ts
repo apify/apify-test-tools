@@ -6,7 +6,7 @@ import yargs, { type Argv } from 'yargs';
 // eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
-import { deleteOldBuilds, runBuilds } from './build.js';
+import { deleteOldBuilds, runBuilds, runZipBuilds } from './build.js';
 import { getChangedActors } from './diff-changes.js';
 import { getBranchOnlyChangedFiles, getChangedFiles, getCommits, hasMergeFromTarget } from './git.js';
 import { getPushData } from './github.js';
@@ -200,6 +200,31 @@ await yargs()
                 reportSlackChannel,
                 releaseSlackChannel,
             });
+        },
+    )
+    .command(
+        'build-zip',
+        '',
+        (args) =>
+            args
+                .option('actors', {
+                    type: 'string',
+                    description:
+                        'Comma-separated actor names (owner/name) to build. Defaults to all actors in the repo.',
+                })
+                .option('dry-run', { type: 'boolean', default: false }),
+        async ({ actors, dryRun }) => {
+            const allActorConfigs = await getRepoActors();
+            const actorConfigs = actors
+                ? actors.split(',').map((name) => {
+                      const trimmed = name.trim();
+                      const config = allActorConfigs.find((c) => c.actorName === trimmed);
+                      if (!config) throw new Error(`Actor "${trimmed}" not found in repo`);
+                      return config;
+                  })
+                : allActorConfigs;
+            const builds = await runZipBuilds({ actorConfigs, dryRun });
+            console.log(JSON.stringify(builds));
         },
     )
     .command(

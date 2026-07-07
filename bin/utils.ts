@@ -1,7 +1,44 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
+import path from 'node:path';
+
+import type { ActorVersionSourceFile } from 'apify-client';
 
 import type { ActorConfig } from './types.js';
+
+// Returns true when `childPath` is not inside `parentPath`.
+// Used to detect monorepo actors whose dockerContextDir escapes the actor directory.
+export const isOutsideDir = (childPath: string, parentPath: string): boolean =>
+    path.relative(parentPath, childPath).startsWith('..');
+
+export const collectFilePaths = async (
+    rootDir: string,
+    skipDirs: Set<string>,
+    isSecretFile: (fileName: string) => boolean,
+): Promise<string[]> => {
+    const entries = await fs.readdir(rootDir, { withFileTypes: true });
+    const filePaths: string[] = [];
+    for (const entry of entries) {
+        if (entry.isDirectory()) {
+            if (skipDirs.has(entry.name)) continue;
+            filePaths.push(...(await collectFilePaths(path.join(rootDir, entry.name), skipDirs, isSecretFile)));
+        } else if (entry.isFile()) {
+            if (isSecretFile(entry.name)) continue;
+            filePaths.push(path.join(rootDir, entry.name));
+        }
+    }
+    return filePaths;
+};
+
+const isBinary = (buffer: Buffer): boolean => buffer.includes(0);
+
+export const toSourceFile = async (absPath: string, rootDir: string): Promise<ActorVersionSourceFile> => {
+    const buffer = await fs.readFile(absPath);
+    const name = path.relative(rootDir, absPath).split(path.sep).join('/');
+    return isBinary(buffer)
+        ? { name, format: 'BASE64', content: buffer.toString('base64') }
+        : { name, format: 'TEXT', content: buffer.toString('utf8') };
+};
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
     console.error(command, args.join(' '));

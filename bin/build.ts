@@ -1,9 +1,38 @@
-import type { Build } from 'apify-client';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import type { ActorVersionSourceFile, Build } from 'apify-client';
 import { ApifyClient } from 'apify-client';
 
 import { ACTOR_SOURCE_TYPES } from '@apify/consts';
 
 import type { ActorConfig, BuildData } from './types.js';
+import { collectFilePaths, isOutsideDir, toSourceFile } from './utils.js';
+
+const SKIP_DIRS = new Set(['node_modules', '.git', 'apify_storage', 'dist', 'build', 'out', '.next', '.cache']);
+
+// JUST IN CASE. Filenames that commonly hold credentials — never ship these into a build, regardless of sourceType.
+const SKIP_FILE_NAMES = new Set([
+    '.env',
+    '.env.local',
+    '.env.development',
+    '.env.testing',
+    '.env.production',
+    '.npmrc',
+    '.netrc',
+    '.pgpass',
+    'credentials.json',
+    'id_rsa',
+    'id_dsa',
+    'id_ecdsa',
+    'id_ed25519',
+]);
+const SKIP_FILE_PATTERNS = [/^\.env(\..+)?$/, /\.pem$/, /\.key$/, /\.pfx$/, /\.p12$/];
+const isSecretFile = (fileName: string): boolean =>
+    SKIP_FILE_NAMES.has(fileName) || SKIP_FILE_PATTERNS.some((pattern) => pattern.test(fileName));
+
+const MAX_SOURCE_FILES_BYTES = 3 * 1024 * 1024;
 
 type BuildPrActorOptions = {
     buildTag?: string;
@@ -101,15 +130,179 @@ class ApifyBuilder {
         return { buildId: id, actorId: actId, buildNumber, actorName: this.actorName };
     };
 
+    startActorBuildFromSourceFiles = async (sourceFiles: ActorVersionSourceFile[]): Promise<BuildData> => {
+        const ZIP_VERSION = '0.98';
+        const actorClient = this.apifyClient.actor(this.actorName);
+        const actorInfo = await actorClient.get();
+        if (!actorInfo) {
+            throw new Error(
+                `No actor named '${this.actorName}' was found on the platform. If this` +
+                    ' is unexpected, make sure the actor you are targeting is spelled the' +
+                    ' same as the folder in the repository.',
+            );
+        }
+
+        type ActorVersion = Parameters<ReturnType<typeof actorClient.version>['update']>[0];
+        const actorVersion: ActorVersion = {
+            versionNumber: ZIP_VERSION,
+            sourceFiles,
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore: couldn't find this type :(
+            sourceType: ACTOR_SOURCE_TYPES.SOURCE_FILES,
+        };
+
+        const versionExists = !actorInfo.versions.find((v) => v.versionNumber === ZIP_VERSION);
+        if (versionExists) {
+            await actorClient.versions().create(actorVersion);
+        } else {
+            await actorClient.version(ZIP_VERSION).update(actorVersion);
+        }
+
+        const { id, actId, buildNumber } = await actorClient.build(ZIP_VERSION, { useCache: false });
+        console.error(`[${this.actorName}]: ${id} (${buildNumber})`);
+        return { buildId: id, actorId: actId, buildNumber, actorName: this.actorName };
+    };
+
+    collectSourceFiles = async (actorDir: string): Promise<ActorVersionSourceFile[]> => {
+        const absActorDir = path.resolve(actorDir);
+
+        // Read actor.json to check if this is a monorepo actor with an external dockerContextDir.
+        // Monorepo actors point their dockerContextDir to a parent directory (e.g. "../../.."),
+        // which means the Docker build context is the repo root, not the actor directory itself.
+        const actorJsonPath = path.join(absActorDir, '.actor', 'actor.json');
+        const actorJson = JSON.parse(await fs.readFile(actorJsonPath, 'utf8')) as Record<string, unknown>;
+        const rawContextDir = actorJson.dockerContextDir as string | undefined;
+        const contextAbsDir = rawContextDir ? path.resolve(absActorDir, '.actor', rawContextDir) : undefined;
+        const isMonorepoActor = !!contextAbsDir && isOutsideDir(contextAbsDir, absActorDir);
+
+        const sourceRootDir = isMonorepoActor
+            ? await this.flattenMonorepoContext(absActorDir, contextAbsDir!, actorJson)
+            : absActorDir;
+
+        try {
+            const filePaths = await collectFilePaths(sourceRootDir, SKIP_DIRS, isSecretFile);
+            const sourceFiles = await Promise.all(
+                filePaths.map(async (filePath) => toSourceFile(filePath, sourceRootDir)),
+            );
+
+            this.assertWithinSizeLimit(sourceFiles);
+            return sourceFiles;
+        } finally {
+            // Only the flattened copy is temporary — never delete the actor's own directory.
+            if (isMonorepoActor) {
+                await fs.rm(sourceRootDir, { recursive: true, force: true });
+            }
+        }
+    };
+
+    // SOURCE_FILES always treats the collected root as the actor root, so we cannot simply
+    // collect the actor directory of a monorepo actor — the platform would reject any path
+    // escaping it. Fix: create a temporary "flattened" directory where:
+    //   - the Docker context contents (repo root) are copied to the temp dir root
+    //   - the actor's .actor/ directory is overlaid at the temp dir root
+    //   - actor.json path fields are rewritten to be relative to the new location
+    //
+    // Result: the collected root IS the Docker context, .actor/ is at that root, and
+    // all relative paths (dockerfile, dockerContextDir, changelog) are exactly one
+    // level up ("..") instead of three ("../../..").
+    flattenMonorepoContext = async (
+        absActorDir: string,
+        contextAbsDir: string,
+        actorJson: Record<string, unknown>,
+    ): Promise<string> => {
+        console.error(`[${this.actorName}]: monorepo actor detected — flattening from Docker context`);
+
+        const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `apify-build-${this.actorName.replace('/', '_')}-`));
+
+        // Step 1: copy the Docker context (repo root) into the temp dir, skipping
+        // generated/large directories and secret files so they never touch disk here.
+        await fs.cp(contextAbsDir, tempDir, {
+            recursive: true,
+            filter: (src) => !SKIP_DIRS.has(path.basename(src)) && !isSecretFile(path.basename(src)),
+        });
+
+        // Step 2: overlay the actor's .actor/ directory at the temp dir root,
+        // overwriting anything that was copied from the context (unlikely but safe).
+        await fs.cp(path.join(absActorDir, '.actor'), path.join(tempDir, '.actor'), {
+            recursive: true,
+            force: true,
+        });
+
+        // Step 3: rewrite actor.json path fields so they resolve correctly from the new location.
+        await this.rewriteActorJsonPaths(absActorDir, contextAbsDir, tempDir, actorJson);
+
+        return tempDir;
+    };
+
+    // Rewrites actor.json path fields so they resolve correctly from the new .actor/ location
+    // (one level below the root) instead of the original three-levels-deep location.
+    //
+    // Algorithm for each path field:
+    //   1. Resolve the original value to an absolute path on disk.
+    //   2. Compute its position relative to the Docker context root (e.g. repo root).
+    //      That relative position is exactly where the file landed inside tempDir,
+    //      because we copied contextAbsDir → tempDir in flattenMonorepoContext's step 1.
+    //   3. Build the new path from newActorDir to that file in tempDir.
+    //
+    // Local paths (e.g. "./dataset_schema.json") point inside .actor/ and are left
+    // unchanged — .actor/ was copied intact so those paths still resolve correctly.
+    rewriteActorJsonPaths = async (
+        absActorDir: string,
+        contextAbsDir: string,
+        tempDir: string,
+        actorJson: Record<string, unknown>,
+    ): Promise<void> => {
+        const originalActorDir = path.join(absActorDir, '.actor');
+        const newActorDir = path.join(tempDir, '.actor');
+        const pathFields = ['dockerfile', 'dockerContextDir', 'changelog', 'readme'] as const;
+        const rewritten = { ...actorJson };
+        for (const field of pathFields) {
+            const value = rewritten[field];
+            if (typeof value !== 'string') continue;
+
+            const absPath = path.resolve(originalActorDir, value);
+
+            // Skip paths that stay inside .actor/ — they don't need rewriting.
+            if (!isOutsideDir(absPath, originalActorDir)) continue;
+
+            // Where does this file live inside the Docker context? That's also where
+            // it lives inside tempDir after the copy in flattenMonorepoContext's step 1.
+            const relativeToContext = path.relative(contextAbsDir, absPath);
+            const newAbsPath = path.join(tempDir, relativeToContext);
+            rewritten[field] = path.relative(newActorDir, newAbsPath);
+        }
+        await fs.writeFile(path.join(newActorDir, 'actor.json'), JSON.stringify(rewritten, null, 4));
+    };
+
+    // The Apify API caps combined SOURCE_FILES content at MAX_SOURCE_FILES_BYTES — fail fast
+    // with a clear message instead of letting the platform reject an opaque, oversized payload.
+    assertWithinSizeLimit = (sourceFiles: ActorVersionSourceFile[]): void => {
+        const totalBytes = sourceFiles.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
+        if (totalBytes <= MAX_SOURCE_FILES_BYTES) return;
+
+        throw new Error(
+            `[${this.actorName}]: Actor source is ${(totalBytes / 1024 / 1024).toFixed(2)} MiB, which exceeds ` +
+                `the ${MAX_SOURCE_FILES_BYTES / 1024 / 1024} MiB limit for SOURCE_FILES builds. Exclude more files ` +
+                'or use a git-based build instead.',
+        );
+    };
+
     waitForBuildToFinish = async (buildId: string, actorName: string): Promise<Build> => {
         const build = await this.apifyClient.build(buildId).waitForFinish();
         const versionNumber = build.buildNumber;
         if (build.status === 'FAILED' || build.status === 'TIMED-OUT') {
-            const message =
-                `[BUILD][${actorName}]: Build ${buildId} (${versionNumber}) failed. ` +
-                `Not continuing with other builds and tests.`;
             console.error(`[${this.actorName}]: ${versionNumber}`);
-            throw new Error(message);
+            try {
+                const log = await this.apifyClient.build(buildId).log().get();
+                const logTail = log?.split('\n').slice(-40).join('\n');
+                console.error(`\n--- BUILD LOG (last 40 lines) ---\n${logTail}\n---`);
+            } catch (err) {
+                console.error(`[${this.actorName}]: Failed to fetch build log: ${err}`);
+            }
+            throw new Error(
+                `[BUILD][${actorName}]: Build ${buildId} (${versionNumber}) failed. ` +
+                    `Not continuing with other builds and tests.`,
+            );
         }
         console.error(`[${this.actorName}]: ${versionNumber}`);
         return build;
@@ -303,4 +496,55 @@ export const deleteOldBuilds = async (actorConfigs: ActorConfig[]) => {
     for (const { actorName } of actorConfigs) {
         await ApifyBuilder.fromActorName(actorName).deleteOldBuilds();
     }
+};
+
+export const runZipBuilds = async ({
+    actorConfigs,
+    dryRun,
+}: {
+    actorConfigs: ActorConfig[];
+    dryRun: boolean;
+}): Promise<BuildData[]> => {
+    if (dryRun) {
+        console.error('[DRY RUN] Would build from local source:');
+        for (const { actorName, folder } of actorConfigs) {
+            console.error(`  ${actorName} (${folder})`);
+        }
+        return actorConfigs.map(({ actorName }) => ({
+            buildId: 'dry-run',
+            actorId: 'dry-run',
+            buildNumber: '0.98.0',
+            actorName,
+        }));
+    }
+
+    console.error('=========================================');
+    console.error('STARTED ZIP BUILDS:');
+    const startedBuilds = await Promise.all(
+        actorConfigs.map(async ({ actorName, folder }) => {
+            const builder = ApifyBuilder.fromActorName(actorName);
+            const sourceFiles = await builder.collectSourceFiles(folder);
+            return builder.startActorBuildFromSourceFiles(sourceFiles);
+        }),
+    );
+
+    console.error('=========================================');
+    console.error('FINISHED ZIP BUILDS:');
+    await Promise.all(
+        startedBuilds.map(async (buildData: BuildData) => {
+            const builder = ApifyBuilder.fromActorName(buildData.actorName);
+            await builder.waitForBuildToFinish(buildData.buildId, buildData.actorName);
+        }),
+    );
+
+    console.error('=========================================');
+    console.error('SUMMARY:');
+    for (const buildData of startedBuilds.sort((a: BuildData, b: BuildData) =>
+        a.actorName.localeCompare(b.actorName),
+    )) {
+        console.error(`[${buildData.actorName}]: ${buildData.buildNumber}`);
+    }
+    console.error('=========================================');
+
+    return startedBuilds;
 };

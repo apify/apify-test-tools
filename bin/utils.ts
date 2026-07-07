@@ -4,6 +4,8 @@ import path from 'node:path';
 
 import type { ActorVersionSourceFile } from 'apify-client';
 
+import { SOURCE_FILE_FORMATS } from '@apify/consts';
+
 import type { ActorConfig } from './types.js';
 
 // Returns true when `childPath` is not inside `parentPath`.
@@ -54,8 +56,8 @@ export const toSourceFile = async (absPath: string, rootDir: string): Promise<Ac
     const buffer = await fs.readFile(absPath);
     const name = path.relative(rootDir, absPath).split(path.sep).join('/');
     return isBinary(buffer)
-        ? { name, format: 'BASE64', content: buffer.toString('base64') }
-        : { name, format: 'TEXT', content: buffer.toString('utf8') };
+        ? { name, format: SOURCE_FILE_FORMATS.BASE64, content: buffer.toString('base64') }
+        : { name, format: SOURCE_FILE_FORMATS.TEXT, content: buffer.toString('utf8') };
 };
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {

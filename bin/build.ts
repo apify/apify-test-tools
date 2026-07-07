@@ -10,7 +10,18 @@ import { ACTOR_SOURCE_TYPES } from '@apify/consts';
 import type { ActorConfig, BuildData } from './types.js';
 import { collectFilePaths, getGitignoredPaths, isOutsideDir, toSourceFile } from './utils.js';
 
-const SKIP_DIRS = new Set(['node_modules', '.git', 'apify_storage', 'dist', 'build', 'out', '.next', '.cache']);
+const SKIP_DIRS = new Set([
+    'node_modules',
+    '.git',
+    'apify_storage',
+    'storage',
+    'crawlee_storage',
+    'dist',
+    'build',
+    'out',
+    '.next',
+    '.cache',
+]);
 
 // JUST IN CASE. File patterns that commonly hold credentials — never ship these into a build, regardless
 // of sourceType or of whether the repo's .gitignore happens to list them. Everything else that should be
@@ -18,8 +29,6 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'apify_storage', 'dist', 'bui
 // in the repo's .gitignore — see getGitignoredPaths.
 const SKIP_FILE_PATTERNS = [/^\.env(\..+)?$/, /\.pem$/, /\.key$/, /\.pfx$/, /\.p12$/];
 const isSecretFile = (fileName: string): boolean => SKIP_FILE_PATTERNS.some((pattern) => pattern.test(fileName));
-
-const MAX_SOURCE_FILES_BYTES = 3 * 1024 * 1024;
 
 type BuildPrActorOptions = {
     buildTag?: string;
@@ -178,7 +187,6 @@ export class ApifyBuilder {
                 filePaths.map(async (filePath) => toSourceFile(filePath, sourceRootDir)),
             );
 
-            this.assertWithinSizeLimit(sourceFiles);
             return sourceFiles;
         } finally {
             // Only the flattened copy is temporary — never delete the actor's own directory.
@@ -190,8 +198,10 @@ export class ApifyBuilder {
 
     // Walks `rootDir` and drops anything the repo's .gitignore excludes — nested .gitignore files,
     // `.git/info/exclude`, and global excludes are all honored since this delegates to `git check-ignore`
-    // instead of re-implementing gitignore matching. Also drops files matching the hardcoded secret-pattern
-    // backstop (keys, certs, .env variants), which we never ship regardless of what .gitignore says.
+    // instead of re-implementing gitignore matching. `.actor/` (the Actor specification folder) is always
+    // kept regardless of .gitignore, matching Apify CLI's own behavior. Files matching the hardcoded
+    // secret-pattern backstop (keys, certs, .env variants) are dropped unconditionally, .actor/ included,
+    // since those should never ship regardless of what .gitignore says.
     collectNonIgnoredFiles = async (rootDir: string, repoRoot: string): Promise<string[]> => {
         const candidatePaths = await collectFilePaths(rootDir, SKIP_DIRS);
         const relativePaths = candidatePaths.map((absPath) =>
@@ -199,9 +209,11 @@ export class ApifyBuilder {
         );
         const ignoredPaths = getGitignoredPaths(relativePaths);
 
-        return candidatePaths.filter(
-            (absPath, i) => !ignoredPaths.has(relativePaths[i]) && !isSecretFile(path.basename(absPath)),
-        );
+        return candidatePaths.filter((absPath, i) => {
+            if (isSecretFile(path.basename(absPath))) return false;
+            const isUnderActorDir = relativePaths[i].split('/').includes('.actor');
+            return isUnderActorDir || !ignoredPaths.has(relativePaths[i]);
+        });
     };
 
     // SOURCE_FILES always treats the collected root as the actor root, so we cannot simply
@@ -237,9 +249,9 @@ export class ApifyBuilder {
             }),
         );
 
-        // Step 2: overlay the actor's .actor/ directory at the temp dir root, applying the same
-        // gitignore/secret-pattern filtering as step 1 instead of a raw copy — otherwise a stray
-        // secret file living inside .actor/ would ship unfiltered.
+        // Step 2: overlay the actor's .actor/ directory at the temp dir root. collectNonIgnoredFiles
+        // always keeps .actor/ paths regardless of .gitignore, but still drops the hardcoded secret
+        // patterns — so this isn't a raw copy, a stray secret file living inside .actor/ is still dropped.
         const actorMetaDir = path.join(absActorDir, '.actor');
         const keptActorFiles = await this.collectNonIgnoredFiles(actorMetaDir, repoRoot);
         await Promise.all(
@@ -295,19 +307,6 @@ export class ApifyBuilder {
             rewritten[field] = path.relative(newActorDir, newAbsPath);
         }
         await fs.writeFile(path.join(newActorDir, 'actor.json'), JSON.stringify(rewritten, null, 4));
-    };
-
-    // The Apify API caps combined SOURCE_FILES content at MAX_SOURCE_FILES_BYTES — fail fast
-    // with a clear message instead of letting the platform reject an opaque, oversized payload.
-    assertWithinSizeLimit = (sourceFiles: ActorVersionSourceFile[]): void => {
-        const totalBytes = sourceFiles.reduce((sum, file) => sum + Buffer.byteLength(file.content), 0);
-        if (totalBytes <= MAX_SOURCE_FILES_BYTES) return;
-
-        throw new Error(
-            `[${this.actorName}]: Actor source is ${(totalBytes / 1024 / 1024).toFixed(2)} MiB, which exceeds ` +
-                `the ${MAX_SOURCE_FILES_BYTES / 1024 / 1024} MiB limit for SOURCE_FILES builds. Exclude more files ` +
-                'or use a git-based build instead.',
-        );
     };
 
     waitForBuildToFinish = async (buildId: string, actorName: string): Promise<Build> => {

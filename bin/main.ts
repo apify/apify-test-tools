@@ -6,7 +6,8 @@ import yargs, { type Argv } from 'yargs';
 // eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
-import { deleteOldBuilds, runBuilds, runZipBuilds } from './build.js';
+import { deleteOldBuilds, runBuilds } from './build.js';
+import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedActors } from './diff-changes.js';
 import { getBranchOnlyChangedFiles, getChangedFiles, getCommits, hasMergeFromTarget } from './git.js';
 import { getPushData } from './github.js';
@@ -203,7 +204,7 @@ await yargs()
         },
     )
     .command(
-        'build-zip',
+        'build-from-local',
         '',
         (args) =>
             args
@@ -223,7 +224,7 @@ await yargs()
                       return config;
                   })
                 : allActorConfigs;
-            const builds = await runZipBuilds({ actorConfigs, dryRun });
+            const builds = await runBuildsFromLocal({ actorConfigs, dryRun });
             console.log(JSON.stringify(builds));
         },
     )

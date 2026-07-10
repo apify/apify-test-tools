@@ -13,18 +13,25 @@ import type { ActorConfig } from './types.js';
 export const isOutsideDir = (childPath: string, parentPath: string): boolean =>
     path.relative(parentPath, childPath).startsWith('..');
 
-export const collectFilePaths = async (rootDir: string, skipDirs: Set<string>): Promise<string[]> => {
-    const entries = await fs.readdir(rootDir, { withFileTypes: true });
-    const filePaths: string[] = [];
-    for (const entry of entries) {
-        if (entry.isDirectory()) {
-            if (skipDirs.has(entry.name)) continue;
-            filePaths.push(...(await collectFilePaths(path.join(rootDir, entry.name), skipDirs)));
-        } else if (entry.isFile()) {
-            filePaths.push(path.join(rootDir, entry.name));
-        }
+/**
+ * Lists every file under `subDir` (paths relative to `repoRoot`) that's either tracked by git or
+ * present but untracked in the working tree — deliberately omitting `--exclude-standard`, so
+ * gitignored files are included too. Callers combine this with getGitignoredPaths to decide what
+ * to keep, e.g. because .actor/ must survive even if .gitignore would otherwise exclude it.
+ * This also means .git/ itself is never walked, since git never lists its own internals here.
+ */
+export const listRepoFilePaths = (repoRoot: string, subDir: string): string[] => {
+    const relSubDir = path.relative(repoRoot, subDir).split(path.sep).join('/') || '.';
+    const result = spawnSync('git', ['ls-files', '--cached', '--others', '-z', '--', relSubDir], {
+        cwd: repoRoot,
+        maxBuffer: 100 * 1024 * 1024,
+    });
+
+    if (result.status !== 0) {
+        throw new Error(`[Command failed]: git ls-files\n${result.stderr.toString()}`);
     }
-    return filePaths;
+
+    return result.stdout.toString().split('\0').filter(Boolean);
 };
 
 /**
@@ -52,7 +59,7 @@ export const getGitignoredPaths = (relativePaths: string[]): Set<string> => {
 
 const isBinary = (buffer: Buffer): boolean => buffer.includes(0);
 
-export const toSourceFile = async (absPath: string, rootDir: string): Promise<ActorVersionSourceFile> => {
+export const toActorVersionSourceFile = async (absPath: string, rootDir: string): Promise<ActorVersionSourceFile> => {
     const buffer = await fs.readFile(absPath);
     const name = path.relative(rootDir, absPath).split(path.sep).join('/');
     return isBinary(buffer)

@@ -7,6 +7,7 @@ import yargs, { type Argv } from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
 import { deleteOldBuilds, runBuilds } from './build.js';
+import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedActors } from './diff-changes.js';
 import { getBranchOnlyChangedFiles, getChangedFiles, getCommits, hasMergeFromTarget } from './git.js';
 import { getPushData } from './github.js';
@@ -200,6 +201,31 @@ await yargs()
                 reportSlackChannel,
                 releaseSlackChannel,
             });
+        },
+    )
+    .command(
+        'build-from-local',
+        '',
+        (args) =>
+            args
+                .option('actors', {
+                    type: 'string',
+                    description:
+                        'Comma-separated actor names (owner/name) to build. Defaults to all actors in the repo.',
+                })
+                .option('dry-run', { type: 'boolean', default: false }),
+        async ({ actors, dryRun }) => {
+            const allActorConfigs = await getRepoActors();
+            const actorConfigs = actors
+                ? actors.split(',').map((name) => {
+                      const trimmed = name.trim();
+                      const config = allActorConfigs.find((c) => c.actorName === trimmed);
+                      if (!config) throw new Error(`Actor "${trimmed}" not found in repo`);
+                      return config;
+                  })
+                : allActorConfigs;
+            const builds = await runBuildsFromLocal({ actorConfigs, dryRun });
+            console.log(JSON.stringify(builds));
         },
     )
     .command(

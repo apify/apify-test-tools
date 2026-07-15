@@ -6,7 +6,13 @@ import type { ActorVersionSourceFile } from 'apify-client';
 
 import { ApifyBuilder, waitAndSummarizeBuilds } from './build.js';
 import type { ActorConfig, BuildData } from './types.js';
-import { getGitignoredPaths, isOutsideDir, listRepoFilePaths, toActorVersionSourceFile } from './utils.js';
+import {
+    getDockerignoredPaths,
+    getGitignoredPaths,
+    isOutsideDir,
+    listRepoFilePaths,
+    toActorVersionSourceFile,
+} from './utils.js';
 
 // JUST IN CASE. File patterns that commonly hold credentials — never ship these into a build, regardless
 // of sourceType or of whether the repo's .gitignore happens to list them. Everything else that should be
@@ -54,19 +60,30 @@ export const collectSourceFiles = async (actorName: string, actorDir: string): P
 // Candidates come from `git ls-files` (tracked + untracked, gitignored included) rather than a
 // manual directory walk — nested .gitignore files, `.git/info/exclude`, and global excludes are
 // all honored since this delegates to git itself instead of re-implementing gitignore matching,
-// and .git/ is never walked because git never lists its own internals here. `.actor/` (the Actor
-// specification folder) is always kept regardless of .gitignore, matching Apify CLI's own behavior.
-// Files matching the hardcoded secret-pattern backstop (keys, certs, .env variants) are dropped
-// unconditionally, .actor/ included, since those should never ship regardless of what .gitignore says.
+// and .git/ is never walked because git never lists its own internals here. `.dockerignore` at
+// `rootDir` (the Docker build context) is honored the same way, since those files would never
+// reach a real Docker build either. `.actor/` (the Actor specification folder) is always kept
+// regardless of .gitignore/.dockerignore, matching Apify CLI's own behavior. Files matching the
+// hardcoded secret-pattern backstop (keys, certs, .env variants) are dropped unconditionally,
+// .actor/ included, since those should never ship regardless of what the ignore files say.
 export const collectNonIgnoredFiles = (rootDir: string, repoRoot: string): string[] => {
     const relativePaths = listRepoFilePaths(repoRoot, rootDir);
     const ignoredPaths = getGitignoredPaths(relativePaths);
+    const rootRelativePaths = new Map(
+        relativePaths.map((relPath) => [
+            relPath,
+            path.relative(rootDir, path.join(repoRoot, relPath)).split(path.sep).join('/'),
+        ]),
+    );
+    const dockerIgnoredPaths = getDockerignoredPaths(rootDir, [...rootRelativePaths.values()]);
 
     return relativePaths
         .filter((relPath) => {
             if (isSecretFile(path.basename(relPath))) return false;
             const isUnderActorDir = relPath.split('/').includes('.actor');
-            return isUnderActorDir || !ignoredPaths.has(relPath);
+            if (isUnderActorDir) return true;
+            if (ignoredPaths.has(relPath)) return false;
+            return !dockerIgnoredPaths.has(rootRelativePaths.get(relPath)!);
         })
         .map((relPath) => path.join(repoRoot, relPath));
 };

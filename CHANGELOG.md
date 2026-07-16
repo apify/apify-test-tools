@@ -2,15 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-<!-- git-cliff-unreleased-start -->
-## 0.8.6 - **not yet released**
+## [0.8.6](https://github.com/apify/apify-test-tools/releases/tag/v0.8.6) (2026-07-16)
 
 ### 🐛 Bug Fixes
 
 - Dockerignore ([#104](https://github.com/apify/apify-test-tools/pull/104)) ([c041024](https://github.com/apify/apify-test-tools/commit/c0410246b7a911fb79e9e5b997d49181c8f8435f)) by [@gytelio](https://github.com/gytelio)
 
 
-<!-- git-cliff-unreleased-end -->
 ## [0.8.5](https://github.com/apify/apify-test-tools/releases/tag/v0.8.5) (2026-07-10)
 
 

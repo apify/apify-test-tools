@@ -55,7 +55,6 @@ class ApifyBuilder {
         buildTag,
         versionNumber,
         gitRepoUrl,
-        actorConfig,
         useDockerCache,
     }: BuildPrActorOptions): Promise<BuildData> => {
         const actorClient = this.apifyClient.actor(this.actorFullName);
@@ -93,15 +92,15 @@ class ApifyBuilder {
         const { id, actId, buildNumber } = await actorClient.build(versionNumber, { useCache: useDockerCache });
 
         console.error(`[${this.actorFullName}]: ${id} (${buildNumber})`);
-        return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName, actorConfig };
+        return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
     };
 
-    waitForBuildToFinish = async (buildId: string, actorFullName: string): Promise<Build> => {
+    waitForBuildToFinish = async (buildId: string): Promise<Build> => {
         const build = await this.apifyClient.build(buildId).waitForFinish();
         const versionNumber = build.buildNumber;
         if (build.status === 'FAILED' || build.status === 'TIMED-OUT') {
             const message =
-                `[BUILD][${actorFullName}]: Build ${buildId} (${versionNumber}) failed. ` +
+                `[BUILD][${this.actorFullName}]: Build ${buildId} (${versionNumber}) failed. ` +
                 `Not continuing with other builds and tests.`;
             console.error(`[${this.actorFullName}]: ${versionNumber}`);
             throw new Error(message);
@@ -110,7 +109,8 @@ class ApifyBuilder {
         return build;
     };
 
-    static fromActorConfig = ({ actorFullName, tokenEnvVar }: ActorConfig): ApifyBuilder => {
+    static fromActorConfig = (actorConfig: ActorConfig): ApifyBuilder => {
+        const { actorFullName, tokenEnvVar } = actorConfig;
         const token = process.env[tokenEnvVar];
         if (!token) {
             throw new Error(`Env var ${tokenEnvVar} is not set (needed for actor "${actorFullName}").`);
@@ -254,11 +254,15 @@ export const runBuilds = async ({
     if (dryRun) {
         return buildConfigs;
     }
+
+    const buildersByActorFullName = new Map<string, ApifyBuilder>(
+        actorConfigs.map((actorConfig) => [actorConfig.actorFullName, ApifyBuilder.fromActorConfig(actorConfig)]),
+    );
     console.error('=========================================');
     console.error('STARTED BUILDS:');
     const startedBuilds = await Promise.all(
         buildConfigs.map(async (buildConfig) => {
-            const builder = ApifyBuilder.fromActorConfig(buildConfig.actorConfig);
+            const builder = buildersByActorFullName.get(buildConfig.actorConfig.actorFullName)!;
             const buildData = await builder.startActorBuild(buildConfig);
             return buildData;
         }),
@@ -267,8 +271,8 @@ export const runBuilds = async ({
     console.error('FINISHED BUILDS:');
     await Promise.all(
         startedBuilds.map(async (buildData) => {
-            const builder = ApifyBuilder.fromActorConfig(buildData.actorConfig);
-            await builder.waitForBuildToFinish(buildData.buildId, buildData.actorFullName);
+            const builder = buildersByActorFullName.get(buildData.actorFullName)!;
+            await builder.waitForBuildToFinish(buildData.buildId);
         }),
     );
     console.error('=========================================');

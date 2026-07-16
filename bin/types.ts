@@ -100,7 +100,6 @@ export interface BuildData {
     buildId: string;
     actorRawId: string;
     actorFullName: string;
-    actorConfig: ActorConfig;
     buildNumber: string;
 }
 

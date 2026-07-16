@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 import type { ActorVersionSourceFile } from 'apify-client';
@@ -55,6 +57,65 @@ export const getGitignoredPaths = (relativePaths: string[]): Set<string> => {
     }
 
     return new Set(result.stdout.toString().split('\n').filter(Boolean));
+};
+
+// Docker normalizes each pattern before matching, so a leading "./" (as in the common "./node_modules"
+// style) is a no-op for Docker. git's ignore engine has no such normalization — it treats "./" as
+// literal pattern text that can never match a real path, so a .dockerignore written in that style
+// would otherwise silently match nothing under git. Strip it here (after any negation prefix) so
+// git sees the same effective pattern Docker would.
+const normalizeDockerignorePattern = (line: string): string => line.replace(/^(!?)(?:\.\/)+/, '$1');
+
+/**
+ * Given paths relative to `rootDir`, returns the subset that a `.dockerignore` file sitting at
+ * `rootDir` would exclude — mirroring getGitignoredPaths, but for Docker's own ignore file. `git
+ * check-ignore` has no built-in notion of .dockerignore, but pointing `core.excludesFile` at a
+ * normalized copy of it for a single invocation makes git apply its patterns exactly like a
+ * .gitignore, without re-implementing gitignore-style pattern matching ourselves. A missing
+ * .dockerignore is a no-op (empty set), so there's no need to check for its existence first.
+ *
+ * Crucially this passes `--no-index`: by default git never reports an already-tracked file as
+ * ignored (that's how real .gitignore semantics work — tracked files aren't affected by ignore
+ * rules), but Docker excludes a matching path from the build context unconditionally, regardless
+ * of git tracking. `--no-index` makes git apply the patterns uniformly, matching Docker's behavior.
+ */
+export const getDockerignoredPaths = (rootDir: string, relativePaths: string[]): Set<string> => {
+    if (relativePaths.length === 0) return new Set();
+
+    let dockerignoreContent: string;
+    try {
+        dockerignoreContent = fsSync.readFileSync(path.join(rootDir, '.dockerignore'), 'utf8');
+    } catch {
+        return new Set();
+    }
+
+    const normalizedContent = dockerignoreContent.split('\n').map(normalizeDockerignorePattern).join('\n');
+
+    const tempDir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'apify-dockerignore-'));
+    try {
+        const normalizedPath = path.join(tempDir, '.dockerignore');
+        fsSync.writeFileSync(normalizedPath, normalizedContent);
+
+        const result = spawnSync(
+            'git',
+            ['-c', `core.excludesFile=${normalizedPath}`, 'check-ignore', '--no-index', '--stdin'],
+            {
+                cwd: rootDir,
+                input: relativePaths.join('\n'),
+                maxBuffer: 100 * 1024 * 1024,
+            },
+        );
+
+        // Exit code 1 means none of the given paths are ignored - not an error. Anything else
+        // (e.g. 128 for "not a git repository") is a real failure.
+        if (result.status !== 0 && result.status !== 1) {
+            throw new Error(`[Command failed]: git check-ignore (dockerignore)\n${result.stderr.toString()}`);
+        }
+
+        return new Set(result.stdout.toString().split('\n').filter(Boolean));
+    } finally {
+        fsSync.rmSync(tempDir, { recursive: true, force: true });
+    }
 };
 
 const isBinary = (buffer: Buffer): boolean => buffer.includes(0);

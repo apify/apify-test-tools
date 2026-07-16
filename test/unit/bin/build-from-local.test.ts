@@ -6,13 +6,13 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: editor-only TS6059 — test/tsconfig.json's rootDir doesn't span bin/, but the root
-// tsconfig (used for the real build and for eslint's type-aware linting) has no such restriction.
 import {
     collectNonIgnoredFiles,
     flattenMonorepoContext,
     rewriteActorJsonPaths,
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore: editor-only TS6059 — test/tsconfig.json's rootDir doesn't span bin/, but the root
+    // tsconfig (used for the real build and for eslint's type-aware linting) has no such restriction.
 } from '../../../bin/build-from-local.js';
 import * as Utils from '../../../bin/utils.js';
 
@@ -179,6 +179,83 @@ describe('build-from-local helpers', () => {
             expect(rewritten.dockerContextDir).toBe('..');
             expect(rewritten.changelog).toBe('./CHANGELOG.md');
         });
+    });
+});
+
+describe('getDockerignoredPaths', () => {
+    const tempDirs: string[] = [];
+
+    afterEach(async () => {
+        vi.mocked(spawnSync).mockClear();
+        await Promise.all(tempDirs.splice(0).map(async (dir) => fs.rm(dir, { recursive: true, force: true })));
+    });
+
+    it('returns an empty set without calling git when given no paths', () => {
+        const result = Utils.getDockerignoredPaths('/does/not/matter', []);
+
+        expect(result).toStrictEqual(new Set());
+        expect(spawnSync).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty set when rootDir has no .dockerignore', async () => {
+        const rootDir = await mkTempDir('apify-test-tools-dockerignore-');
+        tempDirs.push(rootDir);
+        initGitRepo(rootDir);
+
+        expect(Utils.getDockerignoredPaths(rootDir, ['main.js'])).toStrictEqual(new Set());
+    });
+
+    it('returns the paths that match .dockerignore patterns rooted at rootDir', async () => {
+        const rootDir = await mkTempDir('apify-test-tools-dockerignore-');
+        tempDirs.push(rootDir);
+        initGitRepo(rootDir);
+
+        await fs.writeFile(path.join(rootDir, '.dockerignore'), 'test/\n*.log\n');
+
+        const result = Utils.getDockerignoredPaths(rootDir, ['main.js', 'test/fixture.json', 'debug.log']);
+
+        expect(result).toStrictEqual(new Set(['test/fixture.json', 'debug.log']));
+    });
+
+    it('matches "./"-prefixed patterns, which Docker treats as a no-op but git treats as literal text', async () => {
+        const rootDir = await mkTempDir('apify-test-tools-dockerignore-');
+        tempDirs.push(rootDir);
+        initGitRepo(rootDir);
+
+        // The common real-world .dockerignore style: every pattern prefixed with "./",
+        // including a negation re-including one of the otherwise-matched files.
+        await fs.writeFile(path.join(rootDir, '.dockerignore'), './node_modules\n./*.log\n!./keep.log\n');
+
+        const result = Utils.getDockerignoredPaths(rootDir, [
+            'node_modules/foo.js',
+            'debug.log',
+            'keep.log',
+            'main.js',
+        ]);
+
+        expect(result).toStrictEqual(new Set(['node_modules/foo.js', 'debug.log']));
+    });
+
+    it('matches already-tracked files too, since Docker excludes them regardless of git tracking', async () => {
+        const rootDir = await mkTempDir('apify-test-tools-dockerignore-');
+        tempDirs.push(rootDir);
+        initGitRepo(rootDir);
+        spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: rootDir });
+        spawnSync('git', ['config', 'user.name', 'Test'], { cwd: rootDir });
+
+        // Husky hooks are committed to the repo, so this path is tracked by git — by default
+        // `git check-ignore` never reports a tracked file as ignored, which would otherwise mask
+        // this exact pattern from matching, unlike a real Docker build which excludes it anyway.
+        await fs.mkdir(path.join(rootDir, '.husky'));
+        await fs.writeFile(path.join(rootDir, '.husky', 'pre-commit'), '#!/bin/sh\n');
+        spawnSync('git', ['add', '.husky/pre-commit'], { cwd: rootDir });
+        spawnSync('git', ['commit', '-q', '-m', 'add husky hook'], { cwd: rootDir });
+
+        await fs.writeFile(path.join(rootDir, '.dockerignore'), './.husky\n');
+
+        const result = Utils.getDockerignoredPaths(rootDir, ['.husky/pre-commit', 'main.js']);
+
+        expect(result).toStrictEqual(new Set(['.husky/pre-commit']));
     });
 });
 

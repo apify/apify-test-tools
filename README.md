@@ -415,6 +415,27 @@ Remove `--dry-run` to actually trigger builds and update the branch names/ The c
 [{ "buildId": "...", "actorRawId": "...", "buildNumber": "...", "actorFullName": "john.doe/my-actor" }]
 ```
 
+#### Build from local source (no push needed)
+
+If you don't want to push a dummy branch just to test a change and wait for all the tests to finish, `build-from-local` builds Actors directly from your local files (zipped and uploaded as `SOURCE_FILES`), skipping steps 1-4 above.
+
+```bash
+APIFY_TOKEN_JOHN_DOE=<token> \
+GITHUB_WORKSPACE=. \
+  npx apify-test-tools build-from-local --actors john.doe/my-actor
+```
+
+Pass a hardcoded actor name via `--actors` to build only that Actor (comma-separate multiple names). Omit `--actors` to build all Actors in the repo, or add `--dry-run` to preview without building. It outputs the same JSON build array as `build`, so you run tests against it the same way as in step 5 below:
+
+```bash
+# Build from local source and capture output
+BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
+  GITHUB_WORKSPACE=. \
+  npx apify-test-tools build-from-local --actors apify/my-actor)
+```
+
+Since you already scoped the build to just the Actor(s) you care about, point vitest at a specific test file (or a `-t` name filter) instead of the whole `test/platform` directory — you get feedback on that one test without waiting for the full suite to run.
+
 #### 5. Run tests against the builds
 
 Pass the build output as `ACTOR_BUILDS` and provide `TESTER_APIFY_TOKEN`. The token can point to your own account (if you have enough memory) or you can use the testing account (xRGg9iAfJSymqartk).

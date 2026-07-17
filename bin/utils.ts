@@ -2,8 +2,71 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import type { ActorVersionSourceFile } from 'apify-client';
+
+import { SOURCE_FILE_FORMATS } from '@apify/consts';
+
 import { isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, ActorConfigFile } from './types.js';
+
+// Returns true when `childPath` is not inside `parentPath`.
+// Used to detect monorepo actors whose dockerContextDir escapes the actor directory.
+export const isOutsideDir = (childPath: string, parentPath: string): boolean =>
+    path.relative(parentPath, childPath).startsWith('..');
+
+/**
+ * Lists every file under `subDir` (paths relative to `repoRoot`) that's either tracked by git or
+ * present but untracked in the working tree — deliberately omitting `--exclude-standard`, so
+ * gitignored files are included too. Callers combine this with getGitignoredPaths to decide what
+ * to keep, e.g. because .actor/ must survive even if .gitignore would otherwise exclude it.
+ * This also means .git/ itself is never walked, since git never lists its own internals here.
+ */
+export const listRepoFilePaths = (repoRoot: string, subDir: string): string[] => {
+    const relSubDir = path.relative(repoRoot, subDir).split(path.sep).join('/') || '.';
+    const result = spawnSync('git', ['ls-files', '--cached', '--others', '-z', '--', relSubDir], {
+        cwd: repoRoot,
+        maxBuffer: 100 * 1024 * 1024,
+    });
+
+    if (result.status !== 0) {
+        throw new Error(`[Command failed]: git ls-files\n${result.stderr.toString()}`);
+    }
+
+    return result.stdout.toString().split('\0').filter(Boolean);
+};
+
+/**
+ * Given paths relative to the repo root, returns the subset that `git` would exclude because of
+ * .gitignore rules (including nested .gitignore files, `.git/info/exclude`, and global excludes —
+ * anything `git` itself respects). Delegating to `git check-ignore` avoids re-implementing gitignore
+ * pattern matching.
+ */
+export const getGitignoredPaths = (relativePaths: string[]): Set<string> => {
+    if (relativePaths.length === 0) return new Set();
+
+    const result = spawnSync('git', ['check-ignore', '--stdin'], {
+        input: relativePaths.join('\n'),
+        maxBuffer: 100 * 1024 * 1024,
+    });
+
+    // Exit code 1 means none of the given paths are ignored - not an error. Anything else
+    // (e.g. 128 for "not a git repository") is a real failure.
+    if (result.status !== 0 && result.status !== 1) {
+        throw new Error(`[Command failed]: git check-ignore\n${result.stderr.toString()}`);
+    }
+
+    return new Set(result.stdout.toString().split('\n').filter(Boolean));
+};
+
+const isBinary = (buffer: Buffer): boolean => buffer.includes(0);
+
+export const toActorVersionSourceFile = async (absPath: string, rootDir: string): Promise<ActorVersionSourceFile> => {
+    const buffer = await fs.readFile(absPath);
+    const name = path.relative(rootDir, absPath).split(path.sep).join('/');
+    return isBinary(buffer)
+        ? { name, format: SOURCE_FILE_FORMATS.BASE64, content: buffer.toString('base64') }
+        : { name, format: SOURCE_FILE_FORMATS.TEXT, content: buffer.toString('utf8') };
+};
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
     console.error(command, args.join(' '));

@@ -1,4 +1,4 @@
-import type { Build } from 'apify-client';
+import type { ActorVersionSourceFile, Build } from 'apify-client';
 import { ApifyClient } from 'apify-client';
 
 import { ACTOR_SOURCE_TYPES } from '@apify/consts';
@@ -12,7 +12,7 @@ type BuildPrActorOptions = {
     actorConfig: ActorConfig;
     useDockerCache: boolean;
 };
-class ApifyBuilder {
+export class ApifyBuilder {
     private constructor(
         private readonly apifyClient: ApifyClient,
         private readonly actorFullName: string,
@@ -44,6 +44,12 @@ class ApifyBuilder {
             );
         }
         // I reported that buildNumber should probably not be optional
+        if (!actorInfo.taggedBuilds?.[defaultBuildTag]?.buildNumber) {
+            throw new Error(
+                `[${this.actorFullName}] No build found for tag "${defaultBuildTag}". ` +
+                    `The first build must be triggered manually on the platform before CI can take over.`,
+            );
+        }
         const defaultBuildNumber = actorInfo.taggedBuilds![defaultBuildTag].buildNumber!;
         const defaultVersionNumber = defaultBuildNumber.match(/(\d+\.\d+)\.\d+/)![1];
         console.error(`Default version for ${this.actorFullName} is ${defaultVersionNumber}`);
@@ -95,15 +101,55 @@ class ApifyBuilder {
         return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
     };
 
+    startActorBuildFromSourceFiles = async (sourceFiles: ActorVersionSourceFile[]): Promise<BuildData> => {
+        const ZIP_VERSION = '0.98';
+        const actorClient = this.apifyClient.actor(this.actorFullName);
+        const actorInfo = await actorClient.get();
+        if (!actorInfo) {
+            throw new Error(
+                `No actor named '${this.actorFullName}' was found on the platform. If this` +
+                    ' is unexpected, make sure the actor you are targeting is spelled the' +
+                    ' same as the folder in the repository.',
+            );
+        }
+
+        type ActorVersion = Parameters<ReturnType<typeof actorClient.version>['update']>[0];
+        const actorVersion: ActorVersion = {
+            versionNumber: ZIP_VERSION,
+            sourceFiles,
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore: couldn't find this type :(
+            sourceType: ACTOR_SOURCE_TYPES.SOURCE_FILES,
+        };
+
+        const versionExists = !actorInfo.versions.find((v) => v.versionNumber === ZIP_VERSION);
+        if (versionExists) {
+            await actorClient.versions().create(actorVersion);
+        } else {
+            await actorClient.version(ZIP_VERSION).update(actorVersion);
+        }
+
+        const { id, actId, buildNumber } = await actorClient.build(ZIP_VERSION, { useCache: false });
+        console.error(`[${this.actorFullName}]: ${id} (${buildNumber})`);
+        return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
+    };
+
     waitForBuildToFinish = async (buildId: string): Promise<Build> => {
         const build = await this.apifyClient.build(buildId).waitForFinish();
         const versionNumber = build.buildNumber;
         if (build.status === 'FAILED' || build.status === 'TIMED-OUT') {
-            const message =
-                `[BUILD][${this.actorFullName}]: Build ${buildId} (${versionNumber}) failed. ` +
-                `Not continuing with other builds and tests.`;
             console.error(`[${this.actorFullName}]: ${versionNumber}`);
-            throw new Error(message);
+            try {
+                const log = await this.apifyClient.build(buildId).log().get();
+                const logTail = log?.split('\n').slice(-40).join('\n');
+                console.error(`\n--- BUILD LOG (last 40 lines) ---\n${logTail}\n---`);
+            } catch (err) {
+                console.error(`[${this.actorFullName}]: Failed to fetch build log: ${err}`);
+            }
+            throw new Error(
+                `[BUILD][${this.actorFullName}]: Build ${buildId} (${versionNumber}) failed. ` +
+                    `Not continuing with other builds and tests.`,
+            );
         }
         console.error(`[${this.actorFullName}]: ${versionNumber}`);
         return build;
@@ -211,6 +257,30 @@ class ApifyBuilder {
     }
 }
 
+export const waitAndSummarizeBuilds = async (
+    startedBuilds: BuildData[],
+    buildersMap: Map<string, ApifyBuilder>,
+    label: string,
+): Promise<BuildData[]> => {
+    console.error('=========================================');
+    console.error(`FINISHED ${label}:`);
+    await Promise.all(
+        startedBuilds.map(async (buildData) => {
+            const builder = buildersMap.get(buildData.actorFullName)!;
+            await builder.waitForBuildToFinish(buildData.buildId);
+        }),
+    );
+
+    console.error('=========================================');
+    console.error('SUMMARY:');
+    for (const buildData of startedBuilds.sort((a, b) => a.actorFullName.localeCompare(b.actorFullName))) {
+        console.error(`[${buildData.actorFullName}]: ${buildData.buildNumber}`);
+    }
+    console.error('=========================================');
+
+    return startedBuilds;
+};
+
 type RunBuildsOptions = {
     actorConfigs: ActorConfig[];
     isLatest?: boolean;
@@ -267,22 +337,8 @@ export const runBuilds = async ({
             return buildData;
         }),
     );
-    console.error('=========================================');
-    console.error('FINISHED BUILDS:');
-    await Promise.all(
-        startedBuilds.map(async (buildData) => {
-            const builder = buildersByActorFullName.get(buildData.actorFullName)!;
-            await builder.waitForBuildToFinish(buildData.buildId);
-        }),
-    );
-    console.error('=========================================');
-    console.error('SUMMARY:');
-    for (const buildData of startedBuilds.sort((a, b) => a.actorFullName.localeCompare(b.actorFullName))) {
-        console.error(`[${buildData.actorFullName}]: ${buildData.buildNumber} `);
-    }
-    console.error('=========================================');
 
-    return startedBuilds;
+    return waitAndSummarizeBuilds(startedBuilds, buildersByActorFullName, 'BUILDS');
 };
 
 export const deleteOldBuilds = async (actorConfigs: ActorConfig[]) => {

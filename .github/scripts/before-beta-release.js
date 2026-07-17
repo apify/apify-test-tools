@@ -19,7 +19,9 @@ writeFileSync(PKG_JSON_PATH, `${JSON.stringify(pkgJson, null, 2)}\n`);
 
 function addBetaSuffixToVersion(version) {
     const versionString = execSync(`npm show ${PACKAGE_NAME} versions --json`, { encoding: 'utf8' });
-    const versions = JSON.parse(versionString);
+    // Normalize npm's output: npm 12 wraps the versions in an extra array ([[...]]),
+    // and npm returns a bare string for packages with a single published version.
+    const versions = [JSON.parse(versionString)].flat(Infinity).filter((v) => typeof v === 'string');
 
     if (versions.some((v) => v === version)) {
         console.error(

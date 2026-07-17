@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.6](https://github.com/apify/apify-test-tools/releases/tag/v0.8.6) (2026-07-16)
+
+### 🐛 Bug Fixes
+
+- Dockerignore ([#104](https://github.com/apify/apify-test-tools/pull/104)) ([c041024](https://github.com/apify/apify-test-tools/commit/c0410246b7a911fb79e9e5b997d49181c8f8435f)) by [@gytelio](https://github.com/gytelio)
+
+
+## [0.8.5](https://github.com/apify/apify-test-tools/releases/tag/v0.8.5) (2026-07-10)
+
+
+## [0.8.4](https://github.com/apify/apify-test-tools/releases/tag/v0.8.4) (2026-07-10)
+
+### 🚀 Features
+
+- Build from local source, pushed as zip ([#100](https://github.com/apify/apify-test-tools/pull/100)) ([6058a39](https://github.com/apify/apify-test-tools/commit/6058a395faf006ddb6ee155f850e3b8fa9e69c94)) by [@gytelio](https://github.com/gytelio), closes [#93](https://github.com/apify/apify-test-tools/issues/93), [#94](https://github.com/apify/apify-test-tools/issues/94)
+
+
 ## [0.8.3](https://github.com/apify/apify-test-tools/releases/tag/v0.8.3) (2026-07-01)
 
 ### 🐛 Bug Fixes

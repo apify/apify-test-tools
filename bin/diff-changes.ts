@@ -36,7 +36,8 @@ type FileChangeForActor =
  * Steps (in order):
  * 1. Context matching (actorConfig.contextPaths) → outside-context if no match
  * 2. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
- * 3. .dockerignore filtering (patterns relative to dockerContextDir) → ignored if matched
+ * 3. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
+ *    dir → ignored if matched
  * 4. README/CHANGELOG by filename → cosmetic if inside the actor's own folder, otherwise ignored
  * 5. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
  * 6. Everything else → functional
@@ -60,20 +61,24 @@ const classifyFileChange = (
         return { impact: 'ignored' };
     }
 
-    if (dockerIgnoreMatcher(originalFilePath)) {
+    const lowercaseFolder = actorConfig.folder.toLowerCase();
+    const actorDotDir = lowercaseFolder ? `${lowercaseFolder}/.actor` : '.actor';
+    const isUnderActorDotDir = isPathWithinScope(lowercaseFilePath, actorDotDir);
+
+    // .actor/ can legitimately be listed in .dockerignore (the Apify platform evaluates it before
+    // the Docker build, so excluding it from the build context is a valid caching optimization) —
+    // that shouldn't cause changes to .actor/ itself to be ignored here.
+    if (!isUnderActorDotDir && dockerIgnoreMatcher(originalFilePath)) {
         return { impact: 'ignored' };
     }
 
-    const lowerFolder = actorConfig.folder.toLowerCase();
-    const isInActorFolder = isPathWithinScope(lowercaseFilePath, lowerFolder);
+    const isInActorFolder = isPathWithinScope(lowercaseFilePath, lowercaseFolder);
 
     if (lowercaseFilePath.endsWith('readme.md') || lowercaseFilePath.endsWith('changelog.md')) {
         return isInActorFolder ? { impact: 'cosmetic', semanticallyVerified: false } : { impact: 'ignored' };
     }
 
-    const actorDotDir = lowerFolder ? `${lowerFolder}/.actor` : '.actor';
-
-    if (lowercaseFilePath.endsWith('.json') && isPathWithinScope(lowercaseFilePath, actorDotDir)) {
+    if (lowercaseFilePath.endsWith('.json') && isUnderActorDotDir) {
         const isCosmetic = isCosmeticOnlyJsonSchemaChange(commits, originalFilePath);
         if (isCosmetic) {
             return { impact: 'cosmetic', semanticallyVerified: true };

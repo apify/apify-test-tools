@@ -142,12 +142,23 @@ describe('getChangedActors', () => {
         expect(result).not.toContainEqual(standaloneActor);
     });
 
-    it('root-level changelog outside any actor folder is ignored, not cosmetic', () => {
+    it('root-level changelog outside any actor folder is cosmetic for every actor when isLatest', () => {
         const result = getChangedActors({
             filepathsChanged: ['CHANGELOG.md'],
             actorConfigs,
             commits,
             isLatest: true,
+        });
+        expect(result).toEqual(expect.arrayContaining([miniActor, standaloneActor]));
+        expect(result).toHaveLength(2);
+    });
+
+    it('root-level changelog is not cosmetic-triggered when not isLatest', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['CHANGELOG.md'],
+            actorConfigs,
+            commits,
+            isLatest: false,
         });
         expect(result).toEqual([]);
     });

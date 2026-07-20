@@ -34,13 +34,15 @@ type FileChangeForActor =
  * Classify a single file change for a single actor.
  *
  * Steps (in order):
- * 1. Context matching (actorConfig.contextPaths) → outside-context if no match
- * 2. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
- * 3. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
+ * 1. CHANGELOG.md, by filename, anywhere → cosmetic. There is a single repo-wide shared changelog,
+ *    not one per actor, so it applies to every actor regardless of context/folder.
+ * 2. Context matching (actorConfig.contextPaths) → outside-context if no match
+ * 3. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
+ * 4. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
  *    dir → ignored if matched
- * 4. README/CHANGELOG by filename → cosmetic if inside the actor's own folder, otherwise ignored
- * 5. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
- * 6. Everything else → functional
+ * 5. README.md by filename → cosmetic if inside the actor's own folder, otherwise ignored
+ * 6. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
+ * 7. Everything else → functional
  */
 const classifyFileChange = (
     originalFilePath: string,
@@ -49,6 +51,14 @@ const classifyFileChange = (
     dockerIgnoreMatcher: DockerIgnoreMatcher,
 ): FileChangeForActor => {
     const lowercaseFilePath = originalFilePath.toLowerCase();
+
+    // TODO: hardcodes that there's a single repo-wide changelog belonging to every actor. Should instead
+    // be derived from parsing actor.json (readme, changelog, schema paths), see
+    // https://github.com/apify/apify-test-tools/issues/106
+    if (lowercaseFilePath.endsWith('changelog.md')) {
+        return { impact: 'cosmetic', semanticallyVerified: false };
+    }
+
     const lowercaseContextPaths = actorConfig.contextPaths.map((contextPath) => contextPath.toLowerCase());
 
     const matchedContext = findContainingScope(lowercaseFilePath, lowercaseContextPaths);
@@ -74,7 +84,7 @@ const classifyFileChange = (
 
     const isInActorFolder = isPathWithinScope(lowercaseFilePath, lowercaseFolder);
 
-    if (lowercaseFilePath.endsWith('readme.md') || lowercaseFilePath.endsWith('changelog.md')) {
+    if (lowercaseFilePath.endsWith('readme.md')) {
         return isInActorFolder ? { impact: 'cosmetic', semanticallyVerified: false } : { impact: 'ignored' };
     }
 

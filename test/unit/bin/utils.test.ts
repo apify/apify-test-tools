@@ -289,7 +289,7 @@ describe('readConfigFile', () => {
         await expect(readConfigFile()).rejects.toThrow(/overlap/);
     });
 
-    it('throws when overrideActorContext does not include the actor own folder', async () => {
+    it('adds the actor own folder automatically when overrideActorContext does not cover it', async () => {
         mockFiles({
             [CONFIG_FILE_NAME]: validConfig([
                 {
@@ -302,7 +302,8 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        await expect(readConfigFile()).rejects.toThrow('not reachable through its own context paths');
+        const result = await readConfigFile();
+        expect(result[0].contextPaths).toEqual(['code', 'shared', 'actors/shopify']);
     });
 
     it('strips trailing slashes from folder and overrideActorContext entries', async () => {

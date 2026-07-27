@@ -202,19 +202,17 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
         const normalizedDockerContextDir = dockerContextDir === '.' ? '' : dockerContextDir;
         const contextPaths = (entry.overrideActorContext ?? [normalizedDockerContextDir]).map(stripTrailingSlash);
 
+        // The actor's own folder is always part of its context. When an explicit "overrideActorContext"
+        // doesn't already cover it, add it automatically instead of failing the workflow.
+        if (!contextPaths.some((contextPath) => isPathWithinScope(folder, contextPath))) {
+            contextPaths.push(folder);
+        }
+
         const overlap = findOverlappingContextPaths(contextPaths);
         if (overlap) {
             throw new Error(
                 `Invalid context paths for folder "${entry.folder}" in "${CONFIG_FILE_NAME}": ` +
                     `"${overlap[0]}" and "${overlap[1]}" overlap. Context paths must not be prefixes of one another.`,
-            );
-        }
-
-        if (!contextPaths.some((contextPath) => isPathWithinScope(folder, contextPath))) {
-            throw new Error(
-                `Actor folder "${entry.folder}" in "${CONFIG_FILE_NAME}" is not reachable through its own ` +
-                    `context paths (${contextPaths.join(', ')}). Add the actor's own folder to ` +
-                    `"overrideActorContext" or remove the override.`,
             );
         }
 

@@ -30,11 +30,11 @@ export const notifyToSlack = async ({
         console.warn('No new changelog entries found, did you forget to update it?');
     }
 
-    let shortMessage = `${repository} --- New release (by ${author}):\n\n`;
+    let shortMessage = `*${repository}* – New release (by ${author}):\n\n`;
 
     // This one is just for broader public that only cares about public facing changes
     if (changelog && releaseSlackChannel) {
-        shortMessage += `**Additions to the changelog**:\n\n${changelog}\n`;
+        shortMessage += `*Additions to the changelog*:\n\n${changelog}\n`;
         console.error(`=========================================`);
         console.error(`**Sending slack message to channel**: ${releaseSlackChannel}.\n\n${shortMessage}`);
         console.error(`=========================================`);
@@ -52,8 +52,8 @@ export const notifyToSlack = async ({
                 `${index + 1}. Commit message: ${message}\n\tAuthor: ${commitAuthor}.`,
         )
         .join('\n')}`;
-    const changedFilesMessage = `**Files changed**: ${changedFiles.join(', ')}`;
-    const longMessage = `${shortMessage}\n**Commit list**:\n${commitsMessage}\n\n${changedFilesMessage}`;
+    const changedFilesMessage = `*Files changed*: ${changedFiles.map((file) => `\`${file}\``).join(', ')}`;
+    const longMessage = `${shortMessage}\n*Commit list*:\n${commitsMessage}\n\n${changedFilesMessage}`;
 
     // This one is for devs and project managers that need to know more details
     if (reportSlackChannel) {

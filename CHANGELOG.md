@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+<!-- git-cliff-unreleased-start -->
+## 0.8.7 - **not yet released**
+
+### 🐛 Bug Fixes
+
+- Use slack mrkdwn in release notifications ([#107](https://github.com/apify/apify-test-tools/pull/107)) ([b5314e4](https://github.com/apify/apify-test-tools/commit/b5314e42dead43ebe7d501c448287fb6f026e9ed)) by [@JMatej](https://github.com/JMatej)
+
+
+<!-- git-cliff-unreleased-end -->
 ## [0.8.6](https://github.com/apify/apify-test-tools/releases/tag/v0.8.6) (2026-07-16)
 
 ### 🐛 Bug Fixes

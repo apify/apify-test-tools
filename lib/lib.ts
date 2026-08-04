@@ -3,7 +3,7 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
+import { DEFAULT_DATASET_SYNC_DELAY_MS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
 import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
@@ -61,13 +61,15 @@ export const testActor = <T>(
         ...DEFAULT_TEST_ACTOR_OPTIONS,
         ...testOptions,
     };
+    const { datasetSyncDelayMs = DEFAULT_DATASET_SYNC_DELAY_MS } = options;
+
     const name = `${actorName}: ${testName}`;
     const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorName);
     vitestTest.runIf(shouldRun)(name, options, async <TYPE extends TestContext>(context: TYPE) => {
         const { expect, ...rest } = context;
         await fn({
             expect: extendExpect(expect),
-            run: createStartRunFn(actorName, context),
+            run: createStartRunFn(actorName, context, { datasetSyncDelayMs }),
             ...rest,
         });
     });
@@ -247,7 +249,12 @@ const createStandbyTask = async (actorNameOrId: string, buildNumber?: string): P
     }
 };
 
-const createStartRunFn = <T>(actorNameOrId: string, testContext: TestContext) => {
+const createStartRunFn = <T>(
+    actorNameOrId: string,
+    testContext: TestContext,
+    testOptions: { datasetSyncDelayMs: number },
+) => {
+    const { datasetSyncDelayMs } = testOptions;
     const { annotate, task } = testContext;
     const actorConfig = config.get(actorNameOrId);
     const build = actorConfig?.buildNumber;
@@ -280,8 +287,8 @@ const createStartRunFn = <T>(actorNameOrId: string, testContext: TestContext) =>
             actorName: actorNameOrId,
         };
 
-        // waiting for datasetItemCount and chargedEventCounts to sync
-        await sleep(10_000);
+        // waiting for dataset and statistics to sync, the Apify platform is only eventually consistent.
+        await sleep(datasetSyncDelayMs);
 
         return new RunTestResult(apifyClient, run);
     };

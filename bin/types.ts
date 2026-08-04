@@ -3,6 +3,8 @@ export interface Config {
     sourceBranch: string;
     baseCommit?: string;
     workspace?: string;
+    omitActors: string[];
+    onlyActors: string[];
 }
 
 export type Commit = {

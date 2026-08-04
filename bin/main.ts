@@ -6,6 +6,7 @@ import yargs, { type Argv } from 'yargs';
 // eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
+import { filterActorByConfig } from './actor-filtering.js';
 import { deleteOldBuilds, runBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedActors } from './diff-changes.js';
@@ -21,7 +22,7 @@ import { readConfigFile, setCwd, spawnCommandInGhWorkspace } from './utils.js';
  */
 const middlewares = [setCwd];
 
-const buildOptions = (y: Argv) => {
+export const buildOptions = <T>(y: Argv<T>) => {
     return y
         .option('target-branch', {
             type: 'string',
@@ -37,27 +38,36 @@ const buildOptions = (y: Argv) => {
         })
         .option('base-commit', {
             type: 'string',
+            demandOption: false,
+        })
+        .option('omit-actors', {
+            type: 'string',
+            array: true,
+            default: [] as string[],
+        })
+        .option('only-actors', {
+            type: 'string',
+            array: true,
+            default: [] as string[],
         });
 };
 
-const resolveChangedActors = async (
-    { targetBranch, sourceBranch, baseCommit }: Config,
-    { isLatest }: { isLatest: boolean },
-) => {
-    const actorConfigs = await readConfigFile();
+const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: boolean }) => {
+    const originalActorConfigs = await readConfigFile();
+    const actorConfigs = filterActorByConfig(config, originalActorConfigs);
 
-    // This is an optimization for the common case where a branch only has cosmetic changes but had to merge in
+    // This is an optimization for the common case where a branch only has cosmetic changes but had to smerge in
     // functional changes from master (being up-to-date is a CI requirement). Master is already validated, and
     // since the branch has no functional changes of its own, there is nothing new to validate.
     // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
     // individually validated changes can have novel interactions when combined.
-    if (hasMergeFromTarget(sourceBranch, targetBranch)) {
+    if (hasMergeFromTarget(config.sourceBranch, config.targetBranch)) {
         console.error(
             '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
         );
-        const branchOnlyFiles = getBranchOnlyChangedFiles(sourceBranch, targetBranch);
+        const branchOnlyFiles = getBranchOnlyChangedFiles(config.sourceBranch, config.targetBranch);
         // Omit baseCommit to get full branch history. Validated functional commits can still interact with merged ones
-        const allBranchCommits = getCommits({ sourceBranch, targetBranch, baseCommit: undefined });
+        const allBranchCommits = getCommits({ ...config, baseCommit: undefined });
         const branchOnlyActorsChanged = getChangedActors({
             filepathsChanged: branchOnlyFiles,
             actorConfigs,
@@ -73,7 +83,7 @@ const resolveChangedActors = async (
     }
 
     // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply baseCommit and check merge commits (they might be functional or just cosmetic)
-    const commits = getCommits({ targetBranch, sourceBranch, baseCommit });
+    const commits = getCommits(config);
     const changedFiles = getChangedFiles(commits);
     return getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest, commits });
 };
@@ -112,11 +122,8 @@ await yargs()
             console.log(JSON.stringify(actorConfigs));
         },
     )
-    .command('get-affected-actors', '', buildOptions, async ({ targetBranch, sourceBranch, baseCommit }) => {
-        const actorsChanged = await resolveChangedActors(
-            { targetBranch, sourceBranch, baseCommit },
-            { isLatest: false },
-        );
+    .command('get-affected-actors', '', buildOptions, async (config) => {
+        const actorsChanged = await resolveChangedActors(config, { isLatest: false });
         console.log(JSON.stringify(actorsChanged));
     })
     .command(
@@ -136,11 +143,8 @@ await yargs()
         'build',
         '',
         (args) => buildOptions(args).option('dry-run', { type: 'boolean', default: false }),
-        async ({ targetBranch, sourceBranch, baseCommit, dryRun, useDockerCache }) => {
-            const actorsChanged = await resolveChangedActors(
-                { targetBranch, sourceBranch, baseCommit },
-                { isLatest: false },
-            );
+        async (config) => {
+            const actorsChanged = await resolveChangedActors(config, { isLatest: false });
             // https://github.com/apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
             // git@github.com:apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
             const repoUrl = spawnCommandInGhWorkspace(`git remote get-url origin`).replace(
@@ -151,9 +155,9 @@ await yargs()
             const builds = await runBuilds({
                 repoUrl,
                 actorConfigs: actorsChanged,
-                branch: sourceBranch.replace('origin/', ''),
-                dryRun,
-                useDockerCache,
+                branch: config.sourceBranch.replace('origin/', ''),
+                dryRun: config.dryRun,
+                useDockerCache: config.useDockerCache,
             });
             console.log(JSON.stringify(builds));
         },

@@ -6,7 +6,7 @@ import yargs, { type Argv } from 'yargs';
 // eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
-import { filterActorByConfig } from './actor-filtering.js';
+import { selectActors } from './actor-filtering.js';
 import { deleteOldBuilds, runBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedActors } from './diff-changes.js';
@@ -39,13 +39,22 @@ export const buildOptions = <T>(y: Argv<T>) => {
         .option('base-commit', {
             type: 'string',
             demandOption: false,
-        })
-        .option('omit-actors', {
+        });
+};
+
+/**
+ * Actor-selection flags, applied to every command that reads the actor config so a caller can
+ * narrow the set it operates on (e.g. two-stage releases: `--ignore X`, then `--actors X`).
+ * Kept separate from `buildOptions` so the read-only git commands don't advertise flags they ignore.
+ */
+export const actorSelectionOptions = <T>(y: Argv<T>) => {
+    return y
+        .option('actors', {
             type: 'string',
             array: true,
             default: [] as string[],
         })
-        .option('only-actors', {
+        .option('ignore', {
             type: 'string',
             array: true,
             default: [] as string[],
@@ -54,7 +63,7 @@ export const buildOptions = <T>(y: Argv<T>) => {
 
 const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: boolean }) => {
     const originalActorConfigs = await readConfigFile();
-    const actorConfigs = filterActorByConfig(config, originalActorConfigs);
+    const actorConfigs = selectActors(config, originalActorConfigs);
 
     // This is an optimization for the common case where a branch only has cosmetic changes but had to smerge in
     // functional changes from master (being up-to-date is a CI requirement). Master is already validated, and
@@ -113,19 +122,20 @@ await yargs()
         const changedFiles = getChangedFiles(commits);
         console.log(JSON.stringify(changedFiles));
     })
+    .command('get-actor-configs', '', actorSelectionOptions, async ({ actors, ignore }) => {
+        const allActorConfigs = await readConfigFile();
+        const actorConfigs = selectActors({ actors, ignore }, allActorConfigs);
+        console.log(JSON.stringify(actorConfigs));
+    })
     .command(
-        'get-actor-configs',
+        'get-affected-actors',
         '',
-        (_) => _,
-        async () => {
-            const actorConfigs = await readConfigFile();
-            console.log(JSON.stringify(actorConfigs));
+        (args) => actorSelectionOptions(buildOptions(args)),
+        async (config) => {
+            const actorsChanged = await resolveChangedActors(config, { isLatest: false });
+            console.log(JSON.stringify(actorsChanged));
         },
     )
-    .command('get-affected-actors', '', buildOptions, async (config) => {
-        const actorsChanged = await resolveChangedActors(config, { isLatest: false });
-        console.log(JSON.stringify(actorsChanged));
-    })
     .command(
         'report-tests',
         '',
@@ -142,7 +152,7 @@ await yargs()
     .command(
         'build',
         '',
-        (args) => buildOptions(args).option('dry-run', { type: 'boolean', default: false }),
+        (args) => actorSelectionOptions(buildOptions(args)).option('dry-run', { type: 'boolean', default: false }),
         async (config) => {
             const actorsChanged = await resolveChangedActors(config, { isLatest: false });
             // https://github.com/apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
@@ -166,7 +176,7 @@ await yargs()
         'release',
         '',
         (args) =>
-            args
+            actorSelectionOptions(args)
                 .option('push-event-path', { type: 'string', demandOption: true })
                 .option('dry-run', { type: 'boolean', default: false })
                 .option('report-slack-channel', { type: 'string' })
@@ -177,7 +187,8 @@ await yargs()
                 args.pushEventPath,
             );
             const isLatest = true;
-            const actorConfigs = await readConfigFile();
+            const allActorConfigs = await readConfigFile();
+            const actorConfigs = selectActors(args, allActorConfigs);
             const actorsChanged = getChangedActors({
                 filepathsChanged: changedFiles,
                 actorConfigs,
@@ -210,37 +221,19 @@ await yargs()
     .command(
         'build-from-local',
         '',
-        (args) =>
-            args
-                .option('actors', {
-                    type: 'string',
-                    description:
-                        'Comma-separated actor names (owner/name) to build. Defaults to all actors in the repo.',
-                })
-                .option('dry-run', { type: 'boolean', default: false }),
-        async ({ actors, dryRun }) => {
+        (args) => actorSelectionOptions(args).option('dry-run', { type: 'boolean', default: false }),
+        async ({ actors, ignore, dryRun }) => {
             const allActorConfigs = await readConfigFile();
-            const actorConfigs = actors
-                ? actors.split(',').map((name) => {
-                      const trimmed = name.trim();
-                      const config = allActorConfigs.find((c) => c.actorFullName === trimmed);
-                      if (!config) throw new Error(`Actor "${trimmed}" not found in repo`);
-                      return config;
-                  })
-                : allActorConfigs;
+            const actorConfigs = selectActors({ actors, ignore }, allActorConfigs);
             const builds = await runBuildsFromLocal({ actorConfigs, dryRun });
             console.log(JSON.stringify(builds));
         },
     )
-    .command(
-        'delete-old-builds',
-        '',
-        (_) => _,
-        async () => {
-            const actorConfigs = await readConfigFile();
-            await deleteOldBuilds(actorConfigs);
-        },
-    )
+    .command('delete-old-builds', '', actorSelectionOptions, async ({ actors, ignore }) => {
+        const allActorConfigs = await readConfigFile();
+        const actorConfigs = selectActors({ actors, ignore }, allActorConfigs);
+        await deleteOldBuilds(actorConfigs);
+    })
     .strictCommands()
     .demandCommand(1, 'Command is required')
     .parse(hideBin(process.argv));

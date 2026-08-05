@@ -10,11 +10,6 @@ import {
 } from '../../../bin/git.js';
 import * as Utils from '../../../bin/utils.js';
 
-const emptyConfig = {
-    omitActors: [],
-    onlyActors: [],
-};
-
 describe('getCommits', () => {
     const sourceBranch = 'feature-branch';
     const targetBranch = 'main';
@@ -37,7 +32,7 @@ describe('getCommits', () => {
 
     it('should return commits between source and target branches', () => {
         // Act
-        const commits = getCommits({ ...emptyConfig, sourceBranch, targetBranch });
+        const commits = getCommits({ sourceBranch, targetBranch });
 
         // Assert
         expect(commits).toStrictEqual([
@@ -54,7 +49,7 @@ describe('getCommits', () => {
 
     it('should return commits after the base commit if provided', () => {
         // Act
-        const commits = getCommits({ ...emptyConfig, sourceBranch, targetBranch, baseCommit: sha1 });
+        const commits = getCommits({ sourceBranch, targetBranch, baseCommit: sha1 });
 
         // Assert
         expect(commits).toStrictEqual([
@@ -70,7 +65,7 @@ describe('getCommits', () => {
 
     it('should ignore the base commit and return all commits when it is the branch HEAD (rerun or force push)', () => {
         // Act
-        const commits = getCommits({ ...emptyConfig, sourceBranch, targetBranch, baseCommit: sha3 });
+        const commits = getCommits({ sourceBranch, targetBranch, baseCommit: sha3 });
 
         // Assert
         expect(commits).toStrictEqual([
@@ -82,7 +77,7 @@ describe('getCommits', () => {
 
     it('should return all commits if base commit is not found', () => {
         // Act
-        const commits = getCommits({ ...emptyConfig, sourceBranch, targetBranch, baseCommit: 'a'.repeat(40) });
+        const commits = getCommits({ sourceBranch, targetBranch, baseCommit: 'a'.repeat(40) });
 
         // Assert
         expect(commits).toStrictEqual([

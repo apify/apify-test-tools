@@ -236,4 +236,17 @@ await yargs()
     })
     .strictCommands()
     .demandCommand(1, 'Command is required')
+    .fail((msg, err, yargsInstance) => {
+        // Errors thrown from a command handler (e.g. an unknown actor passed to --actors/--ignore,
+        // or a missing config file) arrive here as `err`. A malformed selection must fail loudly
+        // rather than silently operate on the wrong set of actors — print the message, no stack.
+        if (err) {
+            console.error(`[ERROR]: ${err.message}`);
+        } else {
+            // Argument-parsing/validation failure — keep yargs' usage output.
+            console.error(yargsInstance.help());
+            console.error(`\n${msg}`);
+        }
+        process.exit(1);
+    })
     .parse(hideBin(process.argv));

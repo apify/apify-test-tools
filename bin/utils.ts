@@ -6,6 +6,7 @@ import type { ActorVersionSourceFile } from 'apify-client';
 
 import { SOURCE_FILE_FORMATS } from '@apify/consts';
 
+import { selectActors } from './actor-filtering.js';
 import { isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, ActorConfigFile } from './types.js';
 
@@ -113,7 +114,7 @@ const findOverlappingContextPaths = (contextPaths: string[]): [string, string] |
     return undefined;
 };
 
-export const readConfigFile = async (): Promise<ActorConfig[]> => {
+export const readConfigFile = async (selection: { actors: string[]; ignore: string[] }): Promise<ActorConfig[]> => {
     let raw: string;
     try {
         raw = await fs.readFile(CONFIG_FILE_NAME, 'utf-8');
@@ -225,7 +226,7 @@ export const readConfigFile = async (): Promise<ActorConfig[]> => {
         });
     }
 
-    return actorConfigs;
+    return selectActors(selection, actorConfigs);
 };
 
 export const setCwd = ({ workspace }: { workspace: string | undefined }) => {

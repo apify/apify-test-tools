@@ -6,7 +6,6 @@ import yargs, { type Argv } from 'yargs';
 // eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
-import { selectActors } from './actor-filtering.js';
 import { deleteOldBuilds, runBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedActors } from './diff-changes.js';
@@ -62,8 +61,7 @@ export const actorSelectionOptions = <T>(y: Argv<T>) => {
 };
 
 const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: boolean }) => {
-    const originalActorConfigs = await readConfigFile();
-    const actorConfigs = selectActors(config, originalActorConfigs);
+    const actorConfigs = await readConfigFile(config);
 
     // This is an optimization for the common case where a branch only has cosmetic changes but had to smerge in
     // functional changes from master (being up-to-date is a CI requirement). Master is already validated, and
@@ -123,8 +121,7 @@ await yargs()
         console.log(JSON.stringify(changedFiles));
     })
     .command('get-actor-configs', '', actorSelectionOptions, async ({ actors, ignore }) => {
-        const allActorConfigs = await readConfigFile();
-        const actorConfigs = selectActors({ actors, ignore }, allActorConfigs);
+        const actorConfigs = await readConfigFile({ actors, ignore });
         console.log(JSON.stringify(actorConfigs));
     })
     .command(
@@ -187,8 +184,7 @@ await yargs()
                 args.pushEventPath,
             );
             const isLatest = true;
-            const allActorConfigs = await readConfigFile();
-            const actorConfigs = selectActors(args, allActorConfigs);
+            const actorConfigs = await readConfigFile(args);
             const actorsChanged = getChangedActors({
                 filepathsChanged: changedFiles,
                 actorConfigs,
@@ -223,15 +219,13 @@ await yargs()
         '',
         (args) => actorSelectionOptions(args).option('dry-run', { type: 'boolean', default: false }),
         async ({ actors, ignore, dryRun }) => {
-            const allActorConfigs = await readConfigFile();
-            const actorConfigs = selectActors({ actors, ignore }, allActorConfigs);
+            const actorConfigs = await readConfigFile({ actors, ignore });
             const builds = await runBuildsFromLocal({ actorConfigs, dryRun });
             console.log(JSON.stringify(builds));
         },
     )
     .command('delete-old-builds', '', actorSelectionOptions, async ({ actors, ignore }) => {
-        const allActorConfigs = await readConfigFile();
-        const actorConfigs = selectActors({ actors, ignore }, allActorConfigs);
+        const actorConfigs = await readConfigFile({ actors, ignore });
         await deleteOldBuilds(actorConfigs);
     })
     .strictCommands()

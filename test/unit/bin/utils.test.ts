@@ -12,6 +12,8 @@ vi.mock('node:fs/promises', () => ({ default: fsMock }));
 
 afterEach(() => vi.restoreAllMocks());
 
+const emptyActorSelection = { actors: [], ignore: [] };
+
 const validConfig = (actors: object[]) => JSON.stringify({ actors });
 const actorJson = (fields: Record<string, unknown> = {}) => JSON.stringify(fields);
 
@@ -39,7 +41,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '../../..' }),
         });
 
-        const result = await readConfigFile();
+        const result = await readConfigFile(emptyActorSelection);
         expectFileRead('actors/shopify/.actor/actor.json');
         expect(result).toEqual([
             {
@@ -60,7 +62,7 @@ describe('readConfigFile', () => {
             '.actor/actor.json': actorJson({}),
         });
 
-        const result = await readConfigFile();
+        const result = await readConfigFile(emptyActorSelection);
         expect(result[0].folder).toBe('');
         expectFileRead('.actor/actor.json');
     });
@@ -73,7 +75,7 @@ describe('readConfigFile', () => {
             'actors/web-scraper/.actor/actor.json': actorJson({}),
         });
 
-        const result = await readConfigFile();
+        const result = await readConfigFile(emptyActorSelection);
         expect(result[0].dockerContextDir).toBe('actors/web-scraper');
         expect(result[0].contextPaths).toEqual(['actors/web-scraper']);
     });
@@ -86,7 +88,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '../../..' }),
         });
 
-        const result = await readConfigFile();
+        const result = await readConfigFile(emptyActorSelection);
         expect(result[0].dockerContextDir).toBe('');
     });
 
@@ -103,7 +105,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '../../..' }),
         });
 
-        const result = await readConfigFile();
+        const result = await readConfigFile(emptyActorSelection);
         expect(result[0].contextPaths).toEqual(['actors/shopify', 'packages']);
     });
 
@@ -121,7 +123,7 @@ describe('readConfigFile', () => {
             'actors/email-sender/.actor/actor.json': actorJson({}),
         });
 
-        const result = await readConfigFile();
+        const result = await readConfigFile(emptyActorSelection);
         expect(result).toHaveLength(2);
         expect(result[0].actorFullName).toBe('apify/web-scraper');
         expect(result[1].actorFullName).toBe('other-team/email-sender');
@@ -129,17 +131,17 @@ describe('readConfigFile', () => {
 
     it('throws when config file is missing', async () => {
         fsMock.readFile.mockRejectedValue(new Error('ENOENT'));
-        await expect(readConfigFile()).rejects.toThrow('not found');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('not found');
     });
 
     it('throws when config file contains invalid JSON', async () => {
         fsMock.readFile.mockResolvedValue('{bad json');
-        await expect(readConfigFile()).rejects.toThrow('invalid JSON');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('invalid JSON');
     });
 
     it('throws when actors array is missing', async () => {
         fsMock.readFile.mockResolvedValue(JSON.stringify({ notActors: [] }));
-        await expect(readConfigFile()).rejects.toThrow('"actors" array');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('"actors" array');
     });
 
     it('throws on duplicate folders', async () => {
@@ -151,7 +153,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        await expect(readConfigFile()).rejects.toThrow('Duplicate folder');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Duplicate folder');
     });
 
     it('throws on duplicate folders after normalization ("." and "")', async () => {
@@ -163,7 +165,7 @@ describe('readConfigFile', () => {
             '.actor/actor.json': actorJson({}),
         });
 
-        await expect(readConfigFile()).rejects.toThrow('Duplicate folder');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Duplicate folder');
     });
 
     it('throws when actor.json is missing', async () => {
@@ -173,7 +175,7 @@ describe('readConfigFile', () => {
             ]),
         });
 
-        await expect(readConfigFile()).rejects.toThrow('Cannot read');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Cannot read');
     });
 
     it('throws when folder is missing', async () => {
@@ -181,7 +183,7 @@ describe('readConfigFile', () => {
             [CONFIG_FILE_NAME]: validConfig([{ actorFullName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' }]),
         });
 
-        await expect(readConfigFile()).rejects.toThrow(/Invalid "folder"/);
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/Invalid "folder"/);
     });
 
     it('throws when folder is not a string', async () => {
@@ -191,7 +193,7 @@ describe('readConfigFile', () => {
             ]),
         });
 
-        await expect(readConfigFile()).rejects.toThrow(/Invalid "folder"/);
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/Invalid "folder"/);
     });
 
     it('throws when actorFullName is missing', async () => {
@@ -200,7 +202,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        await expect(readConfigFile()).rejects.toThrow('Invalid "actorFullName"');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Invalid "actorFullName"');
     });
 
     it('throws when actorFullName has no slash', async () => {
@@ -211,7 +213,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        await expect(readConfigFile()).rejects.toThrow('Invalid "actorFullName"');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Invalid "actorFullName"');
     });
 
     it('throws when actorFullName has empty parts', async () => {
@@ -222,7 +224,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        await expect(readConfigFile()).rejects.toThrow('Invalid "actorFullName"');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Invalid "actorFullName"');
     });
 
     it('throws when overrideActorContext is not an array', async () => {
@@ -238,7 +240,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        await expect(readConfigFile()).rejects.toThrow('Invalid "overrideActorContext"');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Invalid "overrideActorContext"');
     });
 
     it('throws when overrideActorContext contains non-strings', async () => {
@@ -254,7 +256,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        await expect(readConfigFile()).rejects.toThrow('Invalid "overrideActorContext"');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Invalid "overrideActorContext"');
     });
 
     it('throws when overrideActorContext entries overlap (one is a prefix of another)', async () => {
@@ -270,7 +272,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        await expect(readConfigFile()).rejects.toThrow(/overlap/);
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/overlap/);
     });
 
     it('throws when overrideActorContext contains the repo root alongside another entry', async () => {
@@ -286,7 +288,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        await expect(readConfigFile()).rejects.toThrow(/overlap/);
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/overlap/);
     });
 
     it('adds the actor own folder automatically when overrideActorContext does not cover it', async () => {
@@ -302,7 +304,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        const result = await readConfigFile();
+        const result = await readConfigFile(emptyActorSelection);
         expect(result[0].contextPaths).toEqual(['code', 'shared', 'actors/shopify']);
     });
 
@@ -319,7 +321,7 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        const result = await readConfigFile();
+        const result = await readConfigFile(emptyActorSelection);
         expect(result[0].folder).toBe('actors/shopify');
         expect(result[0].contextPaths).toEqual(['actors/shopify', 'packages']);
     });
@@ -337,7 +339,43 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        const result = await readConfigFile();
+        const result = await readConfigFile(emptyActorSelection);
         expect(result[0].contextPaths).toEqual(['actors/shopify', 'code', 'shared']);
+    });
+
+    describe('actor selection', () => {
+        const twoActors = () =>
+            mockFiles({
+                [CONFIG_FILE_NAME]: validConfig([
+                    { folder: 'actors/a', actorFullName: 'team/a', tokenEnvVar: 'TOKEN' },
+                    { folder: 'actors/b', actorFullName: 'team/b', tokenEnvVar: 'TOKEN' },
+                ]),
+                'actors/a/.actor/actor.json': actorJson({}),
+                'actors/b/.actor/actor.json': actorJson({}),
+            });
+
+        const fullNames = (result: { actorFullName: string }[]) => result.map((c) => c.actorFullName);
+
+        it('returns all actors when the selection is empty', async () => {
+            twoActors();
+            expect(fullNames(await readConfigFile(emptyActorSelection))).toEqual(['team/a', 'team/b']);
+        });
+
+        it('keeps only the selected actors', async () => {
+            twoActors();
+            expect(fullNames(await readConfigFile({ actors: ['team/a'], ignore: [] }))).toEqual(['team/a']);
+        });
+
+        it('drops ignored actors', async () => {
+            twoActors();
+            expect(fullNames(await readConfigFile({ actors: [], ignore: ['team/a'] }))).toEqual(['team/b']);
+        });
+
+        it('throws on an unknown actor name', async () => {
+            twoActors();
+            await expect(readConfigFile({ actors: ['team/nope'], ignore: [] })).rejects.toThrow(
+                'do not exist: team/nope',
+            );
+        });
     });
 });

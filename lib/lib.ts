@@ -3,7 +3,7 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
+import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
 import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
@@ -286,8 +286,8 @@ const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
             actorId: actorConfig?.actorFullName ?? actorId,
         };
 
-        // waiting for datasetItemCount and chargedEventCounts to sync
-        await sleep(10_000);
+        // waiting for dataset and statistics to sync, the Apify platform is only eventually consistent.
+        await sleep(DATASET_SYNC_DELAY_MS);
 
         return new RunTestResult(apifyClient, run);
     };

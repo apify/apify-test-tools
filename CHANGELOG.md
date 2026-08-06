@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+<!-- git-cliff-unreleased-start -->
+## 0.8.7 - **not yet released**
+
+### 🐛 Bug Fixes
+
+- Use slack mrkdwn in release notifications ([#107](https://github.com/apify/apify-test-tools/pull/107)) ([b5314e4](https://github.com/apify/apify-test-tools/commit/b5314e42dead43ebe7d501c448287fb6f026e9ed)) by [@JMatej](https://github.com/JMatej)
+- Increase dataset sync timeout ([#109](https://github.com/apify/apify-test-tools/pull/109)) ([9e61cce](https://github.com/apify/apify-test-tools/commit/9e61cce3e2c96e6513c41b92e856c7ed85899d87)) by [@Patai5](https://github.com/Patai5), closes [#687](https://github.com/apify/apify-test-tools/issues/687)
+
+
+<!-- git-cliff-unreleased-end -->
 ## [0.8.6](https://github.com/apify/apify-test-tools/releases/tag/v0.8.6) (2026-07-16)
 
 ### 🐛 Bug Fixes

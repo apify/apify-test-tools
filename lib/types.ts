@@ -144,13 +144,6 @@ export type ActorTestOptions = Omit<TestOptions, 'retry' | 'timeout'> & {
      * @default 60 * 60 * 1000 // 1 hour
      */
     timeout?: ActorCallOptions['timeout'];
-    /**
-     * Delay in milliseconds before checking the dataset and statistics after a run finishes.
-     * - Useful for ensuring that the dataset is fully synchronized, the Apify platform is only eventually consistent.
-     *
-     * @default 20_000 // 20 seconds
-     */
-    datasetSyncDelayMs?: number;
 };
 
 declare module 'vitest' {

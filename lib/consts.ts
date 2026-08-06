@@ -22,4 +22,4 @@ export const DEFAULT_TEST_RUN_DURATION_MS = 60 * 60 * 1000; // 1 hour
  * - This value should ensure that the dataset and statistics are fully updated before any assertions are made.
  * - Super rarely the platform is still not synced even after 10s, so 20s should be sufficient practically always.
  */
-export const DEFAULT_DATASET_SYNC_DELAY_MS = 20 * 1000; // 20 seconds
+export const DATASET_SYNC_DELAY_MS = 20 * 1000; // 20 seconds

@@ -21,7 +21,7 @@ import { readConfigFile, setCwd, spawnCommandInGhWorkspace } from './utils.js';
  */
 const middlewares = [setCwd];
 
-const buildOptions = (y: Argv) => {
+export const buildOptions = <T>(y: Argv<T>) => {
     return y
         .option('target-branch', {
             type: 'string',
@@ -37,27 +37,44 @@ const buildOptions = (y: Argv) => {
         })
         .option('base-commit', {
             type: 'string',
+            demandOption: false,
         });
 };
 
-const resolveChangedActors = async (
-    { targetBranch, sourceBranch, baseCommit }: Config,
-    { isLatest }: { isLatest: boolean },
-) => {
-    const actorConfigs = await readConfigFile();
+/**
+ * Actor-selection flags, applied to every command that reads the actor config so a caller can
+ * narrow the set it operates on (e.g. two-stage releases: `--ignore X`, then `--actors X`).
+ * Kept separate from `buildOptions` so the read-only git commands don't advertise flags they ignore.
+ */
+export const actorSelectionOptions = <T>(y: Argv<T>) => {
+    return y
+        .option('actors', {
+            type: 'string',
+            array: true,
+            default: [] as string[],
+        })
+        .option('ignore', {
+            type: 'string',
+            array: true,
+            default: [] as string[],
+        });
+};
 
-    // This is an optimization for the common case where a branch only has cosmetic changes but had to merge in
+const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: boolean }) => {
+    const actorConfigs = await readConfigFile(config);
+
+    // This is an optimization for the common case where a branch only has cosmetic changes but had to smerge in
     // functional changes from master (being up-to-date is a CI requirement). Master is already validated, and
     // since the branch has no functional changes of its own, there is nothing new to validate.
     // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
     // individually validated changes can have novel interactions when combined.
-    if (hasMergeFromTarget(sourceBranch, targetBranch)) {
+    if (hasMergeFromTarget(config.sourceBranch, config.targetBranch)) {
         console.error(
             '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
         );
-        const branchOnlyFiles = getBranchOnlyChangedFiles(sourceBranch, targetBranch);
+        const branchOnlyFiles = getBranchOnlyChangedFiles(config.sourceBranch, config.targetBranch);
         // Omit baseCommit to get full branch history. Validated functional commits can still interact with merged ones
-        const allBranchCommits = getCommits({ sourceBranch, targetBranch, baseCommit: undefined });
+        const allBranchCommits = getCommits({ ...config, baseCommit: undefined });
         const branchOnlyActorsChanged = getChangedActors({
             filepathsChanged: branchOnlyFiles,
             actorConfigs,
@@ -73,7 +90,7 @@ const resolveChangedActors = async (
     }
 
     // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply baseCommit and check merge commits (they might be functional or just cosmetic)
-    const commits = getCommits({ targetBranch, sourceBranch, baseCommit });
+    const commits = getCommits(config);
     const changedFiles = getChangedFiles(commits);
     return getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest, commits });
 };
@@ -103,22 +120,19 @@ await yargs()
         const changedFiles = getChangedFiles(commits);
         console.log(JSON.stringify(changedFiles));
     })
+    .command('get-actor-configs', '', actorSelectionOptions, async ({ actors, ignore }) => {
+        const actorConfigs = await readConfigFile({ actors, ignore });
+        console.log(JSON.stringify(actorConfigs));
+    })
     .command(
-        'get-actor-configs',
+        'get-affected-actors',
         '',
-        (_) => _,
-        async () => {
-            const actorConfigs = await readConfigFile();
-            console.log(JSON.stringify(actorConfigs));
+        (args) => actorSelectionOptions(buildOptions(args)),
+        async (config) => {
+            const actorsChanged = await resolveChangedActors(config, { isLatest: false });
+            console.log(JSON.stringify(actorsChanged));
         },
     )
-    .command('get-affected-actors', '', buildOptions, async ({ targetBranch, sourceBranch, baseCommit }) => {
-        const actorsChanged = await resolveChangedActors(
-            { targetBranch, sourceBranch, baseCommit },
-            { isLatest: false },
-        );
-        console.log(JSON.stringify(actorsChanged));
-    })
     .command(
         'report-tests',
         '',
@@ -135,12 +149,9 @@ await yargs()
     .command(
         'build',
         '',
-        (args) => buildOptions(args).option('dry-run', { type: 'boolean', default: false }),
-        async ({ targetBranch, sourceBranch, baseCommit, dryRun, useDockerCache }) => {
-            const actorsChanged = await resolveChangedActors(
-                { targetBranch, sourceBranch, baseCommit },
-                { isLatest: false },
-            );
+        (args) => actorSelectionOptions(buildOptions(args)).option('dry-run', { type: 'boolean', default: false }),
+        async (config) => {
+            const actorsChanged = await resolveChangedActors(config, { isLatest: false });
             // https://github.com/apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
             // git@github.com:apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
             const repoUrl = spawnCommandInGhWorkspace(`git remote get-url origin`).replace(
@@ -151,9 +162,9 @@ await yargs()
             const builds = await runBuilds({
                 repoUrl,
                 actorConfigs: actorsChanged,
-                branch: sourceBranch.replace('origin/', ''),
-                dryRun,
-                useDockerCache,
+                branch: config.sourceBranch.replace('origin/', ''),
+                dryRun: config.dryRun,
+                useDockerCache: config.useDockerCache,
             });
             console.log(JSON.stringify(builds));
         },
@@ -162,7 +173,7 @@ await yargs()
         'release',
         '',
         (args) =>
-            args
+            actorSelectionOptions(args)
                 .option('push-event-path', { type: 'string', demandOption: true })
                 .option('dry-run', { type: 'boolean', default: false })
                 .option('report-slack-channel', { type: 'string' })
@@ -173,7 +184,7 @@ await yargs()
                 args.pushEventPath,
             );
             const isLatest = true;
-            const actorConfigs = await readConfigFile();
+            const actorConfigs = await readConfigFile(args);
             const actorsChanged = getChangedActors({
                 filepathsChanged: changedFiles,
                 actorConfigs,
@@ -206,37 +217,30 @@ await yargs()
     .command(
         'build-from-local',
         '',
-        (args) =>
-            args
-                .option('actors', {
-                    type: 'string',
-                    description:
-                        'Comma-separated actor names (owner/name) to build. Defaults to all actors in the repo.',
-                })
-                .option('dry-run', { type: 'boolean', default: false }),
-        async ({ actors, dryRun }) => {
-            const allActorConfigs = await readConfigFile();
-            const actorConfigs = actors
-                ? actors.split(',').map((name) => {
-                      const trimmed = name.trim();
-                      const config = allActorConfigs.find((c) => c.actorFullName === trimmed);
-                      if (!config) throw new Error(`Actor "${trimmed}" not found in repo`);
-                      return config;
-                  })
-                : allActorConfigs;
+        (args) => actorSelectionOptions(args).option('dry-run', { type: 'boolean', default: false }),
+        async ({ actors, ignore, dryRun }) => {
+            const actorConfigs = await readConfigFile({ actors, ignore });
             const builds = await runBuildsFromLocal({ actorConfigs, dryRun });
             console.log(JSON.stringify(builds));
         },
     )
-    .command(
-        'delete-old-builds',
-        '',
-        (_) => _,
-        async () => {
-            const actorConfigs = await readConfigFile();
-            await deleteOldBuilds(actorConfigs);
-        },
-    )
+    .command('delete-old-builds', '', actorSelectionOptions, async ({ actors, ignore }) => {
+        const actorConfigs = await readConfigFile({ actors, ignore });
+        await deleteOldBuilds(actorConfigs);
+    })
     .strictCommands()
     .demandCommand(1, 'Command is required')
+    .fail((msg, err, yargsInstance) => {
+        // Errors thrown from a command handler (e.g. an unknown actor passed to --actors/--ignore,
+        // or a missing config file) arrive here as `err`. A malformed selection must fail loudly
+        // rather than silently operate on the wrong set of actors — print the message, no stack.
+        if (err) {
+            console.error(`[ERROR]: ${err.message}`);
+        } else {
+            // Argument-parsing/validation failure — keep yargs' usage output.
+            console.error(yargsInstance.help());
+            console.error(`\n${msg}`);
+        }
+        process.exit(1);
+    })
     .parse(hideBin(process.argv));

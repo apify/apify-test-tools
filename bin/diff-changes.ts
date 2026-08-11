@@ -1,4 +1,6 @@
 import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
+import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
+import { findContainingScope, hoistPath, isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, Commit } from './types.js';
 
 interface ShouldBuildAndTestOptions {
@@ -8,89 +10,160 @@ interface ShouldBuildAndTestOptions {
     commits: Commit[];
 }
 
-export const maybeParseActorFolder = (
-    lowercaseFilePath: string,
-): { isActorFolder: true; actorName: string } | { isActorFolder: false } => {
-    const match = lowercaseFilePath.match(/^(?:standalone-)?actors\/([^/]+)\/.+/);
-    if (match) {
-        // Some usernames weirdly use underscores, e.g. google_maps_email_extractor_standby-contact-details-scraper so we only need replace the last one
-        return { isActorFolder: true, actorName: match[1].replace(/_(?=[^_]*$)/, '/') };
-    }
-    return { isActorFolder: false };
-};
+const IGNORED_TOP_LEVEL_FILES = [
+    '.vscode/',
+    '.gitignore',
+    '.husky/',
+    '.eslintrc',
+    'eslint.config.mjs',
+    '.prettierrc',
+    '.editorconfig',
+];
+
+// Expects an already-hoisted path (relative to the matched context entry, see findContainingScope).
+const isIgnoredTopLevelFile = (hoistedLowercaseFilePath: string): boolean =>
+    IGNORED_TOP_LEVEL_FILES.some((pattern) => hoistedLowercaseFilePath.startsWith(pattern));
+
+type FileChangeForActor =
+    | { impact: 'ignored' }
+    | { impact: 'outside-context' }
+    | { impact: 'cosmetic'; semanticallyVerified: boolean }
+    | { impact: 'functional' };
 
 /**
- * Also works for folders
+ * Classify a single file change for a single actor.
+ *
+ * Steps (in order):
+ * 1. CHANGELOG.md, by filename, anywhere → cosmetic. There is a single repo-wide shared changelog,
+ *    not one per actor, so it applies to every actor regardless of context/folder.
+ * 2. Context matching (actorConfig.contextPaths) → outside-context if no match
+ * 3. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
+ * 4. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
+ *    dir → ignored if matched
+ * 5. README.md by filename → cosmetic if inside the actor's own folder, otherwise ignored
+ * 6. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
+ * 7. Everything else → functional
  */
-const isIgnoredTopLevelFile = (lowercaseFilePath: string) => {
-    // On top level, we should only have dev-only readme and .actor/ is just for apify push CLI (real Actor configs are in /actors)
-    const IGNORED_TOP_LEVEL_FILES = [
-        '.vscode/',
-        '.gitignore',
-        'readme.md',
-        '.husky/',
-        '.eslintrc',
-        'eslint.config.mjs',
-        '.prettierrc',
-        '.editorconfig',
-        '.actor/',
-    ];
-    // Strip out deprecated /code and /shared folders, treat them as top-level code
-    const sanitizedLowercaseFilePath = lowercaseFilePath.replace(/^code\//, '').replace(/^shared\//, '');
-
-    return IGNORED_TOP_LEVEL_FILES.some((ignoredFile) => sanitizedLowercaseFilePath.startsWith(ignoredFile));
-};
-
-type FileChange =
-    | { impact: 'ignored' }
-    // Only things that influence how the Actor looks - e.g. README and CHANGELOG files, schema titles, descriptions, reordering, etc. We only need to rebuild on release
-    | { impact: 'cosmetic'; semanticallyVerified: boolean; includes: 'all-actors' | ActorConfig }
-    // Influences how the Actor works - we need to run tests
-    | {
-          impact: 'functional';
-          includes: 'all-actors' | ActorConfig;
-      };
-
-const classifyFileChange = (originalFilePath: string, actorConfigs: ActorConfig[], commits: Commit[]): FileChange => {
-    // Lowercase for case-insensitive matching; keep original for git show (case-sensitive on Linux)
+const classifyFileChange = (
+    originalFilePath: string,
+    actorConfig: ActorConfig,
+    commits: Commit[],
+    dockerIgnoreMatcher: DockerIgnoreMatcher,
+): FileChangeForActor => {
     const lowercaseFilePath = originalFilePath.toLowerCase();
-    if (isIgnoredTopLevelFile(lowercaseFilePath)) {
+
+    // TODO: hardcodes that there's a single repo-wide changelog belonging to every actor. Should instead
+    // be derived from parsing actor.json (readme, changelog, schema paths), see
+    // https://github.com/apify/apify-test-tools/issues/106
+    if (lowercaseFilePath.endsWith('changelog.md')) {
+        return { impact: 'cosmetic', semanticallyVerified: false };
+    }
+
+    const lowercaseContextPaths = actorConfig.contextPaths.map((contextPath) => contextPath.toLowerCase());
+
+    const matchedContext = findContainingScope(lowercaseFilePath, lowercaseContextPaths);
+    if (matchedContext === undefined) {
+        return { impact: 'outside-context' };
+    }
+
+    const hoistedFilePath = hoistPath(lowercaseFilePath, matchedContext);
+    if (isIgnoredTopLevelFile(hoistedFilePath)) {
         return { impact: 'ignored' };
     }
 
-    if (lowercaseFilePath.endsWith('changelog.md')) {
-        return { impact: 'cosmetic', semanticallyVerified: false, includes: 'all-actors' };
+    const lowercaseFolder = actorConfig.folder.toLowerCase();
+    const actorDotDir = lowercaseFolder ? `${lowercaseFolder}/.actor` : '.actor';
+    const isUnderActorDotDir = isPathWithinScope(lowercaseFilePath, actorDotDir);
+
+    // .actor/ can legitimately be listed in .dockerignore (the Apify platform evaluates it before
+    // the Docker build, so excluding it from the build context is a valid caching optimization) —
+    // that shouldn't cause changes to .actor/ itself to be ignored here.
+    if (!isUnderActorDotDir && dockerIgnoreMatcher(originalFilePath)) {
+        return { impact: 'ignored' };
     }
 
-    const actorFolderInfo = maybeParseActorFolder(lowercaseFilePath);
-    if (actorFolderInfo.isActorFolder) {
-        const actorConfigChanged = actorConfigs.find(
-            ({ actorName }) => actorName.toLowerCase() === actorFolderInfo.actorName,
-        );
-        // This is some super weird case that happened once in the past but I don't remember the context anymore
-        if (actorConfigChanged === undefined) {
-            console.error(
-                'SHOULD NEVER HAPPEN: changes was found in an actor folder which no longer exists in the current commit, skipping this file',
-                {
-                    actorName: actorFolderInfo.actorName,
-                    lowercaseFilePath,
-                },
-            );
-            return { impact: 'ignored' };
-        }
-        if (lowercaseFilePath.endsWith('readme.md')) {
-            return { impact: 'cosmetic', semanticallyVerified: false, includes: actorConfigChanged };
-        }
-        // originalFilePath must be used here (not lowercaseFilePath) — git show is case-sensitive on Linux
-        if (lowercaseFilePath.endsWith('.json') && isCosmeticOnlyJsonSchemaChange(commits, originalFilePath)) {
-            return { impact: 'cosmetic', semanticallyVerified: true, includes: actorConfigChanged };
-        }
+    const isInActorFolder = isPathWithinScope(lowercaseFilePath, lowercaseFolder);
 
-        return { impact: 'functional', includes: actorConfigChanged };
+    if (lowercaseFilePath.endsWith('readme.md')) {
+        return isInActorFolder ? { impact: 'cosmetic', semanticallyVerified: false } : { impact: 'ignored' };
     }
 
-    // For any other files, we assume they can interact with the code
-    return { impact: 'functional', includes: 'all-actors' };
+    if (lowercaseFilePath.endsWith('.json') && isUnderActorDotDir) {
+        const isCosmetic = isCosmeticOnlyJsonSchemaChange(commits, originalFilePath);
+        if (isCosmetic) {
+            return { impact: 'cosmetic', semanticallyVerified: true };
+        }
+    }
+
+    return { impact: 'functional' };
+};
+
+/**
+ * Check if a file falls inside another actor's folder.
+ * Root actors (folder === "") never exclude files from siblings.
+ */
+const isExcludedBySibling = (lowercaseFilePath: string, actor: ActorConfig, allActors: ActorConfig[]): boolean => {
+    return allActors.some(
+        (other) =>
+            other.folder !== actor.folder &&
+            other.folder !== '' &&
+            isPathWithinScope(lowercaseFilePath, other.folder.toLowerCase()),
+    );
+};
+
+type ActorChangeEntry = {
+    actorConfig: ActorConfig;
+    files: string[];
+};
+
+type ChangeGroup = { actors: string[]; files: string[] };
+
+/**
+ * Maps each changed file to the set of actor names it triggered a change for.
+ */
+const buildFileToActorsMap = (actorsChangedMap: Map<string, ActorChangeEntry>): Map<string, Set<string>> => {
+    const fileToActors = new Map<string, Set<string>>();
+    for (const { actorConfig, files } of actorsChangedMap.values()) {
+        for (const file of files) {
+            const actors = fileToActors.get(file) ?? new Set<string>();
+            actors.add(actorConfig.actorFullName);
+            fileToActors.set(file, actors);
+        }
+    }
+    return fileToActors;
+};
+
+/**
+ * Groups files by their identical actor-set (files triggering a change for the exact same
+ * actors are grouped together), then orders the groups by descending actor-set size
+ * (most-shared groups first), breaking ties alphabetically by actor names.
+ */
+const groupFilesByActorSet = (fileToActors: Map<string, Set<string>>): ChangeGroup[] => {
+    const groupsByKey = new Map<string, ChangeGroup>();
+    for (const [file, actorsSet] of fileToActors) {
+        const actors = Array.from(actorsSet).sort();
+        const key = actors.join(',');
+        const group = groupsByKey.get(key) ?? { actors, files: [] };
+        group.files.push(file);
+        groupsByKey.set(key, group);
+    }
+
+    return Array.from(groupsByKey.values()).sort((groupA, groupB) => {
+        if (groupB.actors.length !== groupA.actors.length) {
+            return groupB.actors.length - groupA.actors.length;
+        }
+        return groupA.actors.join(',').localeCompare(groupB.actors.join(','));
+    });
+};
+
+const logChangeGroups = (groups: ChangeGroup[]): void => {
+    for (const { actors, files } of groups) {
+        if (actors.length > 1) {
+            console.error(`[DIFF]: Shared changes for actors ${actors.join(', ')}: ${files.join(', ')}`);
+        } else {
+            console.error(`[DIFF]: Changes specific to actor ${actors[0]}: ${files.join(', ')}`);
+        }
+    }
 };
 
 export const getChangedActors = ({
@@ -99,72 +172,40 @@ export const getChangedActors = ({
     isLatest = false,
     commits,
 }: ShouldBuildAndTestOptions): ActorConfig[] => {
-    // folder -> ActorConfig
-    const actorsChangedMap = new Map<string, ActorConfig>();
+    const actorsChangedMap = new Map<string, ActorChangeEntry>();
 
-    const actorConfigsWithoutStandalone = actorConfigs.filter(({ isStandalone }) => !isStandalone);
+    for (const actorConfig of actorConfigs) {
+        const dockerIgnoreMatcher = loadDockerIgnore(actorConfig.dockerContextDir);
 
-    for (const originalFilePath of filepathsChanged) {
-        const fileChange = classifyFileChange(originalFilePath, actorConfigs, commits);
-        if (fileChange.impact === 'ignored') {
-            continue;
-        }
+        for (const originalFilePath of filepathsChanged) {
+            const lowercaseFilePath = originalFilePath.toLowerCase();
 
-        if (fileChange.impact === 'cosmetic' && !isLatest) {
-            continue;
-        }
-
-        if (fileChange.includes !== 'all-actors') {
-            actorsChangedMap.set(fileChange.includes.folder, fileChange.includes);
-        } else if (fileChange.includes === 'all-actors') {
-            // Standalone Actors are handled always via specific actors change, not all-actors
-            for (const actorConfig of actorConfigsWithoutStandalone) {
-                actorsChangedMap.set(actorConfig.folder, actorConfig);
+            if (isExcludedBySibling(lowercaseFilePath, actorConfig, actorConfigs)) {
+                continue;
             }
+
+            const change = classifyFileChange(originalFilePath, actorConfig, commits, dockerIgnoreMatcher);
+
+            if (change.impact === 'ignored' || change.impact === 'outside-context') continue;
+            if (change.impact === 'cosmetic' && !isLatest) continue;
+
+            const entry = actorsChangedMap.get(actorConfig.folder) ?? { actorConfig, files: [] };
+            entry.files.push(originalFilePath);
+            actorsChangedMap.set(actorConfig.folder, entry);
         }
     }
 
-    const actorsChanged = Array.from(actorsChangedMap.values());
+    const actorsChanged = Array.from(actorsChangedMap.values()).map((entry) => entry.actorConfig);
 
-    // All below here is just for logging
-    const formatFiles = (files: string[]) => (files.length > 0 ? files.join(', ') : '<no files>');
-
-    const ignoredFilesChanged = filepathsChanged.filter(
-        (file) => classifyFileChange(file, actorConfigs, commits).impact === 'ignored',
-    );
-    console.error(`[DIFF]: Ignored files (don't trigger test or build): ${formatFiles(ignoredFilesChanged)}`);
-
-    const cosmeticChanges = filepathsChanged
-        .map((file) => ({ file, change: classifyFileChange(file, actorConfigs, commits) }))
-        .filter(({ change }) => change.impact === 'cosmetic') as {
-        file: string;
-        change: Extract<FileChange, { impact: 'cosmetic' }>;
-    }[];
-    const semanticallyVerifiedFiles = cosmeticChanges
-        .filter(({ change }) => change.semanticallyVerified)
-        .map(({ file }) => file);
-    const inherentlyCosmeticFiles = cosmeticChanges
-        .filter(({ change }) => !change.semanticallyVerified)
-        .map(({ file }) => file);
-    console.error(
-        `[DIFF]: Cosmetic-only JSON schema changes (semantically verified, only trigger release build): ${formatFiles(semanticallyVerifiedFiles)}`,
-    );
-    console.error(
-        `[DIFF]: Inherently cosmetic files (README, CHANGELOG — only trigger release build): ${formatFiles(inherentlyCosmeticFiles)}`,
-    );
-
-    const functionalFilesChanged = filepathsChanged.filter(
-        (file) => classifyFileChange(file, actorConfigs, commits).impact === 'functional',
-    );
-    console.error(`[DIFF]: Functional files (trigger test & release build): ${formatFiles(functionalFilesChanged)}`);
+    // Log changes grouped by actor set, so changes shared across actors are logged once
+    // instead of being repeated per actor.
+    const fileToActors = buildFileToActorsMap(actorsChangedMap);
+    const groups = groupFilesByActorSet(fileToActors);
+    logChangeGroups(groups);
 
     if (actorsChanged.length > 0) {
-        const miniactors = actorsChanged.filter((config) => !config.isStandalone).map((config) => config.actorName);
-        const standaloneActors = actorsChanged
-            .filter((config) => config.isStandalone)
-            .map((config) => config.actorName);
-        console.error(`[DIFF]: MiniActors to be built and tested: ${miniactors.join(', ')}`);
-        console.error(`[DIFF]: Standalone Actors to be built and tested: ${standaloneActors.join(', ')}`);
+        const actors = actorsChanged.map((config) => config.actorFullName);
+        console.error(`[DIFF]: Actors to be built and tested: ${actors.join(', ')}`);
     } else {
         console.error(`[DIFF]: No relevant files changed, skipping builds and tests`);
     }

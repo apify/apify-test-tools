@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     collectNonIgnoredFiles,
+    collectSourceFiles,
     flattenMonorepoContext,
     rewriteActorJsonPaths,
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -62,92 +63,109 @@ describe('build-from-local helpers', () => {
     });
 
     describe('flattenMonorepoContext', () => {
-        it('filters the .actor/ overlay through the same secret-pattern check as the rest of the context', async () => {
+        it("overlays the actor's own .actor/ files at the flattened root", async () => {
+            // Simulates flattening from a monorepo with an actors/<name>/.actor structure.
             const repoRoot = await mkTempDir('apify-test-tools-repo-');
             tempDirs.push(repoRoot);
-            initGitRepo(repoRoot);
 
             const absActorDir = path.join(repoRoot, 'actors', 'owner_actor');
+            const actorJsonPath = path.join(absActorDir, '.actor', 'actor.json');
+            const inputSchemaPath = path.join(absActorDir, '.actor', 'INPUT_SCHEMA.json');
+            const mainSrcPath = path.join(absActorDir, 'src', 'main.ts');
+            const packageJsonPath = path.join(repoRoot, 'package.json');
+
             await fs.mkdir(path.join(absActorDir, '.actor'), { recursive: true });
-            await fs.writeFile(
-                path.join(absActorDir, '.actor', 'actor.json'),
-                JSON.stringify({ actorSpecification: 1, name: 'actor' }),
-            );
-            // A stray secret file inside .actor/ must never survive into the build.
-            await fs.writeFile(path.join(absActorDir, '.actor', '.env'), 'SECRET=leaked');
-            await fs.writeFile(path.join(absActorDir, '.actor', 'INPUT_SCHEMA.json'), '{}');
+            await fs.mkdir(path.join(absActorDir, 'src'), { recursive: true });
+            await fs.writeFile(actorJsonPath, JSON.stringify({ actorSpecification: 1, name: 'actor' }));
+            await fs.writeFile(inputSchemaPath, '{}');
+            await fs.writeFile(mainSrcPath, 'console.log(1)');
+            await fs.writeFile(packageJsonPath, '{}');
 
-            const keptContextFile = path.join(repoRoot, 'package.json');
-            await fs.writeFile(keptContextFile, '{}');
+            const keptContextFiles = [packageJsonPath, mainSrcPath, actorJsonPath, inputSchemaPath];
 
-            // Nothing is gitignored here — isolates the assertion to the secret-pattern filter.
-            vi.spyOn(Utils, 'getGitignoredPaths').mockReturnValue(new Set());
-
-            const actorJson = JSON.parse(
-                await fs.readFile(path.join(absActorDir, '.actor', 'actor.json'), 'utf8'),
-            ) as Record<string, unknown>;
+            const actorJson = JSON.parse(await fs.readFile(actorJsonPath, 'utf8')) as Record<string, unknown>;
 
             const { tempDir: flattenedDir, filePaths } = await flattenMonorepoContext(
                 'test/actor',
                 absActorDir,
                 repoRoot,
                 actorJson,
-                [keptContextFile],
-                repoRoot,
+                keptContextFiles,
             );
             tempDirs.push(flattenedDir);
 
-            await expect(fs.access(path.join(flattenedDir, '.actor', '.env'))).rejects.toThrow();
-            await expect(fs.access(path.join(flattenedDir, '.actor', 'INPUT_SCHEMA.json'))).resolves.toBeUndefined();
+            const flattenedMainSrcPath = path.join(flattenedDir, 'actors', 'owner_actor', 'src', 'main.ts');
             await expect(fs.access(path.join(flattenedDir, '.actor', 'actor.json'))).resolves.toBeUndefined();
+            await expect(fs.access(path.join(flattenedDir, '.actor', 'INPUT_SCHEMA.json'))).resolves.toBeUndefined();
             await expect(fs.access(path.join(flattenedDir, 'package.json'))).resolves.toBeUndefined();
-
-            // The returned filePaths must match what actually landed on disk — no .env, everything else present.
-            expect(new Set(filePaths)).toStrictEqual(
-                new Set([
-                    path.join(flattenedDir, 'package.json'),
-                    path.join(flattenedDir, '.actor', 'INPUT_SCHEMA.json'),
-                    path.join(flattenedDir, '.actor', 'actor.json'),
-                ]),
-            );
+            await expect(fs.access(flattenedMainSrcPath)).resolves.toBeUndefined();
+            expect(filePaths).toContain(path.join(flattenedDir, '.actor', 'actor.json'));
+            expect(filePaths).toContain(path.join(flattenedDir, '.actor', 'INPUT_SCHEMA.json'));
+            expect(filePaths).toContain(flattenedMainSrcPath);
         });
 
         it("keeps another actor's .actor/ directory intact at its original nested path", async () => {
+            // Simulates flattening from a monorepo with an actors/<name>/.actor structure — two
+            // sibling actors share the same context, but only one is being flattened here.
             const repoRoot = await mkTempDir('apify-test-tools-repo-');
             tempDirs.push(repoRoot);
-            initGitRepo(repoRoot);
 
             const absActorDir = path.join(repoRoot, 'actors', 'owner_actor');
-            await fs.mkdir(path.join(absActorDir, '.actor'), { recursive: true });
-            await fs.writeFile(
-                path.join(absActorDir, '.actor', 'actor.json'),
-                JSON.stringify({ actorSpecification: 1, name: 'actor' }),
-            );
-
+            const actorJsonPath = path.join(absActorDir, '.actor', 'actor.json');
             const otherActorDir = path.join(repoRoot, 'actors', 'owner_other-actor');
-            await fs.mkdir(path.join(otherActorDir, '.actor'), { recursive: true });
             const otherActorSchemaFile = path.join(otherActorDir, '.actor', 'input_schema.json');
+
+            await fs.mkdir(path.join(absActorDir, '.actor'), { recursive: true });
+            await fs.writeFile(actorJsonPath, JSON.stringify({ actorSpecification: 1, name: 'actor' }));
+            await fs.mkdir(path.join(otherActorDir, '.actor'), { recursive: true });
             await fs.writeFile(otherActorSchemaFile, JSON.stringify({ schema: 'other' }));
 
-            vi.spyOn(Utils, 'getGitignoredPaths').mockReturnValue(new Set());
+            // Stands in for collectNonIgnoredFiles's already-filtered output: the current actor's own
+            // actor.json (always kept by collectNonIgnoredFiles's .actor/ bypass in the real flow —
+            // see the collectSourceFiles test below) plus the other actor's file.
+            const keptContextFiles = [actorJsonPath, otherActorSchemaFile];
 
-            const actorJson = JSON.parse(
-                await fs.readFile(path.join(absActorDir, '.actor', 'actor.json'), 'utf8'),
-            ) as Record<string, unknown>;
+            const actorJson = JSON.parse(await fs.readFile(actorJsonPath, 'utf8')) as Record<string, unknown>;
 
             const { tempDir: flattenedDir, filePaths } = await flattenMonorepoContext(
                 'test/actor',
                 absActorDir,
                 repoRoot,
                 actorJson,
-                [otherActorSchemaFile],
-                repoRoot,
+                keptContextFiles,
             );
             tempDirs.push(flattenedDir);
 
             const preservedPath = path.join(flattenedDir, 'actors', 'owner_other-actor', '.actor', 'input_schema.json');
             await expect(fs.access(preservedPath)).resolves.toBeUndefined();
             expect(filePaths).toContain(preservedPath);
+        });
+    });
+
+    describe('collectSourceFiles', () => {
+        it("always collects the actor's own .actor/actor.json for a monorepo actor, since flattenMonorepoContext depends on it", async () => {
+            const repoRoot = await mkTempDir('apify-test-tools-collect-source-');
+            tempDirs.push(repoRoot);
+            initGitRepo(repoRoot);
+
+            const originalCwd = process.cwd();
+            // We simulate the working directory being the repo root, since collectSourceFiles uses relative paths to the repo root.
+            Utils.setCwd({ workspace: repoRoot });
+            try {
+                const cwd = process.cwd();
+                const actorDir = path.join(cwd, 'actors', 'owner_actor');
+                await fs.mkdir(path.join(actorDir, '.actor'), { recursive: true });
+                await fs.writeFile(
+                    path.join(actorDir, '.actor', 'actor.json'),
+                    JSON.stringify({ actorSpecification: 1, name: 'actor', dockerContextDir: '../../..' }),
+                );
+                await fs.writeFile(path.join(cwd, 'package.json'), '{}');
+
+                const sourceFiles = await collectSourceFiles('owner/actor', actorDir);
+                expect(sourceFiles.map((file) => file.name)).toContain('.actor/actor.json');
+            } finally {
+                process.chdir(originalCwd);
+            }
         });
     });
 
@@ -179,83 +197,6 @@ describe('build-from-local helpers', () => {
             expect(rewritten.dockerContextDir).toBe('..');
             expect(rewritten.changelog).toBe('./CHANGELOG.md');
         });
-    });
-});
-
-describe('getDockerignoredPaths', () => {
-    const tempDirs: string[] = [];
-
-    afterEach(async () => {
-        vi.mocked(spawnSync).mockClear();
-        await Promise.all(tempDirs.splice(0).map(async (dir) => fs.rm(dir, { recursive: true, force: true })));
-    });
-
-    it('returns an empty set without calling git when given no paths', () => {
-        const result = Utils.getDockerignoredPaths('/does/not/matter', []);
-
-        expect(result).toStrictEqual(new Set());
-        expect(spawnSync).not.toHaveBeenCalled();
-    });
-
-    it('returns an empty set when rootDir has no .dockerignore', async () => {
-        const rootDir = await mkTempDir('apify-test-tools-dockerignore-');
-        tempDirs.push(rootDir);
-        initGitRepo(rootDir);
-
-        expect(Utils.getDockerignoredPaths(rootDir, ['main.js'])).toStrictEqual(new Set());
-    });
-
-    it('returns the paths that match .dockerignore patterns rooted at rootDir', async () => {
-        const rootDir = await mkTempDir('apify-test-tools-dockerignore-');
-        tempDirs.push(rootDir);
-        initGitRepo(rootDir);
-
-        await fs.writeFile(path.join(rootDir, '.dockerignore'), 'test/\n*.log\n');
-
-        const result = Utils.getDockerignoredPaths(rootDir, ['main.js', 'test/fixture.json', 'debug.log']);
-
-        expect(result).toStrictEqual(new Set(['test/fixture.json', 'debug.log']));
-    });
-
-    it('matches "./"-prefixed patterns, which Docker treats as a no-op but git treats as literal text', async () => {
-        const rootDir = await mkTempDir('apify-test-tools-dockerignore-');
-        tempDirs.push(rootDir);
-        initGitRepo(rootDir);
-
-        // The common real-world .dockerignore style: every pattern prefixed with "./",
-        // including a negation re-including one of the otherwise-matched files.
-        await fs.writeFile(path.join(rootDir, '.dockerignore'), './node_modules\n./*.log\n!./keep.log\n');
-
-        const result = Utils.getDockerignoredPaths(rootDir, [
-            'node_modules/foo.js',
-            'debug.log',
-            'keep.log',
-            'main.js',
-        ]);
-
-        expect(result).toStrictEqual(new Set(['node_modules/foo.js', 'debug.log']));
-    });
-
-    it('matches already-tracked files too, since Docker excludes them regardless of git tracking', async () => {
-        const rootDir = await mkTempDir('apify-test-tools-dockerignore-');
-        tempDirs.push(rootDir);
-        initGitRepo(rootDir);
-        spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: rootDir });
-        spawnSync('git', ['config', 'user.name', 'Test'], { cwd: rootDir });
-
-        // Husky hooks are committed to the repo, so this path is tracked by git — by default
-        // `git check-ignore` never reports a tracked file as ignored, which would otherwise mask
-        // this exact pattern from matching, unlike a real Docker build which excludes it anyway.
-        await fs.mkdir(path.join(rootDir, '.husky'));
-        await fs.writeFile(path.join(rootDir, '.husky', 'pre-commit'), '#!/bin/sh\n');
-        spawnSync('git', ['add', '.husky/pre-commit'], { cwd: rootDir });
-        spawnSync('git', ['commit', '-q', '-m', 'add husky hook'], { cwd: rootDir });
-
-        await fs.writeFile(path.join(rootDir, '.dockerignore'), './.husky\n');
-
-        const result = Utils.getDockerignoredPaths(rootDir, ['.husky/pre-commit', 'main.js']);
-
-        expect(result).toStrictEqual(new Set(['.husky/pre-commit']));
     });
 });
 

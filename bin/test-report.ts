@@ -36,7 +36,7 @@ export const reportTestResults = async ({
         }
     }
 
-    const failedAssertions: { message: string; runLink: string; actorName: string }[] = [];
+    const failedAssertions: { message: string; runLink: string; actorId: string }[] = [];
 
     console.error();
     console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
@@ -62,7 +62,7 @@ export const reportTestResults = async ({
                 ...failureMessages.map((message) => ({
                     message: message.split('\n')?.[0],
                     runLink: meta.runLink,
-                    actorName: meta.actorName,
+                    actorId: meta.actorId,
                 })),
             );
         }
@@ -89,10 +89,10 @@ export const reportTestResults = async ({
     const jobLink = jobUrl ? ` Check <${jobUrl}|the job>.` : '';
     let slackMessage = `\`${workflowName ?? '-'}\``;
     slackMessage += `: has ${failedAssertions.length} failed assertions. Failing test suites: ${failed.length}/${total}.${jobLink}`;
-    slackMessage += `\n\n${failedAssertions[0].message} --- <${failedAssertions[0].runLink}|${failedAssertions[0].actorName}>`;
+    slackMessage += `\n\n${failedAssertions[0].message} --- <${failedAssertions[0].runLink}|${failedAssertions[0].actorId}>`;
     const blocks = failedAssertions
         .slice(1)
-        .map(({ message, runLink, actorName }) => `• ${message} --- <${runLink}|${actorName}>`);
+        .map(({ message, runLink, actorId }) => `• ${message} --- <${runLink}|${actorId}>`);
 
     console.error('SLACK:', slackMessage);
     console.error('\tblocks:', blocks.join('\n\t\t'));
@@ -122,7 +122,7 @@ interface JsonAssertionResult {
     meta: {
         runId: string;
         runLink: string;
-        actorName: string;
+        actorId: string;
     };
     duration?: Milliseconds | null;
     failureMessages: string[] | null;

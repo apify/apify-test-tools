@@ -1,6 +1,6 @@
 {
     "name": "apify-test-tools",
-    "version": "0.8.7",
+    "version": "0.9.0",
     "type": "module",
     "description": "TBD",
     "repository": {
@@ -19,6 +19,7 @@
         "@apify/consts": "^2.43.0",
         "@slack/web-api": "^7.9.2",
         "apify-client": "^2.22.2",
+        "ignore": "^7.0.5",
         "yargs": "^18.0.0"
     },
     "devDependencies": {
@@ -29,14 +30,14 @@
         "eslint": "^9.29.0",
         "eslint-config-prettier": "^10.1.5",
         "globals": "^17.0.0",
+        "husky": "^9.0.11",
+        "knip": "^5.65.0",
+        "lint-staged": "^15.2.2",
         "prettier": "^3.5.3",
         "tsx": "^4.20.3",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.34.1",
-        "vitest": "^3.2.4",
-        "knip": "^5.65.0",
-        "husky": "^9.0.11",
-        "lint-staged": "^15.2.2"
+        "vitest": "^3.2.4"
     },
     "peerDependencies": {
         "vitest": ">=3.2.4"

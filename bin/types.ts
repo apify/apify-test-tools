@@ -85,16 +85,28 @@ export interface GithubCommit {
     modified: string[];
 }
 
+export interface ActorConfigFileEntry {
+    folder: string;
+    actorFullName: string;
+    tokenEnvVar: string;
+    overrideActorContext?: string[];
+}
+
+export interface ActorConfigFile {
+    actors: ActorConfigFileEntry[];
+}
+
 export interface BuildData {
     buildId: string;
-    actorId: string;
-    actorName: string;
-    // folder: string | undefined;
+    actorRawId: string;
+    actorFullName: string;
     buildNumber: string;
 }
 
 export interface ActorConfig {
-    actorName: string;
+    actorFullName: string;
     folder: string;
-    isStandalone: boolean;
+    tokenEnvVar: string;
+    dockerContextDir: string;
+    contextPaths: string[];
 }

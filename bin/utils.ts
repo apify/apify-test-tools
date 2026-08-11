@@ -1,14 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 
 import type { ActorVersionSourceFile } from 'apify-client';
 
 import { SOURCE_FILE_FORMATS } from '@apify/consts';
 
-import type { ActorConfig } from './types.js';
+import { isPathWithinScope } from './path-utils.js';
+import type { ActorConfig, ActorConfigFile } from './types.js';
 
 // Returns true when `childPath` is not inside `parentPath`.
 // Used to detect monorepo actors whose dockerContextDir escapes the actor directory.
@@ -59,65 +58,6 @@ export const getGitignoredPaths = (relativePaths: string[]): Set<string> => {
     return new Set(result.stdout.toString().split('\n').filter(Boolean));
 };
 
-// Docker normalizes each pattern before matching, so a leading "./" (as in the common "./node_modules"
-// style) is a no-op for Docker. git's ignore engine has no such normalization — it treats "./" as
-// literal pattern text that can never match a real path, so a .dockerignore written in that style
-// would otherwise silently match nothing under git. Strip it here (after any negation prefix) so
-// git sees the same effective pattern Docker would.
-const normalizeDockerignorePattern = (line: string): string => line.replace(/^(!?)(?:\.\/)+/, '$1');
-
-/**
- * Given paths relative to `rootDir`, returns the subset that a `.dockerignore` file sitting at
- * `rootDir` would exclude — mirroring getGitignoredPaths, but for Docker's own ignore file. `git
- * check-ignore` has no built-in notion of .dockerignore, but pointing `core.excludesFile` at a
- * normalized copy of it for a single invocation makes git apply its patterns exactly like a
- * .gitignore, without re-implementing gitignore-style pattern matching ourselves. A missing
- * .dockerignore is a no-op (empty set), so there's no need to check for its existence first.
- *
- * Crucially this passes `--no-index`: by default git never reports an already-tracked file as
- * ignored (that's how real .gitignore semantics work — tracked files aren't affected by ignore
- * rules), but Docker excludes a matching path from the build context unconditionally, regardless
- * of git tracking. `--no-index` makes git apply the patterns uniformly, matching Docker's behavior.
- */
-export const getDockerignoredPaths = (rootDir: string, relativePaths: string[]): Set<string> => {
-    if (relativePaths.length === 0) return new Set();
-
-    let dockerignoreContent: string;
-    try {
-        dockerignoreContent = fsSync.readFileSync(path.join(rootDir, '.dockerignore'), 'utf8');
-    } catch {
-        return new Set();
-    }
-
-    const normalizedContent = dockerignoreContent.split('\n').map(normalizeDockerignorePattern).join('\n');
-
-    const tempDir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'apify-dockerignore-'));
-    try {
-        const normalizedPath = path.join(tempDir, '.dockerignore');
-        fsSync.writeFileSync(normalizedPath, normalizedContent);
-
-        const result = spawnSync(
-            'git',
-            ['-c', `core.excludesFile=${normalizedPath}`, 'check-ignore', '--no-index', '--stdin'],
-            {
-                cwd: rootDir,
-                input: relativePaths.join('\n'),
-                maxBuffer: 100 * 1024 * 1024,
-            },
-        );
-
-        // Exit code 1 means none of the given paths are ignored - not an error. Anything else
-        // (e.g. 128 for "not a git repository") is a real failure.
-        if (result.status !== 0 && result.status !== 1) {
-            throw new Error(`[Command failed]: git check-ignore (dockerignore)\n${result.stderr.toString()}`);
-        }
-
-        return new Set(result.stdout.toString().split('\n').filter(Boolean));
-    } finally {
-        fsSync.rmSync(tempDir, { recursive: true, force: true });
-    }
-};
-
 const isBinary = (buffer: Buffer): boolean => buffer.includes(0);
 
 export const toActorVersionSourceFile = async (absPath: string, rootDir: string): Promise<ActorVersionSourceFile> => {
@@ -154,50 +94,137 @@ export const getEnvVar = (varName: string, defaultValue?: string): string => {
     return value;
 };
 
-/**
- * Reads and parses all directories in `actors` directory
- * This works locally if checkoutRepoLocally is called first
- */
-export const getRepoActors = async (): Promise<ActorConfig[]> => {
-    let actorDirs: string[];
-    try {
-        actorDirs = (await fs.readdir(`./actors`)).map((dir) => `actors/${dir}`);
-    } catch {
-        console.warn(`No /actors directory found in repo`);
-        actorDirs = [];
-    }
-    let standaloneActorDirs: string[];
-    try {
-        standaloneActorDirs = (await fs.readdir(`./standalone-actors`)).map((dir) => `standalone-actors/${dir}`);
-    } catch {
-        console.warn(`No /standalone-actors directory found in repo`);
-        standaloneActorDirs = [];
-    }
-    const actorConfigs: ActorConfig[] = [];
-    for (const actorDir of [...actorDirs, ...standaloneActorDirs]) {
-        const match = actorDir.match(/^([^/]+)\/(.+)_([^_]+)$/);
-        if (!match) {
-            throw new Error(`Invalid actor directory name. Got "${actorDir}", expected "actor.owner-name_actor-name"`);
+export const CONFIG_FILE_NAME = 'apify-test-tools.config.json';
+
+// Strips a trailing slash so config-declared paths ("actors/shopify/" vs "actors/shopify") compare equal.
+const stripTrailingSlash = (pathValue: string): string => pathValue.replace(/\/+$/, '');
+
+const findOverlappingContextPaths = (contextPaths: string[]): [string, string] | undefined => {
+    for (let i = 0; i < contextPaths.length; i++) {
+        for (let j = i + 1; j < contextPaths.length; j++) {
+            if (
+                isPathWithinScope(contextPaths[i], contextPaths[j]) ||
+                isPathWithinScope(contextPaths[j], contextPaths[i])
+            ) {
+                return [contextPaths[i], contextPaths[j]];
+            }
         }
-        const [, folderType, owner, actorName] = match;
+    }
+    return undefined;
+};
+
+export const readConfigFile = async (): Promise<ActorConfig[]> => {
+    let raw: string;
+    try {
+        raw = await fs.readFile(CONFIG_FILE_NAME, 'utf-8');
+    } catch {
+        throw new Error(
+            `Config file "${CONFIG_FILE_NAME}" not found in the current directory. ` +
+                `Please create one with the required actor entries.`,
+        );
+    }
+
+    let config: ActorConfigFile;
+    try {
+        config = JSON.parse(raw);
+    } catch {
+        throw new Error(`Config file "${CONFIG_FILE_NAME}" contains invalid JSON.`);
+    }
+
+    if (!Array.isArray(config.actors)) {
+        throw new Error(`Config file "${CONFIG_FILE_NAME}" must have an "actors" array at the top level.`);
+    }
+
+    const seenFolders = new Set<string>();
+    const actorConfigs: ActorConfig[] = [];
+
+    for (const [index, entry] of config.actors.entries()) {
+        if (typeof entry.folder !== 'string') {
+            throw new Error(
+                `Invalid "folder" for actor entry at index ${index} in "${CONFIG_FILE_NAME}". ` +
+                    `Must be a string (use "." for a single-actor repo).`,
+            );
+        }
+
+        const folder = entry.folder === '.' ? '' : stripTrailingSlash(entry.folder);
+
+        if (seenFolders.has(folder)) {
+            throw new Error(
+                `Duplicate folder "${entry.folder}" in "${CONFIG_FILE_NAME}". Each actor must have a unique folder.`,
+            );
+        }
+        seenFolders.add(folder);
+
+        const nameParts = entry.actorFullName?.split('/');
+        if (!nameParts || nameParts.length !== 2 || !nameParts[0] || !nameParts[1]) {
+            throw new Error(
+                `Invalid "actorFullName" for folder "${entry.folder}" in "${CONFIG_FILE_NAME}". ` +
+                    `Must be in "owner/name" format (e.g. "apify/web-scraper").`,
+            );
+        }
+
+        if (entry.overrideActorContext !== undefined) {
+            if (
+                !Array.isArray(entry.overrideActorContext) ||
+                !entry.overrideActorContext.every((p) => typeof p === 'string')
+            ) {
+                throw new Error(
+                    `Invalid "overrideActorContext" for folder "${entry.folder}" in "${CONFIG_FILE_NAME}". ` +
+                        `Must be an array of strings.`,
+                );
+            }
+        }
+
+        const actorJsonPath = folder ? `${folder}/.actor/actor.json` : '.actor/actor.json';
+
+        let actorJson: { dockerContextDir?: string };
+        try {
+            actorJson = JSON.parse(await fs.readFile(actorJsonPath, 'utf-8'));
+        } catch {
+            throw new Error(
+                `Cannot read "${actorJsonPath}". Every actor entry in "${CONFIG_FILE_NAME}" ` +
+                    `must have a corresponding .actor/actor.json file.`,
+            );
+        }
+
+        const actorDotDir = folder ? `${folder}/.actor` : '.actor';
+        const rawDockerContextDir = actorJson.dockerContextDir ?? '..';
+        const resolved = path.resolve(process.cwd(), actorDotDir, rawDockerContextDir);
+        const dockerContextDir = path.relative(process.cwd(), resolved);
+
+        if (dockerContextDir.startsWith('..')) {
+            throw new Error(
+                `"dockerContextDir" for folder "${entry.folder}" resolves outside the repository root. ` +
+                    `Resolved path: "${dockerContextDir}".`,
+            );
+        }
+
+        const normalizedDockerContextDir = dockerContextDir === '.' ? '' : dockerContextDir;
+        const contextPaths = (entry.overrideActorContext ?? [normalizedDockerContextDir]).map(stripTrailingSlash);
+
+        // The actor's own folder is always part of its context. When an explicit "overrideActorContext"
+        // doesn't already cover it, add it automatically instead of failing the workflow.
+        if (!contextPaths.some((contextPath) => isPathWithinScope(folder, contextPath))) {
+            contextPaths.push(folder);
+        }
+
+        const overlap = findOverlappingContextPaths(contextPaths);
+        if (overlap) {
+            throw new Error(
+                `Invalid context paths for folder "${entry.folder}" in "${CONFIG_FILE_NAME}": ` +
+                    `"${overlap[0]}" and "${overlap[1]}" overlap. Context paths must not be prefixes of one another.`,
+            );
+        }
+
         actorConfigs.push({
-            actorName: `${owner}/${actorName}`,
-            folder: actorDir,
-            isStandalone: folderType === 'standalone-actors',
+            actorFullName: entry.actorFullName,
+            folder,
+            tokenEnvVar: entry.tokenEnvVar,
+            dockerContextDir: normalizedDockerContextDir,
+            contextPaths,
         });
     }
-    console.error(
-        `Actors in repo: ${actorConfigs
-            .filter(({ isStandalone }) => !isStandalone)
-            .map(({ actorName }) => actorName)
-            .join(', ')}`,
-    );
-    console.error(
-        `Standalone actors in repo: ${actorConfigs
-            .filter(({ isStandalone }) => !!isStandalone)
-            .map(({ actorName }) => actorName)
-            .join(', ')}`,
-    );
+
     return actorConfigs;
 };
 

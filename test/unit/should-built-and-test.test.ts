@@ -9,19 +9,25 @@ describe('Should build and test parser', () => {
     // From https://github.com/apify-store/testing-repo-for-github-actions
     const ACTOR_CONFIGS: ActorConfig[] = [
         {
-            actorName: 'lukaskrivka/testing-github-integration-1',
+            actorFullName: 'lukaskrivka/testing-github-integration-1',
             folder: 'actors/lukaskrivka_testing-github-integration-1',
-            isStandalone: false,
+            tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
+            dockerContextDir: '',
+            contextPaths: [''],
         },
         {
-            actorName: 'lukaskrivka/testing-github-integration-2',
+            actorFullName: 'lukaskrivka/testing-github-integration-2',
             folder: 'actors/lukaskrivka_testing-github-integration-2',
-            isStandalone: false,
+            tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
+            dockerContextDir: '',
+            contextPaths: [''],
         },
         {
-            actorName: 'lukaskrivka/test-standalone',
+            actorFullName: 'lukaskrivka/test-standalone',
             folder: 'standalone-actors/lukaskrivka_test-standalone',
-            isStandalone: true,
+            tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
+            dockerContextDir: 'standalone-actors/lukaskrivka_test-standalone',
+            contextPaths: ['standalone-actors/lukaskrivka_test-standalone'],
         },
     ];
 
@@ -51,7 +57,7 @@ describe('Should build and test parser', () => {
     });
 
     test('Ignores other ignored files and folders', () => {
-        const FILES = ['.vscode/', '.gitignore', '.husky/', '.eslintrc', '.editorconfig', '.actor/'];
+        const FILES = ['.vscode/', '.gitignore', '.husky/', '.eslintrc', '.editorconfig'];
 
         const actorsChanged = getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
@@ -63,8 +69,41 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual([]);
     });
 
-    test('Only builds latest for all Actors', () => {
+    test('.actor/ changes trigger builds for broad-context actors', () => {
+        const FILES = ['.actor/actor.json'];
+
+        const actorsChanged = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            commits,
+        });
+
+        expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
+    });
+
+    test('Root-level changelog is cosmetic for every actor, only on latest', () => {
         const FILES = ['shared/CHANGELOG.md', 'CHANGELOG.md'];
+
+        const actorsChangedNotLatest = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: false,
+            filepathsChanged: FILES,
+            commits,
+        });
+        expect(actorsChangedNotLatest).toEqual([]);
+
+        const actorsChangedLatest = getChangedActors({
+            actorConfigs: ACTOR_CONFIGS,
+            isLatest: true,
+            filepathsChanged: FILES,
+            commits,
+        });
+        expect(actorsChangedLatest).toEqual(ACTOR_CONFIGS);
+    });
+
+    test('A changelog nested inside one actor own folder is excluded for sibling actors, only triggers that actor', () => {
+        const FILES = ['actors/lukaskrivka_testing-github-integration-1/CHANGELOG.md'];
 
         const actorsChanged = getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
@@ -73,10 +112,10 @@ describe('Should build and test parser', () => {
             commits,
         });
 
-        expect(actorsChanged).toEqual(ACTOR_CONFIGS.filter(({ isStandalone }) => !isStandalone));
+        expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
     });
 
-    test('Code updated, tests miniactors', () => {
+    test('Code updated, tests broad-context actors', () => {
         const FILES = ['code/src/main.ts', 'package.json'];
 
         const actorsChanged = getChangedActors({
@@ -86,7 +125,7 @@ describe('Should build and test parser', () => {
             commits,
         });
 
-        expect(actorsChanged).toEqual(ACTOR_CONFIGS.filter(({ isStandalone }) => !isStandalone));
+        expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
     });
 
     test('Specific Actor functionality configs updated', () => {
@@ -119,7 +158,7 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
     });
 
-    test('Miniactor, Code and standalone actor updated,', () => {
+    test('Actor folder, shared code and narrow-context actor updated', () => {
         const FILES = [
             'actors/lukaskrivka_testing-github-integration-1/.actor/actor.json',
             'code/src/main.ts',
@@ -216,7 +255,7 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[1]]);
     });
 
-    test('Standalone actor with cosmetic-only JSON change in PR context skips tests', () => {
+    test('Narrow-context actor with cosmetic-only JSON change in PR context skips tests', () => {
         const FILES = ['standalone-actors/lukaskrivka_test-standalone/.actor/actor.json'];
         isCosmeticOnlyJsonSchemaSpy.mockReturnValue(true);
 
@@ -249,49 +288,67 @@ describe('Should build and test parser', () => {
         const ACTOR_CONFIGS_GOOGLE_MAPS: ActorConfig[] = [
             {
                 // Edge case of capitals in actor name :)
-                actorName: 'compass/Google-Maps-Reviews-Scraper',
+                actorFullName: 'compass/Google-Maps-Reviews-Scraper',
                 folder: 'actors/compass_Google-Maps-Reviews-Scraper',
-                isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
+                dockerContextDir: '',
+                contextPaths: [''],
             },
             {
-                actorName: 'compass/crawler-google-places',
+                actorFullName: 'compass/crawler-google-places',
                 folder: 'actors/compass_crawler-google-places',
-                isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
+                dockerContextDir: '',
+                contextPaths: [''],
             },
             {
-                actorName: 'compass/easy-google-maps',
+                actorFullName: 'compass/easy-google-maps',
                 folder: 'actors/compass_easy-google-maps',
-                isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
+                dockerContextDir: '',
+                contextPaths: [''],
             },
             {
-                actorName: 'compass/google-maps-extractor',
+                actorFullName: 'compass/google-maps-extractor',
                 folder: 'actors/compass_google-maps-extractor',
-                isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
+                dockerContextDir: '',
+                contextPaths: [''],
             },
             {
-                actorName: 'compass/google-places-api',
+                actorFullName: 'compass/google-places-api',
                 folder: 'actors/compass_google-places-api',
-                isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
+                dockerContextDir: '',
+                contextPaths: [''],
             },
             {
-                actorName: 'lukaskrivka/google-maps-with-contact-details',
+                actorFullName: 'lukaskrivka/google-maps-with-contact-details',
                 folder: 'actors/lukaskrivka_google-maps-with-contact-details',
-                isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
+                dockerContextDir: '',
+                contextPaths: [''],
             },
             {
-                actorName: 'natasha.lekh/gas-prices-scraper',
+                actorFullName: 'natasha.lekh/gas-prices-scraper',
                 folder: 'actors/natasha.lekh_gas-prices-scraper',
-                isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_NATASHA_LEKH',
+                dockerContextDir: '',
+                contextPaths: [''],
             },
             {
-                actorName: 'natasha.lekh/vegan-places-finder',
+                actorFullName: 'natasha.lekh/vegan-places-finder',
                 folder: 'actors/natasha.lekh_vegan-places-finder',
-                isStandalone: false,
+                tokenEnvVar: 'APIFY_TOKEN_NATASHA_LEKH',
+                dockerContextDir: '',
+                contextPaths: [''],
             },
             {
-                actorName: 'lukaskrivka/google-maps-scraper-orchestrator',
+                actorFullName: 'lukaskrivka/google-maps-scraper-orchestrator',
                 folder: 'standalone-actors/lukaskrivka_google-maps-scraper-orchestrator',
-                isStandalone: true,
+                tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
+                dockerContextDir: 'standalone-actors/lukaskrivka_google-maps-scraper-orchestrator',
+                contextPaths: ['standalone-actors/lukaskrivka_google-maps-scraper-orchestrator'],
             },
         ];
 
@@ -302,6 +359,6 @@ describe('Should build and test parser', () => {
             commits,
         });
 
-        expect(actorsChanged).toEqual(ACTOR_CONFIGS_GOOGLE_MAPS.filter(({ isStandalone }) => !isStandalone));
+        expect(actorsChanged).toEqual(ACTOR_CONFIGS_GOOGLE_MAPS.slice(0, 8));
     });
 });

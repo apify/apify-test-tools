@@ -1,46 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getChangedActors, maybeParseActorFolder } from '../../../bin/diff-changes.js';
+import { getChangedActors } from '../../../bin/diff-changes.js';
 import * as DiffJsonSchema from '../../../bin/diff-json-schema.js';
+import * as Dockerignore from '../../../bin/dockerignore.js';
 import type { ActorConfig } from '../../../bin/types.js';
 
-const miniActor: ActorConfig = { actorName: 'foo/bar', folder: 'actors/foo_bar', isStandalone: false };
+const miniActor: ActorConfig = {
+    actorFullName: 'foo/bar',
+    folder: 'actors/foo_bar',
+    tokenEnvVar: 'APIFY_TOKEN_FOO',
+    dockerContextDir: '',
+    contextPaths: [''],
+};
 const standaloneActor: ActorConfig = {
-    actorName: 'standalone',
+    actorFullName: 'owner/standalone',
     folder: 'standalone-actors/standalone',
-    isStandalone: true,
+    tokenEnvVar: 'APIFY_TOKEN_OWNER',
+    dockerContextDir: 'standalone-actors/standalone',
+    contextPaths: ['standalone-actors/standalone'],
 };
 const actorConfigs = [miniActor, standaloneActor];
+const amazonActor: ActorConfig = {
+    actorFullName: 'junglee/amazon-crawler',
+    folder: 'actors/junglee_Amazon-crawler',
+    tokenEnvVar: 'APIFY_TOKEN_JUNGLEE',
+    dockerContextDir: '',
+    contextPaths: ['actors/junglee_Amazon-crawler', 'code', 'shared'],
+};
 
 const commits = [{ sha: 'Commit1', author: '', date: '', message: '' }];
-
-describe('maybeParseActorFolder', () => {
-    it('returns actorName for actors/ path', () => {
-        expect(maybeParseActorFolder('actors/foo_bar/actor.json')).toEqual({
-            isActorFolder: true,
-            actorName: 'foo/bar',
-        });
-    });
-
-    it('returns actorName for standalone-actors/ path', () => {
-        expect(maybeParseActorFolder('standalone-actors/my_actor/main.ts')).toEqual({
-            isActorFolder: true,
-            actorName: 'my/actor',
-        });
-    });
-
-    it('returns false for top-level file', () => {
-        expect(maybeParseActorFolder('package.json')).toEqual({ isActorFolder: false });
-    });
-
-    it('returns false for path with no file inside actor folder', () => {
-        expect(maybeParseActorFolder('actors/foo_bar')).toEqual({ isActorFolder: false });
-    });
-
-    it('returns false for unrelated folder', () => {
-        expect(maybeParseActorFolder('src/utils.ts')).toEqual({ isActorFolder: false });
-    });
-});
 
 describe('getChangedActors', () => {
     beforeEach(() => {
@@ -92,7 +80,7 @@ describe('getChangedActors', () => {
     it('returns actor when isLatest and JSON file has only cosmetic changes', () => {
         vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
         const result = getChangedActors({
-            filepathsChanged: ['actors/foo_bar/actor.json'],
+            filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
             commits,
             isLatest: true,
@@ -103,7 +91,7 @@ describe('getChangedActors', () => {
     it('does not return actor when not isLatest and JSON file has only cosmetic changes', () => {
         vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
         const result = getChangedActors({
-            filepathsChanged: ['actors/foo_bar/actor.json'],
+            filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
             commits,
             isLatest: false,
@@ -114,14 +102,37 @@ describe('getChangedActors', () => {
     it('returns actor when JSON file has functional changes', () => {
         vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(false);
         const result = getChangedActors({
-            filepathsChanged: ['actors/foo_bar/actor.json'],
+            filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
             commits,
         });
         expect(result).toEqual([miniActor]);
     });
 
-    it('returns all non-standalone actors when a non-actor-folder functional file changes', () => {
+    it('JSON file in actor folder but outside .actor/ is functional, not checked for cosmetic', () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
+        const result = getChangedActors({
+            filepathsChanged: ['actors/foo_bar/package.json'],
+            actorConfigs,
+            commits,
+            isLatest: false,
+        });
+        expect(result).toEqual([miniActor]);
+        expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).not.toHaveBeenCalled();
+    });
+
+    it('JSON file under .actor/ inside actor folder is checked for cosmetic changes', () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
+        const result = getChangedActors({
+            filepathsChanged: ['actors/foo_bar/.actor/input_schema.json'],
+            actorConfigs,
+            commits,
+            isLatest: true,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('does not trigger narrow-context actor when shared file changes', () => {
         const result = getChangedActors({
             filepathsChanged: ['shared/utils.ts'],
             actorConfigs,
@@ -131,18 +142,28 @@ describe('getChangedActors', () => {
         expect(result).not.toContainEqual(standaloneActor);
     });
 
-    it('does not include standalone actor in all-actors expansion from changelog', () => {
+    it('root-level changelog outside any actor folder is cosmetic for every actor when isLatest', () => {
         const result = getChangedActors({
             filepathsChanged: ['CHANGELOG.md'],
             actorConfigs,
             commits,
             isLatest: true,
         });
-        expect(result).toContainEqual(miniActor);
-        expect(result).not.toContainEqual(standaloneActor);
+        expect(result).toEqual(expect.arrayContaining([miniActor, standaloneActor]));
+        expect(result).toHaveLength(2);
     });
 
-    it('includes standalone actor when its own folder changes', () => {
+    it('root-level changelog is not cosmetic-triggered when not isLatest', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['CHANGELOG.md'],
+            actorConfigs,
+            commits,
+            isLatest: false,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('triggers narrow-context actor when its own folder changes', () => {
         const result = getChangedActors({
             filepathsChanged: ['standalone-actors/standalone/src/main.ts'],
             actorConfigs,
@@ -161,7 +182,7 @@ describe('getChangedActors', () => {
         expect(result).toContainEqual(miniActor);
     });
 
-    it('handles mixed changes: returns both mini and standalone actors', () => {
+    it('handles mixed changes: returns both broad and narrow-context actors', () => {
         const result = getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/main.ts', 'standalone-actors/standalone/Dockerfile'],
             actorConfigs,
@@ -171,6 +192,47 @@ describe('getChangedActors', () => {
         expect(result).toContainEqual(standaloneActor);
     });
 
+    it('matches folder where folder name differs from actor name', () => {
+        const ownerlessActor: ActorConfig = {
+            actorFullName: 'myteam/shopify-scraper',
+            folder: 'actors/shopify',
+            tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
+            dockerContextDir: '',
+            contextPaths: [''],
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['actors/shopify/src/main.ts'],
+            actorConfigs: [ownerlessActor],
+            commits,
+        });
+        expect(result).toEqual([ownerlessActor]);
+    });
+
+    it('in single-actor repo, .actor/ changes trigger builds', () => {
+        const rootActor: ActorConfig = {
+            actorFullName: 'myteam/my-actor',
+            folder: '',
+            tokenEnvVar: 'BUILDER_APIFY_TOKEN',
+            dockerContextDir: '',
+            contextPaths: [''],
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['.actor/actor.json'],
+            actorConfigs: [rootActor],
+            commits,
+        });
+        expect(result).toEqual([rootActor]);
+    });
+
+    it('in multi-actor repo, .actor/ changes only trigger broad-context actors', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['.actor/actor.json'],
+            actorConfigs,
+            commits,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
     it('file paths are matched case-insensitively', () => {
         const result = getChangedActors({
             filepathsChanged: ['Actors/FOO_BAR/Main.ts'],
@@ -178,5 +240,299 @@ describe('getChangedActors', () => {
             commits,
         });
         expect(result).toEqual([miniActor]);
+    });
+
+    it('triggers actor with contextPaths override when file matches an override path', () => {
+        const overrideActor: ActorConfig = {
+            actorFullName: 'team/override-actor',
+            folder: 'actors/override',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: 'actors/override',
+            contextPaths: ['actors/override', 'packages'],
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['packages/shared/utils.ts'],
+            actorConfigs: [overrideActor],
+            commits,
+        });
+        expect(result).toEqual([overrideActor]);
+    });
+
+    it('does not trigger actor with contextPaths override when file is outside all override paths', () => {
+        const overrideActor: ActorConfig = {
+            actorFullName: 'team/override-actor',
+            folder: 'actors/override',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: 'actors/override',
+            contextPaths: ['actors/override', 'packages'],
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['other-dir/file.ts'],
+            actorConfigs: [overrideActor],
+            commits,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('broad-context actor skips files in sibling actor folders', () => {
+        const actorA: ActorConfig = {
+            actorFullName: 'team/actor-a',
+            folder: 'actors/a',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: [''],
+        };
+        const actorB: ActorConfig = {
+            actorFullName: 'team/actor-b',
+            folder: 'actors/b',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: [''],
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['actors/b/src/main.ts'],
+            actorConfigs: [actorA, actorB],
+            commits,
+        });
+        expect(result).toEqual([actorB]);
+    });
+
+    it('root actor (folder="") is excluded from sibling actor folder files', () => {
+        const rootActor: ActorConfig = {
+            actorFullName: 'team/root',
+            folder: '',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: [''],
+        };
+        const childActor: ActorConfig = {
+            actorFullName: 'team/child',
+            folder: 'actors/child',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: 'actors/child',
+            contextPaths: ['actors/child'],
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['actors/child/src/main.ts'],
+            actorConfigs: [rootActor, childActor],
+            commits,
+        });
+        expect(result).not.toContainEqual(rootActor);
+        expect(result).toContainEqual(childActor);
+    });
+
+    it('root actor (folder="") sees files outside any actor folder', () => {
+        const rootActor: ActorConfig = {
+            actorFullName: 'team/root',
+            folder: '',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: [''],
+        };
+        const childActor: ActorConfig = {
+            actorFullName: 'team/child',
+            folder: 'actors/child',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: 'actors/child',
+            contextPaths: ['actors/child'],
+        };
+        const result = getChangedActors({
+            filepathsChanged: ['lib/shared-utils.ts'],
+            actorConfigs: [rootActor, childActor],
+            commits,
+        });
+        expect(result).toContainEqual(rootActor);
+        expect(result).not.toContainEqual(childActor);
+    });
+
+    it('file matched by .dockerignore is treated as ignored', () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(
+            (filePath) => filePath === 'actors/foo_bar/node_modules/foo.js',
+        );
+        const result = getChangedActors({
+            filepathsChanged: ['actors/foo_bar/node_modules/foo.js'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('file not matched by .dockerignore is classified normally', () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue((filePath) => filePath.includes('node_modules'));
+        const result = getChangedActors({
+            filepathsChanged: ['actors/foo_bar/src/main.ts'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('JSON file in context but outside actor folder is functional (not checked for cosmetic)', () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
+        const result = getChangedActors({
+            filepathsChanged: ['lib/config.json'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('README outside actor folder but inside context is ignored (not cosmetic)', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['docs/README.md'],
+            actorConfigs: [miniActor],
+            commits,
+            isLatest: true,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('README inside actor folder is cosmetic', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['actors/foo_bar/README.md'],
+            actorConfigs: [miniActor],
+            commits,
+            isLatest: true,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('hoists a standalone actor own top-level dev file relative to its context before checking the ignore list', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['standalone-actors/standalone/.eslintrc'],
+            actorConfigs,
+            commits,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('does not special-case code/ and shared/ prefixes anymore — must be declared via overrideActorContext', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['code/.eslintrc'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('ignores code/.eslintrc when "code" is declared via overrideActorContext', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['code/.eslintrc'],
+            actorConfigs: [amazonActor],
+            commits,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('shared/Dockerfile declared via overrideActorContext is functional', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['shared/Dockerfile'],
+            actorConfigs: [amazonActor],
+            commits,
+        });
+        expect(result).toEqual([amazonActor]);
+    });
+
+    it('code/README.md declared via overrideActorContext is ignored (outside actor folder)', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['code/README.md'],
+            actorConfigs: [amazonActor],
+            commits,
+            isLatest: true,
+        });
+        expect(result).toEqual([]);
+    });
+});
+
+describe('getChangedActors logging', () => {
+    beforeEach(() => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(false);
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+
+    it('logs a single "specific" group for a single actor with one functional file', () => {
+        getChangedActors({
+            filepathsChanged: ['actors/foo_bar/src/main.ts'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+
+        expect(console.error).toHaveBeenCalledWith(
+            '[DIFF]: Changes specific to actor foo/bar: actors/foo_bar/src/main.ts',
+        );
+        expect(console.error).toHaveBeenCalledWith('[DIFF]: Actors to be built and tested: foo/bar');
+    });
+
+    it('logs a single "shared" group when two actors are triggered by the exact same file', () => {
+        const actorA: ActorConfig = {
+            actorFullName: 'team/actor-a',
+            folder: 'actors/a',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: ['', 'shared'],
+        };
+        const actorB: ActorConfig = {
+            actorFullName: 'team/actor-b',
+            folder: 'actors/b',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: ['', 'shared'],
+        };
+
+        getChangedActors({
+            filepathsChanged: ['shared/shared.ts'],
+            actorConfigs: [actorA, actorB],
+            commits,
+        });
+
+        expect(console.error).toHaveBeenCalledWith(
+            '[DIFF]: Shared changes for actors team/actor-a, team/actor-b: shared/shared.ts',
+        );
+        expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('Changes specific to actor'));
+        expect(console.error).toHaveBeenCalledWith('[DIFF]: Actors to be built and tested: team/actor-a, team/actor-b');
+    });
+
+    it('logs shared and specific groups in descending-size order for partial overlap across actors', () => {
+        const actorA: ActorConfig = {
+            actorFullName: 'team/actor-a',
+            folder: 'actors/a',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: [''],
+        };
+        const actorB: ActorConfig = {
+            actorFullName: 'team/actor-b',
+            folder: 'actors/b',
+            tokenEnvVar: 'APIFY_TOKEN_TEAM',
+            dockerContextDir: '',
+            contextPaths: [''],
+        };
+
+        getChangedActors({
+            filepathsChanged: ['shared.ts', 'actors/a/a-only.ts', 'actors/b/b-only.ts'],
+            actorConfigs: [actorA, actorB],
+            commits,
+        });
+
+        const errorCalls = (console.error as unknown as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]);
+
+        expect(errorCalls).toEqual([
+            '[DIFF]: Shared changes for actors team/actor-a, team/actor-b: shared.ts',
+            '[DIFF]: Changes specific to actor team/actor-a: actors/a/a-only.ts',
+            '[DIFF]: Changes specific to actor team/actor-b: actors/b/b-only.ts',
+            '[DIFF]: Actors to be built and tested: team/actor-a, team/actor-b',
+        ]);
+    });
+
+    it('logs no group lines when zero actors changed', () => {
+        getChangedActors({
+            filepathsChanged: ['.gitignore', 'README.md'],
+            actorConfigs,
+            commits,
+        });
+
+        expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('Shared changes'));
+        expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('Changes specific to'));
+        expect(console.error).toHaveBeenCalledWith('[DIFF]: No relevant files changed, skipping builds and tests');
     });
 });

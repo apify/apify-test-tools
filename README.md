@@ -4,28 +4,98 @@
 
 ## Getting Started
 
-1. Install the package `npm i -D apify-test-tools`
-    - because it uses [annotate](https://vitest.dev/guide/test-context.html#annotate), `vitest` version to be at least `3.2.0`
-    - make sure that `target` and `module` in your `tsconfig.json`'s `compilerOptions` are set to `ES2022`
-2. create test directories: `mkdir -p test/platform/core`
-    - core (hourly) tests should go to `test/platform/core`
-    - daily tests should go to `test/platform`
-3. setup github worklows TODO
+### 1. Install the package
 
-File structure:
+```bash
+npm i -D apify-test-tools
+```
+
+- Requires `vitest` version `3.2.0` or later (uses [annotate](https://vitest.dev/guide/test-context.html#annotate))
+- Make sure `target` and `module` in your `tsconfig.json`'s `compilerOptions` are set to `ES2022`
+
+### 2. Create the config file
+
+Every repo that uses `apify-test-tools` must have an `apify-test-tools.config.json` file at the root. This file tells the tool which actors live in the repo, how to identify them, and which token to use.
+
+```json
+{
+    "actors": [
+        {
+            "folder": "actors/web-scraper",
+            "actorFullName": "myteam/web-scraper",
+            "tokenEnvVar": "APIFY_TOKEN_MYTEAM"
+        },
+        {
+            "folder": "actors/email-sender",
+            "actorFullName": "myteam/email-sender",
+            "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
+            "overrideActorContext": ["actors/email-sender", "packages/shared"]
+        }
+    ]
+}
+```
+
+Each entry has:
+
+| Field                  | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `folder`               | yes      | Relative path from repo root to the actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`), the actor's README/CHANGELOG, and its source. Use `"."` for a single-actor repo where `.actor/` is at the root.                                                                                                                                                                                                                          |
+| `actorFullName`        | yes      | Full actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                               |
+| `tokenEnvVar`          | yes      | Name of the environment variable holding the Apify API token for this actor. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                                    |
+| `overrideActorContext` | no       | Array of paths (relative to repo root) that define which files are relevant to this actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
+
+### 3. Set up actor folders
+
+Each actor in the config must have a `.actor/actor.json` file. The `dockerContextDir` field in `actor.json` defines the build context boundary — this is what the tool uses to determine which files can affect the actor's build.
 
 ```
-google-maps
+my-repo
+├── apify-test-tools.config.json
 ├── actors
-└── src
+│   ├── web-scraper
+│   │   ├── .actor
+│   │   │   └── actor.json
+│   │   └── src/
+│   └── email-sender
+│       ├── .actor
+│       │   └── actor.json
+│       └── src/
 └── test
     ├── unit
     └── platform
-        ├── core                  <- Core tests need to be inside core directory
+        ├── core                    <- Core (hourly) tests
         │   └── core.test.ts
-        ├── some.test.ts          <- Other tests can be defined anywhere inside platform directory
+        ├── some.test.ts            <- Daily tests can be anywhere inside platform/
         └── some-other.test.ts
 ```
+
+For a single-actor repo, set `"folder": "."` in the config and place `.actor/actor.json` at the repo root.
+
+### Change detection
+
+When a PR is opened or code is pushed, the tool determines which actors need to be built and tested based on the changed files. For each changed file, for each actor:
+
+1. **Sibling exclusion** — files inside another actor's `folder` are excluded first. This prevents an actor with broad context from being triggered by changes that belong to a sibling actor.
+2. **CHANGELOG classification** — a `CHANGELOG.md` file is always `cosmetic` (only triggers a release build, not tests), for every actor, regardless of context or folder. (See [issue #106](https://github.com/apify/apify-test-tools/issues/106).)
+3. **Context matching** — the file must fall within one of the actor's context paths (`dockerContextDir` from `actor.json` by default, or `overrideActorContext` from config if set). Files outside every context path are skipped.
+4. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it matched (e.g. a standalone actor's own `.eslintrc` is checked as just `.eslintrc`, not the full repo-root-relative path), then checked against repo-level dev file patterns (`.vscode/`, `.gitignore`, `.husky/`, `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`). There's no hardcoded special-casing for legacy `code/`/`shared/` layouts — repos that need those directories treated as top-level must list them explicitly in `overrideActorContext`.
+5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior.
+6. **README classification** — a `README.md` file is `cosmetic` (only triggers a release build, not tests) if it lives inside the actor's own `folder`; otherwise it's ignored entirely, since it isn't documentation for this actor.
+7. **Cosmetic JSON classification** — `.json` files inside the actor's own `.actor/` directory with only cosmetic schema changes (whitespace, key ordering) only trigger a release build.
+8. **Functional** — everything else triggers both build and tests.
+
+### 4. Create test directories
+
+```bash
+mkdir -p test/platform/core
+```
+
+- Core (hourly) tests go in `test/platform/core`
+- Daily tests go anywhere in `test/platform`
+
+### 5. Set up GitHub workflows
+
+See the [GitHub workflows](#github-worklows) section below.
 
 ## Github worklows
 
@@ -343,7 +413,7 @@ GITHUB_WORKSPACE=. \
 Remove `--dry-run` to actually trigger builds and update the branch names/ The command outputs a JSON array of build objects to stdout:
 
 ```json
-[{ "buildId": "...", "actorId": "...", "buildNumber": "...", "actorName": "john.doe/my-actor" }]
+[{ "buildId": "...", "actorRawId": "...", "buildNumber": "...", "actorFullName": "john.doe/my-actor" }]
 ```
 
 #### Build from local source (no push needed)

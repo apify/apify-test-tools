@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 <!-- git-cliff-unreleased-start -->
 ## 0.8.7 - **not yet released**
 
+### 🚀 Features
+
+- [**breaking**] Replace folder naming convention for actor discovery with explicit config file ([#96](https://github.com/apify/apify-test-tools/pull/96)) ([bcf1187](https://github.com/apify/apify-test-tools/commit/bcf1187d98f74183a09b3edd91f7361097cba3e9)) by [@ruocco-l](https://github.com/ruocco-l), closes [#84](https://github.com/apify/apify-test-tools/issues/84)
+
 ### 🐛 Bug Fixes
 
 - Use slack mrkdwn in release notifications ([#107](https://github.com/apify/apify-test-tools/pull/107)) ([b5314e4](https://github.com/apify/apify-test-tools/commit/b5314e42dead43ebe7d501c448287fb6f026e9ed)) by [@JMatej](https://github.com/JMatej)

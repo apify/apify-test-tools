@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 ### 🚀 Features
 
 - [**breaking**] Replace folder naming convention for actor discovery with explicit config file ([#96](https://github.com/apify/apify-test-tools/pull/96)) ([bcf1187](https://github.com/apify/apify-test-tools/commit/bcf1187d98f74183a09b3edd91f7361097cba3e9)) by [@ruocco-l](https://github.com/ruocco-l), closes [#84](https://github.com/apify/apify-test-tools/issues/84)
+- **only-and-omit:** Pick or exclude actors ([#113](https://github.com/apify/apify-test-tools/pull/113)) ([99506f6](https://github.com/apify/apify-test-tools/commit/99506f668073680eda6fb9d28e22881936b70d96)) by [@JuanGalilea](https://github.com/JuanGalilea)
 
 ### 🐛 Bug Fixes
 

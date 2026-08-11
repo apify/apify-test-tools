@@ -94,7 +94,11 @@ const fetchAllBranchCommits = (sourceBranch: string, targetBranch: string): Comm
  * Gets the commits between sourceBranch and targetBranch (exclusive).
  * - If baseCommit is provided, only returns commits after the baseCommit.
  */
-export const getCommits = ({ sourceBranch, targetBranch, baseCommit }: Config): Commit[] => {
+export const getCommits = ({
+    sourceBranch,
+    targetBranch,
+    baseCommit,
+}: Pick<Config, 'sourceBranch' | 'targetBranch' | 'baseCommit'>): Commit[] => {
     const baseCommitSha = parseBaseCommit(baseCommit);
     const commits = fetchAllBranchCommits(sourceBranch, targetBranch);
 

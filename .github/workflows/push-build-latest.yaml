@@ -1,0 +1,57 @@
+name: Build latest and report to slack
+
+on:
+    workflow_call:
+        inputs:
+            working-directory:
+                type: string
+                default: .
+                required: false
+            additional-working-directory:
+                type: string
+                required: false
+            # Defaults to #notif-<repo-name> when empty, matching the previous behavior.
+            report-slack-channel:
+                type: string
+                default: ''
+                required: false
+
+jobs:
+    pushBuildLatest:
+        name: 'Build latest: ${{github.repository}} ${{github.event.head_commit.message}}'
+        if: |
+            !contains(github.event.head_commit.message, '[skip ci]') &&
+            !contains(github.event.head_commit.message, '[skip platform-test]')
+
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: ${{ inputs.working-directory }}
+
+        steps:
+            - name: Setup repository and dependencies
+              id: setup
+              # For testing, you have to temporarily change the branch
+              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@v1
+              with:
+                  working-directory: ${{ inputs.working-directory }}
+                  additional-working-directory: ${{ inputs.additional-working-directory }}
+                  npm-token: ${{ secrets.NPM_TOKEN }}
+
+            # run-with-apify-tokens.mjs reads the token names from in apify-test-tools.config.json
+            # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
+            # The library never sees secrets it doesn't need
+            - name: Release Actors and notify
+              env:
+                  ALL_SECRETS: ${{ toJSON(secrets) }}
+                  SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
+              run: |
+                  node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
+                    npx apify-test-tools release --push-event-path ${{ github.event_path }} --release-slack-channel "#delivery-public-actors" --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" --use-docker-cache
+
+            - name: Delete old builds
+              env:
+                  ALL_SECRETS: ${{ toJSON(secrets) }}
+              run: |
+                  node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
+                    npx apify-test-tools delete-old-builds

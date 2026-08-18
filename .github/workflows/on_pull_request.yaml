@@ -21,3 +21,30 @@ jobs:
     tests:
         name: Tests
         uses: ./.github/workflows/_tests.yaml
+
+    # Reports whether merging this PR will ship the workflows or hold the major tag until a release.
+    # Never fails: raising the floor ahead of the release that satisfies it is a supported way to
+    # land the package change and the workflow change that needs it in one PR.
+    workflows_package_floor:
+        name: Workflows package floor
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Check the required package version is published
+              run: |
+                  min_version=$(cat .github/workflows-min-package-version)
+                  if npm view "apify-test-tools@>=$min_version" version >/dev/null 2>&1; then
+                      echo "Workflows require apify-test-tools >=$min_version, which is published."
+                      echo "The major tag moves on merge and these workflows go live." >> "$GITHUB_STEP_SUMMARY"
+                  else
+                      {
+                          echo "### Major tag will be held on merge"
+                          echo
+                          echo "These workflows require \`apify-test-tools@>=$min_version\`, which is not on npm yet."
+                          echo "Merging is fine: consumers keep running the current workflows until you cut a"
+                          echo "stable release, and the tag moves once that version is published."
+                      } >> "$GITHUB_STEP_SUMMARY"
+                      echo "::notice::Merging will not ship these workflows until apify-test-tools $min_version is released."
+                  fi

@@ -1,0 +1,75 @@
+name: Platform tests
+
+on:
+    workflow_call:
+        inputs:
+            # Deprecated, use `test-files-glob`
+            subtest:
+                type: string
+                default: ''
+                required: false
+            # Specify what tests you want to run, relative to `test/platform`
+            test-files-glob:
+                type: string
+                default: ''
+                required: false
+            working-directory:
+                type: string
+                default: .
+                required: false
+            additional-working-directory:
+                type: string
+                required: false
+            # Defaults to #notif-<repo-name> when empty, matching the previous behavior.
+            report-slack-channel:
+                type: string
+                default: ''
+                required: false
+
+jobs:
+    scheduledPlatformTests:
+        name: Scheduled Platform tests
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: ${{ inputs.working-directory }}
+        steps:
+            - name: Setup repository and dependencies
+              # For testing, you have to temporarily change the branch
+              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@v1
+              with:
+                  working-directory: ${{ inputs.working-directory }}
+                  additional-working-directory: ${{ inputs.additional-working-directory }}
+                  npm-token: ${{ secrets.NPM_TOKEN }}
+
+            - name: Test
+              env:
+                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+                  SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
+              run: |
+                  set +e
+                  export RUN_ALL_PLATFORM_TESTS=1
+                  npx vitest ./test/platform/${{ inputs.test-files-glob || inputs.subtest }} \
+                    --run \
+                    --reporter=default \
+                    --reporter=json \
+                    --outputFile=./test-output.json \
+                    --maxConcurrency 20 \
+                    --fileParallelism=true \
+                    --maxWorkers 100
+                  return_code=$?
+                  npx apify-test-tools report-tests \
+                    --report-file ./test-output.json \
+                    --workspace . \
+                    --workflow-name "${{ github.workflow }}" \
+                    --job-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+                    --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}"
+                  exit $return_code
+
+            - name: Upload Vitest JSON artifact
+              uses: actions/upload-artifact@v6
+              if: always()
+              with:
+                  name: vitest-results
+                  path: ./test-output.json

@@ -31,7 +31,7 @@ const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
 
 export { ExpectStatic };
 
-const { TESTER_APIFY_TOKEN, RUN_PLATFORM_TESTS, RUN_ALL_PLATFORM_TESTS } = process.env;
+const { TESTER_APIFY_TOKEN, RUN_ALL_PLATFORM_TESTS } = process.env;
 const apifyClient = new ApifyClient({ token: TESTER_APIFY_TOKEN });
 
 const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
@@ -41,8 +41,11 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
     timeout: DEFAULT_TEST_RUN_DURATION_MS,
 };
 
+/**
+ * Platform tests only run when `TESTER_APIFY_TOKEN` is provided, since they need the platform to run against.
+ */
 export const describe = (name: string, fn?: SuiteFactory<object>, options: ActorTestOptions = DEFAULT_TEST_OPTIONS) => {
-    vitestDescribe.runIf(!!RUN_PLATFORM_TESTS || !!RUN_ALL_PLATFORM_TESTS)(name, options, fn);
+    vitestDescribe.runIf(!!TESTER_APIFY_TOKEN || !!RUN_ALL_PLATFORM_TESTS)(name, options, fn);
 };
 
 const DEFAULT_TEST_ACTOR_OPTIONS: ActorTestOptions = {

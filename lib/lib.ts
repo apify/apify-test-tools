@@ -43,6 +43,9 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
 
 /**
  * Platform tests only run when `TESTER_APIFY_TOKEN` is provided, since they need the platform to run against.
+ *
+ * `RUN_ALL_PLATFORM_TESTS` is needed for periodic tests, where there is no `ACTOR_BUILDS` env var to match
+ * the tests against - without it, every `testActor` would be filtered out as an actor we didn't build.
  */
 export const describe = (name: string, fn?: SuiteFactory<object>, options: ActorTestOptions = DEFAULT_TEST_OPTIONS) => {
     vitestDescribe.runIf(!!TESTER_APIFY_TOKEN || !!RUN_ALL_PLATFORM_TESTS)(name, options, fn);

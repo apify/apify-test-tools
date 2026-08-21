@@ -11,6 +11,7 @@ import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedActors } from './diff-changes.js';
 import { getBranchOnlyChangedFiles, getChangedFiles, getCommits, hasMergeFromTarget } from './git.js';
 import { getPushData } from './github.js';
+import { notifiers } from './notifiers/index.js';
 import { notify } from './notify.js';
 import { writeReleaseNotifyFiles } from './release-report.js';
 import { reportTestResults } from './test-report.js';
@@ -153,7 +154,7 @@ await yargs()
         (args) =>
             args
                 .option('notify-file', { type: 'string', demandOption: true })
-                .option('notifier', { type: 'string', demandOption: true })
+                .option('notifier', { type: 'string', demandOption: true, choices: Object.keys(notifiers) })
                 .option('target', { type: 'string', demandOption: true })
                 .option('token-env-var', {
                     type: 'string',

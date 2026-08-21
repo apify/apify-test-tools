@@ -48,4 +48,22 @@ describe('notify', () => {
             notify({ notifyFile: 'out.json', notifier: 'carrier-pigeon', target: '#general', dryRun: false }),
         ).rejects.toThrow('Unknown notifier "carrier-pigeon"');
     });
+
+    it('builds the config from an explicit --token-env-var and skips reading the config file entirely', async () => {
+        fsMock.readFile.mockResolvedValue(Buffer.from(JSON.stringify({ summary: 'hi' })));
+
+        await notify({
+            notifyFile: 'out.json',
+            notifier: 'slack',
+            target: '#general',
+            dryRun: false,
+            tokenEnvVar: 'SLACK_TOKEN',
+        });
+
+        expect(readNotifiersConfigMock).not.toHaveBeenCalled();
+        expect(notifiersMock.slack).toHaveBeenCalledWith(
+            { summary: 'hi' },
+            { target: '#general', dryRun: false, config: { tokenEnvVar: 'SLACK_TOKEN' } },
+        );
+    });
 });

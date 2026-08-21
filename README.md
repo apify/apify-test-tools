@@ -525,4 +525,16 @@ The `notify` command looks up its delivery settings under `notifiers.<name>` in 
 }
 ```
 
+Alternatively, pass `--token-env-var` directly on the `notify` command to skip the config file check entirely:
+
+```bash
+npx apify-test-tools notify \
+  --notify-file test-report.notify.json \
+  --notifier slack \
+  --target "#test-failures" \
+  --token-env-var SLACK_TOKEN
+```
+
+`--token-env-var` takes precedence over `notifiers.<name>` and, when given, `notify` doesn't read `apify-test-tools.config.json` at all.
+
 `report-tests`/`release`/`notify` always log what they're about to write/send, regardless of `--dry-run` (top-level flag). What `--dry-run` skips is the actual side effect: `report-tests`/`release` don't write the notify file, and `notify` doesn't actually deliver it.

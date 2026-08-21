@@ -9,9 +9,10 @@ interface NotifyOptions {
     notifier: string;
     target: string;
     dryRun: boolean;
+    tokenEnvVar?: string;
 }
 
-export const notify = async ({ notifyFile, notifier: notifierName, target, dryRun }: NotifyOptions) => {
+export const notify = async ({ notifyFile, notifier: notifierName, target, dryRun, tokenEnvVar }: NotifyOptions) => {
     const payload: NotifyPayload = JSON.parse((await fs.readFile(notifyFile)).toString());
 
     const notifier = notifiers[notifierName];
@@ -21,6 +22,7 @@ export const notify = async ({ notifyFile, notifier: notifierName, target, dryRu
         );
     }
 
-    const notifiersConfig = await readNotifiersConfig();
-    await notifier(payload, { target, dryRun, config: notifiersConfig?.[notifierName] });
+    // An explicit --token-env-var skips the config file check entirely.
+    const config = tokenEnvVar ? { tokenEnvVar } : (await readNotifiersConfig())?.[notifierName];
+    await notifier(payload, { target, dryRun, config });
 };

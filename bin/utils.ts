@@ -114,7 +114,7 @@ const findOverlappingContextPaths = (contextPaths: string[]): [string, string] |
     return undefined;
 };
 
-export const readConfigFile = async (selection: { actors: string[]; ignore: string[] }): Promise<ActorConfig[]> => {
+const readAndParseConfigFile = async (): Promise<ActorConfigFile> => {
     let raw: string;
     try {
         raw = await fs.readFile(CONFIG_FILE_NAME, 'utf-8');
@@ -125,12 +125,15 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
         );
     }
 
-    let config: ActorConfigFile;
     try {
-        config = JSON.parse(raw);
+        return JSON.parse(raw);
     } catch {
         throw new Error(`Config file "${CONFIG_FILE_NAME}" contains invalid JSON.`);
     }
+};
+
+export const readConfigFile = async (selection: { actors: string[]; ignore: string[] }): Promise<ActorConfig[]> => {
+    const config = await readAndParseConfigFile();
 
     if (!Array.isArray(config.actors)) {
         throw new Error(`Config file "${CONFIG_FILE_NAME}" must have an "actors" array at the top level.`);
@@ -227,6 +230,11 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
     }
 
     return selectActors(selection, actorConfigs);
+};
+
+export const readNotifiersConfig = async (): Promise<Record<string, unknown> | undefined> => {
+    const config = await readAndParseConfigFile();
+    return config.notifiers;
 };
 
 export const setCwd = ({ workspace }: { workspace: string | undefined }) => {

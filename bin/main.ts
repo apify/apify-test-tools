@@ -11,7 +11,8 @@ import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedActors } from './diff-changes.js';
 import { getBranchOnlyChangedFiles, getChangedFiles, getCommits, hasMergeFromTarget } from './git.js';
 import { getPushData } from './github.js';
-import { notifyToSlack } from './slack.js';
+import { notify } from './notify.js';
+import { writeReleaseNotifyFiles } from './release-report.js';
 import { reportTestResults } from './test-report.js';
 import type { Config } from './types.js';
 import { readConfigFile, setCwd, spawnCommandInGhWorkspace } from './utils.js';
@@ -139,11 +140,23 @@ await yargs()
         (args) =>
             args
                 .option('report-file', { type: 'string', demandOption: true })
-                .option('report-slack-channel', { type: 'string' })
+                .option('notify-file', { type: 'string', demandOption: true })
                 .option('job-url', { type: 'string' })
                 .option('workflow-name', { type: 'string' }),
         async (args) => {
             await reportTestResults(args);
+        },
+    )
+    .command(
+        'notify',
+        '',
+        (args) =>
+            args
+                .option('notify-file', { type: 'string', demandOption: true })
+                .option('notifier', { type: 'string', demandOption: true })
+                .option('target', { type: 'string', demandOption: true }),
+        async (args) => {
+            await notify(args);
         },
     )
     .command(
@@ -176,8 +189,8 @@ await yargs()
             actorSelectionOptions(args)
                 .option('push-event-path', { type: 'string', demandOption: true })
                 .option('dry-run', { type: 'boolean', default: false })
-                .option('report-slack-channel', { type: 'string' })
-                .option('release-slack-channel', { type: 'string' })
+                .option('report-notify-file', { type: 'string', demandOption: true })
+                .option('release-notify-file', { type: 'string', demandOption: true })
                 .option('use-docker-cache', { type: 'boolean', default: false }),
         async (args) => {
             const { branch, changedFiles, repoUrl, commits, changelog, repository, author } = await getPushData(
@@ -191,7 +204,7 @@ await yargs()
                 isLatest,
                 commits,
             });
-            const { dryRun, reportSlackChannel, releaseSlackChannel } = args;
+            const { dryRun, reportNotifyFile, releaseNotifyFile } = args;
             const builds = await runBuilds({
                 isLatest,
                 repoUrl,
@@ -202,15 +215,15 @@ await yargs()
             });
             console.error(JSON.stringify(builds));
 
-            await notifyToSlack({
+            await writeReleaseNotifyFiles({
                 changedFiles,
                 commits,
                 changelog,
                 repository,
                 dryRun,
                 author,
-                reportSlackChannel,
-                releaseSlackChannel,
+                reportNotifyFile,
+                releaseNotifyFile,
             });
         },
     )

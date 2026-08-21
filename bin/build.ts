@@ -1,7 +1,5 @@
-import type { ActorVersionSourceFile, Build } from 'apify-client';
-import { ApifyClient } from 'apify-client';
-
-import { ACTOR_SOURCE_TYPES } from '@apify/consts';
+import type { ActorVersion, ActorVersionSourceFile, Build } from 'apify-client';
+import { ActorSourceType, ApifyClient } from 'apify-client';
 
 import type { ActorConfig, BuildData } from './types.js';
 
@@ -15,10 +13,6 @@ type BuildPrActorOptions = {
 
 // Fixed version number used to build from local source files, since there is no real version to track.
 export const ZIP_VERSION = '0.98';
-
-type ActorClient = ReturnType<ApifyClient['actor']>;
-// NOTE: I couldn't find this type, so I had to extract it :(
-type ActorVersion = Parameters<ReturnType<ActorClient['version']>['update']>[0];
 
 export class ApifyBuilder {
     private constructor(
@@ -107,9 +101,7 @@ export class ApifyBuilder {
             buildTag,
             versionNumber,
             gitRepoUrl,
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore: coudn't find this type either :(
-            sourceType: ACTOR_SOURCE_TYPES.GIT_REPO,
+            sourceType: ActorSourceType.GitRepo,
         };
         return this.createVersionAndBuild(versionNumber, actorVersion, useDockerCache);
     };
@@ -118,9 +110,7 @@ export class ApifyBuilder {
         const actorVersion: ActorVersion = {
             versionNumber: ZIP_VERSION,
             sourceFiles,
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore: couldn't find this type :(
-            sourceType: ACTOR_SOURCE_TYPES.SOURCE_FILES,
+            sourceType: ActorSourceType.SourceFiles,
         };
         return this.createVersionAndBuild(ZIP_VERSION, actorVersion, false);
     };

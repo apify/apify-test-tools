@@ -42,10 +42,10 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
 };
 
 /**
- * Platform tests only run when `TESTER_APIFY_TOKEN` is provided, since they need the platform to run against.
+ * Platform tests need `TESTER_APIFY_TOKEN` to talk to the platform, so without it we skip them altogether.
  *
- * `RUN_ALL_PLATFORM_TESTS` is needed for periodic tests, where there is no `ACTOR_BUILDS` env var to match
- * the tests against - without it, every `testActor` would be filtered out as an actor we didn't build.
+ * `RUN_ALL_PLATFORM_TESTS` enables them too because locally we can test against a hardcoded `runId`,
+ * which doesn't need the tester token.
  */
 export const describe = (name: string, fn?: SuiteFactory<object>, options: ActorTestOptions = DEFAULT_TEST_OPTIONS) => {
     vitestDescribe.runIf(!!TESTER_APIFY_TOKEN || !!RUN_ALL_PLATFORM_TESTS)(name, options, fn);
@@ -71,6 +71,8 @@ export const testActor = <T>(
         ...testOptions,
     };
     const name = `${actorId}: ${testName}`;
+    // `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
+    // tests against - without it, every test would be filtered out as an actor we didn't build.
     const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorId);
     vitestTest.runIf(shouldRun)(name, options, async <TYPE extends TestContext>(context: TYPE) => {
         const { expect, ...rest } = context;
@@ -103,6 +105,8 @@ export const testStandbyActor = <I = any, O = any>(
         ...testOptions,
     };
     const name = `${actorId}: ${testName}`;
+    // `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
+    // tests against - without it, every test would be filtered out as an actor we didn't build.
     const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorId);
 
     vitestTest.runIf(shouldRun)(name, options, async <T extends TestContext>(context: T) => {

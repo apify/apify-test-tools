@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import type { ActorVersionSourceFile } from 'apify-client';
 
-import { ApifyBuilder, waitAndSummarizeBuilds } from './build.js';
+import { dryRunBuildData, runAndSummarizeBuilds, ZIP_VERSION } from './build.js';
 import { buildDockerIgnoreMatcher } from './dockerignore.js';
 import { isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, BuildData } from './types.js';
@@ -197,26 +197,11 @@ export const runBuildsFromLocal = async ({
         for (const { actorFullName, folder } of actorConfigs) {
             console.error(`  ${actorFullName} (${folder})`);
         }
-        return actorConfigs.map(({ actorFullName }) => ({
-            buildId: 'dry-run',
-            actorRawId: 'dry-run',
-            buildNumber: '0.98.0',
-            actorFullName,
-        }));
+        return actorConfigs.map(({ actorFullName }) => dryRunBuildData(actorFullName, ZIP_VERSION));
     }
 
-    console.error('=========================================');
-    console.error('STARTED LOCAL BUILDS:');
-    const buildersByActorFullName = new Map<string, ApifyBuilder>(
-        actorConfigs.map((actorConfig) => [actorConfig.actorFullName, ApifyBuilder.fromActorConfig(actorConfig)]),
-    );
-    const startedBuilds = await Promise.all(
-        actorConfigs.map(async ({ actorFullName, folder }) => {
-            const builder = buildersByActorFullName.get(actorFullName)!;
-            const sourceFiles = await collectSourceFiles(actorFullName, folder);
-            return builder.startActorBuildFromSourceFiles(sourceFiles);
-        }),
-    );
-
-    return waitAndSummarizeBuilds(startedBuilds, buildersByActorFullName, 'LOCAL BUILDS');
+    return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {
+        const sourceFiles = await collectSourceFiles(actorConfig.actorFullName, actorConfig.folder);
+        return builder.startActorBuildFromSourceFiles(sourceFiles);
+    });
 };

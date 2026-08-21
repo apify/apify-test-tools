@@ -28,21 +28,17 @@ describe('notify', () => {
         );
     });
 
-    it('passes a null payload through untouched', async () => {
+    it('skips the notifier entirely when the payload is null', async () => {
         fsMock.readFile.mockResolvedValue(Buffer.from('null'));
         readNotifiersConfigMock.mockResolvedValue(undefined);
 
         await notify({ notifyFile: 'out.json', notifier: 'slack', target: '#general', dryRun: false });
 
-        expect(notifiersMock.slack).toHaveBeenCalledWith(null, {
-            target: '#general',
-            dryRun: false,
-            config: undefined,
-        });
+        expect(notifiersMock.slack).not.toHaveBeenCalled();
     });
 
     it('throws on an unknown notifier', async () => {
-        fsMock.readFile.mockResolvedValue(Buffer.from('null'));
+        fsMock.readFile.mockResolvedValue(Buffer.from(JSON.stringify({ summary: 'hi' })));
 
         await expect(
             notify({ notifyFile: 'out.json', notifier: 'carrier-pigeon', target: '#general', dryRun: false }),

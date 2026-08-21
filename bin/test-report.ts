@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 
-import type { NotifyPayload } from './notifiers/types.js';
+import type { NotifyFileContents } from './notifiers/types.js';
 
 interface ReportTestResultsOptions {
     reportFile: string;
@@ -72,7 +72,7 @@ export const reportTestResults = async ({
     console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
     console.error();
 
-    let notifyPayload: NotifyPayload = null;
+    let notifyPayload: NotifyFileContents = null;
 
     if (failedAssertions.length > 0) {
         // TODO: add slack profiles

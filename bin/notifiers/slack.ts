@@ -24,11 +24,6 @@ const assertSlackConfig = (config: unknown): SlackNotifierConfig => {
 };
 
 export const slackNotifier: Notifier = async (payload, { target, dryRun, config }) => {
-    if (!payload) {
-        console.error('Nothing to notify, skipping Slack message.');
-        return;
-    }
-
     const { tokenEnvVar } = assertSlackConfig(config);
 
     console.error(`=========================================`);

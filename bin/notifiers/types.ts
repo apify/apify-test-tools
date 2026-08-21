@@ -1,4 +1,5 @@
-export type NotifyPayload = { summary: string; details?: string[] } | null;
+export type NotifyPayload = { summary: string; details?: string[] };
+export type NotifyFileContents = NotifyPayload | null;
 
 export interface NotifierOptions {
     target: string;

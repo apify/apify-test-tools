@@ -17,12 +17,6 @@ const { slackNotifier } = await import('../../../../bin/notifiers/slack.js');
 afterEach(() => vi.restoreAllMocks());
 
 describe('slackNotifier', () => {
-    it('does nothing when the payload is null', async () => {
-        await slackNotifier(null, { target: '#general', dryRun: false, config: { tokenEnvVar: 'SLACK_TOKEN' } });
-
-        expect(postMessageMock).not.toHaveBeenCalled();
-    });
-
     it('throws when the config is missing a tokenEnvVar', async () => {
         await expect(
             slackNotifier({ summary: 'hi' }, { target: '#general', dryRun: false, config: {} }),

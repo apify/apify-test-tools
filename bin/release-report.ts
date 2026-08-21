@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 
-import type { NotifyPayload } from './notifiers/types.js';
+import type { NotifyFileContents, NotifyPayload } from './notifiers/types.js';
 import type { Commit } from './types.js';
 
 interface WriteReleaseNotifyFilesOptions {
@@ -31,7 +31,7 @@ export const writeReleaseNotifyFiles = async ({
     const shortSummary = `*${repository}* – New release (by ${author}):\n\n`;
 
     // This one is just for broader public that only cares about public facing changes
-    const releasePayload: NotifyPayload = changelog
+    const releasePayload: NotifyFileContents = changelog
         ? { summary: `${shortSummary}*Additions to the changelog*:\n\n${changelog}\n` }
         : null;
 

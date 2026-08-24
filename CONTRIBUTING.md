@@ -10,8 +10,10 @@ The package consists of two parts:
 - `bin/build.ts` actor building
 - `bin/git.ts` git wrappers for getting relevant git commits and changed files
 - `bin/github.ts` github push event parsing
-- `bin/main.ts` entrypoing
-- `bin/slack.ts` sending notifications to slack
+- `bin/main.ts` entrypoint
+- `bin/notify.ts` dispatches a notify file to a pluggable notifier (e.g. Slack)
+- `bin/notifiers/` notifier implementations (`slack.ts`, etc.) and the shared `Notifier` interface
+- `bin/release-report.ts` builds the release notify payloads (report + public changelog)
 - `bin/test-report.ts` processing vitest's test reports
 
 ## Test library

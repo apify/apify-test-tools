@@ -1,20 +1,19 @@
 import fs from 'node:fs/promises';
 
-import { sendSlackMessage } from './slack.js';
-import { getEnvVar } from './utils.js';
+import type { NotifyFileContents } from './notifiers/types.js';
 
 interface ReportTestResultsOptions {
     reportFile: string;
+    notifyFile: string;
     dryRun: boolean;
-    reportSlackChannel?: string;
     jobUrl?: string;
     workflowName?: string;
 }
 
 export const reportTestResults = async ({
     dryRun,
-    reportSlackChannel,
     reportFile: jsonResultsPath,
+    notifyFile,
     jobUrl,
     workflowName,
 }: ReportTestResultsOptions) => {
@@ -73,38 +72,29 @@ export const reportTestResults = async ({
     console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
     console.error();
 
-    if (!reportSlackChannel) {
-        console.error(
-            `Skipping slack notification. If you want to enable it, add --report-slack-channel flag and make sure SLACK_TOKEN_TESTS_BOT env variable is set.`,
-        );
+    let notifyPayload: NotifyFileContents = null;
+
+    if (failedAssertions.length > 0) {
+        // TODO: add slack profiles
+        const total = failed.length + passed.length;
+        const jobLink = jobUrl ? ` Check <${jobUrl}|the job>.` : '';
+        let summary = `\`${workflowName ?? '-'}\``;
+        summary += `: has ${failedAssertions.length} failed assertions. Failing test suites: ${failed.length}/${total}.${jobLink}`;
+        summary += `\n\n${failedAssertions[0].message} --- <${failedAssertions[0].runLink}|${failedAssertions[0].actorId}>`;
+        const details = failedAssertions
+            .slice(1)
+            .map(({ message, runLink, actorId }) => `• ${message} --- <${runLink}|${actorId}>`);
+
+        notifyPayload = { summary, details };
+    }
+
+    console.error('NOTIFY:', JSON.stringify(notifyPayload));
+
+    if (dryRun) {
         return;
     }
 
-    if (failedAssertions.length === 0) {
-        return;
-    }
-
-    // TODO: add slack profiles
-    const total = failed.length + passed.length;
-    const jobLink = jobUrl ? ` Check <${jobUrl}|the job>.` : '';
-    let slackMessage = `\`${workflowName ?? '-'}\``;
-    slackMessage += `: has ${failedAssertions.length} failed assertions. Failing test suites: ${failed.length}/${total}.${jobLink}`;
-    slackMessage += `\n\n${failedAssertions[0].message} --- <${failedAssertions[0].runLink}|${failedAssertions[0].actorId}>`;
-    const blocks = failedAssertions
-        .slice(1)
-        .map(({ message, runLink, actorId }) => `• ${message} --- <${runLink}|${actorId}>`);
-
-    console.error('SLACK:', slackMessage);
-    console.error('\tblocks:', blocks.join('\n\t\t'));
-
-    if (!reportSlackChannel) {
-        return;
-    }
-
-    if (!dryRun) {
-        const slackToken = getEnvVar('SLACK_TOKEN_TESTS_BOT');
-        await sendSlackMessage(reportSlackChannel, slackMessage, blocks, slackToken);
-    }
+    await fs.writeFile(notifyFile, JSON.stringify(notifyPayload));
 };
 
 type Status = 'passed' | 'failed' | 'skipped' | 'pending' | 'todo' | 'disabled';

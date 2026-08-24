@@ -96,6 +96,7 @@ export interface ActorConfigFileEntry {
 
 export interface ActorConfigFile {
     actors: ActorConfigFileEntry[];
+    notifiers?: Record<string, unknown>;
 }
 
 export interface BuildData {

@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import type { ActorVersionSourceFile } from 'apify-client';
 
-import { dryRunBuildData, runAndSummarizeBuilds, ZIP_VERSION } from './build.js';
+import { dryRunBuildData, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
 import { buildDockerIgnoreMatcher } from './dockerignore.js';
 import { isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, BuildData } from './types.js';
@@ -197,7 +197,7 @@ export const runBuildsFromLocal = async ({
         for (const { actorFullName, folder } of actorConfigs) {
             console.error(`  ${actorFullName} (${folder})`);
         }
-        return actorConfigs.map(({ actorFullName }) => dryRunBuildData(actorFullName, ZIP_VERSION));
+        return actorConfigs.map(({ actorFullName }) => dryRunBuildData(actorFullName, LOCAL_SOURCE_VERSION_NUMBER));
     }
 
     return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {

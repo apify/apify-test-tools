@@ -12,7 +12,8 @@ type BuildPrActorOptions = {
 };
 
 // Fixed version number used to build from local source files, since there is no real version to track.
-export const ZIP_VERSION = '0.98';
+export const LOCAL_SOURCE_VERSION_NUMBER = '0.98';
+const DEFAULT_TEST_VERSION_NUMBER = '0.99';
 
 export class ApifyBuilder {
     private constructor(
@@ -108,11 +109,11 @@ export class ApifyBuilder {
 
     startActorBuildFromSourceFiles = async (sourceFiles: ActorVersionSourceFile[]): Promise<BuildData> => {
         const actorVersion: ActorVersion = {
-            versionNumber: ZIP_VERSION,
+            versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
             sourceFiles,
             sourceType: ActorSourceType.SourceFiles,
         };
-        return this.createVersionAndBuild(ZIP_VERSION, actorVersion, false);
+        return this.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false);
     };
 
     waitForBuildToFinish = async (buildId: string): Promise<Build> => {
@@ -318,7 +319,7 @@ export const runBuilds = async ({
             versionNumber = defaultVersionNumber;
             buildTag = defaultBuildTag;
         } else {
-            versionNumber = '0.99';
+            versionNumber = DEFAULT_TEST_VERSION_NUMBER;
         }
 
         // Depending on if these are miniactors or standaloneActors

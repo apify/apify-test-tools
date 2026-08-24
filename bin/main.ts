@@ -136,7 +136,7 @@ await yargs()
         },
     )
     .command(
-        'report-tests',
+        'create-test-report',
         '',
         (args) =>
             args

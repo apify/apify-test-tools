@@ -488,10 +488,10 @@ GITHUB_WORKSPACE=local-clone tsx bin/main.ts get-actor-configs
 
 ### Notifications
 
-`report-tests` and `release` don't send notifications themselves — they write a _notify file_ (a JSON payload of `{ "summary": string, "details"?: string[] } | null`, `null` meaning nothing to report) describing what happened. A separate `notify` command then delivers that file through a pluggable notifier (Slack for now), so each command can be composed as its own step in a GitHub Actions workflow:
+`create-test-report` and `release` don't send notifications themselves — they write a _notify file_ (a JSON payload of `{ "summary": string, "details"?: string[] } | null`, `null` meaning nothing to report) describing what happened. A separate `notify` command then delivers that file through a pluggable notifier (Slack for now), so each command can be composed as its own step in a GitHub Actions workflow:
 
 ```bash
-npx apify-test-tools report-tests \
+npx apify-test-tools create-test-report \
   --report-file jest-results.json \
   --notify-file test-report.notify.json \
   --job-url "$JOB_URL" \
@@ -537,4 +537,4 @@ npx apify-test-tools notify \
 
 `--token-env-var` takes precedence over `notifiers.<name>` and, when given, `notify` doesn't read `apify-test-tools.config.json` at all.
 
-`report-tests`/`release`/`notify` always log what they're about to write/send, regardless of `--dry-run` (top-level flag). What `--dry-run` skips is the actual side effect: `report-tests`/`release` don't write the notify file, and `notify` doesn't actually deliver it.
+`create-test-report`/`release`/`notify` always log what they're about to write/send, regardless of `--dry-run` (top-level flag). What `--dry-run` skips is the actual side effect: `create-test-report`/`release` don't write the notify file, and `notify` doesn't actually deliver it.

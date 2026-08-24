@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { ActorVersionSourceFile } from 'apify-client';
+import type { ActorVersion, ActorVersionSourceFile } from 'apify-client';
+import { ActorSourceType } from 'apify-client';
 
 import { dryRunBuildData, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
 import { buildDockerIgnoreMatcher } from './dockerignore.js';
@@ -202,6 +203,11 @@ export const runBuildsFromLocal = async ({
 
     return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {
         const sourceFiles = await collectSourceFiles(actorConfig.actorFullName, actorConfig.folder);
-        return builder.startActorBuildFromSourceFiles(sourceFiles);
+        const actorVersion: ActorVersion = {
+            versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
+            sourceFiles,
+            sourceType: ActorSourceType.SourceFiles,
+        };
+        return builder.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false);
     });
 };

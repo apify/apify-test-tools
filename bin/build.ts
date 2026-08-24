@@ -1,4 +1,4 @@
-import type { ActorVersion, ActorVersionSourceFile, Build } from 'apify-client';
+import type { ActorVersion, Build } from 'apify-client';
 import { ActorSourceType, ApifyClient } from 'apify-client';
 
 import type { ActorConfig, BuildData } from './types.js';
@@ -90,30 +90,6 @@ export class ApifyBuilder {
 
         console.error(`[${this.actorFullName}]: ${id} (${buildNumber})`);
         return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
-    };
-
-    startActorBuild = async ({
-        buildTag,
-        versionNumber,
-        gitRepoUrl,
-        useDockerCache,
-    }: BuildPrActorOptions): Promise<BuildData> => {
-        const actorVersion: ActorVersion = {
-            buildTag,
-            versionNumber,
-            gitRepoUrl,
-            sourceType: ActorSourceType.GitRepo,
-        };
-        return this.createVersionAndBuild(versionNumber, actorVersion, useDockerCache);
-    };
-
-    startActorBuildFromSourceFiles = async (sourceFiles: ActorVersionSourceFile[]): Promise<BuildData> => {
-        const actorVersion: ActorVersion = {
-            versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
-            sourceFiles,
-            sourceType: ActorSourceType.SourceFiles,
-        };
-        return this.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false);
     };
 
     waitForBuildToFinish = async (buildId: string): Promise<Build> => {
@@ -344,9 +320,21 @@ export const runBuilds = async ({
         buildConfigs.map((buildConfig) => [buildConfig.actorConfig.actorFullName, buildConfig]),
     );
 
-    return runAndSummarizeBuilds(actorConfigs, 'BUILDS', async (actorConfig, builder) =>
-        builder.startActorBuild(buildConfigsByActorFullName.get(actorConfig.actorFullName)!),
-    );
+    return runAndSummarizeBuilds(actorConfigs, 'BUILDS', async (actorConfig, builder) => {
+        const {
+            buildTag,
+            versionNumber,
+            gitRepoUrl,
+            useDockerCache: useCache,
+        } = buildConfigsByActorFullName.get(actorConfig.actorFullName)!;
+        const actorVersion: ActorVersion = {
+            buildTag,
+            versionNumber,
+            gitRepoUrl,
+            sourceType: ActorSourceType.GitRepo,
+        };
+        return builder.createVersionAndBuild(versionNumber, actorVersion, useCache);
+    });
 };
 
 export const deleteOldBuilds = async (actorConfigs: ActorConfig[]) => {

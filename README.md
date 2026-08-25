@@ -439,14 +439,13 @@ Since you already scoped the build to just the Actor(s) you care about, point vi
 
 #### 5. Run tests against the builds
 
-Pass the build output as `ACTOR_BUILDS` and provide `TESTER_APIFY_TOKEN`. The token can point to your own account (if you have enough memory) or you can use the testing account (xRGg9iAfJSymqartk).
+Pass the build output as `ACTOR_BUILDS` and provide `TESTER_APIFY_TOKEN`. The token can point to your own account (if you have enough memory) or you can use the testing account (xRGg9iAfJSymqartk). Platform test suites are skipped unless `TESTER_APIFY_TOKEN` is set, so regular unit test runs stay unaffected.
 
 If you want to run only certain tests, change the `test/platform` to be more specific.
 
 ```bash
 ACTOR_BUILDS='<JSON output from build command>' \
 TESTER_APIFY_TOKEN=<token> \
-RUN_PLATFORM_TESTS=1 \
   npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
 ```
 
@@ -463,7 +462,6 @@ BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
 # Run tests with the builds
 ACTOR_BUILDS="$BUILDS" \
 TESTER_APIFY_TOKEN=apify_api_yyy \
-RUN_PLATFORM_TESTS=1 \
   npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
 ```
 

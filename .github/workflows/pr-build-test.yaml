@@ -1,0 +1,169 @@
+name: Test
+
+on:
+    workflow_call:
+        inputs:
+            working-directory:
+                type: string
+                default: .
+                required: false
+            additional-working-directory:
+                type: string
+                required: false
+            skip-platform-tests:
+                type: boolean
+                default: false
+                required: false
+            # Specify what tests you want to run, relative to `test/platform`
+            test-files-glob:
+                type: string
+                default: ''
+                required: false
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    platformTest:
+        if: ${{ !inputs.skip-platform-tests }}
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: ${{ inputs.working-directory }}
+        steps:
+            - name: Setup repository and dependencies
+              id: setup
+              # For testing, you have to temporarily change the branch
+              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@v1
+              with:
+                  working-directory: ${{ inputs.working-directory }}
+                  additional-working-directory: ${{ inputs.additional-working-directory }}
+                  # Some repos use private npm packages, they need to pass NPM_TOKEN secret to this workflow
+                  npm-token: ${{ secrets.NPM_TOKEN }}
+
+            - name: Pick last validated commit from cache
+              id: base_commit
+              uses: actions/cache@v5
+              with:
+                  # We have to call it base commit for the library but it makes more sense as "last validated commit"
+                  # Using run_id ensures the key is always unique so the cache always saves at end-of-job (no "cache hit, not saving" issue)
+                  path: ./base_commit.txt
+                  key: base_commit-${{ github.run_id }}
+                  # This is needed to force overriding the cache with new entry at the end
+                  restore-keys: base_commit-
+
+            # run-with-apify-tokens.mjs reads the token names from in apify-test-tools.config.json
+            # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
+            # The library never sees secrets it doesn't need
+            - name: Build
+              id: build
+              env:
+                  ALL_SECRETS: ${{ toJSON(secrets) }}
+                  # Branch names are attacker-controlled on fork PRs, so they reach the script as
+                  # environment variables rather than being interpolated into it.
+                  HEAD_REF: ${{ github.head_ref }}
+                  BASE_REF: ${{ github.base_ref }}
+                  SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
+              run: |
+                  base_commit=$(cat base_commit.txt 2>/dev/null || echo "")
+                  echo "Last validated (base) commit to be used for build & test: $base_commit"
+                  args=(
+                    --source-branch "origin/$HEAD_REF"
+                    --target-branch "origin/$BASE_REF"
+                    --use-docker-cache
+                  )
+                  [ -n "$base_commit" ] && args+=(--base-commit "$base_commit")
+                  actor_builds=$(node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" \
+                    npx apify-test-tools build "${args[@]}")
+                  echo "actor_builds=$actor_builds" | tee -a "$GITHUB_OUTPUT"
+
+            # Runs the repo's test code and its whole import graph, so it gets the tester token only.
+            - name: Test
+              env:
+                  ACTOR_BUILDS: ${{ steps.build.outputs.actor_builds }}
+                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+                  RUN_PLATFORM_TESTS: '1'
+              run: npx vitest ./test/platform/${{ inputs.test-files-glob }} --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100
+
+            # NOTE: This is an optimization that if we did functional changes and later only cosmetic changes (e.g. dev readme), we will compare changes files only for the last commit. This must run after tests because we want to cache the latest commit only if the tests are successful
+            - name: Store last validated commit to cache
+              env:
+                  HEAD_REF: ${{ github.head_ref }}
+                  BASE_REF: ${{ github.base_ref }}
+              run: |
+                  base_commit=$(cat base_commit.txt 2>/dev/null || echo "")
+                  echo "Old last validated (base) commit: $base_commit"
+                  args=(
+                    --source-branch "origin/$HEAD_REF"
+                    --target-branch "origin/$BASE_REF"
+                  )
+                  [ -n "$base_commit" ] && args+=(--base-commit "$base_commit")
+                  npx apify-test-tools get-latest-commit "${args[@]}" > ./base_commit.txt
+                  echo "New last validated (base) commit: $(cat base_commit.txt)"
+
+    # Pure static checks against the repo. Needs no Apify or Slack credentials, only the npm
+    # token to install dependencies.
+    unitTest:
+        # TODO: only run on changes to code
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: ${{ inputs.working-directory }}
+
+        steps:
+            - name: Setup repository and dependencies
+              # For testing, you have to temporarily change the branch
+              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@v1
+              with:
+                  working-directory: ${{ inputs.working-directory }}
+                  additional-working-directory: ${{ inputs.additional-working-directory }}
+                  npm-token: ${{ secrets.NPM_TOKEN }}
+
+            - name: TypeScript
+              # Some repos require custom build checks, so we check if the `build-check` script exists and run it if
+              # it does. Otherwise default to the standard `npx tsc --noEmit` check
+              run: |
+                  HAS_CUSTOM_BUILD_CHECK=$(jq -r '.scripts["build-check"] // empty' package.json)
+                  if [ -n "$HAS_CUSTOM_BUILD_CHECK" ]; then
+                      echo "Custom build check script found. Running it.";
+                      npm run build-check;
+                  else
+                      echo "No custom build check script found. Running standard tsc --noEmit.";
+                      npx tsc --noEmit;
+                  fi
+
+            - name: Lint
+              run: npm run lint
+
+            - name: Test
+              run: npm test
+
+            - name: Formatter Check
+              run: |
+                  HAS_FORMAT_CHECK_SCRIPT=$(jq -r '.scripts["format:check"] // empty' package.json)
+                  if [ -n "$HAS_FORMAT_CHECK_SCRIPT" ]; then
+                      echo "Custom format:check script found. Running it.";
+                      npm run format:check;
+                  elif [ -d "node_modules/prettier" ]; then
+                      echo "Prettier is installed. Running prettier --check .";
+                      npx prettier --check .;
+                  else
+                      echo "Prettier is not installed. Skipping Prettier check.";
+                  fi
+
+            - name: Unused Exports Check
+              run: |
+                  HAS_CHECK_UNUSED_SCRIPT=$(jq -r '.scripts["check-unused"] // empty' package.json)
+                  if [ -n "$HAS_CHECK_UNUSED_SCRIPT" ]; then
+                      echo "Custom check-unused script found. Running it.";
+                      npm run check-unused;
+                  elif [ -d "node_modules/knip" ]; then
+                      echo "Knip is installed. Running knip to check for unused exports.";
+                      npx knip --include exports,types;
+                  elif [ -d "node_modules/ts-unused-exports" ]; then
+                      echo "Knip is not installed, but ts-unused-exports is. Running ts-unused-exports to check for unused exports.";
+                      npx ts-unused-exports ./tsconfig.json;
+                  else
+                      echo "knip nor ts-unused-exports are installed. Skipping unused exports check.";
+                  fi

@@ -1,0 +1,95 @@
+name: Move major version tag
+
+# Consumer repos track a floating major tag (`...@v1`), not `master`, so merging to master does not
+# ship anything by itself. This workflow is what ships: it moves that tag forward, but only once the
+# package version the workflows declare in .github/workflows-min-package-version is actually on npm.
+#
+# That gate is the whole point. The workflows and the npm package release on their own schedules, so
+# the only combination that can break consumers is a workflow that calls a CLI feature which has not
+# been published yet. In that case the tag simply stays where it is and production keeps running the
+# previous workflows until someone cuts a release.
+
+on:
+    workflow_call:
+        inputs:
+            ref:
+                description: Commit to move the tag to. Defaults to the commit that triggered the caller.
+                type: string
+                default: ''
+
+permissions:
+    contents: read
+
+concurrency:
+    group: move-major-tag
+    cancel-in-progress: false
+
+jobs:
+    move_major_tag:
+        name: Move major version tag
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        env:
+            # The major version consumers pin, e.g.
+            # `uses: apify/apify-test-tools/.github/workflows/pr-build-test.yaml@v1`.
+            # Bump this only for a breaking change to a workflow's inputs, secrets or behaviour.
+            # The previous tag then stops moving and keeps working, so repos migrate when they get
+            # to it instead of all at once.
+            MAJOR_TAG: v1
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+              with:
+                  ref: ${{ inputs.ref || github.sha }}
+
+            - name: Check the required package version is published
+              id: check
+              run: |
+                  min_version=$(cat .github/workflows-min-package-version)
+                  echo "min_version=$min_version" >> "$GITHUB_OUTPUT"
+
+                  # The publish that satisfies a floor bump can still be in flight when this runs,
+                  # so give it a short grace period before deciding the tag has to stay put.
+                  for attempt in 1 2 3 4 5 6; do
+                      if npm view "apify-test-tools@>=$min_version" version >/dev/null 2>&1; then
+                          echo "apify-test-tools >=$min_version is on npm"
+                          echo "published=true" >> "$GITHUB_OUTPUT"
+                          exit 0
+                      fi
+                      echo "apify-test-tools >=$min_version is not on npm yet (attempt $attempt/6)"
+                      if [ "$attempt" -lt 6 ]; then sleep 20; fi
+                  done
+                  echo "published=false" >> "$GITHUB_OUTPUT"
+
+            - name: Move tag
+              if: steps.check.outputs.published == 'true'
+              env:
+                  TARGET_SHA: ${{ inputs.ref || github.sha }}
+              run: |
+                  git tag -f "$MAJOR_TAG" "$TARGET_SHA"
+                  git push -f origin "refs/tags/$MAJOR_TAG"
+                  {
+                      echo "### \`$MAJOR_TAG\` moved"
+                      echo
+                      echo "Now points at \`$TARGET_SHA\`."
+                      echo "Requires \`apify-test-tools@>=${{ steps.check.outputs.min_version }}\`, which is published."
+                  } >> "$GITHUB_STEP_SUMMARY"
+
+            # Not a failure. Holding the tag is the designed outcome of merging a workflow change
+            # that needs an unreleased package feature, and consumers are unaffected while it waits.
+            - name: Report held tag
+              if: steps.check.outputs.published != 'true'
+              env:
+                  TARGET_SHA: ${{ inputs.ref || github.sha }}
+              run: |
+                  {
+                      echo "### \`$MAJOR_TAG\` held"
+                      echo
+                      echo "\`$TARGET_SHA\` declares it needs \`apify-test-tools@>=${{ steps.check.outputs.min_version }}\`, which is not on npm."
+                      echo "Consumers keep running the workflows \`$MAJOR_TAG\` already points at."
+                      echo
+                      echo "Publish that version with the **Stable release** workflow. The tag moves on the"
+                      echo "next master push, or immediately via the **Move major version tag** workflow."
+                  } >> "$GITHUB_STEP_SUMMARY"
+                  echo "::warning::$MAJOR_TAG not moved: apify-test-tools >=${{ steps.check.outputs.min_version }} is not published yet."

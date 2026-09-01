@@ -1,9 +1,10 @@
 # Contributing
 
-The package consists of two parts:
+The package consists of three parts:
 
 - cli located in `bin/`
 - test library located in `lib`
+- the reusable GitHub workflows consumer repos call, in `.github/workflows/` and `.github/actions/`
 
 ## CLI
 
@@ -25,7 +26,7 @@ The package consists of two parts:
 1. Clone and build `apify-test-tools` repo:
 
 ```sh
-git clone git@github.com:apify-projects/apify-test-tools.git
+git clone git@github.com:apify/apify-test-tools.git
 cd apify-test-tools
 npm i
 npm run build
@@ -56,3 +57,24 @@ npm i -D ../path/to/apify-test-tools
 ```
 
 You need to run `npm run build` inside `apify-test-tools` repo everytime you want to test your changes in `testing-repo-for-github-actions`.
+
+## Reusable workflows
+
+`pr-build-test`, `platform-tests`, `push-build-latest`, `claude` and
+`platform-tests-claude-investigate-and-fix` are the workflows consumer repos call. They live here
+because they call this package's CLI, so a change to both is one PR. GitHub only reads workflow
+files at the top level of `.github/workflows`, so they sit next to this repo's own CI; the
+`_`-prefixed files are internal to this repo and are not meant to be called from outside.
+
+Consumers pin `@v1`, not `@master`. See
+[Versioning and releases](./README.md#versioning-and-releases) in the README for how the tag and the
+npm release relate — the short version:
+
+- changing only a workflow needs no npm release
+- changing only the package needs no workflow change
+- a workflow that calls a **new** CLI feature must raise the floor in
+  `.github/workflows-min-package-version` in the same PR. The `v1` tag is then held until that
+  version is on npm, so merging can't ship a workflow that calls a CLI that doesn't exist yet.
+
+`npm run lint` and `actionlint` (via the `Code checks` workflow) both gate master, so run them before
+pushing workflow changes.

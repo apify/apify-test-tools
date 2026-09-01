@@ -1,0 +1,188 @@
+name: 'Platform tests: Claude failure investigation and fix'
+
+# Notion page docs: https://app.notion.com/p/apify/374f39950a2280d99c89f27fc9fb49c5
+
+# Reusable workflow that uses Claude Code to investigate a failing E2E platform test and
+# attempt an automated fix.
+#
+# Two-phase execution:
+#   1. investigate: Claude reviews test logs, recent workflow history, and existing issues,
+#      then opens a GitHub issue with its findings. Skips silently if a duplicate exists.
+#      On success, adds a "claude" label to the issue for visibility.
+#   2. fix: Runs only when investigate created a new issue. Claude reads the issue,
+#      implements a fix, and opens a PR. On success, adds a "claude:done" label to the issue.
+#
+# Note: this workflow is intended to be called from a scheduled workflow. Scheduled runs use
+# GITHUB_TOKEN with reduced permissions that cannot trigger other workflow runs. For this reason
+# the PR phase is chained as a direct job dependency rather than relying on a label-based trigger.
+#
+# Example usage:
+#
+# jobs:
+#     platformTestsCore:
+#         uses: apify/apify-test-tools/.github/workflows/platform-tests.yaml@v1
+#         with:
+#             subtest: core
+#         secrets: inherit
+#
+#     handle-failure:
+#         needs: platformTestsCore
+#         if: ${{ failure() }}
+#         uses: apify/apify-test-tools/.github/workflows/platform-tests-claude-investigate-and-fix.yaml@v1
+#         secrets: inherit
+
+on:
+    workflow_call:
+        inputs:
+            model:
+                required: false
+                type: string
+                default: sonnet
+                description: Claude model to use for investigation and fix
+            investigate_prompt:
+                required: false
+                type: string
+                default: |
+                    Investigate the failing E2E platform test and open a GitHub issue documenting your findings. Start by reviewing the test logs, error messages, and recent workflow run history to determine the root cause.
+
+                    The failure will typically fall into one of these categories:
+                    - Flaky test: The test is non-deterministic or depends on timing/external state and fails intermittently. Check past workflow runs to see if this test has failed before.
+                    - Real bug: Genuine broken functionality — either a pre-existing issue or an environment/dependency change outside the codebase (e.g. a website changed its structure, an external API changed behavior).
+
+                    Use available tools to check previous workflow runs, git history, and existing GitHub issues to gather context and avoid creating duplicate issues.
+
+                    When you create the issue:
+                    - Title: short and clean, describing the actual problem — no dates, run numbers, or other noise. Prefix it with a conventional-commit-style type, e.g. "fix: blocking issue on detail endpoint" or "test(platform): flaky video views count expectation".
+                    - Body: a short, descriptive summary of the root cause and evidence (relevant log lines, links to the failing run). Aim for well under 10 lines — only go longer if the issue genuinely can't be understood without more detail. Skip filler like restating the workflow name or generic troubleshooting steps.
+
+                    If you create a new issue, you MUST write its issue number (just the number, nothing else) to $GITHUB_WORKSPACE/issue-number.txt as the very last thing you do. If you skip creating one because a duplicate already exists, do not create the file.
+                description: Prompt given to Claude for the investigation phase. Override to customize how issues are investigated, titled, and described.
+        secrets:
+            ANTHROPIC_API_KEY:
+                required: true
+                description: Claude API key
+
+jobs:
+    investigate:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            pull-requests: read
+            issues: write
+            actions: read
+        outputs:
+            issue_number: ${{ steps.issue.outputs.number }}
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Run Claude Code
+              id: claude
+              uses: anthropics/claude-code-action@v1
+              with:
+                  prompt: ${{ inputs.investigate_prompt }}
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+                  claude_args: |
+                      --model ${{ inputs.model }}
+                      --dangerously-skip-permissions
+
+            - name: Upload Claude output (for debugging)
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: claude-output-investigate
+                  path: /home/runner/work/_temp/claude-execution-output.json
+
+            - name: Read created issue
+              id: issue
+              # Claude writes the issue number to a file because there is no direct way to pass
+              # structured output from a Claude Code action step to subsequent steps.
+              run: |
+                  if [ -f "$GITHUB_WORKSPACE/issue-number.txt" ]; then
+                      ISSUE_NUMBER=$(cat "$GITHUB_WORKSPACE/issue-number.txt")
+                      echo "number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+                      echo "Issue created: #$ISSUE_NUMBER"
+                  else
+                      echo "number=" >> "$GITHUB_OUTPUT"
+                      echo "No issue created (duplicate skipped)"
+                  fi
+
+            # Adds the "claude" label for visibility. Normally this would trigger the claude.yaml
+            # workflow, but scheduled runs lack the permissions to trigger other workflows, so the
+            # PR phase is driven by the fix job dependency instead.
+            - name: Add Claude label to issue
+              if: steps.issue.outputs.number != ''
+              uses: actions/github-script@v7
+              with:
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  script: |
+                      try {
+                          await github.rest.issues.createLabel({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              name: "claude",
+                              color: "d93f0b",
+                          });
+                      } catch (e) {
+                          // Label already exists
+                      }
+
+                      await github.rest.issues.addLabels({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          issue_number: parseInt('${{ steps.issue.outputs.number }}'),
+                          labels: ["claude"],
+                      });
+
+    fix:
+        needs: investigate
+        if: needs.investigate.outputs.issue_number != ''
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            pull-requests: write
+            issues: write
+            id-token: write
+            actions: read
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Run Claude Code
+              id: claude
+              uses: anthropics/claude-code-action@v1
+              with:
+                  anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+                  use_commit_signing: true
+                  prompt: 'Open a pull request to address GitHub issue #${{ needs.investigate.outputs.issue_number }}. Use `gh issue view ${{ needs.investigate.outputs.issue_number }}` to read the issue details first, then implement the fix and create a PR.'
+                  claude_args: |
+                      --model ${{ inputs.model }}
+                      --dangerously-skip-permissions
+
+            - name: Upload Claude output (for debugging)
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: claude-output-fix
+                  path: /home/runner/work/_temp/claude-execution-output.json
+
+            # Adds "claude:done" to the issue to signal that a fix PR was opened. Pure status
+            # tracking — does not trigger any further automation.
+            - name: Mark issue as processed by Claude
+              if: steps.claude.conclusion == 'success'
+              uses: actions/github-script@v7
+              with:
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  script: |
+                      try {
+                          await github.rest.issues.addLabels({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              issue_number: parseInt('${{ needs.investigate.outputs.issue_number }}'),
+                              labels: ['claude:done']
+                          });
+                          console.log('Label claude:done added to issue.');
+                      } catch (e) {
+                          console.log('Label claude:done does not exist. Skipping.');
+                      }

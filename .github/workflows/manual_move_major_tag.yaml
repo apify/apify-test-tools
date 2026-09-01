@@ -1,0 +1,26 @@
+name: Move major version tag
+
+# Escape hatch for the two cases the automatic move does not cover: shipping a workflow change right
+# after the release that unblocked it, without waiting for the next master push, and rolling the tag
+# back to an earlier commit when a shipped workflow turns out to be broken.
+
+on:
+    workflow_dispatch:
+        inputs:
+            ref:
+                description: Commit, branch or tag to move the major tag to (defaults to master)
+                required: false
+                type: string
+                default: ''
+
+permissions:
+    contents: read
+
+jobs:
+    move_major_tag:
+        name: Move major version tag
+        permissions:
+            contents: write
+        uses: ./.github/workflows/_move_major_tag.yaml
+        with:
+            ref: ${{ inputs.ref }}

@@ -1,0 +1,115 @@
+name: Checkout and restore dependencies
+description: Checkout and restore dependencies
+inputs:
+    working-directory:
+        description: Working directory
+        required: false
+        default: .
+    additional-working-directory:
+        description: Additional working directory
+        required: false
+    npm-token:
+        description: >-
+            Token for installing private npm packages. Exported as both NPM_TOKEN (what a
+            committed .npmrc usually references) and NODE_AUTH_TOKEN (what setup-node's
+            generated .npmrc references), and only on the dependency install steps, so it
+            never reaches the build or test steps. Use a read-only token.
+        required: false
+
+outputs:
+    scripts-path:
+        description: >-
+            Absolute path to this repo's scripts/ directory in the runner's action checkout.
+            Lets calling workflows run helpers like run-with-apify-tokens.mjs without checking
+            this repo out again, since the workspace holds the caller's repo, not this one.
+        value: ${{ steps.scripts-path.outputs.path }}
+
+# Sets common steps and ensure we use cached node_modules
+# To test a change here, repoint the `uses:` refs in the reusable workflows at your branch, and
+# change them back before merging. Merging to master no longer ships it: consumers track the `v1`
+# tag, which only moves once the package version in .github/workflows-min-package-version is on npm.
+runs:
+    using: 'composite'
+    steps:
+        - name: Checkout Repository
+          uses: actions/checkout@v5
+          with:
+              fetch-depth: 0
+              # We want to test our branch, not GitHub's fake merge commit (we must test that before merging anyway)
+              # head_ref must be used for pull_request but for push and schedule events we have to use ref to get the branch name
+              ref: ${{ github.head_ref || github.ref }}
+
+        - name: Use Node.js 24
+          uses: actions/setup-node@v4
+          with:
+              node-version: 24
+
+        # `github.action_path` only resolves inside this composite action, but the steps that use
+        # .github/scripts/ live in the calling workflows. Resolving it once here and exposing it as
+        # an output keeps the scripts readable in place, with no copy into a temp directory.
+        # This is not a good place for this but me and Claude didn't figure out a better way.
+        - name: Resolve scripts path
+          id: scripts-path
+          shell: bash
+          run: echo "path=$(cd "${{ github.action_path }}/../../scripts" && pwd)" >> "$GITHUB_OUTPUT"
+
+        - name: Cache dependencies npm
+          id: check-dependencies-cache
+          uses: actions/cache@v5
+          with:
+              path: ${{ inputs.working-directory }}/node_modules
+              key: modules-npm-${{ inputs.working-directory }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
+
+        - name: Cache additional dependencies npm
+          id: check-additional-dependencies-cache
+          if: inputs.additional-working-directory != ''
+          uses: actions/cache@v5
+          with:
+              path: ${{ inputs.additional-working-directory }}/node_modules
+              key: modules-npm-${{ inputs.additional-working-directory }}-${{ hashFiles(format('{0}/package-lock.json', inputs.additional-working-directory)) }}
+
+        - name: install npm dependencies
+          if: steps.check-dependencies-cache.outputs.cache-hit != 'true'
+          shell: bash
+          working-directory: ${{ inputs.working-directory }}
+          env:
+              NPM_TOKEN: ${{ inputs.npm-token }}
+              NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
+          run: npm ci
+
+        - name: install additional npm dependencies
+          if: inputs.additional-working-directory != '' && steps.check-additional-dependencies-cache.outputs.cache-hit != 'true'
+          shell: bash
+          working-directory: ${{ inputs.additional-working-directory }}
+          env:
+              NPM_TOKEN: ${{ inputs.npm-token }}
+              NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
+          run: npm ci
+
+        # Repos can still have older version locally but on cloud we enforce uniformity.
+        # This causes minor mismatch in package-lock.json and node_modules but it shouldn't cause any issues.
+        - name: Enforce test tools version required by these workflows
+          # We don't override beta so we can use it to test branch-specific versions of apify-test-tools
+          # Needs the npm token too: a repo whose .npmrc routes all traffic through a private
+          # registry has to authenticate even for public packages.
+          shell: bash
+          working-directory: ${{ inputs.working-directory }}
+          env:
+              NPM_TOKEN: ${{ inputs.npm-token }}
+              NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
+          run: |
+              locked_version=$(jq -r '.packages["node_modules/apify-test-tools"].version' package-lock.json)
+              echo "Package-lock version of apify-test-tools: $locked_version"
+              if [[ "$locked_version" == *"-beta"* ]]; then
+                echo "Beta version detected, reinstalling $locked_version to ensure cache consistency"
+                npm install apify-test-tools@$locked_version --audit=false --no-fund;
+              else
+                # These workflows and the package release independently, so the workflows declare the
+                # oldest package version they can run against. `>=` resolves to the newest published
+                # stable, which is `latest` in the normal case, and fails loudly with a version
+                # mismatch instead of a confusing CLI error if the floor was never released.
+                # npm excludes pre-releases from a plain `>=` range, so betas are never picked here.
+                min_version=$(cat "${{ github.action_path }}/../../workflows-min-package-version")
+                echo "Installing newest apify-test-tools >=$min_version (required by these workflows)"
+                npm install "apify-test-tools@>=$min_version" --audit=false --no-fund;
+              fi

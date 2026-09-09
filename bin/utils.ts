@@ -232,9 +232,15 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
     return selectActors(selection, actorConfigs);
 };
 
-export const readNotifiersConfig = async (): Promise<Record<string, unknown> | undefined> => {
+export const readNotifiersConfig = async (notifierName: string): Promise<unknown> => {
     const config = await readAndParseConfigFile();
-    return config.notifiers;
+    const notifierConfig = config.notifiers?.[notifierName];
+    if (notifierConfig !== undefined && (typeof notifierConfig !== 'object' || notifierConfig === null)) {
+        throw new Error(
+            `The "notifiers.${notifierName}" entry in the config file must be an object, got ${JSON.stringify(notifierConfig)}.`,
+        );
+    }
+    return notifierConfig;
 };
 
 export const setCwd = ({ workspace }: { workspace: string | undefined }) => {

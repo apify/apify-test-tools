@@ -153,13 +153,9 @@ await yargs()
         '',
         (args) =>
             args
-                .option('notify-file', { type: 'string', demandOption: true })
+                .option('input', { type: 'string' })
                 .option('notifier', { type: 'string', demandOption: true, choices: Object.keys(notifiers) })
-                .option('target', { type: 'string', demandOption: true })
-                .option('token-env-var', {
-                    type: 'string',
-                    description: 'Env var holding the notifier credential, skipping the config file check.',
-                }),
+                .option('view', { type: 'string', choices: ['dev', 'public'] as const }),
         async (args) => {
             await notify(args);
         },

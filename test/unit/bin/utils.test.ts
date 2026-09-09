@@ -381,29 +381,39 @@ describe('readConfigFile', () => {
 });
 
 describe('readNotifiersConfig', () => {
-    it('returns the notifiers object from the config file', async () => {
+    it('returns the named notifier config from the config file', async () => {
         mockFiles({
             [CONFIG_FILE_NAME]: JSON.stringify({ actors: [], notifiers: { slack: { tokenEnvVar: 'SLACK_TOKEN' } } }),
         });
 
-        expect(await readNotifiersConfig()).toEqual({ slack: { tokenEnvVar: 'SLACK_TOKEN' } });
+        expect(await readNotifiersConfig('slack')).toEqual({ tokenEnvVar: 'SLACK_TOKEN' });
     });
 
-    it('returns undefined when the config file has no notifiers key', async () => {
+    it('returns undefined when the config file has no entry for that notifier', async () => {
         mockFiles({ [CONFIG_FILE_NAME]: validConfig([]) });
 
-        expect(await readNotifiersConfig()).toBeUndefined();
+        expect(await readNotifiersConfig('slack')).toBeUndefined();
+    });
+
+    it('throws when the named notifier config is present but not an object', async () => {
+        mockFiles({
+            [CONFIG_FILE_NAME]: JSON.stringify({ actors: [], notifiers: { slack: 'oops' } }),
+        });
+
+        await expect(readNotifiersConfig('slack')).rejects.toThrow('notifiers.slack');
     });
 
     it('throws when the config file is missing', async () => {
         mockFiles({});
 
-        await expect(readNotifiersConfig()).rejects.toThrow(`Config file "${CONFIG_FILE_NAME}" not found`);
+        await expect(readNotifiersConfig('slack')).rejects.toThrow(`Config file "${CONFIG_FILE_NAME}" not found`);
     });
 
     it('throws when the config file contains invalid JSON', async () => {
         mockFiles({ [CONFIG_FILE_NAME]: '{invalid' });
 
-        await expect(readNotifiersConfig()).rejects.toThrow(`Config file "${CONFIG_FILE_NAME}" contains invalid JSON`);
+        await expect(readNotifiersConfig('slack')).rejects.toThrow(
+            `Config file "${CONFIG_FILE_NAME}" contains invalid JSON`,
+        );
     });
 });

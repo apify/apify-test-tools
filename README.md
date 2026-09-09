@@ -50,7 +50,14 @@ The config file can also have a top-level `notifiers` key, holding per-notifier 
 {
     "actors": [...],
     "notifiers": {
-        "slack": { "tokenEnvVar": "SLACK_TOKEN" }
+        "slack": {
+            "tokenEnvVar": "SLACK_TOKEN",
+            "targets": {
+                "test-report": "#test-failures",
+                "release-report-dev": "#releases-dev",
+                "release-report-public": "#releases"
+            }
+        }
     }
 }
 ```
@@ -488,53 +495,56 @@ GITHUB_WORKSPACE=local-clone tsx bin/main.ts get-actor-configs
 
 ### Notifications
 
-`create-test-report` and `release` don't send notifications themselves — they write a _notify file_ (a JSON payload of `{ "summary": string, "details"?: string[] } | null`, `null` meaning nothing to report) describing what happened. A separate `notify` command then delivers that file through a pluggable notifier (Slack for now), so each command can be composed as its own step in a GitHub Actions workflow:
+`create-test-report` and `release` don't send notifications themselves — they write a JSON `NotifyDocument` describing what happened (`{ "type": "test-report", ... }` or `{ "type": "release-report", ... }`). A separate `notify` command then formats and delivers it through a pluggable notifier (Slack for now), so each command can be composed as its own step in a GitHub Actions workflow. Both producers always print their document to stdout (or stderr on a `--dry-run`), and `--output` optionally also writes it to a file:
 
 ```bash
 npx apify-test-tools create-test-report \
-  --report-file jest-results.json \
-  --notify-file test-report.notify.json \
+  --input jest-results.json \
+  --output test-report.notify.json \
   --job-url "$JOB_URL" \
   --workflow-name "$WORKFLOW_NAME"
 
 npx apify-test-tools notify \
-  --notify-file test-report.notify.json \
-  --notifier slack \
-  --target "#test-failures"
+  --input test-report.notify.json \
+  --notifier slack
 ```
 
-`release` writes two independent notify files in the same invocation — one for developers (commit list + changed files) and one for the wider public (changelog additions only):
+`notify` also reads the document straight from stdin when `--input` is omitted, so the two commands can be piped together directly:
 
 ```bash
-npx apify-test-tools release \
-  --push-event-path "$GITHUB_EVENT_PATH" \
-  --report-notify-file release-report.notify.json \
-  --release-notify-file release-public.notify.json
-
-npx apify-test-tools notify --notify-file release-report.notify.json --notifier slack --target "#releases-dev"
-npx apify-test-tools notify --notify-file release-public.notify.json --notifier slack --target "#releases"
+npx apify-test-tools create-test-report --input jest-results.json | npx apify-test-tools notify --notifier slack
 ```
 
-The `notify` command looks up its delivery settings under `notifiers.<name>` in `apify-test-tools.config.json` (see [step 2](#2-create-the-config-file)). The Slack notifier requires `tokenEnvVar`, naming the environment variable that holds the Slack bot token to send with:
+A `release-report` document holds the same structured data (commits, changed files, changelog) regardless of audience — formatting it for a given audience is `notify`'s job, via `--view <dev|public>` (dev: commit list + changed files; public: changelog additions only). `--view` is required when the document is a `release-report` and ignored for other document types; run `notify` once per view to deliver both:
+
+```bash
+npx apify-test-tools release --push-event-path "$GITHUB_EVENT_PATH" --output release.notify.json
+
+npx apify-test-tools notify --input release.notify.json --notifier slack --view dev
+npx apify-test-tools notify --input release.notify.json --notifier slack --view public
+```
+
+The `notify` command looks up its settings under `notifiers.<name>` in `apify-test-tools.config.json` (see [step 2](#2-create-the-config-file)). Every notifier configures a `targets` map the same way: one entry per document type/view it can send, only needing whichever ones you actually use (`release-report` targets are further keyed by view: `release-report-dev`/`release-report-public`). What a target value means, and what other settings a notifier needs beyond `targets`, is specific to that notifier — see below.
+
+`notify` fails with a clear error if no `targets` entry exists for the document (and view) it's trying to send — there is no CLI override for a target or a notifier's credentials; everything comes from the config file.
+
+#### Slack
+
+A Slack target is the channel name to post to. Beyond `targets`, Slack's only requirement is `tokenEnvVar` — the environment variable holding the bot token to send with:
 
 ```json
 {
     "notifiers": {
-        "slack": { "tokenEnvVar": "SLACK_TOKEN" }
+        "slack": {
+            "tokenEnvVar": "SLACK_TOKEN",
+            "targets": {
+                "test-report": "#test-failures",
+                "release-report-dev": "#releases-dev",
+                "release-report-public": "#releases"
+            }
+        }
     }
 }
 ```
 
-Alternatively, pass `--token-env-var` directly on the `notify` command to skip the config file check entirely:
-
-```bash
-npx apify-test-tools notify \
-  --notify-file test-report.notify.json \
-  --notifier slack \
-  --target "#test-failures" \
-  --token-env-var SLACK_TOKEN
-```
-
-`--token-env-var` takes precedence over `notifiers.<name>` and, when given, `notify` doesn't read `apify-test-tools.config.json` at all.
-
-`create-test-report`/`release`/`notify` always log what they're about to write/send, regardless of `--dry-run` (top-level flag). What `--dry-run` skips is the actual side effect: `create-test-report`/`release` don't write the notify file, and `notify` doesn't actually deliver it.
+`create-test-report`/`release`/`notify` always log what they're about to write/send, regardless of `--dry-run` (top-level flag). What `--dry-run` skips is the actual side effect: `create-test-report`/`release` print their document to stderr instead of stdout and skip writing `--output`, and `notify` doesn't actually deliver the message.

@@ -1,23 +1,17 @@
 import fs from 'node:fs/promises';
 
-import type { NotifierMessage } from './notifiers/types.js';
+import type { FailedTest, NotifyDocument } from './notifiers/types.js';
 
 interface ReportTestResultsOptions {
-    reportFile: string;
-    notifyFile: string;
+    input: string;
+    output?: string;
     dryRun: boolean;
     jobUrl?: string;
     workflowName?: string;
 }
 
-export const reportTestResults = async ({
-    dryRun,
-    reportFile: jsonResultsPath,
-    notifyFile,
-    jobUrl,
-    workflowName,
-}: ReportTestResultsOptions) => {
-    const results: JsonTestResults = JSON.parse((await fs.readFile(jsonResultsPath)).toString());
+export const reportTestResults = async ({ dryRun, input, output, jobUrl, workflowName }: ReportTestResultsOptions) => {
+    const results: JsonTestResults = JSON.parse((await fs.readFile(input)).toString());
     const passed: JsonAssertionResult[] = [];
     const failed: JsonAssertionResult[] = [];
 
@@ -35,7 +29,7 @@ export const reportTestResults = async ({
         }
     }
 
-    const failedAssertions: { message: string; runLink: string; actorId: string }[] = [];
+    const failedTests: FailedTest[] = [];
 
     console.error();
     console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
@@ -57,8 +51,12 @@ export const reportTestResults = async ({
     for (const [i, aResult] of failed.entries()) {
         const { failureMessages, fullName, meta } = aResult;
         if (failureMessages) {
-            failedAssertions.push(
+            // Every message flattened out of this assertion identifies the same failing assertion,
+            // so they all share the id computed from it.
+            const id = `${meta.actorId} > ${fullName}`;
+            failedTests.push(
                 ...failureMessages.map((message) => ({
+                    id,
                     message: message.split('\n')?.[0],
                     runLink: meta.runLink,
                     actorId: meta.actorId,
@@ -72,29 +70,26 @@ export const reportTestResults = async ({
     console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
     console.error();
 
-    let notifyPayload: NotifierMessage | null = null;
-
-    if (failedAssertions.length > 0) {
-        // TODO: add slack profiles
-        const total = failed.length + passed.length;
-        const jobLink = jobUrl ? ` Check <${jobUrl}|the job>.` : '';
-        let summary = `\`${workflowName ?? '-'}\``;
-        summary += `: has ${failedAssertions.length} failed assertions. Failing test suites: ${failed.length}/${total}.${jobLink}`;
-        summary += `\n\n${failedAssertions[0].message} --- <${failedAssertions[0].runLink}|${failedAssertions[0].actorId}>`;
-        const details = failedAssertions
-            .slice(1)
-            .map(({ message, runLink, actorId }) => `• ${message} --- <${runLink}|${actorId}>`);
-
-        notifyPayload = { summary, details };
-    }
-
-    console.error('NOTIFY:', JSON.stringify(notifyPayload));
+    const document: NotifyDocument = {
+        type: 'test-report',
+        workflowName,
+        jobUrl,
+        failed: failedTests,
+        failedCount: failed.length,
+        passedCount: passed.length,
+        totalCount: passed.length + failed.length,
+    };
 
     if (dryRun) {
+        console.error(JSON.stringify(document));
         return;
     }
 
-    await fs.writeFile(notifyFile, JSON.stringify(notifyPayload));
+    console.log(JSON.stringify(document));
+
+    if (output) {
+        await fs.writeFile(output, JSON.stringify(document));
+    }
 };
 
 type Status = 'passed' | 'failed' | 'skipped' | 'pending' | 'todo' | 'disabled';

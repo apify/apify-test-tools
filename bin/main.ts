@@ -140,8 +140,9 @@ await yargs()
         '',
         (args) =>
             args
-                .option('report-file', { type: 'string', demandOption: true })
-                .option('notify-file', { type: 'string', demandOption: true })
+                // TODO: --input shouldn't be required — like `notify`, this should fall back to stdin.
+                .option('input', { type: 'string', demandOption: true })
+                .option('output', { type: 'string' })
                 .option('job-url', { type: 'string' })
                 .option('workflow-name', { type: 'string' }),
         async (args) => {

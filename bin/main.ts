@@ -13,7 +13,7 @@ import { getBranchOnlyChangedFiles, getChangedFiles, getCommits, hasMergeFromTar
 import { getPushData } from './github.js';
 import { notifiers } from './notifiers/index.js';
 import { notify } from './notify.js';
-import { writeReleaseNotifyFiles } from './release-report.js';
+import { writeReleaseDocument } from './release-report.js';
 import { reportTestResults } from './test-report.js';
 import type { Config } from './types.js';
 import { readConfigFile, setCwd, spawnCommandInGhWorkspace } from './utils.js';
@@ -191,8 +191,7 @@ await yargs()
             actorSelectionOptions(args)
                 .option('push-event-path', { type: 'string', demandOption: true })
                 .option('dry-run', { type: 'boolean', default: false })
-                .option('report-notify-file', { type: 'string', demandOption: true })
-                .option('release-notify-file', { type: 'string', demandOption: true })
+                .option('output', { type: 'string' })
                 .option('use-docker-cache', { type: 'boolean', default: false }),
         async (args) => {
             const { branch, changedFiles, repoUrl, commits, changelog, repository, author } = await getPushData(
@@ -206,7 +205,7 @@ await yargs()
                 isLatest,
                 commits,
             });
-            const { dryRun, reportNotifyFile, releaseNotifyFile } = args;
+            const { dryRun, output } = args;
             const builds = await runBuilds({
                 isLatest,
                 repoUrl,
@@ -217,15 +216,14 @@ await yargs()
             });
             console.error(JSON.stringify(builds));
 
-            await writeReleaseNotifyFiles({
+            await writeReleaseDocument({
                 changedFiles,
                 commits,
                 changelog,
                 repository,
                 dryRun,
                 author,
-                reportNotifyFile,
-                releaseNotifyFile,
+                output,
             });
         },
     )

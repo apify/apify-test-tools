@@ -1,60 +1,48 @@
 import fs from 'node:fs/promises';
 
-import type { NotifierMessage } from './notifiers/types.js';
+import type { NotifyDocument } from './notifiers/types.js';
 import type { Commit } from './types.js';
 
-interface WriteReleaseNotifyFilesOptions {
+interface WriteReleaseDocumentOptions {
     repository: string;
     changedFiles: string[];
     changelog: string | null;
     commits: Commit[];
     dryRun: boolean;
     author: string;
-    reportNotifyFile: string;
-    releaseNotifyFile: string;
+    output?: string;
 }
 
-export const writeReleaseNotifyFiles = async ({
+export const writeReleaseDocument = async ({
     changedFiles,
     commits,
     changelog,
     repository,
     dryRun,
     author,
-    reportNotifyFile,
-    releaseNotifyFile,
-}: WriteReleaseNotifyFilesOptions) => {
+    output,
+}: WriteReleaseDocumentOptions) => {
     if (!changelog) {
         console.warn('No new changelog entries found, did you forget to update it?');
     }
 
-    const shortSummary = `*${repository}* – New release (by ${author}):\n\n`;
-
-    // This one is just for broader public that only cares about public facing changes
-    const releasePayload: NotifierMessage | null = changelog
-        ? { summary: `${shortSummary}*Additions to the changelog*:\n\n${changelog}\n` }
-        : null;
-
-    const commitsMessage = `${commits
-        .map(
-            ({ author: commitAuthor, message }, index) =>
-                `${index + 1}. Commit message: ${message}\n\tAuthor: ${commitAuthor}.`,
-        )
-        .join('\n')}`;
-    const changedFilesMessage = `*Files changed*: ${changedFiles.map((file) => `\`${file}\``).join(', ')}`;
-
-    // This one is for devs and project managers that need to know more details
-    const reportPayload: NotifierMessage = {
-        summary: `${shortSummary}\n*Commit list*:\n${commitsMessage}\n\n${changedFilesMessage}`,
+    const document: NotifyDocument = {
+        type: 'release-report',
+        repository,
+        author,
+        changelog,
+        commits,
+        changedFiles,
     };
 
-    console.error('NOTIFY (report):', JSON.stringify(reportPayload));
-    console.error('NOTIFY (release):', JSON.stringify(releasePayload));
-
     if (dryRun) {
+        console.error(JSON.stringify(document));
         return;
     }
 
-    await fs.writeFile(reportNotifyFile, JSON.stringify(reportPayload));
-    await fs.writeFile(releaseNotifyFile, JSON.stringify(releasePayload));
+    console.log(JSON.stringify(document));
+
+    if (output) {
+        await fs.writeFile(output, JSON.stringify(document));
+    }
 };

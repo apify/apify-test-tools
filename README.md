@@ -44,6 +44,24 @@ Each entry has:
 | `tokenEnvVar`          | yes      | Name of the environment variable holding the Apify API token for this actor. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                                    |
 | `overrideActorContext` | no       | Array of paths (relative to repo root) that define which files are relevant to this actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
 
+The config file can also have a top-level `notifiers` key, holding per-notifier settings for the `notify` command (see [Notifications](#notifications) below):
+
+```json
+{
+    "actors": [...],
+    "notifiers": {
+        "slack": {
+            "tokenEnvVar": "SLACK_TOKEN",
+            "targets": {
+                "test-report": "#test-failures",
+                "release-report-dev": "#releases-dev",
+                "release-report-public": "#releases"
+            }
+        }
+    }
+}
+```
+
 ### 3. Set up actor folders
 
 Each actor in the config must have a `.actor/actor.json` file. The `dockerContextDir` field in `actor.json` defines the build context boundary — this is what the tool uses to determine which files can affect the actor's build.
@@ -377,7 +395,7 @@ describe('standby tests', () => {
 
 ## CLI (`apify-test-tools` bin)
 
-The package includes a CLI binary used by CI workflows to build Actors, detect changes, and report test results. You can also run it locally.
+The package includes a CLI binary used by CI workflows to build Actors, detect changes, report test results, and deliver notifications. You can also run it locally.
 
 ### Running locally
 
@@ -472,3 +490,59 @@ For development on `apify-test-tools` itself, use `tsx` directly:
 ```bash
 GITHUB_WORKSPACE=local-clone tsx bin/main.ts get-actor-configs
 ```
+
+### Notifications
+
+`create-test-report` and `release` don't send notifications themselves — they write a JSON `NotifyDocument` describing what happened (`{ "type": "test-report", ... }` or `{ "type": "release-report", ... }`). A separate `notify` command then formats and delivers it through a pluggable notifier (Slack for now), so each command can be composed as its own step in a GitHub Actions workflow. Both producers always print their document to stdout (or stderr on a `--dry-run`), and `--output` optionally also writes it to a file:
+
+```bash
+npx apify-test-tools create-test-report \
+  --input jest-results.json \
+  --output test-report.notify.json \
+  --job-url "$JOB_URL" \
+  --workflow-name "$WORKFLOW_NAME"
+
+npx apify-test-tools notify \
+  --input test-report.notify.json \
+  --notifier slack
+```
+
+`notify` also reads the document straight from stdin when `--input` is omitted, so the two commands can be piped together directly:
+
+```bash
+npx apify-test-tools create-test-report --input jest-results.json | npx apify-test-tools notify --notifier slack
+```
+
+A `release-report` document holds the same structured data (commits, changed files, changelog) regardless of audience — formatting it for a given audience is `notify`'s job, via `--view <dev|public>` (dev: commit list + changed files; public: changelog additions only). `--view` is required when the document is a `release-report` and ignored for other document types; run `notify` once per view to deliver both:
+
+```bash
+npx apify-test-tools release --push-event-path "$GITHUB_EVENT_PATH" --output release.notify.json
+
+npx apify-test-tools notify --input release.notify.json --notifier slack --view dev
+npx apify-test-tools notify --input release.notify.json --notifier slack --view public
+```
+
+The `notify` command looks up its settings under `notifiers.<name>` in `apify-test-tools.config.json` (see [step 2](#2-create-the-config-file)). Every notifier configures a `targets` map the same way: one entry per document type/view it can send, only needing whichever ones you actually use (`release-report` targets are further keyed by view: `release-report-dev`/`release-report-public`). What a target value means, and what other settings a notifier needs beyond `targets`, is specific to that notifier — see below.
+
+`notify` fails with a clear error if no `targets` entry exists for the document (and view) it's trying to send — there is no CLI override for a target or a notifier's credentials; everything comes from the config file.
+
+#### Slack
+
+A Slack target is the channel name to post to. Beyond `targets`, Slack's only requirement is `tokenEnvVar` — the environment variable holding the bot token to send with:
+
+```json
+{
+    "notifiers": {
+        "slack": {
+            "tokenEnvVar": "SLACK_TOKEN",
+            "targets": {
+                "test-report": "#test-failures",
+                "release-report-dev": "#releases-dev",
+                "release-report-public": "#releases"
+            }
+        }
+    }
+}
+```
+
+`create-test-report`/`release`/`notify` always log what they're about to write/send, regardless of `--dry-run` (top-level flag). What `--dry-run` skips is the actual side effect: `create-test-report`/`release` print their document to stderr instead of stdout and skip writing `--output`, and `notify` doesn't actually deliver the message.

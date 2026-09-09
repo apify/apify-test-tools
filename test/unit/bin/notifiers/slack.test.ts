@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { SlackNotifierConfig } from '../../../../bin/notifiers/slack.js';
+
 const { postMessageMock, getEnvVarMock } = vi.hoisted(() => ({
     postMessageMock: vi.fn(),
     getEnvVarMock: vi.fn(),
@@ -12,19 +14,25 @@ vi.mock('@slack/web-api', () => ({
 }));
 vi.mock('../../../../bin/utils.js', () => ({ getEnvVar: getEnvVarMock }));
 
-const { slackNotifier } = await import('../../../../bin/notifiers/slack.js');
+const { SlackNotifier } = await import('../../../../bin/notifiers/slack.js');
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('slackNotifier', () => {
+    const slackNotifier = new SlackNotifier();
+
     it('throws when the config is missing a tokenEnvVar', async () => {
+        // Config comes from an untyped JSON/config file at runtime, so an invalid shape must be simulated here.
         await expect(
-            slackNotifier({ summary: 'hi' }, { target: '#general', dryRun: false, config: {} }),
+            slackNotifier.send(
+                { summary: 'hi' },
+                { target: '#general', dryRun: false, config: {} as unknown as SlackNotifierConfig },
+            ),
         ).rejects.toThrow('notifiers.slack.tokenEnvVar');
     });
 
     it('does not send anything on a dry run', async () => {
-        await slackNotifier(
+        await slackNotifier.send(
             { summary: 'hi' },
             { target: '#general', dryRun: true, config: { tokenEnvVar: 'SLACK_TOKEN' } },
         );
@@ -36,7 +44,7 @@ describe('slackNotifier', () => {
         getEnvVarMock.mockReturnValue('xoxb-token');
         postMessageMock.mockResolvedValue({ ts: '123.456' });
 
-        await slackNotifier(
+        await slackNotifier.send(
             { summary: 'hi', details: ['line 1', 'line 2'] },
             { target: '#general', dryRun: false, config: { tokenEnvVar: 'SLACK_TOKEN' } },
         );
@@ -59,7 +67,7 @@ describe('slackNotifier', () => {
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
         const details = Array.from({ length: 8 }, (_, i) => `line ${i + 1}`);
-        await slackNotifier(
+        await slackNotifier.send(
             { summary: 'hi', details },
             { target: '#general', dryRun: false, config: { tokenEnvVar: 'SLACK_TOKEN' } },
         );
@@ -81,7 +89,7 @@ describe('slackNotifier', () => {
         getEnvVarMock.mockReturnValue('xoxb-token');
         postMessageMock.mockResolvedValue({ ts: '123.456' });
 
-        await slackNotifier(
+        await slackNotifier.send(
             { summary: 'hi' },
             { target: '#general', dryRun: false, config: { tokenEnvVar: 'SLACK_TOKEN' } },
         );

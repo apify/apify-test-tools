@@ -29,5 +29,5 @@ export const notify = async ({ notifyFile, notifier: notifierName, target, dryRu
 
     // An explicit --token-env-var skips the config file check entirely.
     const config = tokenEnvVar ? { tokenEnvVar } : (await readNotifiersConfig())?.[notifierName];
-    await notifier(payload, { target, dryRun, config });
+    await notifier.send(payload, { target, dryRun, config });
 };

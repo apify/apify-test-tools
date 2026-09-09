@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { fsMock, notifiersMock, readNotifiersConfigMock } = vi.hoisted(() => ({
     fsMock: { readFile: vi.fn() },
-    notifiersMock: { slack: vi.fn() },
+    notifiersMock: { slack: { send: vi.fn() } },
     readNotifiersConfigMock: vi.fn(),
 }));
 
@@ -22,7 +22,7 @@ describe('notify', () => {
         await notify({ notifyFile: 'out.json', notifier: 'slack', target: '#general', dryRun: false });
 
         expect(fsMock.readFile).toHaveBeenCalledWith('out.json');
-        expect(notifiersMock.slack).toHaveBeenCalledWith(
+        expect(notifiersMock.slack.send).toHaveBeenCalledWith(
             { summary: 'hi' },
             { target: '#general', dryRun: false, config: { tokenEnvVar: 'SLACK_TOKEN' } },
         );
@@ -34,7 +34,7 @@ describe('notify', () => {
 
         await notify({ notifyFile: 'out.json', notifier: 'slack', target: '#general', dryRun: false });
 
-        expect(notifiersMock.slack).not.toHaveBeenCalled();
+        expect(notifiersMock.slack.send).not.toHaveBeenCalled();
     });
 
     it('throws on an unknown notifier', async () => {
@@ -57,7 +57,7 @@ describe('notify', () => {
         });
 
         expect(readNotifiersConfigMock).not.toHaveBeenCalled();
-        expect(notifiersMock.slack).toHaveBeenCalledWith(
+        expect(notifiersMock.slack.send).toHaveBeenCalledWith(
             { summary: 'hi' },
             { target: '#general', dryRun: false, config: { tokenEnvVar: 'SLACK_TOKEN' } },
         );

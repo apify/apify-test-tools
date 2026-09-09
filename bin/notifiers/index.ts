@@ -1,6 +1,6 @@
-import { slackNotifier } from './slack.js';
-import type { Notifier } from './types.js';
+import type { Notifier } from './notifier.js';
+import { SlackNotifier } from './slack.js';
 
 export const notifiers: Record<string, Notifier> = {
-    slack: slackNotifier,
+    slack: new SlackNotifier(),
 };

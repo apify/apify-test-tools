@@ -1,7 +1,5 @@
-import type { ActorVersionSourceFile, Build } from 'apify-client';
-import { ApifyClient } from 'apify-client';
-
-import { ACTOR_SOURCE_TYPES } from '@apify/consts';
+import type { ActorVersion, Build } from 'apify-client';
+import { ActorSourceType, ApifyClient } from 'apify-client';
 
 import type { ActorConfig, BuildData } from './types.js';
 
@@ -12,6 +10,11 @@ type BuildPrActorOptions = {
     actorConfig: ActorConfig;
     useDockerCache: boolean;
 };
+
+// Fixed version number used to build from local source files, since there is no real version to track.
+export const LOCAL_SOURCE_VERSION_NUMBER = '0.98';
+const DEFAULT_TEST_VERSION_NUMBER = '0.99';
+
 export class ApifyBuilder {
     private constructor(
         private readonly apifyClient: ApifyClient,
@@ -57,12 +60,11 @@ export class ApifyBuilder {
         return { defaultBuildNumber, defaultVersionNumber, defaultBuildTag };
     };
 
-    startActorBuild = async ({
-        buildTag,
-        versionNumber,
-        gitRepoUrl,
-        useDockerCache,
-    }: BuildPrActorOptions): Promise<BuildData> => {
+    createVersionAndBuild = async (
+        versionNumber: string,
+        actorVersion: ActorVersion,
+        useCache: boolean,
+    ): Promise<BuildData> => {
         const actorClient = this.apifyClient.actor(this.actorFullName);
         const actorInfo = await actorClient.get();
         if (!actorInfo) {
@@ -72,17 +74,6 @@ export class ApifyBuilder {
                     ' same as the folder in the repository.',
             );
         }
-
-        // NOTE: I couldn't find this type, so I had to extract it :(
-        type ActorVersion = Parameters<ReturnType<typeof actorClient.version>['update']>[0];
-        const actorVersion: ActorVersion = {
-            buildTag,
-            versionNumber,
-            gitRepoUrl,
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore: coudn't find this type either :(
-            sourceType: ACTOR_SOURCE_TYPES.GIT_REPO,
-        };
 
         // Prepare version
         const versionExists = !actorInfo.versions.find((version) => version.versionNumber === versionNumber);
@@ -95,41 +86,8 @@ export class ApifyBuilder {
         }
 
         // We also get back actId so the testing actor can both match by actor ID and name
-        const { id, actId, buildNumber } = await actorClient.build(versionNumber, { useCache: useDockerCache });
+        const { id, actId, buildNumber } = await actorClient.build(versionNumber, { useCache });
 
-        console.error(`[${this.actorFullName}]: ${id} (${buildNumber})`);
-        return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
-    };
-
-    startActorBuildFromSourceFiles = async (sourceFiles: ActorVersionSourceFile[]): Promise<BuildData> => {
-        const ZIP_VERSION = '0.98';
-        const actorClient = this.apifyClient.actor(this.actorFullName);
-        const actorInfo = await actorClient.get();
-        if (!actorInfo) {
-            throw new Error(
-                `No actor named '${this.actorFullName}' was found on the platform. If this` +
-                    ' is unexpected, make sure the actor you are targeting is spelled the' +
-                    ' same as the folder in the repository.',
-            );
-        }
-
-        type ActorVersion = Parameters<ReturnType<typeof actorClient.version>['update']>[0];
-        const actorVersion: ActorVersion = {
-            versionNumber: ZIP_VERSION,
-            sourceFiles,
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore: couldn't find this type :(
-            sourceType: ACTOR_SOURCE_TYPES.SOURCE_FILES,
-        };
-
-        const versionExists = !actorInfo.versions.find((v) => v.versionNumber === ZIP_VERSION);
-        if (versionExists) {
-            await actorClient.versions().create(actorVersion);
-        } else {
-            await actorClient.version(ZIP_VERSION).update(actorVersion);
-        }
-
-        const { id, actId, buildNumber } = await actorClient.build(ZIP_VERSION, { useCache: false });
         console.error(`[${this.actorFullName}]: ${id} (${buildNumber})`);
         return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
     };
@@ -281,6 +239,33 @@ export const waitAndSummarizeBuilds = async (
     return startedBuilds;
 };
 
+export const runAndSummarizeBuilds = async (
+    actorConfigs: ActorConfig[],
+    label: string,
+    buildOneActor: (actorConfig: ActorConfig, builder: ApifyBuilder) => Promise<BuildData>,
+): Promise<BuildData[]> => {
+    const buildersByActorFullName = new Map<string, ApifyBuilder>(
+        actorConfigs.map((actorConfig) => [actorConfig.actorFullName, ApifyBuilder.fromActorConfig(actorConfig)]),
+    );
+    console.error('=========================================');
+    console.error(`STARTED ${label}:`);
+    const startedBuilds = await Promise.all(
+        actorConfigs.map(async (actorConfig) =>
+            buildOneActor(actorConfig, buildersByActorFullName.get(actorConfig.actorFullName)!),
+        ),
+    );
+
+    return waitAndSummarizeBuilds(startedBuilds, buildersByActorFullName, label);
+};
+
+// Placeholder BuildData for dry runs, since no real build was triggered.
+export const dryRunBuildData = (actorFullName: string, versionNumber: string): BuildData => ({
+    buildId: 'dry-run',
+    actorRawId: 'dry-run',
+    buildNumber: versionNumber,
+    actorFullName,
+});
+
 type RunBuildsOptions = {
     actorConfigs: ActorConfig[];
     isLatest?: boolean;
@@ -297,7 +282,7 @@ export const runBuilds = async ({
     isLatest = false,
     dryRun,
     useDockerCache,
-}: RunBuildsOptions) => {
+}: RunBuildsOptions): Promise<BuildData[]> => {
     const buildConfigs: BuildPrActorOptions[] = [];
 
     for (const actorConfig of actorConfigs) {
@@ -310,7 +295,7 @@ export const runBuilds = async ({
             versionNumber = defaultVersionNumber;
             buildTag = defaultBuildTag;
         } else {
-            versionNumber = '0.99';
+            versionNumber = DEFAULT_TEST_VERSION_NUMBER;
         }
 
         // Depending on if these are miniactors or standaloneActors
@@ -322,23 +307,34 @@ export const runBuilds = async ({
     }
 
     if (dryRun) {
-        return buildConfigs;
+        console.error('[DRY RUN] Would build:');
+        for (const { actorConfig, versionNumber } of buildConfigs) {
+            console.error(`  ${actorConfig.actorFullName} (${versionNumber})`);
+        }
+        return buildConfigs.map(({ actorConfig, versionNumber }) =>
+            dryRunBuildData(actorConfig.actorFullName, versionNumber),
+        );
     }
 
-    const buildersByActorFullName = new Map<string, ApifyBuilder>(
-        actorConfigs.map((actorConfig) => [actorConfig.actorFullName, ApifyBuilder.fromActorConfig(actorConfig)]),
-    );
-    console.error('=========================================');
-    console.error('STARTED BUILDS:');
-    const startedBuilds = await Promise.all(
-        buildConfigs.map(async (buildConfig) => {
-            const builder = buildersByActorFullName.get(buildConfig.actorConfig.actorFullName)!;
-            const buildData = await builder.startActorBuild(buildConfig);
-            return buildData;
-        }),
+    const buildConfigsByActorFullName = new Map(
+        buildConfigs.map((buildConfig) => [buildConfig.actorConfig.actorFullName, buildConfig]),
     );
 
-    return waitAndSummarizeBuilds(startedBuilds, buildersByActorFullName, 'BUILDS');
+    return runAndSummarizeBuilds(actorConfigs, 'BUILDS', async (actorConfig, builder) => {
+        const {
+            buildTag,
+            versionNumber,
+            gitRepoUrl,
+            useDockerCache: useCache,
+        } = buildConfigsByActorFullName.get(actorConfig.actorFullName)!;
+        const actorVersion: ActorVersion = {
+            buildTag,
+            versionNumber,
+            gitRepoUrl,
+            sourceType: ActorSourceType.GitRepo,
+        };
+        return builder.createVersionAndBuild(versionNumber, actorVersion, useCache);
+    });
 };
 
 export const deleteOldBuilds = async (actorConfigs: ActorConfig[]) => {

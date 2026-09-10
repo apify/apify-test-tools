@@ -102,7 +102,7 @@ See the [GitHub workflows](#github-worklows) section below.
 The reusable workflows live in this repo, alongside the package they call. Reference them at the
 `@v1` major tag, never at `@master` — see [Versioning and releases](#versioning-and-releases).
 
-There should be 4 GH workflow files in `.github/workflows`.
+There should be 4 GH workflow files in `.github/workflows`, plus an optional fifth for Claude reviews.
 
 ### `platform-tests-core.yaml`
 
@@ -169,6 +169,29 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/push-build-latest.yaml@v1
         secrets: inherit
 ```
+
+### `claude-review.yaml`
+
+Optional. Reviews a PR against the shared guidelines when you add the trigger label, and again on
+every push while that label is on.
+
+```yaml
+name: Claude review
+
+on:
+    pull_request:
+        types: [labeled, synchronize]
+
+jobs:
+    review:
+        uses: apify/apify-test-tools/.github/workflows/review.yaml@v1
+        secrets: inherit
+```
+
+The review instructions live in `.github/review-prompt.md` in this repo and are fetched at run time,
+because a reusable workflow doesn't get its own repo checked out. `prompt-ref` selects which ref to
+fetch them from and defaults to `v1`, so the instructions match the workflow you're calling — point
+it at a branch only to test a prompt change.
 
 ### Secrets
 

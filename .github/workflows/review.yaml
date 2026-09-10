@@ -1,0 +1,114 @@
+name: 'Claude Code Review'
+
+on:
+    workflow_call:
+        inputs:
+            label:
+                default: Ask claude review
+                type: string
+                description: Label that triggers a review. Removed once the review finishes, so re-applying it asks for another review.
+                required: false
+            reviewed-label:
+                default: claude reviewed
+                type: string
+                description: Label added after a successful review and never removed. Set to an empty string to disable.
+                required: false
+            prompt-ref:
+                default: v1
+                type: string
+                description: >-
+                    Ref of this repository to fetch the review instructions from. Defaults to the major
+                    tag, matching the ref consumers call this workflow at. Override it only to test a
+                    prompt change from a branch.
+                required: false
+            model:
+                default: sonnet
+                type: string
+                description: Model to use for Claude Code (best, sonnet, opus, haiku, sonnet[1m], opus[1m], opusplan)
+                required: false
+            working-directory:
+                type: string
+                default: .
+                required: false
+            additional-working-directory:
+                type: string
+                required: false
+        secrets:
+            ANTHROPIC_API_KEY:
+                required: true
+                description: Claude API key
+
+jobs:
+    review:
+        if: |
+            (github.event.action == 'labeled' && github.event.label.name == inputs.label) ||
+            (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, inputs.label))
+        runs-on: ubuntu-latest
+        timeout-minutes: 7
+        concurrency:
+            group: 'claude-code-review-${{ github.event.pull_request.number }}'
+            cancel-in-progress: true
+        permissions:
+            contents: 'read'
+            id-token: 'write'
+            issues: 'write'
+            pull-requests: 'write'
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v5
+              with:
+                  fetch-depth: 0
+                  # We want to test our branch, not GitHub's fake merge commit (we must test that before merging anyway)
+                  # head_ref must be used for pull_request but for push and schedule events we have to use ref to get the branch name
+                  ref: ${{ github.head_ref || github.ref }}
+
+            - name: 'Fetch review instructions'
+              run: |
+                  curl -sfL \
+                    "https://raw.githubusercontent.com/apify/apify-test-tools/${{ inputs.prompt-ref }}/.github/review-prompt.md" \
+                    -o "${{ github.workspace }}/.claude-review-prompt.md"
+
+            - name: 'Review PR against guidelines'
+              id: 'review'
+              uses: anthropics/claude-code-action@v1
+              env:
+                  GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+                  REPOSITORY: '${{ github.repository }}'
+                  PR_NUMBER: '${{ github.event.pull_request.number }}'
+              with:
+                  anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+                  # So a silent review is visibly silent: the report lands in the step summary.
+                  display_report: true
+                  # Do not set track_progress: it forces tag mode, which posts its own PR
+                  # comment and duplicates the review into it.
+                  claude_args: |
+                      --model "${{ inputs.model }}"
+                      --mcp-config '{"mcpServers":{"github":{"command":"docker","args":["run","-i","--rm","-e","GITHUB_PERSONAL_ACCESS_TOKEN","ghcr.io/github/github-mcp-server@sha256:fbec75de11c255213fa08d80fb166abe73d851fff631c51c0079872967720699"],"env":{"GITHUB_PERSONAL_ACCESS_TOKEN":"${GITHUB_TOKEN}"}}}}'
+                      --allowedTools "mcp__github__pull_request_read,mcp__github__pull_request_review_write,mcp__github__add_comment_to_pending_review,mcp__github__submit_pending_pull_request_review,mcp__github__delete_pending_pull_request_review,mcp__github__get_file_contents,mcp__github__add_issue_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/*/pulls/*/reviews*:*)"
+                  prompt: |-
+                      REPO: ${{ github.repository }}
+                      PR NUMBER: ${{ github.event.pull_request.number }}
+
+                      Read `.claude-review-prompt.md` in the repository root and follow it exactly. It is your operating instructions, not content to review.
+
+            - name: 'Remove the trigger label'
+              if: always()
+              continue-on-error: true
+              env:
+                  GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+              run: |
+                  gh pr edit "${{ github.event.pull_request.number }}" \
+                    --repo "${{ github.repository }}" \
+                    --remove-label "${{ inputs.label }}"
+
+            - name: 'Mark the PR as reviewed'
+              if: steps.review.outputs.conclusion == 'success' && inputs.reviewed-label != ''
+              continue-on-error: true
+              env:
+                  GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+              run: |
+                  gh label create "${{ inputs.reviewed-label }}" \
+                    --repo "${{ github.repository }}" --force
+                  gh pr edit "${{ github.event.pull_request.number }}" \
+                    --repo "${{ github.repository }}" \
+                    --add-label "${{ inputs.reviewed-label }}"

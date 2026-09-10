@@ -1,0 +1,12 @@
+# actionlint bakes in a snapshot of popular actions' inputs and outputs, taken when the pinned
+# version was released. `anthropics/claude-code-action` has added to its interface since then, so
+# actionlint reports inputs and outputs that do exist on the action as undefined.
+#
+# Both of the ignores below were checked against the action's own action.yml at @v1: `display_report`
+# is a declared input, and `conclusion` ("Execution status of Claude Code") is a declared output.
+# Drop an entry once the pinned actionlint in _check_code.yaml is new enough to know about it.
+paths:
+    .github/workflows/review.yaml:
+        ignore:
+            - 'input "display_report" is not defined in action "anthropics/claude-code-action@v1"'
+            - 'property "conclusion" is not defined in object type'

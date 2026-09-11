@@ -22,6 +22,27 @@ jobs:
         name: Tests
         uses: ./.github/workflows/_tests.yaml
 
+    # Catches the one combination that breaks consumers: a workflow starting to use a CLI feature
+    # from the same PR. Merging ships the workflow immediately, so the floor has to be raised in the
+    # same change or the workflow goes live calling something that is not published.
+    floor_bump_needed:
+        name: Floor bump needed
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+                  ref: ${{ github.event.pull_request.head.sha }}
+
+            - name: Check whether this PR needs a floor bump
+              env:
+                  BASE_REF: ${{ github.base_ref }}
+                  PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+              run: |
+                  git fetch --no-tags origin "$BASE_REF"
+                  git diff --name-only FETCH_HEAD...HEAD | node .github/scripts/check-floor-bump.mjs
+
     # Reports whether merging this PR will ship the workflows or hold the major tag until a release.
     # Never fails: raising the floor ahead of the release that satisfies it is a supported way to
     # land the package change and the workflow change that needs it in one PR.

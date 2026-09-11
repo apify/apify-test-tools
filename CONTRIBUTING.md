@@ -81,6 +81,14 @@ npm release relate — the short version:
   `.github/workflows-min-package-version` in the same PR. The `v0` tag is then held until that
   version is on npm, so merging can't ship a workflow that calls a CLI that doesn't exist yet.
 
+The `Floor bump needed` check enforces that last point: a PR touching both a `public_` workflow (or
+the composite action) and `bin/`, `lib/` or `index.ts` has to raise the floor. When the two changes
+are unrelated and the workflow doesn't need the new code, label the PR `no-floor-bump-needed`.
+
+It only looks at a single PR, so it won't catch a workflow that starts using a CLI feature merged in
+an earlier, still-unreleased PR. That needs someone to land a CLI change and sit on it unreleased;
+catching it would mean flagging every workflow edit made while any package change is unreleased.
+
 `npm run lint` and `actionlint` (via the `Code checks` workflow) both gate master, so run them before
 pushing workflow changes.
 

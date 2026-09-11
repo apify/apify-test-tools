@@ -1,6 +1,6 @@
 name: Move major version tag
 
-# Consumer repos track a floating major tag (`...@v1`), not `master`, so merging to master does not
+# Consumer repos track a floating major tag (`...@v0`), not `master`, so merging to master does not
 # ship anything by itself. This workflow is what ships: it moves that tag forward, but only once the
 # package version the workflows declare in .github/workflows-min-package-version is actually on npm.
 #
@@ -32,11 +32,16 @@ jobs:
             contents: write
         env:
             # The major version consumers pin, e.g.
-            # `uses: apify/apify-test-tools/.github/workflows/pr-build-test.yaml@v1`.
+            # `uses: apify/apify-test-tools/.github/workflows/pr-build-test.yaml@v0`.
             # Bump this only for a breaking change to a workflow's inputs, secrets or behaviour.
             # The previous tag then stops moving and keeps working, so repos migrate when they get
             # to it instead of all at once.
-            MAJOR_TAG: v1
+            #
+            # This tracks the workflows' own contract, not the npm package version — the two move
+            # independently by design, so `v0` here is expected to outlive the package reaching 1.0.
+            # `uses:` cannot take an expression, so every ref into this repo hardcodes this same tag;
+            # check-major-tag-refs.mjs fails the build if one of them drifts.
+            MAJOR_TAG: v0
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6

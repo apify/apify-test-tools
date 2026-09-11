@@ -100,7 +100,7 @@ See the [GitHub workflows](#github-worklows) section below.
 ## Github worklows
 
 The reusable workflows live in this repo, alongside the package they call. Reference them at the
-`@v1` major tag, never at `@master` — see [Versioning and releases](#versioning-and-releases).
+`@v0` major tag, never at `@master` — see [Versioning and releases](#versioning-and-releases).
 
 There should be 4 GH workflow files in `.github/workflows`, plus an optional fifth for Claude reviews.
 
@@ -117,7 +117,7 @@ on:
 
 jobs:
     platformTestsCore:
-        uses: apify/apify-test-tools/.github/workflows/platform-tests.yaml@v1
+        uses: apify/apify-test-tools/.github/workflows/platform-tests.yaml@v0
         with:
             subtest: core
         secrets: inherit
@@ -136,7 +136,7 @@ on:
 
 jobs:
     platformTestsDaily:
-        uses: apify/apify-test-tools/.github/workflows/platform-tests.yaml@v1
+        uses: apify/apify-test-tools/.github/workflows/platform-tests.yaml@v0
         secrets: inherit
 ```
 
@@ -151,7 +151,7 @@ on:
 
 jobs:
     buildDevelAndTest:
-        uses: apify/apify-test-tools/.github/workflows/pr-build-test.yaml@v1
+        uses: apify/apify-test-tools/.github/workflows/pr-build-test.yaml@v0
         secrets: inherit
 ```
 
@@ -166,7 +166,7 @@ on:
 
 jobs:
     buildLatest:
-        uses: apify/apify-test-tools/.github/workflows/push-build-latest.yaml@v1
+        uses: apify/apify-test-tools/.github/workflows/push-build-latest.yaml@v0
         secrets: inherit
 ```
 
@@ -184,13 +184,13 @@ on:
 
 jobs:
     review:
-        uses: apify/apify-test-tools/.github/workflows/review.yaml@v1
+        uses: apify/apify-test-tools/.github/workflows/review.yaml@v0
         secrets: inherit
 ```
 
 The review instructions live in `.github/review-prompt.md` in this repo and are fetched at run time,
 because a reusable workflow doesn't get its own repo checked out. `prompt-ref` selects which ref to
-fetch them from and defaults to `v1`, so the instructions match the workflow you're calling — point
+fetch them from and defaults to `v0`, so the instructions match the workflow you're calling — point
 it at a branch only to test a prompt change.
 
 ### Secrets
@@ -253,7 +253,7 @@ decide what a consumer repo actually runs:
 
 | Pointer                                 | What it selects                                | Moves when                                               |
 | --------------------------------------- | ---------------------------------------------- | -------------------------------------------------------- |
-| the `@v1` tag in `uses:`                | which workflows run                            | a master push, once the version floor below is published |
+| the `@v0` tag in `uses:`                | which workflows run                            | a master push, once the version floor below is published |
 | `.github/workflows-min-package-version` | oldest `apify-test-tools` the workflows accept | you edit it                                              |
 
 The setup action installs `apify-test-tools@>=<floor>`, which resolves to the newest published stable
@@ -262,20 +262,26 @@ version error instead of a confusing CLI error deep in a build.
 
 Nothing is coupled that doesn't need to be:
 
-- **Workflow-only change** — merge it. `v1` moves, it goes live, no release needed.
+- **Workflow-only change** — merge it. `v0` moves, it goes live, no release needed.
 - **Package-only change** — merge it, then cut a release when you want it out. The workflows are
   unchanged, so consumers see nothing until the release lands.
 - **A workflow that calls a new CLI feature** — the one case that can break consumers, and the only
   one with any ceremony. Put the package change, the workflow change, and the floor bump in one PR.
-  On merge the tag is **held**: the CI job reports that the floor isn't on npm and leaves `v1` where
+  On merge the tag is **held**: the CI job reports that the floor isn't on npm and leaves `v0` where
   it is, so consumers keep running the previous workflows. Cut a stable release, and the tag moves
   on its own. Run **Move major version tag** if you don't want to wait for the next master push.
 
-`v1` moving on every master push means `@v1` is as live as `@master` was — there's no staging step,
-just a gate on the package version. What the tag buys you is a `v2` for breaking workflow changes,
+`v0` moving on every master push means `@v0` is as live as `@master` was — there's no staging step,
+just a gate on the package version. What the tag buys you is a `v1` for breaking workflow changes,
 so repos migrate one at a time instead of all at once, and a way to roll back by pointing the tag at
-an earlier commit. Bump `MAJOR_TAG` in `.github/workflows/_move_major_tag.yaml` to cut `v2`; `v1`
-then freezes where it is and keeps working.
+an earlier commit. Bump `MAJOR_TAG` in `.github/workflows/_move_major_tag.yaml` to cut the next
+major; the old tag then freezes where it is and keeps working.
+
+The tag tracks the **workflows'** contract, not the npm package version. They move independently on
+purpose, so `@v0` is expected to stay `@v0` after the package reaches 1.0 — bump it when a workflow
+breaks its callers, not when the package does. Because `uses:` cannot take an expression, every ref
+into this repo repeats the tag literally; `check-major-tag-refs.mjs` fails the build if `MAJOR_TAG`
+and those refs disagree, which is the mistake that would otherwise ship silently during a bump.
 
 ### Testing workflow changes
 

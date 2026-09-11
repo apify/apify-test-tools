@@ -66,14 +66,14 @@ because they call this package's CLI, so a change to both is one PR. GitHub only
 files at the top level of `.github/workflows`, so they sit next to this repo's own CI; the
 `_`-prefixed files are internal to this repo and are not meant to be called from outside.
 
-Consumers pin `@v1`, not `@master`. See
+Consumers pin `@v0`, not `@master`. See
 [Versioning and releases](./README.md#versioning-and-releases) in the README for how the tag and the
 npm release relate — the short version:
 
 - changing only a workflow needs no npm release
 - changing only the package needs no workflow change
 - a workflow that calls a **new** CLI feature must raise the floor in
-  `.github/workflows-min-package-version` in the same PR. The `v1` tag is then held until that
+  `.github/workflows-min-package-version` in the same PR. The `v0` tag is then held until that
   version is on npm, so merging can't ship a workflow that calls a CLI that doesn't exist yet.
 
 `npm run lint` and `actionlint` (via the `Code checks` workflow) both gate master, so run them before
@@ -81,5 +81,5 @@ pushing workflow changes.
 
 `review` is the odd one out: it fetches `.github/review-prompt.md` over HTTP at run time, because a
 reusable workflow runs with the caller's repo checked out and never gets its own. Its `prompt-ref`
-input defaults to `v1` so the instructions come from the same release as the workflow — leaving it
+input defaults to `v0` so the instructions come from the same release as the workflow — leaving it
 at `master` would run released workflows against unreleased instructions.

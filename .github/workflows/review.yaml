@@ -14,12 +14,12 @@ on:
                 description: Label added after a successful review and never removed. Set to an empty string to disable.
                 required: false
             prompt-ref:
-                default: v1
+                default: v0
                 type: string
                 description: >-
-                    Ref of this repository to fetch the review instructions from. Defaults to the major
-                    tag, matching the ref consumers call this workflow at. Override it only to test a
-                    prompt change from a branch.
+                    Ref of this repository to fetch the review instructions from. Defaults to the
+                    major tag, matching the ref consumers call this workflow at. Override it only to
+                    test a prompt change from a branch.
                 required: false
             model:
                 default: sonnet

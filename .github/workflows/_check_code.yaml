@@ -26,6 +26,22 @@ jobs:
     #         - name: Check spelling with typos
     #           uses: crate-ci/typos@v1
 
+    major_tag_refs:
+        name: Major tag refs
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+            - name: Use Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+            # `uses:` takes no expressions, so the major tag is repeated in every ref into this repo.
+            # Missing one during a bump is silent while both tags exist: the new workflows quietly
+            # run the old composite action.
+            - name: Check refs match MAJOR_TAG
+              run: node .github/scripts/check-major-tag-refs.mjs
+
     lint_check:
         name: Lint check
         runs-on: ubuntu-latest

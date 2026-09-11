@@ -20,7 +20,7 @@ name: 'Platform tests: Claude failure investigation and fix'
 #
 # jobs:
 #     platformTestsCore:
-#         uses: apify/apify-test-tools/.github/workflows/platform-tests.yaml@v1
+#         uses: apify/apify-test-tools/.github/workflows/platform-tests.yaml@v0
 #         with:
 #             subtest: core
 #         secrets: inherit
@@ -28,7 +28,7 @@ name: 'Platform tests: Claude failure investigation and fix'
 #     handle-failure:
 #         needs: platformTestsCore
 #         if: ${{ failure() }}
-#         uses: apify/apify-test-tools/.github/workflows/platform-tests-claude-investigate-and-fix.yaml@v1
+#         uses: apify/apify-test-tools/.github/workflows/platform-tests-claude-investigate-and-fix.yaml@v0
 #         secrets: inherit
 
 on:

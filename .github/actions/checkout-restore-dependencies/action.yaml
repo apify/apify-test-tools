@@ -26,7 +26,7 @@ outputs:
 
 # Sets common steps and ensure we use cached node_modules
 # To test a change here, repoint the `uses:` refs in the reusable workflows at your branch, and
-# change them back before merging. Merging to master no longer ships it: consumers track the `v1`
+# change them back before merging. Merging to master no longer ships it: consumers track the `v0`
 # tag, which only moves once the package version in .github/workflows-min-package-version is on npm.
 runs:
     using: 'composite'

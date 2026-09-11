@@ -32,7 +32,7 @@ jobs:
             contents: write
         env:
             # The major version consumers pin, e.g.
-            # `uses: apify/apify-test-tools/.github/workflows/pr-build-test.yaml@v0`.
+            # `uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@v0`.
             # Bump this only for a breaking change to a workflow's inputs, secrets or behaviour.
             # The previous tag then stops moving and keeps working, so repos migrate when they get
             # to it instead of all at once.

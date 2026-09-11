@@ -99,8 +99,10 @@ See the [GitHub workflows](#github-worklows) section below.
 
 ## Github worklows
 
-The reusable workflows live in this repo, alongside the package they call. Reference them at the
-`@v0` major tag, never at `@master` — see [Versioning and releases](#versioning-and-releases).
+The reusable workflows live in this repo, alongside the package they call. They are the
+`public_`-prefixed files in `.github/workflows`; everything else there is this repo's own CI.
+Reference them at the `@v0` major tag, never at `@master` — see
+[Versioning and releases](#versioning-and-releases).
 
 There should be 4 GH workflow files in `.github/workflows`, plus an optional fifth for Claude reviews.
 
@@ -117,7 +119,7 @@ on:
 
 jobs:
     platformTestsCore:
-        uses: apify/apify-test-tools/.github/workflows/platform-tests.yaml@v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@v0
         with:
             subtest: core
         secrets: inherit
@@ -136,7 +138,7 @@ on:
 
 jobs:
     platformTestsDaily:
-        uses: apify/apify-test-tools/.github/workflows/platform-tests.yaml@v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@v0
         secrets: inherit
 ```
 
@@ -151,7 +153,7 @@ on:
 
 jobs:
     buildDevelAndTest:
-        uses: apify/apify-test-tools/.github/workflows/pr-build-test.yaml@v0
+        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@v0
         secrets: inherit
 ```
 
@@ -166,7 +168,7 @@ on:
 
 jobs:
     buildLatest:
-        uses: apify/apify-test-tools/.github/workflows/push-build-latest.yaml@v0
+        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@v0
         secrets: inherit
 ```
 
@@ -184,7 +186,7 @@ on:
 
 jobs:
     review:
-        uses: apify/apify-test-tools/.github/workflows/review.yaml@v0
+        uses: apify/apify-test-tools/.github/workflows/public_review.yaml@v0
         secrets: inherit
 ```
 

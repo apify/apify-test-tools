@@ -60,11 +60,16 @@ You need to run `npm run build` inside `apify-test-tools` repo everytime you wan
 
 ## Reusable workflows
 
-`pr-build-test`, `platform-tests`, `push-build-latest`, `claude`, `review` and
-`platform-tests-claude-investigate-and-fix` are the workflows consumer repos call. They live here
-because they call this package's CLI, so a change to both is one PR. GitHub only reads workflow
-files at the top level of `.github/workflows`, so they sit next to this repo's own CI; the
-`_`-prefixed files are internal to this repo and are not meant to be called from outside.
+The `public_`-prefixed workflows are the ones consumer repos call: `public_pr-build-test`,
+`public_platform-tests`, `public_push-build-latest`, `public_claude`, `public_review` and
+`public_platform-tests-claude-investigate-and-fix`. They live here because they call this package's
+CLI, so a change to both is one PR. GitHub only reads workflow files at the top level of
+`.github/workflows`, so they sit next to this repo's own CI, and the prefix is what separates the
+two: `public_` is the API other repos depend on, `_` is internal plumbing, and `on_`/`manual_` are
+this repo's own triggers.
+
+A `public_` filename is part of the contract — it is baked into every consumer's `uses:` line, so
+renaming one is a breaking change that needs a major tag bump, not a tidy-up.
 
 Consumers pin `@v0`, not `@master`. See
 [Versioning and releases](./README.md#versioning-and-releases) in the README for how the tag and the
@@ -79,7 +84,7 @@ npm release relate — the short version:
 `npm run lint` and `actionlint` (via the `Code checks` workflow) both gate master, so run them before
 pushing workflow changes.
 
-`review` is the odd one out: it fetches `.github/review-prompt.md` over HTTP at run time, because a
+`public_review` is the odd one out: it fetches `.github/review-prompt.md` over HTTP at run time, because a
 reusable workflow runs with the caller's repo checked out and never gets its own. Its `prompt-ref`
 input defaults to `v0` so the instructions come from the same release as the workflow — leaving it
 at `master` would run released workflows against unreleased instructions.

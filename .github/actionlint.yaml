@@ -6,7 +6,7 @@
 # is a declared input, and `conclusion` ("Execution status of Claude Code") is a declared output.
 # Drop an entry once the pinned actionlint in _check_code.yaml is new enough to know about it.
 paths:
-    .github/workflows/review.yaml:
+    .github/workflows/public_review.yaml:
         ignore:
             - 'input "display_report" is not defined in action "anthropics/claude-code-action@v1"'
             - 'property "conclusion" is not defined in object type'

@@ -343,6 +343,238 @@ describe('readConfigFile', () => {
         expect(result[0].contextPaths).toEqual(['actors/shopify', 'code', 'shared']);
     });
 
+    it('throws when no tokenEnvVar can be resolved for an actor', async () => {
+        mockFiles({
+            [CONFIG_FILE_NAME]: validConfig([{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }]),
+            'actors/shopify/.actor/actor.json': actorJson({}),
+        });
+
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/tokenEnvVar/);
+    });
+
+    describe('configs (glob-based overrides)', () => {
+        it('fills in a property from a matching folder-glob configs entry', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
+                    configs: [{ folder: 'actors/*', tokenEnvVar: 'GLOB_TOKEN' }],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const result = await readConfigFile(emptyActorSelection);
+            expect(result[0].tokenEnvVar).toBe('GLOB_TOKEN');
+        });
+
+        it('an actorFullName-glob configs entry wins over a folder-glob configs entry', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
+                    configs: [
+                        { folder: 'actors/*', tokenEnvVar: 'FOLDER_TOKEN' },
+                        { actorFullName: 'myteam/*', tokenEnvVar: 'ACTOR_TOKEN' },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const result = await readConfigFile(emptyActorSelection);
+            expect(result[0].tokenEnvVar).toBe('ACTOR_TOKEN');
+        });
+
+        it('among matching folder-glob entries, array position decides the winner, not pattern specificity', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
+                    configs: [
+                        { folder: 'actors/*', tokenEnvVar: 'BROADER_TOKEN' },
+                        { folder: 'actors/shopify', tokenEnvVar: 'SPECIFIC_TOKEN' },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const resultBroaderLast = await readConfigFile(emptyActorSelection);
+            expect(resultBroaderLast[0].tokenEnvVar).toBe('SPECIFIC_TOKEN');
+
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
+                    configs: [
+                        { folder: 'actors/shopify', tokenEnvVar: 'SPECIFIC_TOKEN' },
+                        { folder: 'actors/*', tokenEnvVar: 'BROADER_TOKEN' },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const resultSpecificLast = await readConfigFile(emptyActorSelection);
+            expect(resultSpecificLast[0].tokenEnvVar).toBe('BROADER_TOKEN');
+        });
+
+        it('among matching actorFullName-glob entries, array position decides the winner, not pattern specificity', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
+                    configs: [
+                        { actorFullName: 'myteam/*', tokenEnvVar: 'BROADER_TOKEN' },
+                        { actorFullName: 'myteam/shopify', tokenEnvVar: 'SPECIFIC_TOKEN' },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const resultBroaderLast = await readConfigFile(emptyActorSelection);
+            expect(resultBroaderLast[0].tokenEnvVar).toBe('SPECIFIC_TOKEN');
+
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
+                    configs: [
+                        { actorFullName: 'myteam/shopify', tokenEnvVar: 'SPECIFIC_TOKEN' },
+                        { actorFullName: 'myteam/*', tokenEnvVar: 'BROADER_TOKEN' },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const resultSpecificLast = await readConfigFile(emptyActorSelection);
+            expect(resultSpecificLast[0].tokenEnvVar).toBe('BROADER_TOKEN');
+        });
+
+        it.each([
+            {
+                patternKey: 'folder' as const,
+                folder: '.',
+                actorFullName: 'apify/my-actor',
+                actorJsonPath: '.actor/actor.json',
+            },
+            {
+                patternKey: 'actorFullName' as const,
+                folder: 'actors/shopify',
+                actorFullName: 'myteam/shopify',
+                actorJsonPath: 'actors/shopify/.actor/actor.json',
+            },
+        ])(
+            '"**" as a $patternKey pattern matches every actor (including a single-actor/root repo for folder)',
+            async ({ patternKey, folder, actorFullName, actorJsonPath }) => {
+                mockFiles({
+                    [CONFIG_FILE_NAME]: JSON.stringify({
+                        actors: [{ folder, actorFullName }],
+                        configs: [{ [patternKey]: '**', tokenEnvVar: 'GLOB_TOKEN' }],
+                    }),
+                    [actorJsonPath]: actorJson({}),
+                });
+
+                const result = await readConfigFile(emptyActorSelection);
+                expect(result[0].tokenEnvVar).toBe('GLOB_TOKEN');
+            },
+        );
+
+        it.each([{ patternKey: 'folder' as const }, { patternKey: 'actorFullName' as const }])(
+            'a single-segment "*" does not match a multi-segment $patternKey',
+            async ({ patternKey }) => {
+                mockFiles({
+                    [CONFIG_FILE_NAME]: JSON.stringify({
+                        actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
+                        configs: [{ [patternKey]: '*', tokenEnvVar: 'GLOB_TOKEN' }],
+                    }),
+                    'actors/shopify/.actor/actor.json': actorJson({}),
+                });
+
+                await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/tokenEnvVar/);
+            },
+        );
+
+        it('throws when a configs entry has both folder and actorFullName set', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
+                    configs: [{ folder: 'actors/*', actorFullName: 'myteam/*', tokenEnvVar: 'GLOB_TOKEN' }],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/Invalid "configs" entry/);
+        });
+
+        it('throws when the non-selected discriminant is present with a wrong type', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
+                    configs: [{ folder: 'actors/*', actorFullName: 123, tokenEnvVar: 'GLOB_TOKEN' }],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/Invalid "configs" entry/);
+        });
+
+        it('a literal value wins over both a folder-glob and an actorFullName-glob match on the same actor', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [
+                        {
+                            folder: 'actors/shopify',
+                            actorFullName: 'myteam/shopify',
+                            tokenEnvVar: 'LITERAL_TOKEN',
+                        },
+                    ],
+                    configs: [
+                        { folder: 'actors/*', tokenEnvVar: 'FOLDER_TOKEN' },
+                        { actorFullName: 'myteam/*', tokenEnvVar: 'ACTOR_TOKEN' },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const result = await readConfigFile(emptyActorSelection);
+            expect(result[0].tokenEnvVar).toBe('LITERAL_TOKEN');
+        });
+
+        it('an actorFullName-glob match wins over a folder-glob match when no literal is set', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
+                    configs: [
+                        { folder: 'actors/*', tokenEnvVar: 'FOLDER_TOKEN' },
+                        { actorFullName: 'myteam/*', tokenEnvVar: 'ACTOR_TOKEN' },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const result = await readConfigFile(emptyActorSelection);
+            expect(result[0].tokenEnvVar).toBe('ACTOR_TOKEN');
+        });
+
+        it('throws a friendly error when "configs" is present but not an array', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
+                    configs: {},
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/"configs" must be an array/);
+        });
+
+        it('merges in an unrecognized property from a matching configs entry with no effect', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
+                    configs: [{ folder: 'actors/*', tokenEnvVarr: 'MISSPELLED' }],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const result = await readConfigFile(emptyActorSelection);
+            expect(result[0]).not.toHaveProperty('tokenEnvVarr');
+            expect(result[0].tokenEnvVar).toBe('APIFY_TOKEN');
+        });
+    });
+
     describe('actor selection', () => {
         const twoActors = () =>
             mockFiles({

@@ -3,12 +3,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import type { ActorVersionSourceFile } from 'apify-client';
+import { minimatch } from 'minimatch';
 
 import { SOURCE_FILE_FORMATS } from '@apify/consts';
 
 import { selectActors } from './actor-filtering.js';
 import { isPathWithinScope } from './path-utils.js';
-import type { ActorConfig, ActorConfigFile } from './types.js';
+import type { ActorConfig, ActorConfigFile, ActorConfigFileEntry, ActorGlobConfigEntry } from './types.js';
 
 // Returns true when `childPath` is not inside `parentPath`.
 // Used to detect monorepo actors whose dockerContextDir escapes the actor directory.
@@ -114,6 +115,62 @@ const findOverlappingContextPaths = (contextPaths: string[]): [string, string] |
     return undefined;
 };
 
+const validateGlobConfigEntries = (configs: unknown[]): ActorGlobConfigEntry[] => {
+    for (const [index, configEntry] of configs.entries()) {
+        const { folder, actorFullName } = configEntry as ActorGlobConfigEntry;
+
+        // TODO: Allow for combined filtering?
+        if (folder !== undefined && actorFullName !== undefined) {
+            throw new Error(
+                `Invalid "configs" entry at index ${index} in "${CONFIG_FILE_NAME}". ` +
+                    `Must not have both "folder" and "actorFullName" set.`,
+            );
+        }
+
+        if (folder === undefined && actorFullName === undefined) {
+            throw new Error(
+                `Invalid "configs" entry at index ${index} in "${CONFIG_FILE_NAME}". ` +
+                    `Must have exactly one of "folder" or "actorFullName" set.`,
+            );
+        }
+
+        if (typeof (folder ?? actorFullName) !== 'string') {
+            throw new Error(
+                `Invalid "configs" entry at index ${index} in "${CONFIG_FILE_NAME}". ` +
+                    `"folder"/"actorFullName" must be a string.`,
+            );
+        }
+    }
+
+    return configs as ActorGlobConfigEntry[];
+};
+
+// Precedence, lowest to highest: matching folder-glob entries, matching actorFullName-glob
+// entries, the actor's own literal entry.
+const mergeGlobConfigs = (
+    actorEntry: ActorConfigFileEntry,
+    folder: string,
+    configs: ActorGlobConfigEntry[],
+): ActorConfigFileEntry => {
+    const matchingFolderConfigs = configs.filter(
+        (configEntry) => configEntry.folder !== undefined && minimatch(folder, configEntry.folder),
+    );
+    const matchingActorFullNameConfigs = configs.filter(
+        (configEntry) =>
+            configEntry.actorFullName !== undefined &&
+            typeof actorEntry.actorFullName === 'string' &&
+            minimatch(actorEntry.actorFullName, configEntry.actorFullName),
+    );
+
+    let overlay: Partial<ActorConfigFileEntry> = {};
+    for (const configEntry of [...matchingFolderConfigs, ...matchingActorFullNameConfigs]) {
+        const { folder: matchedFolder, actorFullName: matchedActorFullName, ...rest } = configEntry;
+        overlay = { ...overlay, ...rest };
+    }
+
+    return { ...overlay, ...actorEntry };
+};
+
 export const readConfigFile = async (selection: { actors: string[]; ignore: string[] }): Promise<ActorConfig[]> => {
     let raw: string;
     try {
@@ -136,18 +193,24 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
         throw new Error(`Config file "${CONFIG_FILE_NAME}" must have an "actors" array at the top level.`);
     }
 
+    if (config.configs !== undefined && !Array.isArray(config.configs)) {
+        throw new Error(`Config file "${CONFIG_FILE_NAME}" "configs" must be an array.`);
+    }
+    const globConfigs = config.configs ? validateGlobConfigEntries(config.configs) : [];
+
     const seenFolders = new Set<string>();
     const actorConfigs: ActorConfig[] = [];
 
-    for (const [index, entry] of config.actors.entries()) {
-        if (typeof entry.folder !== 'string') {
+    for (const [index, rawEntry] of config.actors.entries()) {
+        if (typeof rawEntry.folder !== 'string') {
             throw new Error(
                 `Invalid "folder" for actor entry at index ${index} in "${CONFIG_FILE_NAME}". ` +
                     `Must be a string (use "." for a single-actor repo).`,
             );
         }
 
-        const folder = entry.folder === '.' ? '' : stripTrailingSlash(entry.folder);
+        const folder = rawEntry.folder === '.' ? '' : stripTrailingSlash(rawEntry.folder);
+        const entry = mergeGlobConfigs(rawEntry, folder, globConfigs);
 
         if (seenFolders.has(folder)) {
             throw new Error(
@@ -214,6 +277,13 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
             throw new Error(
                 `Invalid context paths for folder "${entry.folder}" in "${CONFIG_FILE_NAME}": ` +
                     `"${overlap[0]}" and "${overlap[1]}" overlap. Context paths must not be prefixes of one another.`,
+            );
+        }
+
+        if (entry.tokenEnvVar === undefined) {
+            throw new Error(
+                `Missing "tokenEnvVar" for folder "${entry.folder}" (actor "${entry.actorFullName}") in "${CONFIG_FILE_NAME}". ` +
+                    `Set it directly on the actor entry or via a matching "configs" entry.`,
             );
         }
 

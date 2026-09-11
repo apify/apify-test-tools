@@ -90,12 +90,17 @@ export interface GithubCommit {
 export interface ActorConfigFileEntry {
     folder: string;
     actorFullName: string;
-    tokenEnvVar: string;
+    tokenEnvVar?: string;
     overrideActorContext?: string[];
 }
 
+export type ActorGlobConfigEntry =
+    | ({ folder: string; actorFullName?: never } & Partial<Omit<ActorConfigFileEntry, 'folder' | 'actorFullName'>>)
+    | ({ actorFullName: string; folder?: never } & Partial<Omit<ActorConfigFileEntry, 'folder' | 'actorFullName'>>);
+
 export interface ActorConfigFile {
     actors: ActorConfigFileEntry[];
+    configs?: ActorGlobConfigEntry[];
 }
 
 export interface BuildData {

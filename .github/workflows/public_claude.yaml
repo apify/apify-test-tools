@@ -1,0 +1,101 @@
+name: Claude Code
+
+on:
+    workflow_call:
+        inputs:
+            model:
+                default: sonnet
+                type: string
+                description: Model to use for Claude Code (best, sonnet, opus, haiku, sonnet[1m], opus[1m], opusplan)
+                required: false
+            extra_allowed_tools:
+                default: ''
+                type: string
+                description: Comma-separated list of additional tool patterns to append to --allowedTools (e.g. "Bash(npm run e2e),Bash(npm run typecheck)")
+                required: false
+        secrets:
+            ANTHROPIC_API_KEY:
+                required: true
+                description: Claude API key
+
+jobs:
+    claude:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            pull-requests: write
+            issues: write
+            id-token: write
+            actions: read
+        if: |
+            (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+            (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+            (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+            (github.event_name == 'pull_request_review' && github.event.review.state == 'changes_requested' && github.event.pull_request.user.login == 'claude[bot]') ||
+            (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'claude' && !contains(github.event.issue.labels.*.name, 'claude:done')) ||
+            (github.event_name == 'issues' && github.event.action != 'labeled' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 1
+
+            - name: Compute allowed tools
+              id: tools
+              env:
+                  EXTRA_ALLOWED_TOOLS: ${{ inputs.extra_allowed_tools }}
+              run: |
+                  BASE_TOOLS="Bash(gh pr*),Bash(gh api*),Bash(gh issue*),Bash(npm ci)"
+                  if [ -n "$EXTRA_ALLOWED_TOOLS" ]; then
+                      ALLOWED_TOOLS="${BASE_TOOLS},${EXTRA_ALLOWED_TOOLS}"
+                  else
+                      ALLOWED_TOOLS="${BASE_TOOLS}"
+                  fi
+                  echo "allowed_tools=${ALLOWED_TOOLS}" >> "$GITHUB_OUTPUT"
+
+            - name: Compute PR instruction
+              id: pr_instruction
+              env:
+                  EVENT_NAME: ${{ github.event_name }}
+                  IS_PR_COMMENT: ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request != null }}
+              run: |
+                  if [ "$EVENT_NAME" = "pull_request_review_comment" ] || [ "$EVENT_NAME" = "pull_request_review" ] || [ "$IS_PR_COMMENT" = "true" ]; then
+                      INSTRUCTION="After completing the requested changes, push them to the existing pull request's branch. Do not open a new pull request."
+                  else
+                      INSTRUCTION="After completing the requested changes, always open a pull request with your work. Do not just push commits or leave a comment without opening a PR."
+                  fi
+                  echo "instruction=${INSTRUCTION}" >> "$GITHUB_OUTPUT"
+
+            - name: Run Claude Code
+              id: claude
+              uses: anthropics/claude-code-action@v1
+              with:
+                  anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+                  track_progress: true
+                  use_commit_signing: true
+                  claude_args: |
+                      --model "${{ inputs.model }}"
+                      --allowedTools "${{ steps.tools.outputs.allowed_tools }}"
+                      --append-system-prompt "${{ steps.pr_instruction.outputs.instruction }}"
+
+            - name: Mark issue as processed by Claude
+              if: |
+                  github.event_name == 'issues' &&
+                  github.event.action == 'labeled' &&
+                  github.event.label.name == 'claude' &&
+                  steps.claude.conclusion == 'success'
+              uses: actions/github-script@v7
+              with:
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  script: |
+                      try {
+                          await github.rest.issues.addLabels({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              issue_number: context.issue.number,
+                              labels: ['claude:done']
+                          });
+                          console.log('Label claude:done added to issue.');
+                      } catch (e) {
+                          console.log('Label claude:done does not exist. Skipping.');
+                      }

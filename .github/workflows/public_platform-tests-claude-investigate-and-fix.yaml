@@ -49,7 +49,8 @@ on:
                     - Flaky test: The test is non-deterministic or depends on timing/external state and fails intermittently. Check past workflow runs to see if this test has failed before.
                     - Real bug: Genuine broken functionality — either a pre-existing issue or an environment/dependency change outside the codebase (e.g. a website changed its structure, an external API changed behavior).
 
-                    Use available tools to check previous workflow runs, git history, and existing GitHub issues to gather context and avoid creating duplicate issues.
+                    Use available tools to check previous workflow runs, git history, and existing GitHub issues to gather context and avoid creating duplicate issues. For deeper context,
+                    use tools to investigate the run on Apify platform, review its logs, datasets, key-value stores.
 
                     When you create the issue:
                     - Title: short and clean, describing the actual problem — no dates, run numbers, or other noise. Prefix it with a conventional-commit-style type, e.g. "fix: blocking issue on detail endpoint" or "test(platform): flaky video views count expectation".
@@ -61,6 +62,9 @@ on:
             ANTHROPIC_API_KEY:
                 required: true
                 description: Claude API key
+            TESTER_APIFY_TOKEN_READ_ONLY:
+                required: true
+                description: Apify token used only for read-only investigation — reading the failing run, its log and its storages.
 
 jobs:
     investigate:
@@ -78,12 +82,23 @@ jobs:
 
             - name: Run Claude Code
               id: claude
-              uses: anthropics/claude-code-action@v1
+              uses: anthropics/claude-code-action@8251c103ac8c1d761882c86aba1412c7f583c844 # v1.0.213
+              env:
+                  TESTER_APIFY_TOKEN_READ_ONLY: ${{ secrets.TESTER_APIFY_TOKEN_READ_ONLY }}
               with:
-                  prompt: ${{ inputs.investigate_prompt }}
+                  prompt: |
+                      The failing E2E platform test ran in workflow run ${{ github.run_id }} of this repo.
+
+                      ${{ inputs.investigate_prompt }}
                   github_token: ${{ secrets.GITHUB_TOKEN }}
                   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+                  # The `tools` query parameter below selects which tools the Apify MCP server
+                  # exposes: reading an Actor run — its status, exit code, storage ids and log — and
+                  # reading that run's dataset items and its key-value store keys and records, e.g.
+                  # INPUT, OUTPUT and error snapshots. WARN: the server adds `abort-actor-run` on top
+                  # even when not listed here, see https://github.com/apify/apify-mcp-server
                   claude_args: |
+                      --mcp-config '{"mcpServers":{"apify":{"type":"http","url":"https://mcp.apify.com/?tools=get-actor-run,get-actor-log,get-dataset-list,get-dataset,get-dataset-items,get-key-value-store-list,get-key-value-store,get-key-value-store-keys,get-key-value-store-record","headers":{"Authorization":"Bearer ${TESTER_APIFY_TOKEN_READ_ONLY}"}}}}'
                       --model ${{ inputs.model }}
                       --dangerously-skip-permissions
 
@@ -151,7 +166,7 @@ jobs:
 
             - name: Run Claude Code
               id: claude
-              uses: anthropics/claude-code-action@v1
+              uses: anthropics/claude-code-action@8251c103ac8c1d761882c86aba1412c7f583c844 # v1.0.213
               with:
                   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
                   use_commit_signing: true

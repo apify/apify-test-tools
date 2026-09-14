@@ -1,18 +1,20 @@
-import { lstat, readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 
 // this function structure blows, but i wanted to keep errors transparent
 export async function safeReadJsonObjectFile(
     path: string,
 ): Promise<{ success: true; contents: Record<string, unknown> } | { success: false; failure: Error }> {
-    const stat = await lstat(path).catch(() => null);
-    if (!stat) {
+    // `stat` since symlinks must resolve to their target, matching what `readFile` below does
+    const stats = await stat(path).catch(() => null);
+    if (!stats) {
         return { success: false, failure: new Error(`Expected ${path} to exist`) };
     }
-    if (!stat.isFile()) {
+    if (!stats.isFile()) {
         return { success: false, failure: new Error(`Expected ${path} to be a file`) };
     }
     const file = await readFile(path, 'utf8').catch(() => null);
-    if (!file) {
+
+    if (file === null) {
         return { success: false, failure: new Error(`Failed to read ${path}`) };
     }
     try {

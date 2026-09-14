@@ -1,1 +1,4 @@
 CHANGELOG.md
+
+# Fixtures must stay byte-exact — several are deliberately malformed, empty, or BOM-prefixed
+test/fixtures

@@ -29,7 +29,14 @@ Every repo that uses `apify-test-tools` must have an `apify-test-tools.config.js
             "folder": "actors/email-sender",
             "actorFullName": "myteam/email-sender",
             "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
-            "overrideActorContext": ["actors/email-sender", "packages/shared"]
+            "overrideActorContext": ["actors/email-sender", "packages/shared"],
+            "envVars": {
+                "OPENAI_API_KEY": {
+                    "fromEnv": "SHARED_OPENAI_API_KEY",
+                    "isShared": true,
+                    "isSecret": true
+                }
+            }
         }
     ]
 }
@@ -43,6 +50,15 @@ Each entry has:
 | `actorFullName`        | yes      | Full actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                               |
 | `tokenEnvVar`          | yes      | Name of the environment variable holding the Apify API token for this actor. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                                    |
 | `overrideActorContext` | no       | Array of paths (relative to repo root) that define which files are relevant to this actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
+| `envVars`              | no       | Map of Actor environment-variable names to synchronization settings. `fromEnv` is the process/GitHub environment variable containing the value; `isSecret` controls Apify encryption; `isShared` defaults to `false` and includes the variable in test and debug versions when `true`.                                                                                                                                                                                                                  |
+
+### Environment variable synchronization
+
+`envVars` values are read from the process environment during a build. Production releases apply every configured entry. Test and local builds apply only entries with `isShared: true`. Existing variables with other names are preserved; removing an entry from the configuration does not delete it from Apify.
+
+For GitHub Actions, update the shared workflow and its `run-with-apify-tokens.mjs` helper in the separate [`apify-store/github-actions-source`](https://github.com/apify-store/github-actions-source) repository. This package does not implement or verify that workflow change. The workflow must provide `ALL_SECRETS: ${{ toJSON(secrets) }}` and `ALL_VARS: ${{ toJSON(vars) }}` to the helper. A secret-backed entry uses `fromEnv` to name a GitHub secret; a non-secret entry uses the same field to name a GitHub Actions configuration variable. The helper must forward only declared names and never expose the context blobs to the build process.
+
+If a selected source is missing or empty, the build fails before updating any Actor version. Dry runs show destination names, source names, and flags, but never values. Updating a GitHub secret or variable takes effect the next time that Actor is built; it does not trigger a build by itself.
 
 ### 3. Set up actor folders
 

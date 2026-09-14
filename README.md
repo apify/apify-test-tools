@@ -44,6 +44,35 @@ Each entry has:
 | `tokenEnvVar`          | yes      | Name of the environment variable holding the Apify API token for this actor. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                                    |
 | `overrideActorContext` | no       | Array of paths (relative to repo root) that define which files are relevant to this actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
 
+#### Applying settings to multiple actors with `configs`
+
+Instead of repeating the same field on every actor entry, an optional top-level `configs` array can fill in fields for actors that match a glob pattern:
+
+```json
+{
+    "actors": [
+        { "folder": "actors/web-scraper", "actorFullName": "myteam/web-scraper" },
+        {
+            "folder": "actors/email-sender",
+            "actorFullName": "myteam/email-sender",
+            "tokenEnvVar": "APIFY_TOKEN_SPECIAL"
+        }
+    ],
+    "configs": [{ "match": { "folder": "actors/*" }, "set": { "tokenEnvVar": "APIFY_TOKEN_MYTEAM" } }]
+}
+```
+
+Each `configs` entry has a `match` (at least one of `folder`/`actorFullName`, glob patterns via [minimatch](https://github.com/isaacs/minimatch)) and a `set` (the fields to fill in on every actor the match applies to). A `match` with both `folder` and `actorFullName` only applies when both match — it's not a match on either one alone.
+
+Precedence, lowest to highest:
+
+1. entries matching on `folder` alone
+2. entries matching on `actorFullName` alone
+3. entries matching on both `folder` and `actorFullName` together
+4. the actor's own literal entry in `actors[]`
+
+Within a single tier, if more than one entry matches, only the _last_ one (array order) applies — earlier same-tier matches are dropped entirely, not merged in. Across tiers, results are deep-merged from lowest to highest precedence: a higher tier wins on any field it sets, but a field it doesn't set is inherited from a lower tier rather than being lost. Object-valued fields merge key by key; array-valued fields (e.g. `overrideActorContext`) keep the higher tier's array intact and append only the lower tier's entries that aren't already present, preserving the higher tier's order.
+
 ### 3. Set up actor folders
 
 Each actor in the config must have a `.actor/actor.json` file. The `dockerContextDir` field in `actor.json` defines the build context boundary — this is what the tool uses to determine which files can affect the actor's build.

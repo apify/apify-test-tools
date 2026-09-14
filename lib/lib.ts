@@ -39,8 +39,14 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
     concurrent: true,
     // test should finish within 1 hour
     timeout: DEFAULT_TEST_RUN_DURATION_MS,
+    retry: 1,
 };
 
+const DEFAULT_TEST_ACTOR_OPTIONS: ActorTestOptions = {
+    // Prevent orphaned runs - timeout the Actor 1 minute before the test does so everything is logged correctly.
+    //      - Otherwise the run link URL can get lost.
+    timeout: DEFAULT_TEST_RUN_DURATION_MS / 1000 - 60,
+};
 /**
  * Platform tests need `TESTER_APIFY_TOKEN` to talk to the platform, so without it we skip them altogether.
  *
@@ -49,12 +55,6 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
  */
 export const describe = (name: string, fn?: SuiteFactory<object>, options: ActorTestOptions = DEFAULT_TEST_OPTIONS) => {
     vitestDescribe.runIf(!!TESTER_APIFY_TOKEN || !!RUN_ALL_PLATFORM_TESTS)(name, options, fn);
-};
-
-const DEFAULT_TEST_ACTOR_OPTIONS: ActorTestOptions = {
-    retry: 1,
-    // prevent orphaned runs
-    timeout: DEFAULT_TEST_RUN_DURATION_MS,
 };
 
 /**
@@ -66,10 +66,8 @@ export const testActor = <T>(
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    const options = {
-        ...DEFAULT_TEST_ACTOR_OPTIONS,
-        ...testOptions,
-    };
+    const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
+
     const name = `${actorId}: ${testName}`;
     // `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
     // tests against - without it, every test would be filtered out as an actor we didn't build.
@@ -100,10 +98,8 @@ export const testStandbyActor = <I = any, O = any>(
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    const options = {
-        ...DEFAULT_TEST_ACTOR_OPTIONS,
-        ...testOptions,
-    };
+    const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
+
     const name = `${actorId}: ${testName}`;
     // `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
     // tests against - without it, every test would be filtered out as an actor we didn't build.
@@ -285,7 +281,8 @@ const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
             ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorId, buildId))),
             ...input,
         };
-        const run = await actor.call(actorInput, { build, log: null, ...options });
+        const actorOptions = { ...DEFAULT_TEST_ACTOR_OPTIONS, build, log: null, ...options };
+        const run = await actor.call(actorInput, actorOptions);
 
         const runLink = generateRunLink(run);
         await annotate(`${task.name} - ${runLink}`, 'run_link');
@@ -306,3 +303,7 @@ const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
 const generateRunLink = (run: ActorRun | ActorRunListItem): string => {
     return `https://console.apify.com/view/runs/${run.id}`;
 };
+
+/** Used for unit testing */
+// eslint-disable-next-line no-underscore-dangle
+export const _private = { createStartRunFn } as const;

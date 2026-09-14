@@ -96,6 +96,34 @@ export const getEnvVar = (varName: string, defaultValue?: string): string => {
     return value;
 };
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const deepEqual = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+// Overlay's array is kept intact and first; only overlay-novel base elements are appended after it.
+const mergeArrays = (base: unknown[], overlay: unknown[]): unknown[] => [
+    ...overlay,
+    ...base.filter((value) => !overlay.some((overlayValue) => deepEqual(overlayValue, value))),
+];
+
+// Merges `overlay` onto `base`, `overlay` taking precedence. Plain objects recurse key by key,
+// arrays merge via mergeArrays, everything else (including array/object type mismatches) is replaced outright.
+export const deepMerge = (base: Record<string, unknown>, overlay: Record<string, unknown>): Record<string, unknown> => {
+    const result: Record<string, unknown> = { ...base };
+    for (const [key, overlayValue] of Object.entries(overlay)) {
+        const baseValue = base[key];
+        if (Array.isArray(baseValue) && Array.isArray(overlayValue)) {
+            result[key] = mergeArrays(baseValue, overlayValue);
+        } else if (isPlainObject(baseValue) && isPlainObject(overlayValue)) {
+            result[key] = deepMerge(baseValue, overlayValue);
+        } else {
+            result[key] = overlayValue;
+        }
+    }
+    return result;
+};
+
 export const CONFIG_FILE_NAME = 'apify-test-tools.config.json';
 
 // Strips a trailing slash so config-declared paths ("actors/shopify/" vs "actors/shopify") compare equal.

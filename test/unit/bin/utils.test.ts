@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { CONFIG_FILE_NAME, readConfigFile } from '../../../bin/utils.js';
+import { CONFIG_FILE_NAME, readConfigFile } from '../../../bin/utils/actor-config.js';
 
 const { fsMock } = vi.hoisted(() => ({
     fsMock: {

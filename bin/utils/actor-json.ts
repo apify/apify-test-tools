@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, normalize } from 'node:path';
 
 import z from 'zod';
 
@@ -7,10 +7,7 @@ import { ACTOR_LIMITS } from '@apify/consts';
 import { safeReadJsonObjectFile } from './files.js';
 
 const DEFAULT_PATH = '.actor/actor.json';
-
-export function getActorJsonPath(actorDir: string): string {
-    return join(actorDir, DEFAULT_PATH);
-}
+// #region schema
 
 const memoryMbytesSchema = z.int().min(ACTOR_LIMITS.MIN_RUN_MEMORY_MBYTES).max(ACTOR_LIMITS.MAX_RUN_MEMORY_MBYTES);
 
@@ -46,7 +43,9 @@ export const ACTOR_JSON_SCHEMA = z.object({
     buildTag: z.string().default('latest'),
     environmentVariables: z.record(z.string(), z.string()).optional(),
     dockerfile: z.string().default('../Dockerfile'),
-    dockerContextDir: z.string().optional(),
+    // `dockerContextDir` is the only defaulted value that does not match the schema
+    // Its done for simplicity in code (and also the platform assumes it anyway)
+    dockerContextDir: z.string().default('..'),
     readme: z.string().default('../README.md'),
     changelog: z.string().optional(),
     minMemoryMbytes: memoryMbytesSchema.optional(),
@@ -63,15 +62,27 @@ export const ACTOR_JSON_SCHEMA = z.object({
 });
 
 export type ActorJson = z.infer<typeof ACTOR_JSON_SCHEMA>;
+// #endregion
+
+// #region exports
 
 /**
+ * @param actorDir path to actor root folder
+ * @returns full resolved path to actor.json on expected location
+ */
+export function getActorJsonPath(actorDir: string): string {
+    return join(actorDir, DEFAULT_PATH);
+}
+console.log(normalize('../apify-test-tools/bin/utils/.././../bin/.'));
+
+/**
+ * @param actorDir path to actor.json
  * @throws Error when file does not exist
  * @throws Error when file is not a file
  * @throws Error when file is not valid JSON
  * @throws Error when file is not valid actor.json
  */
-export async function getActorJson(actorDir: string): Promise<ActorJson> {
-    const path = getActorJsonPath(actorDir);
+export async function getActorJson(path: string): Promise<ActorJson> {
     const file = await safeReadJsonObjectFile(path);
     if (!file.success) {
         throw file.failure;
@@ -83,5 +94,3 @@ export async function getActorJson(actorDir: string): Promise<ActorJson> {
     }
     return parsed.data;
 }
-
-await getActorJson('test/fixtures/test-actor');

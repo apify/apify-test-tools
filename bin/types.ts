@@ -1,3 +1,5 @@
+import type { ActorJson } from './utils/actor-json.js';
+
 export interface Config {
     targetBranch: string;
     sourceBranch: string;
@@ -110,5 +112,6 @@ export interface ActorConfig {
     folder: string;
     tokenEnvVar: string;
     dockerContextDir: string;
+    actorConfig: ActorJson;
     contextPaths: string[];
 }

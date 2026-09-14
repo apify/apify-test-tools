@@ -1,12 +1,14 @@
 {
     "extends": "@apify/tsconfig",
     "compilerOptions": {
-        "module": "ES2022",
-        "target": "ES2022",
+        "module": "nodenext",
+        "moduleResolution": "nodenext",
+        "target": "es2024",
         "outDir": "dist",
+        "rootDir": "..",
         "noUnusedLocals": false,
         "noEmit": true,
-        "lib": ["DOM", "es2021"],
+        "lib": ["ES2024"],
         "skipLibCheck": true
     },
     "include": ["./**/*"]

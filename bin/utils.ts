@@ -8,7 +8,7 @@ import { SOURCE_FILE_FORMATS } from '@apify/consts';
 
 import { selectActors } from './actor-filtering.js';
 import { isPathWithinScope } from './path-utils.js';
-import type { ActorConfig, ActorConfigFile } from './types.js';
+import type { ActorConfig, ActorConfigFile, ActorEnvVarConfig } from './types.js';
 
 // Returns true when `childPath` is not inside `parentPath`.
 // Used to detect monorepo actors whose dockerContextDir escapes the actor directory.
@@ -114,6 +114,50 @@ const findOverlappingContextPaths = (contextPaths: string[]): [string, string] |
     return undefined;
 };
 
+/**
+ * Validates the optional envVars map read from the actor configuration JSON.
+ * Each nonblank variable name must map to an object with a nonblank fromEnv string,
+ * a boolean isSecret, and an optional boolean isShared.
+ * Throws on invalid configuration; otherwise returns the original map or undefined.
+ */
+const validateActorEnvVarsConfig = (
+    entry: ActorConfigFile['actors'][number],
+    index: number,
+): Record<string, ActorEnvVarConfig> | undefined => {
+    if (entry.envVars === undefined) return undefined;
+
+    if (typeof entry.envVars !== 'object' || entry.envVars === null || Array.isArray(entry.envVars)) {
+        throw new Error(`Invalid "envVars" for actor entry at index ${index} in "${CONFIG_FILE_NAME}". Must be a map.`);
+    }
+
+    for (const [name, definition] of Object.entries(entry.envVars)) {
+        if (!name.trim()) {
+            throw new Error(
+                `Environment variable name must not be empty at actor entry ${index} in "${CONFIG_FILE_NAME}".`,
+            );
+        }
+
+        if (typeof definition !== 'object' || definition === null || Array.isArray(definition)) {
+            throw new Error(
+                `Environment variable "${name}" must be an object at actor entry ${index} in "${CONFIG_FILE_NAME}".`,
+            );
+        }
+
+        const { fromEnv, isSecret, isShared } = definition;
+        if (typeof fromEnv !== 'string' || !fromEnv.trim()) {
+            throw new Error(`Environment variable "${name}" needs a non-empty "fromEnv" at actor entry ${index}.`);
+        }
+        if (typeof isSecret !== 'boolean') {
+            throw new Error(`Environment variable "${name}" needs a boolean "isSecret" at actor entry ${index}.`);
+        }
+        if (isShared !== undefined && typeof isShared !== 'boolean') {
+            throw new Error(`Environment variable "${name}" needs a boolean "isShared" at actor entry ${index}.`);
+        }
+    }
+
+    return entry.envVars;
+};
+
 export const readConfigFile = async (selection: { actors: string[]; ignore: string[] }): Promise<ActorConfig[]> => {
     let raw: string;
     try {
@@ -176,6 +220,8 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
             }
         }
 
+        const envVars = validateActorEnvVarsConfig(entry, index);
+
         const actorJsonPath = folder ? `${folder}/.actor/actor.json` : '.actor/actor.json';
 
         let actorJson: { dockerContextDir?: string };
@@ -223,6 +269,7 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
             tokenEnvVar: entry.tokenEnvVar,
             dockerContextDir: normalizedDockerContextDir,
             contextPaths,
+            envVars,
         });
     }
 

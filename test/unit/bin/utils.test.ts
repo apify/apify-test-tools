@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { CONFIG_FILE_NAME, readConfigFile } from '../../../bin/utils.js';
+import { CONFIG_FILE_NAME, mergeGlobConfigs, readConfigFile } from '../../../bin/utils.js';
 
 const { fsMock } = vi.hoisted(() => ({
     fsMock: {
@@ -357,7 +357,7 @@ describe('readConfigFile', () => {
             mockFiles({
                 [CONFIG_FILE_NAME]: JSON.stringify({
                     actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
-                    configs: [{ folder: 'actors/*', tokenEnvVar: 'GLOB_TOKEN' }],
+                    configs: [{ match: { folder: 'actors/*' }, set: { tokenEnvVar: 'GLOB_TOKEN' } }],
                 }),
                 'actors/shopify/.actor/actor.json': actorJson({}),
             });
@@ -371,8 +371,8 @@ describe('readConfigFile', () => {
                 [CONFIG_FILE_NAME]: JSON.stringify({
                     actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
                     configs: [
-                        { folder: 'actors/*', tokenEnvVar: 'FOLDER_TOKEN' },
-                        { actorFullName: 'myteam/*', tokenEnvVar: 'ACTOR_TOKEN' },
+                        { match: { folder: 'actors/*' }, set: { tokenEnvVar: 'FOLDER_TOKEN' } },
+                        { match: { actorFullName: 'myteam/*' }, set: { tokenEnvVar: 'ACTOR_TOKEN' } },
                     ],
                 }),
                 'actors/shopify/.actor/actor.json': actorJson({}),
@@ -387,8 +387,8 @@ describe('readConfigFile', () => {
                 [CONFIG_FILE_NAME]: JSON.stringify({
                     actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
                     configs: [
-                        { folder: 'actors/*', tokenEnvVar: 'BROADER_TOKEN' },
-                        { folder: 'actors/shopify', tokenEnvVar: 'SPECIFIC_TOKEN' },
+                        { match: { folder: 'actors/*' }, set: { tokenEnvVar: 'BROADER_TOKEN' } },
+                        { match: { folder: 'actors/shopify' }, set: { tokenEnvVar: 'SPECIFIC_TOKEN' } },
                     ],
                 }),
                 'actors/shopify/.actor/actor.json': actorJson({}),
@@ -401,8 +401,8 @@ describe('readConfigFile', () => {
                 [CONFIG_FILE_NAME]: JSON.stringify({
                     actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
                     configs: [
-                        { folder: 'actors/shopify', tokenEnvVar: 'SPECIFIC_TOKEN' },
-                        { folder: 'actors/*', tokenEnvVar: 'BROADER_TOKEN' },
+                        { match: { folder: 'actors/shopify' }, set: { tokenEnvVar: 'SPECIFIC_TOKEN' } },
+                        { match: { folder: 'actors/*' }, set: { tokenEnvVar: 'BROADER_TOKEN' } },
                     ],
                 }),
                 'actors/shopify/.actor/actor.json': actorJson({}),
@@ -417,8 +417,8 @@ describe('readConfigFile', () => {
                 [CONFIG_FILE_NAME]: JSON.stringify({
                     actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
                     configs: [
-                        { actorFullName: 'myteam/*', tokenEnvVar: 'BROADER_TOKEN' },
-                        { actorFullName: 'myteam/shopify', tokenEnvVar: 'SPECIFIC_TOKEN' },
+                        { match: { actorFullName: 'myteam/*' }, set: { tokenEnvVar: 'BROADER_TOKEN' } },
+                        { match: { actorFullName: 'myteam/shopify' }, set: { tokenEnvVar: 'SPECIFIC_TOKEN' } },
                     ],
                 }),
                 'actors/shopify/.actor/actor.json': actorJson({}),
@@ -431,8 +431,8 @@ describe('readConfigFile', () => {
                 [CONFIG_FILE_NAME]: JSON.stringify({
                     actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
                     configs: [
-                        { actorFullName: 'myteam/shopify', tokenEnvVar: 'SPECIFIC_TOKEN' },
-                        { actorFullName: 'myteam/*', tokenEnvVar: 'BROADER_TOKEN' },
+                        { match: { actorFullName: 'myteam/shopify' }, set: { tokenEnvVar: 'SPECIFIC_TOKEN' } },
+                        { match: { actorFullName: 'myteam/*' }, set: { tokenEnvVar: 'BROADER_TOKEN' } },
                     ],
                 }),
                 'actors/shopify/.actor/actor.json': actorJson({}),
@@ -461,7 +461,7 @@ describe('readConfigFile', () => {
                 mockFiles({
                     [CONFIG_FILE_NAME]: JSON.stringify({
                         actors: [{ folder, actorFullName }],
-                        configs: [{ [patternKey]: '**', tokenEnvVar: 'GLOB_TOKEN' }],
+                        configs: [{ match: { [patternKey]: '**' }, set: { tokenEnvVar: 'GLOB_TOKEN' } }],
                     }),
                     [actorJsonPath]: actorJson({}),
                 });
@@ -477,7 +477,7 @@ describe('readConfigFile', () => {
                 mockFiles({
                     [CONFIG_FILE_NAME]: JSON.stringify({
                         actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
-                        configs: [{ [patternKey]: '*', tokenEnvVar: 'GLOB_TOKEN' }],
+                        configs: [{ match: { [patternKey]: '*' }, set: { tokenEnvVar: 'GLOB_TOKEN' } }],
                     }),
                     'actors/shopify/.actor/actor.json': actorJson({}),
                 });
@@ -486,11 +486,65 @@ describe('readConfigFile', () => {
             },
         );
 
-        it('throws when a configs entry has both folder and actorFullName set', async () => {
+        it('allows a configs entry to match on both folder and actorFullName together', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
+                    configs: [
+                        {
+                            match: { folder: 'actors/*', actorFullName: 'myteam/*' },
+                            set: { tokenEnvVar: 'COMBINED_TOKEN' },
+                        },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const result = await readConfigFile(emptyActorSelection);
+            expect(result[0].tokenEnvVar).toBe('COMBINED_TOKEN');
+        });
+
+        it('does not apply a combined match when only the folder half matches', async () => {
             mockFiles({
                 [CONFIG_FILE_NAME]: JSON.stringify({
                     actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
-                    configs: [{ folder: 'actors/*', actorFullName: 'myteam/*', tokenEnvVar: 'GLOB_TOKEN' }],
+                    configs: [
+                        {
+                            match: { folder: 'actors/*', actorFullName: 'otherteam/*' },
+                            set: { tokenEnvVar: 'COMBINED_TOKEN' },
+                        },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const result = await readConfigFile(emptyActorSelection);
+            expect(result[0].tokenEnvVar).toBe('APIFY_TOKEN');
+        });
+
+        it('does not apply a combined match when only the actorFullName half matches', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
+                    configs: [
+                        {
+                            match: { folder: 'other/*', actorFullName: 'myteam/*' },
+                            set: { tokenEnvVar: 'COMBINED_TOKEN' },
+                        },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const result = await readConfigFile(emptyActorSelection);
+            expect(result[0].tokenEnvVar).toBe('APIFY_TOKEN');
+        });
+
+        it('throws when a configs entry is missing "match"', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
+                    configs: [{ set: { tokenEnvVar: 'GLOB_TOKEN' } }],
                 }),
                 'actors/shopify/.actor/actor.json': actorJson({}),
             });
@@ -498,16 +552,76 @@ describe('readConfigFile', () => {
             await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/Invalid "configs" entry/);
         });
 
-        it('throws when the non-selected discriminant is present with a wrong type', async () => {
+        it('throws when "match" has neither folder nor actorFullName', async () => {
             mockFiles({
                 [CONFIG_FILE_NAME]: JSON.stringify({
                     actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
-                    configs: [{ folder: 'actors/*', actorFullName: 123, tokenEnvVar: 'GLOB_TOKEN' }],
+                    configs: [{ match: {}, set: { tokenEnvVar: 'GLOB_TOKEN' } }],
                 }),
                 'actors/shopify/.actor/actor.json': actorJson({}),
             });
 
             await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/Invalid "configs" entry/);
+        });
+
+        it('throws when "match.folder" or "match.actorFullName" has the wrong type', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
+                    configs: [
+                        { match: { folder: 'actors/*', actorFullName: 123 }, set: { tokenEnvVar: 'GLOB_TOKEN' } },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/Invalid "configs" entry/);
+        });
+
+        it('throws when "set" is not an object', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
+                    configs: [{ match: { folder: 'actors/*' }, set: 'GLOB_TOKEN' }],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/Invalid "configs" entry/);
+        });
+
+        it('throws when a configs entry is missing "set"', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
+                    configs: [{ match: { folder: 'actors/*' } }],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/Invalid "configs" entry/);
+        });
+
+        it('appends only novel array entries from lower tiers, keeping the higher tier intact and first', async () => {
+            mockFiles({
+                [CONFIG_FILE_NAME]: JSON.stringify({
+                    actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
+                    configs: [
+                        {
+                            match: { folder: 'actors/*' },
+                            set: { tokenEnvVar: 'APIFY_TOKEN', overrideActorContext: ['actors/shopify', 'shared'] },
+                        },
+                        {
+                            match: { actorFullName: 'myteam/*' },
+                            set: { overrideActorContext: ['actors/shopify', 'code'] },
+                        },
+                    ],
+                }),
+                'actors/shopify/.actor/actor.json': actorJson({}),
+            });
+
+            const result = await readConfigFile(emptyActorSelection);
+            expect(result[0].contextPaths).toEqual(['actors/shopify', 'code', 'shared']);
         });
 
         it('a literal value wins over both a folder-glob and an actorFullName-glob match on the same actor', async () => {
@@ -521,8 +635,8 @@ describe('readConfigFile', () => {
                         },
                     ],
                     configs: [
-                        { folder: 'actors/*', tokenEnvVar: 'FOLDER_TOKEN' },
-                        { actorFullName: 'myteam/*', tokenEnvVar: 'ACTOR_TOKEN' },
+                        { match: { folder: 'actors/*' }, set: { tokenEnvVar: 'FOLDER_TOKEN' } },
+                        { match: { actorFullName: 'myteam/*' }, set: { tokenEnvVar: 'ACTOR_TOKEN' } },
                     ],
                 }),
                 'actors/shopify/.actor/actor.json': actorJson({}),
@@ -537,8 +651,8 @@ describe('readConfigFile', () => {
                 [CONFIG_FILE_NAME]: JSON.stringify({
                     actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify' }],
                     configs: [
-                        { folder: 'actors/*', tokenEnvVar: 'FOLDER_TOKEN' },
-                        { actorFullName: 'myteam/*', tokenEnvVar: 'ACTOR_TOKEN' },
+                        { match: { folder: 'actors/*' }, set: { tokenEnvVar: 'FOLDER_TOKEN' } },
+                        { match: { actorFullName: 'myteam/*' }, set: { tokenEnvVar: 'ACTOR_TOKEN' } },
                     ],
                 }),
                 'actors/shopify/.actor/actor.json': actorJson({}),
@@ -564,7 +678,7 @@ describe('readConfigFile', () => {
             mockFiles({
                 [CONFIG_FILE_NAME]: JSON.stringify({
                     actors: [{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }],
-                    configs: [{ folder: 'actors/*', tokenEnvVarr: 'MISSPELLED' }],
+                    configs: [{ match: { folder: 'actors/*' }, set: { tokenEnvVarr: 'MISSPELLED' } }],
                 }),
                 'actors/shopify/.actor/actor.json': actorJson({}),
             });
@@ -572,6 +686,58 @@ describe('readConfigFile', () => {
             const result = await readConfigFile(emptyActorSelection);
             expect(result[0]).not.toHaveProperty('tokenEnvVarr');
             expect(result[0].tokenEnvVar).toBe('APIFY_TOKEN');
+        });
+    });
+
+    describe('mergeGlobConfigs (cross-tier deep merge)', () => {
+        const actorEntry = { folder: 'actors/shopify', actorFullName: 'myteam/shopify' };
+
+        it('deep-merges nested objects across tiers instead of one tier clobbering the other', () => {
+            const result = mergeGlobConfigs(actorEntry, 'actors/shopify', [
+                { match: { folder: 'actors/*' }, set: { notifier: { slack: { token: 'FOLDER_SLACK_TOKEN' } } } },
+                {
+                    match: { actorFullName: 'myteam/*' },
+                    set: { notifier: { slack: { testTarget: '#actor-tier' }, email: { token: 'ACTOR_EMAIL' } } },
+                },
+            ]);
+
+            expect(result).toMatchObject({
+                notifier: {
+                    slack: { token: 'FOLDER_SLACK_TOKEN', testTarget: '#actor-tier' },
+                    email: { token: 'ACTOR_EMAIL' },
+                },
+            });
+        });
+
+        it("lets a higher tier win a leaf conflict while still inheriting the lower tier's other fields", () => {
+            const result = mergeGlobConfigs(actorEntry, 'actors/shopify', [
+                {
+                    match: { folder: 'actors/*' },
+                    set: { notifier: { slack: { token: 'FOLDER_TOKEN', testTarget: '#folder-tier' } } },
+                },
+                {
+                    match: { actorFullName: 'myteam/*' },
+                    set: { notifier: { slack: { token: 'ACTOR_TOKEN' } } },
+                },
+            ]);
+
+            expect(result).toMatchObject({
+                notifier: { slack: { token: 'ACTOR_TOKEN', testTarget: '#folder-tier' } },
+            });
+        });
+
+        it('lets the literal actor entry win a leaf conflict while inheriting untouched nested fields', () => {
+            const result = mergeGlobConfigs({ ...actorEntry, tokenEnvVar: 'LITERAL_TOKEN' }, 'actors/shopify', [
+                {
+                    match: { folder: 'actors/*' },
+                    set: { notifier: { slack: { token: 'FOLDER_TOKEN', testTarget: '#folder-tier' } } },
+                },
+            ]);
+
+            expect(result).toMatchObject({
+                tokenEnvVar: 'LITERAL_TOKEN',
+                notifier: { slack: { token: 'FOLDER_TOKEN', testTarget: '#folder-tier' } },
+            });
         });
     });
 

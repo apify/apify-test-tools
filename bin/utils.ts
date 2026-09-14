@@ -9,7 +9,7 @@ import { SOURCE_FILE_FORMATS } from '@apify/consts';
 
 import { selectActors } from './actor-filtering.js';
 import { isPathWithinScope } from './path-utils.js';
-import type { ActorConfig, ActorConfigFile, ActorConfigFileEntry, ActorGlobConfigEntry } from './types.js';
+import type { ActorConfig, ActorDeclaration, ActorGlobConfigEntry, ActorGlobMatch, ConfigFileSchema } from './types.js';
 
 // Returns true when `childPath` is not inside `parentPath`.
 // Used to detect monorepo actors whose dockerContextDir escapes the actor directory.
@@ -109,10 +109,12 @@ const mergeArrays = (base: unknown[], overlay: unknown[]): unknown[] => [
 
 // Merges `overlay` onto `base`, `overlay` taking precedence. Plain objects recurse key by key,
 // arrays merge via mergeArrays, everything else (including array/object type mismatches) is replaced outright.
-export const deepMerge = (base: Record<string, unknown>, overlay: Record<string, unknown>): Record<string, unknown> => {
-    const result: Record<string, unknown> = { ...base };
+// Takes/returns `object` (not Record<string, unknown>) so any typed object can be passed in as-is.
+export const deepMerge = (base: object, overlay: object): object => {
+    const baseRecord = base as Record<string, unknown>;
+    const result: Record<string, unknown> = { ...baseRecord };
     for (const [key, overlayValue] of Object.entries(overlay)) {
-        const baseValue = base[key];
+        const baseValue = baseRecord[key];
         if (Array.isArray(baseValue) && Array.isArray(overlayValue)) {
             result[key] = mergeArrays(baseValue, overlayValue);
         } else if (isPlainObject(baseValue) && isPlainObject(overlayValue)) {
@@ -145,27 +147,39 @@ const findOverlappingContextPaths = (contextPaths: string[]): [string, string] |
 
 const validateGlobConfigEntries = (configs: unknown[]): ActorGlobConfigEntry[] => {
     for (const [index, configEntry] of configs.entries()) {
-        const { folder, actorFullName } = configEntry as ActorGlobConfigEntry;
+        const { match, set } = configEntry as ActorGlobConfigEntry;
 
-        // TODO: Allow for combined filtering?
-        if (folder !== undefined && actorFullName !== undefined) {
+        if (!isPlainObject(match)) {
             throw new Error(
-                `Invalid "configs" entry at index ${index} in "${CONFIG_FILE_NAME}". ` +
-                    `Must not have both "folder" and "actorFullName" set.`,
+                `Invalid "configs" entry at index ${index} in "${CONFIG_FILE_NAME}". Must have a "match" object.`,
             );
         }
+
+        const { folder, actorFullName } = match;
 
         if (folder === undefined && actorFullName === undefined) {
             throw new Error(
                 `Invalid "configs" entry at index ${index} in "${CONFIG_FILE_NAME}". ` +
-                    `Must have exactly one of "folder" or "actorFullName" set.`,
+                    `"match" must have at least one of "folder" or "actorFullName" set.`,
             );
         }
 
-        if (typeof (folder ?? actorFullName) !== 'string') {
+        if (folder !== undefined && typeof folder !== 'string') {
+            throw new Error(
+                `Invalid "configs" entry at index ${index} in "${CONFIG_FILE_NAME}". "match.folder" must be a string.`,
+            );
+        }
+
+        if (actorFullName !== undefined && typeof actorFullName !== 'string') {
             throw new Error(
                 `Invalid "configs" entry at index ${index} in "${CONFIG_FILE_NAME}". ` +
-                    `"folder"/"actorFullName" must be a string.`,
+                    `"match.actorFullName" must be a string.`,
+            );
+        }
+
+        if (!isPlainObject(set)) {
+            throw new Error(
+                `Invalid "configs" entry at index ${index} in "${CONFIG_FILE_NAME}". Must have a "set" object.`,
             );
         }
     }
@@ -173,30 +187,53 @@ const validateGlobConfigEntries = (configs: unknown[]): ActorGlobConfigEntry[] =
     return configs as ActorGlobConfigEntry[];
 };
 
-// Precedence, lowest to highest: matching folder-glob entries, matching actorFullName-glob
-// entries, the actor's own literal entry.
-const mergeGlobConfigs = (
-    actorEntry: ActorConfigFileEntry,
+// An entry's `match` fields are AND-ed together: every field it sets must match, not just any one of them.
+const matchesEntry = (match: ActorGlobMatch, folder: string, actorFullName: unknown): boolean => {
+    if (match.folder !== undefined && !minimatch(folder, match.folder)) return false;
+    if (
+        match.actorFullName !== undefined &&
+        (typeof actorFullName !== 'string' || !minimatch(actorFullName, match.actorFullName))
+    ) {
+        return false;
+    }
+    return true;
+};
+
+// Within a tier, the last matching entry (array order) wins outright — earlier same-tier matches
+// are discarded, not merged with the winner.
+const lastMatchIn = (
+    matchingConfigs: ActorGlobConfigEntry[],
+    isInTier: (match: ActorGlobMatch) => boolean,
+): Record<string, unknown> | undefined => {
+    const tierMatches = matchingConfigs.filter((configEntry) => isInTier(configEntry.match));
+    return tierMatches.length > 0 ? tierMatches[tierMatches.length - 1].set : undefined;
+};
+
+// Precedence, lowest to highest: matching folder-only entries, matching actorFullName-only entries,
+// matching combined (folder AND actorFullName) entries, the actor's own literal entry. The tier
+// winners deep-merge in that ascending order, so a field one tier doesn't set is inherited from
+// a lower tier instead of being clobbered.
+export const mergeGlobConfigs = (
+    actorEntry: ActorDeclaration,
     folder: string,
     configs: ActorGlobConfigEntry[],
-): ActorConfigFileEntry => {
-    const matchingFolderConfigs = configs.filter(
-        (configEntry) => configEntry.folder !== undefined && minimatch(folder, configEntry.folder),
-    );
-    const matchingActorFullNameConfigs = configs.filter(
-        (configEntry) =>
-            configEntry.actorFullName !== undefined &&
-            typeof actorEntry.actorFullName === 'string' &&
-            minimatch(actorEntry.actorFullName, configEntry.actorFullName),
+): ActorDeclaration => {
+    const matchingConfigs = configs.filter((configEntry) =>
+        matchesEntry(configEntry.match, folder, actorEntry.actorFullName),
     );
 
-    let overlay: Partial<ActorConfigFileEntry> = {};
-    for (const configEntry of [...matchingFolderConfigs, ...matchingActorFullNameConfigs]) {
-        const { folder: matchedFolder, actorFullName: matchedActorFullName, ...rest } = configEntry;
-        overlay = { ...overlay, ...rest };
+    const tierWinners = [
+        lastMatchIn(matchingConfigs, (match) => match.folder !== undefined && match.actorFullName === undefined),
+        lastMatchIn(matchingConfigs, (match) => match.actorFullName !== undefined && match.folder === undefined),
+        lastMatchIn(matchingConfigs, (match) => match.folder !== undefined && match.actorFullName !== undefined),
+    ];
+
+    let merged: object = {};
+    for (const tierWinner of tierWinners) {
+        if (tierWinner) merged = deepMerge(merged, tierWinner);
     }
 
-    return { ...overlay, ...actorEntry };
+    return deepMerge(merged, actorEntry) as ActorDeclaration;
 };
 
 export const readConfigFile = async (selection: { actors: string[]; ignore: string[] }): Promise<ActorConfig[]> => {
@@ -210,7 +247,7 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
         );
     }
 
-    let config: ActorConfigFile;
+    let config: ConfigFileSchema;
     try {
         config = JSON.parse(raw);
     } catch {

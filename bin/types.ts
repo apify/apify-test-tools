@@ -87,19 +87,33 @@ export interface GithubCommit {
     modified: string[];
 }
 
-export interface ActorConfigFileEntry {
+// An actor's permanent identity, shared by its actors[] declaration and its resolved config
+export interface ActorIdentity {
     folder: string;
     actorFullName: string;
+}
+
+// Known optional settings an actor can have, whether declared directly or filled in via configs
+export interface ActorSettings {
     tokenEnvVar?: string;
     overrideActorContext?: string[];
 }
 
-export type ActorGlobConfigEntry =
-    | ({ folder: string; actorFullName?: never } & Partial<Omit<ActorConfigFileEntry, 'folder' | 'actorFullName'>>)
-    | ({ actorFullName: string; folder?: never } & Partial<Omit<ActorConfigFileEntry, 'folder' | 'actorFullName'>>);
+// One actors[] entry
+export type ActorDeclaration = ActorIdentity & ActorSettings;
 
-export interface ActorConfigFile {
-    actors: ActorConfigFileEntry[];
+// The matcher inside a configs[] entry: at least one of folder/actorFullName, both allowed together
+export type ActorGlobMatch = { folder: string; actorFullName?: string } | { folder?: string; actorFullName: string };
+
+// One configs[] entry
+export interface ActorGlobConfigEntry {
+    match: ActorGlobMatch;
+    set: Record<string, unknown>;
+}
+
+// The top-level shape of the config file
+export interface ConfigFileSchema {
+    actors: ActorDeclaration[];
     configs?: ActorGlobConfigEntry[];
 }
 
@@ -110,9 +124,8 @@ export interface BuildData {
     buildNumber: string;
 }
 
-export interface ActorConfig {
-    actorFullName: string;
-    folder: string;
+// The fully resolved, merged actor config
+export interface ActorConfig extends ActorIdentity {
     tokenEnvVar: string;
     dockerContextDir: string;
     contextPaths: string[];

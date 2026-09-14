@@ -3,7 +3,7 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
+import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
 import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
@@ -42,11 +42,6 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
     retry: 1,
 };
 
-const DEFAULT_TEST_ACTOR_OPTIONS: ActorTestOptions = {
-    // Prevent orphaned runs - timeout the Actor 1 minute before the test does so everything is logged correctly.
-    //      - Otherwise the run link URL can get lost.
-    timeout: DEFAULT_TEST_RUN_DURATION_MS / 1000 - 60,
-};
 /**
  * Platform tests need `TESTER_APIFY_TOKEN` to talk to the platform, so without it we skip them altogether.
  *
@@ -275,13 +270,19 @@ const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
             return new RunTestResult(apifyClient, run);
         }
 
-        const actor = apifyClient.actor(actorId);
-
         const actorInput = {
             ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorId, buildId))),
             ...input,
         };
-        const actorOptions = { ...DEFAULT_TEST_ACTOR_OPTIONS, build, log: null, ...options };
+
+        const actor = apifyClient.actor(actorId);
+        const actorInfo = await actor.get();
+        const timeout = Math.min(
+            actorInfo?.defaultRunOptions?.timeoutSecs ?? DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
+            DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
+        );
+
+        const actorOptions = { timeout, build, log: null, ...options };
         const run = await actor.call(actorInput, actorOptions);
 
         const runLink = generateRunLink(run);

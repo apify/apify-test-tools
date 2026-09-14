@@ -98,12 +98,22 @@ export function resolveActorJsonPaths(config: ActorJson, path: string): ActorJso
     result.readme = resolve(base, config.readme);
     result.changelog = resolvePathIfPresent(base, config.changelog);
     if (config.storages) {
-        result.storages = Object.fromEntries(
-            Object.entries(config.storages).map(([key, value]) => [key, resolvePathIfPresent(base, value)]),
-        );
+        if (result.storages?.dataset) {
+            result.storages.dataset = resolvePathIfPresent(base, config.storages.dataset);
+        }
+        if (result.storages?.keyValueStore) {
+            result.storages.keyValueStore = resolvePathIfPresent(base, config.storages.keyValueStore);
+        }
+        if (result.storages?.datasets) {
+            result.storages.datasets = Object.fromEntries(
+                Object.entries(result.storages.datasets).map(([name, dataset]) => [
+                    name,
+                    resolvePathIfPresent(base, dataset),
+                ]),
+            );
+        }
     }
     result.webServerSchema = resolvePathIfPresent(base, result.webServerSchema);
-    result.webServerMcpPath = resolvePathIfPresent(base, result.webServerMcpPath);
     result.input = resolvePathIfPresent(base, result.input);
     result.inputSchema = resolvePathIfPresent(base, result.inputSchema);
     result.output = resolvePathIfPresent(base, result.output);

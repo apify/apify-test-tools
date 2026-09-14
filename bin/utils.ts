@@ -188,14 +188,9 @@ const validateGlobConfigEntries = (configs: unknown[]): ActorGlobConfigEntry[] =
 };
 
 // An entry's `match` fields are AND-ed together: every field it sets must match, not just any one of them.
-const matchesEntry = (match: ActorGlobMatch, folder: string, actorFullName: unknown): boolean => {
+const matchesEntry = (match: ActorGlobMatch, folder: string, actorFullName: string): boolean => {
     if (match.folder !== undefined && !minimatch(folder, match.folder)) return false;
-    if (
-        match.actorFullName !== undefined &&
-        (typeof actorFullName !== 'string' || !minimatch(actorFullName, match.actorFullName))
-    ) {
-        return false;
-    }
+    if (match.actorFullName !== undefined && !minimatch(actorFullName, match.actorFullName)) return false;
     return true;
 };
 
@@ -275,22 +270,25 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
         }
 
         const folder = rawEntry.folder === '.' ? '' : stripTrailingSlash(rawEntry.folder);
-        const entry = mergeGlobConfigs(rawEntry, folder, globConfigs);
 
         if (seenFolders.has(folder)) {
             throw new Error(
-                `Duplicate folder "${entry.folder}" in "${CONFIG_FILE_NAME}". Each actor must have a unique folder.`,
+                `Duplicate folder "${rawEntry.folder}" in "${CONFIG_FILE_NAME}". Each actor must have a unique folder.`,
             );
         }
         seenFolders.add(folder);
 
-        const nameParts = entry.actorFullName?.split('/');
+        // actorFullName/folder are identity fields set only via the literal actors[] entry, never
+        // via configs, so validate them upfront on rawEntry rather than after mergeGlobConfigs.
+        const nameParts = typeof rawEntry.actorFullName === 'string' ? rawEntry.actorFullName.split('/') : undefined;
         if (!nameParts || nameParts.length !== 2 || !nameParts[0] || !nameParts[1]) {
             throw new Error(
-                `Invalid "actorFullName" for folder "${entry.folder}" in "${CONFIG_FILE_NAME}". ` +
+                `Invalid "actorFullName" for folder "${rawEntry.folder}" in "${CONFIG_FILE_NAME}". ` +
                     `Must be in "owner/name" format (e.g. "apify/web-scraper").`,
             );
         }
+
+        const entry = mergeGlobConfigs(rawEntry, folder, globConfigs);
 
         if (entry.overrideActorContext !== undefined) {
             if (

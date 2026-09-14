@@ -1,10 +1,8 @@
-import { join, normalize } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import z from 'zod';
 
 import { ACTOR_LIMITS } from '@apify/consts';
-
-import { safeReadJsonObjectFile } from './files.js';
 
 const DEFAULT_PATH = '.actor/actor.json';
 // #region schema
@@ -73,24 +71,43 @@ export type ActorJson = z.infer<typeof ACTOR_JSON_SCHEMA>;
 export function getActorJsonPath(actorDir: string): string {
     return join(actorDir, DEFAULT_PATH);
 }
-console.log(normalize('../apify-test-tools/bin/utils/.././../bin/.'));
 
 /**
- * @param actorDir path to actor.json
- * @throws Error when file does not exist
- * @throws Error when file is not a file
- * @throws Error when file is not valid JSON
- * @throws Error when file is not valid actor.json
+ * @param contents contents of actor.json already parsed, like from `safeReadJsonObjectFile`
+ * @param path path to actor.json
  */
-export async function getActorJson(path: string): Promise<ActorJson> {
-    const file = await safeReadJsonObjectFile(path);
-    if (!file.success) {
-        throw file.failure;
-    }
-    const parsed = ACTOR_JSON_SCHEMA.safeParse(file.contents);
+export function parseActorJsonAndResolvePaths(contents: Record<string, unknown>, path: string): ActorJson {
+    const parsed = ACTOR_JSON_SCHEMA.safeParse(contents);
     if (!parsed.success) {
-        console.error(`Actor.json is not valid. See errors below\n${z.prettifyError(parsed.error)}`);
-        throw new Error(`actor.json at ${path} is not valid`);
+        throw new Error(`Actor.json is not valid. See errors below\n${z.prettifyError(parsed.error)}`);
     }
-    return parsed.data;
+    return resolveActorJsonPaths(parsed.data, path);
+}
+
+const resolvePathIfPresent = <T>(base: string, to: T | string): string | T => {
+    if (typeof to === 'string') {
+        return resolve(base, to);
+    }
+    return to;
+};
+
+export function resolveActorJsonPaths(config: ActorJson, path: string): ActorJson {
+    const base = path.endsWith('actor.json') ? dirname(path) : path;
+    const result = structuredClone(config);
+    result.dockerContextDir = resolve(base, config.dockerContextDir);
+    result.readme = resolve(base, config.readme);
+    result.changelog = resolvePathIfPresent(base, config.changelog);
+    if (config.storages) {
+        result.storages = Object.fromEntries(
+            Object.entries(config.storages).map(([key, value]) => [key, resolvePathIfPresent(base, value)]),
+        );
+    }
+    result.webServerSchema = resolvePathIfPresent(base, result.webServerSchema);
+    result.webServerMcpPath = resolvePathIfPresent(base, result.webServerMcpPath);
+    result.input = resolvePathIfPresent(base, result.input);
+    result.inputSchema = resolvePathIfPresent(base, result.inputSchema);
+    result.output = resolvePathIfPresent(base, result.output);
+    result.outputSchema = resolvePathIfPresent(base, result.outputSchema);
+    result.dockerfile = resolvePathIfPresent(base, config.dockerfile);
+    return result;
 }

@@ -2,6 +2,7 @@ import { dirname, join, normalize } from 'node:path';
 
 import z from 'zod';
 
+import { selectActors } from '../actor-filtering.js';
 import type { ActorConfig } from '../types.js';
 import { type ActorJson, getActorJsonPath, parseActorJsonAndResolvePaths } from './actor-json.js';
 import { safeReadJsonObjectFile } from './files.js';
@@ -26,7 +27,13 @@ export type TestUtilsConfig = z.infer<typeof ACTOR_CONFIG_SCHEMA>;
 // #endregion
 
 // #region utils
-
+/**
+ * Ensures each actor has a unique name.
+ * If not, throws an error listing all duplicates.
+ * @param actorConfigs ActorConfig[]
+ * @returns void
+ * @throws Error
+ */
 function enforceUniqueActorFullNames(actorConfigs: ActorConfig[]): void {
     const fullNamesCount = actorConfigs.reduce(
         (acc, c) => {
@@ -42,20 +49,12 @@ function enforceUniqueActorFullNames(actorConfigs: ActorConfig[]): void {
         `Duplicate actor full names on the following actors in "${DEFAULT_CONFIG_FILE_PATH}": \n${duplicates.map(([name]) => name).join('\n')}`,
     );
 }
-
-function filterBySelection(
-    selection: { actors: string[]; ignore: string[] },
-    actorConfigs: ActorConfig[],
-): ActorConfig[] {
-    const actorsToIgnore = new Set(selection.ignore);
-    return actorConfigs.filter((actorConfig) => {
-        if (actorsToIgnore.has(actorConfig.actorFullName)) {
-            return false;
-        }
-        return selection.actors.includes(actorConfig.actorFullName);
-    });
-}
-
+/**
+ * Resolves the `folder` and `overrideActorContext` fields of each actor in the config.
+ * @param config the config to resolve
+ * @param path the path to resolve against
+ * @returns the config with resolved paths
+ */
 function resolveConfigFilePaths(config: TestUtilsConfig, path: string): TestUtilsConfig {
     for (const actorConfig of config.actors) {
         actorConfig.folder = join(path, actorConfig.folder);
@@ -65,7 +64,15 @@ function resolveConfigFilePaths(config: TestUtilsConfig, path: string): TestUtil
     }
     return config;
 }
-
+/**
+ * Adds `actor.json` fields to the base config, producing a full `ActorConfig`.
+ *
+ * Additionally, decides the `contextPaths` field based on the `overrideActorContext` field
+ * or the `dockerContextDir` field if no override is set.
+ * @param config the base config for a single actor
+ * @param actorConfig `actor.json` contents
+ * @returns `ActorConfig`
+ */
 function mergeActorConfig(config: TestUtilsActor, actorConfig: ActorJson): ActorConfig {
     return {
         ...config,
@@ -77,7 +84,6 @@ function mergeActorConfig(config: TestUtilsActor, actorConfig: ActorJson): Actor
 
 export const testablePrivates = {
     enforceUniqueActorFullNames,
-    filterBySelection,
     resolveConfigFilePaths,
     mergeActorConfig,
 };
@@ -103,7 +109,7 @@ export const readConfigFile = async (
     const results = await Promise.all(resolvedConfig.actors.map(loadActorConfig));
 
     enforceUniqueActorFullNames(results);
-    const selectedActors = filterBySelection(selection, results);
+    const selectedActors = selectActors(selection, results);
     return selectedActors;
 };
 

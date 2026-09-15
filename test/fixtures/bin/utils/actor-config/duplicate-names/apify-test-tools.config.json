@@ -1,0 +1,14 @@
+{
+    "actors": [
+        {
+            "folder": "actors/first",
+            "actorFullName": "owner/twin",
+            "tokenEnvVar": "APIFY_TOKEN_FIRST"
+        },
+        {
+            "folder": "actors/second",
+            "actorFullName": "owner/twin",
+            "tokenEnvVar": "APIFY_TOKEN_SECOND"
+        }
+    ]
+}

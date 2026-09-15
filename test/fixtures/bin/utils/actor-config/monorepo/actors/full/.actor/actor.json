@@ -1,0 +1,46 @@
+{
+    "$schema": "https://apify.com/schemas/v1/actor.json",
+    "actorSpecification": 1,
+    "name": "full",
+    "title": "Full Actor",
+    "description": "Sets every path-carrying field, half as paths and half as inline definitions.",
+    "version": "2.3",
+    "buildTag": "beta",
+    "environmentVariables": {
+        "LOG_LEVEL": "DEBUG"
+    },
+    "dockerfile": "./Dockerfile",
+    "dockerContextDir": "../../..",
+    "readme": "../README.md",
+    "changelog": "../CHANGELOG.md",
+    "minMemoryMbytes": 256,
+    "maxMemoryMbytes": 4096,
+    "defaultMemoryMbytes": 1024,
+    "input": {
+        "title": "Inline input",
+        "type": "object",
+        "schemaVersion": 1,
+        "properties": {}
+    },
+    "inputSchema": "./input_schema.json",
+    "output": {
+        "actorOutputSchemaVersion": 1,
+        "title": "Inline output",
+        "properties": {}
+    },
+    "outputSchema": "./output_schema.json",
+    "storages": {
+        "keyValueStore": "./key_value_store_schema.json",
+        "datasets": {
+            "default": "./dataset_schema.json",
+            "errors": {
+                "actorSpecification": 1,
+                "title": "Inline errors dataset",
+                "fields": {}
+            }
+        }
+    },
+    "usesStandbyMode": true,
+    "webServerSchema": "./web_server_schema.json",
+    "webServerMcpPath": "/mcp"
+}

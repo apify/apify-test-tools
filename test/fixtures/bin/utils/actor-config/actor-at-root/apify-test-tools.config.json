@@ -1,0 +1,9 @@
+{
+    "actors": [
+        {
+            "folder": ".",
+            "actorFullName": "owner/root",
+            "tokenEnvVar": "APIFY_TOKEN_ROOT"
+        }
+    ]
+}

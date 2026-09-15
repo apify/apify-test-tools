@@ -1,0 +1,6 @@
+{
+    "actorSpecification": 1,
+    "name": "root",
+    "version": "3.0",
+    "input": "./input_schema.json"
+}

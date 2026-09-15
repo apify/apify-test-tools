@@ -1,0 +1,15 @@
+{
+    "actors": [
+        {
+            "folder": "../actors/sibling",
+            "actorFullName": "owner/sibling",
+            "tokenEnvVar": "APIFY_TOKEN_SIBLING",
+            "overrideActorContext": ["../actors", "../.."]
+        },
+        {
+            "folder": "../root-actor",
+            "actorFullName": "owner/root-actor",
+            "tokenEnvVar": "APIFY_TOKEN_ROOT_ACTOR"
+        }
+    ]
+}

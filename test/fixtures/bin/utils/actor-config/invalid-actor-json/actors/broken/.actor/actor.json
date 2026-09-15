@@ -1,0 +1,9 @@
+{
+    "actorSpecification": 2,
+    "name": "broken",
+    "version": "latest",
+    "minMemoryMbytes": 64,
+    "storages": {
+        "requestQueue": "./request_queue_schema.json"
+    }
+}

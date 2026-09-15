@@ -1,0 +1,9 @@
+{
+    "actors": [
+        {
+            "folder": "actors/no-actor-json",
+            "actorFullName": "owner/no-actor-json",
+            "tokenEnvVar": "APIFY_TOKEN_NO_ACTOR_JSON"
+        }
+    ]
+}

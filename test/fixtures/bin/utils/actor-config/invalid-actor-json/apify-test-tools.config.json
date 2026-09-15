@@ -1,0 +1,9 @@
+{
+    "actors": [
+        {
+            "folder": "actors/broken",
+            "actorFullName": "owner/broken",
+            "tokenEnvVar": "APIFY_TOKEN_BROKEN"
+        }
+    ]
+}

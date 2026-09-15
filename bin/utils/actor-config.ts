@@ -101,8 +101,7 @@ export const readConfigFile = async (
     }
     const parsed = ACTOR_CONFIG_SCHEMA.safeParse(file.contents);
     if (!parsed.success) {
-        console.error(`Config file is not valid. See errors below\n${z.prettifyError(parsed.error)}`);
-        throw new Error(`Config file is not valid`);
+        throw new Error(`Config file is not valid. See errors below\n${z.prettifyError(parsed.error)}`);
     }
 
     const resolvedConfig = resolveConfigFilePaths(parsed.data, dirname(configFilePath));

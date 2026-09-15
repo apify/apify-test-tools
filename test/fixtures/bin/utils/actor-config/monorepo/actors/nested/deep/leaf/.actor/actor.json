@@ -1,0 +1,9 @@
+{
+    "actorSpecification": 1,
+    "name": "leaf",
+    "version": "0.1",
+    "buildTag": "latest",
+    "storages": {
+        "dataset": "./dataset_schema.json"
+    }
+}

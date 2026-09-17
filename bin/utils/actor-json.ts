@@ -1,4 +1,4 @@
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 
 import z from 'zod';
 
@@ -86,7 +86,7 @@ export function parseActorJsonAndResolvePaths(contents: Record<string, unknown>,
 
 const resolvePathIfPresent = <T>(base: string, to: T | string): string | T => {
     if (typeof to === 'string') {
-        return resolve(base, to);
+        return join(base, to);
     }
     return to;
 };
@@ -94,8 +94,8 @@ const resolvePathIfPresent = <T>(base: string, to: T | string): string | T => {
 export function resolveActorJsonPaths(config: ActorJson, path: string): ActorJson {
     const base = path.endsWith('actor.json') ? dirname(path) : path;
     const result = structuredClone(config);
-    result.dockerContextDir = resolve(base, config.dockerContextDir);
-    result.readme = resolve(base, config.readme);
+    result.dockerContextDir = join(base, config.dockerContextDir);
+    result.readme = join(base, config.readme);
     result.changelog = resolvePathIfPresent(base, config.changelog);
     if (config.storages) {
         if (result.storages?.dataset) {

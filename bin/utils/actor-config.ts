@@ -3,6 +3,7 @@ import { dirname, join, normalize } from 'node:path';
 import z from 'zod';
 
 import { selectActors } from '../actor-filtering.js';
+import { assertRelative, isWithinPath } from '../path-utils.js';
 import type { ActorConfig } from '../types.js';
 import { type ActorJson, getActorJsonPath, parseActorJsonAndResolvePaths } from './actor-json.js';
 import { safeReadJsonObjectFile } from './files.js';
@@ -49,6 +50,18 @@ function enforceUniqueActorFullNames(actorConfigs: ActorConfig[]): void {
         `Duplicate actor full names on the following actors in "${DEFAULT_CONFIG_FILE_PATH}": \n${duplicates.map(([name]) => name).join('\n')}`,
     );
 }
+
+// maybe move to path-utils.ts IF it is useful elsewhere
+function joinWithoutEscape(base: string, to: string): string {
+    assertRelative(base);
+    assertRelative(to);
+    const resolved = join(base, to);
+    // cannot escape the original root
+    if (!isWithinPath('.', resolved)) {
+        throw new Error(`Expected ${resolved} to be inside ${base}`);
+    }
+    return resolved;
+}
 /**
  * Resolves the `folder` and `overrideActorContext` fields of each actor in the config.
  * @param config the config to resolve
@@ -56,10 +69,11 @@ function enforceUniqueActorFullNames(actorConfigs: ActorConfig[]): void {
  * @returns the config with resolved paths
  */
 function resolveConfigFilePaths(config: TestUtilsConfig, path: string): TestUtilsConfig {
+    assertRelative(path);
     for (const actorConfig of config.actors) {
-        actorConfig.folder = join(path, actorConfig.folder);
+        actorConfig.folder = joinWithoutEscape(path, actorConfig.folder);
         if (actorConfig.overrideActorContext) {
-            actorConfig.overrideActorContext = actorConfig.overrideActorContext.map((p) => join(path, p));
+            actorConfig.overrideActorContext = actorConfig.overrideActorContext.map((p) => joinWithoutEscape(path, p));
         }
     }
     return config;
@@ -74,10 +88,16 @@ function resolveConfigFilePaths(config: TestUtilsConfig, path: string): TestUtil
  * @returns `ActorConfig`
  */
 function mergeActorConfig(config: TestUtilsActor, actorConfig: ActorJson): ActorConfig {
+    const contextPaths = [config.folder];
+    if (config.overrideActorContext) {
+        contextPaths.push(...config.overrideActorContext.map((p) => normalize(p)));
+    } else {
+        contextPaths.push(actorConfig.dockerContextDir);
+    }
     return {
         ...config,
         actorConfig,
-        contextPaths: config.overrideActorContext?.map((p) => normalize(p)) ?? [actorConfig.dockerContextDir],
+        contextPaths,
         dockerContextDir: actorConfig.dockerContextDir,
     };
 }

@@ -1,0 +1,10 @@
+{
+    "actors": [
+        {
+            "folder": "actors/nested",
+            "actorFullName": "owner/nested",
+            "tokenEnvVar": "APIFY_TOKEN_NESTED",
+            "overrideActorContext": ["actors/nested", "actors"]
+        }
+    ]
+}

@@ -8,9 +8,7 @@ import {
 } from '../../../../bin/utils/actor-json.js';
 import actorJsonFixture from '../../../fixtures/bin/utils/actor-json/actor.json' with { type: 'json' };
 
-// Absolute POSIX literals, because `resolve()` is what is under test — recomputing the expectations
-// with `resolve()` would assert the function against itself.
-const ACTOR_DIR = '/repo/actors/my-actor';
+const ACTOR_DIR = 'repo/actors/my-actor';
 const ACTOR_JSON_PATH = `${ACTOR_DIR}/.actor/actor.json`;
 
 /** A schema-valid `ActorJson`, i.e. with the defaults `ACTOR_JSON_SCHEMA` would have filled in. */
@@ -91,7 +89,7 @@ describe('resolveActorJsonPaths', () => {
             dockerfile: `${ACTOR_DIR}/Dockerfile`,
             readme: `${ACTOR_DIR}/README.md`,
             changelog: `${ACTOR_DIR}/CHANGELOG.md`,
-            dockerContextDir: '/repo/actors',
+            dockerContextDir: 'repo/actors',
             input: `${ACTOR_DIR}/.actor/INPUT.json`,
             inputSchema: `${ACTOR_DIR}/.actor/input_schema.json`,
             output: `${ACTOR_DIR}/.actor/OUTPUT.json`,
@@ -123,8 +121,10 @@ describe('resolveActorJsonPaths', () => {
     it('treats the path as a directory when it does not end in actor.json', () => {
         const result = resolveActorJsonPaths(actorJson(), `${ACTOR_DIR}/.actor`);
 
-        expect(result.dockerContextDir).toBe(ACTOR_DIR);
-        expect(result.readme).toBe(`${ACTOR_DIR}/README.md`);
+        const expectedDockerContextDir = ACTOR_DIR;
+        const expectedReadme = `${ACTOR_DIR}/README.md`;
+        expect(result.dockerContextDir).toBe(expectedDockerContextDir);
+        expect(result.readme).toBe(expectedReadme);
     });
 
     it('leaves inline definitions untouched instead of resolving them as paths', () => {

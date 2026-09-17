@@ -1,5 +1,4 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import path, { join, relative } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -120,13 +119,10 @@ describe('resolveConfigFilePaths', () => {
     });
 });
 
-// `readConfigFile` reads real fixture trees under `test/fixtures/bin/utils/actor-config/` rather than
-// mocking `node:fs`: what is being tested is how config paths, `.actor/actor.json` locations and the
-// paths inside them relate to each other on a real filesystem. See that directory's README.md.
-//
-// Expectations below are built by string concatenation, never by `join`/`resolve` — recomputing them
-// with the same functions the code under test uses would assert those functions against themselves.
-const FIXTURES = fileURLToPath(new URL('../../../fixtures/bin/utils/actor-config', import.meta.url));
+/**
+ * Relative path to fixtures directory, relative to the current working directory (root of the repo).
+ */
+const FIXTURES = relative(process.cwd(), join(import.meta.dirname, '../../../fixtures/bin/utils/actor-config'));
 const MONOREPO = `${FIXTURES}/monorepo`;
 const MONOREPO_CONFIG = `${MONOREPO}/apify-test-tools.config.json`;
 

@@ -1,0 +1,6 @@
+{
+    "storages": { "datasets": { "default": { "title": "Default" } } },
+    "overrideActorContext": ["../shared", "."],
+    "changelog": null,
+    "nested": [{ "deep": [1, 2, { "deeper": true }] }]
+}

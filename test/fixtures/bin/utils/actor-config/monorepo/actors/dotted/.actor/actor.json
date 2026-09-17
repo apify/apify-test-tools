@@ -1,0 +1,8 @@
+{
+    "actorSpecification": 1,
+    "name": "dotted",
+    "version": "1.2.3",
+    "dockerfile": "../docker/Dockerfile",
+    "readme": "../../../README.md",
+    "dockerContextDir": "."
+}

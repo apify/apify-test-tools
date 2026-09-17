@@ -4,13 +4,14 @@
         "declaration": true,
         "module": "nodenext",
         "moduleResolution": "nodenext",
-        "target": "ES2022",
+        "target": "es2024",
         "outDir": "dist",
         "noUnusedLocals": false,
         "strict": true,
         "esModuleInterop": true,
-        "lib": ["DOM", "es2021"],
-        "skipLibCheck": true
+        "lib": ["ES2024"],
+        "skipLibCheck": true,
+        "types": ["node"]
     },
     "include": ["./index.ts", "./bin/**/*", "./lib/**/*", "./test/**/*"]
 }

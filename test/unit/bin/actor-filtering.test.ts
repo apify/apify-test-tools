@@ -2,14 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { selectActors } from '../../../bin/actor-filtering.js';
 import type { ActorConfig } from '../../../bin/types.js';
-
-const actor = (actorFullName: string): ActorConfig => ({
-    actorFullName,
-    folder: actorFullName.split('/')[1],
-    tokenEnvVar: 'TOKEN',
-    dockerContextDir: '.',
-    contextPaths: [],
-});
+import { actor } from './actor-config-fixture.js';
 
 const configs = [actor('owner/a'), actor('owner/b'), actor('owner/c')];
 const names = (result: ActorConfig[]) => result.map((c) => c.actorFullName);

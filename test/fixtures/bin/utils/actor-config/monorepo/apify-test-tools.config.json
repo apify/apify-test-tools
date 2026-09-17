@@ -1,0 +1,26 @@
+{
+    "actors": [
+        {
+            "folder": "actors/minimal",
+            "actorFullName": "owner/minimal",
+            "tokenEnvVar": "APIFY_TOKEN_MINIMAL"
+        },
+        {
+            "folder": "actors/full",
+            "actorFullName": "owner/full",
+            "tokenEnvVar": "APIFY_TOKEN_FULL",
+            "overrideActorContext": ["actors/full", "shared"]
+        },
+        {
+            "folder": "actors/nested/deep/leaf",
+            "actorFullName": "other-owner/leaf",
+            "tokenEnvVar": "APIFY_TOKEN_LEAF",
+            "overrideActorContext": ["actors/nested/deep/leaf", "shared/utils", "."]
+        },
+        {
+            "folder": "./actors/dotted/../dotted",
+            "actorFullName": "owner/dotted",
+            "tokenEnvVar": "APIFY_TOKEN_DOTTED"
+        }
+    ]
+}

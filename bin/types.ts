@@ -92,6 +92,7 @@ export interface ActorConfigFileEntry {
     actorFullName: string;
     tokenEnvVar: string;
     overrideActorContext?: string[];
+    envVars?: Record<string, ActorEnvVarConfig>;
 }
 
 export interface ActorConfigFile {
@@ -111,4 +112,11 @@ export interface ActorConfig {
     tokenEnvVar: string;
     dockerContextDir: string;
     contextPaths: string[];
+    envVars?: Record<string, ActorEnvVarConfig>;
+}
+
+export interface ActorEnvVarConfig {
+    fromEnv: string;
+    isShared?: boolean;
+    isSecret: boolean;
 }

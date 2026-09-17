@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { ActorVersion, ActorVersionSourceFile } from 'apify-client';
 import { ActorSourceType } from 'apify-client';
 
+import { logSelectedActorEnvVars, resolveActorEnvVars } from './actor-env-vars.js';
 import { dryRunBuildData, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
 import { buildDockerIgnoreMatcher } from './dockerignore.js';
 import { isPathWithinScope } from './path-utils.js';
@@ -195,11 +196,20 @@ export const runBuildsFromLocal = async ({
 }): Promise<BuildData[]> => {
     if (dryRun) {
         console.error('[DRY RUN] Would build from local source:');
-        for (const { actorFullName, folder } of actorConfigs) {
+        for (const actorConfig of actorConfigs) {
+            const { actorFullName, folder } = actorConfig;
             console.error(`  ${actorFullName} (${folder})`);
+            logSelectedActorEnvVars(actorConfig, false);
         }
         return actorConfigs.map(({ actorFullName }) => dryRunBuildData(actorFullName, LOCAL_SOURCE_VERSION_NUMBER));
     }
+
+    const envVarsByActorFullName = new Map(
+        actorConfigs.map((actorConfig) => [
+            actorConfig.actorFullName,
+            resolveActorEnvVars(actorConfig, false, process.env),
+        ]),
+    );
 
     return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {
         const sourceFiles = await collectSourceFiles(actorConfig.actorFullName, actorConfig.folder);
@@ -208,6 +218,11 @@ export const runBuildsFromLocal = async ({
             sourceFiles,
             sourceType: ActorSourceType.SourceFiles,
         };
-        return builder.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false);
+        return builder.createVersionAndBuild(
+            LOCAL_SOURCE_VERSION_NUMBER,
+            actorVersion,
+            false,
+            envVarsByActorFullName.get(actorConfig.actorFullName),
+        );
     });
 };

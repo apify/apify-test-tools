@@ -3,7 +3,7 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
+import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
 import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
@@ -39,6 +39,7 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
     concurrent: true,
     // test should finish within 1 hour
     timeout: DEFAULT_TEST_RUN_DURATION_MS,
+    retry: 1,
 };
 
 /**
@@ -51,12 +52,6 @@ export const describe = (name: string, fn?: SuiteFactory<object>, options: Actor
     vitestDescribe.runIf(!!TESTER_APIFY_TOKEN || !!RUN_ALL_PLATFORM_TESTS)(name, options, fn);
 };
 
-const DEFAULT_TEST_ACTOR_OPTIONS: ActorTestOptions = {
-    retry: 1,
-    // prevent orphaned runs
-    timeout: DEFAULT_TEST_RUN_DURATION_MS,
-};
-
 /**
  * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
  */
@@ -66,10 +61,8 @@ export const testActor = <T>(
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    const options = {
-        ...DEFAULT_TEST_ACTOR_OPTIONS,
-        ...testOptions,
-    };
+    const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
+
     const name = `${actorId}: ${testName}`;
     // `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
     // tests against - without it, every test would be filtered out as an actor we didn't build.
@@ -100,10 +93,8 @@ export const testStandbyActor = <I = any, O = any>(
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    const options = {
-        ...DEFAULT_TEST_ACTOR_OPTIONS,
-        ...testOptions,
-    };
+    const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
+
     const name = `${actorId}: ${testName}`;
     // `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
     // tests against - without it, every test would be filtered out as an actor we didn't build.
@@ -279,13 +270,20 @@ const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
             return new RunTestResult(apifyClient, run);
         }
 
-        const actor = apifyClient.actor(actorId);
-
         const actorInput = {
             ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorId, buildId))),
             ...input,
         };
-        const run = await actor.call(actorInput, { build, log: null, ...options });
+
+        const actor = apifyClient.actor(actorId);
+        const actorInfo = await actor.get();
+        const timeout = Math.min(
+            actorInfo?.defaultRunOptions?.timeoutSecs ?? DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
+            DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
+        );
+
+        const actorOptions = { timeout, build, log: null, ...options };
+        const run = await actor.call(actorInput, actorOptions);
 
         const runLink = generateRunLink(run);
         await annotate(`${task.name} - ${runLink}`, 'run_link');
@@ -306,3 +304,7 @@ const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
 const generateRunLink = (run: ActorRun | ActorRunListItem): string => {
     return `https://console.apify.com/view/runs/${run.id}`;
 };
+
+/** Used for unit testing */
+// eslint-disable-next-line no-underscore-dangle
+export const _private = { createStartRunFn } as const;

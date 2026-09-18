@@ -6,11 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     CONFIG_FILE_NAME,
-    denormalizeConfig,
     loadActorConfig,
     parseConfigFile,
     readConfigFile,
-} from '../../../../bin/utils/actor-config.js';
+    resolveRawConfig,
+} from '../../../../bin/utils/config/load-config.js';
 
 // `readConfigFile` resolves every path against the process's working directory, so these tests give it
 // a real one: a throwaway repo in a temp dir. Reading actual files rather than a mocked
@@ -46,8 +46,8 @@ const writeFiles = async (files: Record<string, string>) =>
     );
 
 // Stages 2-4 are callable on their own, which is the point: a differently shaped config file only
-// has to reach `denormalizeConfig`'s output to work with everything downstream.
-describe('the parse/denormalize/load seam', () => {
+// has to reach `resolveRawConfig`'s output to work with everything downstream.
+describe('the parse/resolve/load seam', () => {
     it('parseConfigFile validates the file shape without touching the filesystem', () => {
         const entry = { folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' };
 
@@ -55,8 +55,8 @@ describe('the parse/denormalize/load seam', () => {
         expect(() => parseConfigFile({ actors: [{ ...entry, folder: 123 }] })).toThrow(/Invalid "folder"/);
     });
 
-    it('denormalizeConfig is where the repo root becomes "" and trailing slashes go', () => {
-        const result = denormalizeConfig({
+    it('resolveRawConfig is where the repo root becomes "" and trailing slashes go', () => {
+        const result = resolveRawConfig({
             actors: [
                 { folder: '.', actorFullName: 'myteam/root', tokenEnvVar: 'APIFY_TOKEN' },
                 {
@@ -79,12 +79,12 @@ describe('the parse/denormalize/load seam', () => {
         ]);
     });
 
-    it('loadActorConfig resolves an entry that never came from a config file', async () => {
+    it('loadActorConfig resolves data coming from actor.json', async () => {
         await writeFiles({ 'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '..' }) });
 
-        await expect(
+        expect(
             loadActorConfig({ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }),
-        ).resolves.toEqual({
+        ).toEqual({
             actorFullName: 'myteam/shopify',
             folder: 'actors/shopify',
             tokenEnvVar: 'APIFY_TOKEN',

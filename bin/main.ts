@@ -15,7 +15,7 @@ import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
 import type { Config } from './types.js';
 import { setCwd, spawnCommandInGhWorkspace } from './utils.js';
-import { readConfigFile } from './utils/actor-config.js';
+import { readConfigFile } from './utils/config/load-config.js';
 
 /**
  * Middlewares to be run before every command execution

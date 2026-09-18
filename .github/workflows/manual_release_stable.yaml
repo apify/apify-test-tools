@@ -79,3 +79,15 @@ jobs:
                           "ref": "${{ needs.release_metadata.outputs.changelog_commitish }}",
                           "tag": "latest"
                       }
+
+    # This release is what unblocks a major tag being held for an unpublished package version, so
+    # try the move again now rather than making someone wait for the next master push. A no-op when
+    # the tag was not being held.
+    move_major_tag:
+        name: Move major version tag
+        needs: [release_metadata, npm_publish]
+        permissions:
+            contents: write
+        uses: ./.github/workflows/_move_major_tag.yaml
+        with:
+            ref: ${{ needs.release_metadata.outputs.changelog_commitish }}

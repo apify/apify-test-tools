@@ -99,7 +99,12 @@ See the [GitHub workflows](#github-worklows) section below.
 
 ## Github worklows
 
-There should be 4 GH workflow files in `.github/workflows`.
+The reusable workflows live in this repo, alongside the package they call. They are the
+`public_`-prefixed files in `.github/workflows`; everything else there is this repo's own CI.
+Reference them at the `@v0` major tag, never at `@master` — see
+[Versioning and releases](#versioning-and-releases).
+
+There should be 4 GH workflow files in `.github/workflows`, plus an optional fifth for Claude reviews.
 
 ### `platform-tests-core.yaml`
 
@@ -114,7 +119,7 @@ on:
 
 jobs:
     platformTestsCore:
-        uses: apify-store/github-actions-source/.github/workflows/platform-tests.yaml@new_master
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@v0
         with:
             subtest: core
         secrets: inherit
@@ -133,7 +138,7 @@ on:
 
 jobs:
     platformTestsDaily:
-        uses: apify-store/github-actions-source/.github/workflows/platform-tests.yaml@new_master
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@v0
         secrets: inherit
 ```
 
@@ -148,7 +153,7 @@ on:
 
 jobs:
     buildDevelAndTest:
-        uses: apify-store/github-actions-source/.github/workflows/pr-build-test.yaml@new_master
+        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@v0
         secrets: inherit
 ```
 
@@ -163,9 +168,146 @@ on:
 
 jobs:
     buildLatest:
-        uses: apify-store/github-actions-source/.github/workflows/push-build-latest.yaml@new_master
+        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@v0
         secrets: inherit
 ```
+
+### `claude-review.yaml`
+
+Optional. Reviews a PR against the shared guidelines when you add the trigger label, and again on
+every push while that label is on.
+
+```yaml
+name: Claude review
+
+on:
+    pull_request:
+        types: [labeled, synchronize]
+
+jobs:
+    review:
+        uses: apify/apify-test-tools/.github/workflows/public_review.yaml@v0
+        secrets: inherit
+```
+
+The review instructions live in `.github/review-prompt.md` in this repo and are fetched at run time,
+because a reusable workflow doesn't get its own repo checked out. `prompt-ref` selects which ref to
+fetch them from and defaults to `v0`, so the instructions match the workflow you're calling — point
+it at a branch only to test a prompt change.
+
+### Secrets
+
+Callers pass `secrets: inherit`. The workflows do not turn every inherited secret into job-wide
+environment variables, so a secret is only visible to the step that needs it:
+
+| Secret                                                                    | Reaches                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NPM_TOKEN`                                                               | dependency install steps only, as both `NPM_TOKEN` and `NODE_AUTH_TOKEN`. Use a read-only token: npm granular tokens can be read-only, classic automation tokens can publish.                                          |
+| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the `build`, `release`, and `delete-old-builds` steps only                                                                                                                                                             |
+| `TESTER_APIFY_TOKEN`                                                      | the vitest step only                                                                                                                                                                                                   |
+| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and release steps only                                                                                                                                                                                   |
+| `TESTER_APIFY_TOKEN_READ_ONLY`                                            | the Claude investigation step only, as the Apify MCP server's bearer token. Required by `public_platform-tests-claude-investigate-and-fix`. Use a read-only token: it reads the failing run, its log and its storages. |
+
+The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its
+own token via `tokenEnvVar` in `apify-test-tools.config.json`. Those steps pass
+`${{ toJSON(secrets) }}` as `ALL_SECRETS` and run the command through
+`.github/scripts/run-with-apify-tokens.mjs`, which reads that same config file to decide which
+secrets to pass on:
+
+```yaml
+- name: Build
+  env:
+      ALL_SECRETS: ${{ toJSON(secrets) }}
+  run: |
+      node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
+        npx apify-test-tools build --target-branch ...
+```
+
+The wrapper passes only the tokens the config declares and drops `ALL_SECRETS`, so neither `npx` nor
+anything under `node_modules` sees the blob. Nothing is written to `$GITHUB_ENV`, so the tokens stay
+inside that one command rather than leaking into later steps. Reading the same file
+`apify-test-tools` reads means the two can't drift, and a secret that merely looks like an Actor
+token is not passed just because of its name.
+
+A token the config declares but the repo hasn't set is a warning, not a failure: a repo can carry an
+Actor whose token isn't configured and still build fine as long as that Actor never changes, and
+`apify-test-tools` raises a precise error naming the Actor at the point it actually needs the token.
+
+`scripts-path` comes from the setup action (give the step `id: setup`) and points at this repo's
+`.github/scripts/` directory inside the runner's action checkout, so workflows can run these helpers
+without checking this repo out again. The caller's workspace holds the caller's repo, not this one.
+
+Two tidier-looking alternatives don't work, so don't reach for them:
+
+- **Exporting to `$GITHUB_ENV`** would let the steps call `npx` directly with no wrapper, but
+  `$GITHUB_ENV` applies to every later step in the job. In `pr-build-test` the vitest step runs after
+  the build, so it would inherit Actor tokens it has no use for.
+- **Returning the tokens as a step output** would be scoped correctly, but the runner refuses to set
+  an output whose value contains a registered secret. It logs `Skip output <name> since it may
+contain secret` and leaves the output empty, so anything reading it downstream gets nothing.
+
+The `unitTest` job runs static checks and needs `NPM_TOKEN` only. No job runs `npm ci` with Apify or
+Slack credentials in scope, so a postinstall script in the dependency tree cannot read them.
+
+## Versioning and releases
+
+The workflows and the npm package live in one repo but ship on their own schedules. Two pointers
+decide what a consumer repo actually runs:
+
+| Pointer                             | What it selects                                | Moves when                                               |
+| ----------------------------------- | ---------------------------------------------- | -------------------------------------------------------- |
+| the `@v0` tag in `uses:`            | which workflows run                            | a master push, once the version below is published       |
+| `.github/workflows-package-version` | which `apify-test-tools` the workflows install | a stable release writes it; you may set it ahead of time |
+
+The setup action installs that **exact** version — not a range. A tag is therefore a complete
+statement: these workflows _and_ this library. The stable release writes the file into the same
+commit that bumps `package.json` and `CHANGELOG.md`, so a released commit always names the version
+it published, and rollout latency is unchanged: the release publishes and moves the tag in one run.
+
+Prereleases are excluded. Master pushes publish a `-beta` that consumer repos must never install, so
+the pin only moves on a stable release; betas stay reachable through the lockfile path in the setup
+action, which is how branch testing works.
+
+Nothing is coupled that doesn't need to be:
+
+- **Workflow-only change** — merge it. `v0` moves, it goes live, no release needed.
+- **Package-only change** — merge it, then cut a release when you want it out. The workflows are
+  unchanged, so consumers see nothing until the release lands.
+- **A workflow that calls a new CLI feature** — the one case that can break consumers, and the only
+  one with any ceremony. Put the package change, the workflow change, and the new pin in one PR. On
+  merge the tag is **held**: the CI job reports that the pinned version isn't on npm and leaves `v0`
+  where it is, so consumers keep running the previous workflows. Cut a stable release, and the tag
+  moves on its own. Run **Move major version tag** if you don't want to wait for the next master
+  push.
+
+`v0` moving on every master push means `@v0` is as live as `@master` was — there's no staging step,
+just a gate on the package version. What the tag buys you is a `v1` for breaking workflow changes,
+so repos migrate one at a time instead of all at once, and a way to roll back by pointing the tag at
+an earlier commit. Bump `MAJOR_TAG` in `.github/workflows/_move_major_tag.yaml` to cut the next
+major; the old tag then freezes where it is and keeps working.
+
+Freezing is real, which is the whole reason the version is pinned rather than a floor. A frozen `v0`
+points at a commit whose pinned version never changes, so it keeps installing the library it was
+tested against no matter how far the package moves on. Had the workflows installed `>=<floor>`, a
+frozen `v0` would still resolve to whatever is newest — and since the release that enables `v1` is
+usually the same release that breaks `v0`, the migration window would have been zero.
+
+The tag tracks the **workflows'** contract, not the npm package version. They move independently on
+purpose, so `@v0` is expected to stay `@v0` after the package reaches 1.0 — bump it when a workflow
+breaks its callers, not when the package does. Because `uses:` cannot take an expression, every ref
+into this repo repeats the tag literally; `check-major-tag-refs.mjs` fails the build if `MAJOR_TAG`
+and those refs disagree, which is the mistake that would otherwise ship silently during a bump.
+
+### Testing workflow changes
+
+- Point [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions)
+  at your branch (`uses: ...@your-branch`). It has real attached Actors and tests. Because the
+  package lives here too, a master push publishes a `beta`, and the lockfile-beta path in the setup
+  action installs that exact version — so one branch tests both halves of a change together.
+- To change the composite action itself, repoint the `uses:` refs inside the reusable workflows at
+  your branch as well, and change them back before merging.
+- Make sure the shell code actually works on your laptop first.
+- After merging, watch the workflow on a real project before moving on.
 
 ## Writing tests
 

@@ -25,6 +25,17 @@ jobs:
         name: Tests
         uses: ./.github/workflows/_tests.yaml
 
+    # Ships any workflow change in this push to consumer repos. Deliberately independent of the npm
+    # release below: a workflow-only change needs no release, and a package-only release leaves the
+    # workflows byte-identical. `code_checks` runs actionlint, which is what validates the workflows;
+    # `tests` covers the npm package and is skipped for docs commits, so it is not a dependency here.
+    move_major_tag:
+        name: Move major version tag
+        needs: [code_checks]
+        permissions:
+            contents: write
+        uses: ./.github/workflows/_move_major_tag.yaml
+
     release_metadata:
         if: >-
             startsWith(github.event.head_commit.message, 'feat') ||

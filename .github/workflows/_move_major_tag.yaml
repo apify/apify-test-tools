@@ -2,7 +2,7 @@ name: Move major version tag
 
 # Consumer repos track a floating major tag (`...@v0`), not `master`, so merging to master does not
 # ship anything by itself. This workflow is what ships: it moves that tag forward, but only once the
-# package version the workflows declare in .github/workflows-min-package-version is actually on npm.
+# package version the workflows pin in .github/workflows-package-version is actually on npm.
 #
 # That gate is the whole point. The workflows and the npm package release on their own schedules, so
 # the only combination that can break consumers is a workflow that calls a CLI feature which has not
@@ -51,18 +51,18 @@ jobs:
             - name: Check the required package version is published
               id: check
               run: |
-                  min_version=$(cat .github/workflows-min-package-version)
-                  echo "min_version=$min_version" >> "$GITHUB_OUTPUT"
+                  pinned_version=$(cat .github/workflows-package-version)
+                  echo "pinned_version=$pinned_version" >> "$GITHUB_OUTPUT"
 
-                  # The publish that satisfies a floor bump can still be in flight when this runs,
-                  # so give it a short grace period before deciding the tag has to stay put.
+                  # The publish that satisfies a pin bump can still be in flight when this runs, so
+                  # give it a short grace period before deciding the tag has to stay put.
                   for attempt in 1 2 3 4 5 6; do
-                      if npm view "apify-test-tools@>=$min_version" version >/dev/null 2>&1; then
-                          echo "apify-test-tools >=$min_version is on npm"
+                      if npm view "apify-test-tools@$pinned_version" version >/dev/null 2>&1; then
+                          echo "apify-test-tools@$pinned_version is on npm"
                           echo "published=true" >> "$GITHUB_OUTPUT"
                           exit 0
                       fi
-                      echo "apify-test-tools >=$min_version is not on npm yet (attempt $attempt/6)"
+                      echo "apify-test-tools@$pinned_version is not on npm yet (attempt $attempt/6)"
                       if [ "$attempt" -lt 6 ]; then sleep 20; fi
                   done
                   echo "published=false" >> "$GITHUB_OUTPUT"
@@ -78,7 +78,7 @@ jobs:
                       echo "### \`$MAJOR_TAG\` moved"
                       echo
                       echo "Now points at \`$TARGET_SHA\`."
-                      echo "Requires \`apify-test-tools@>=${{ steps.check.outputs.min_version }}\`, which is published."
+                      echo "Pins \`apify-test-tools@${{ steps.check.outputs.pinned_version }}\`, which is published."
                   } >> "$GITHUB_STEP_SUMMARY"
 
             # Not a failure. Holding the tag is the designed outcome of merging a workflow change
@@ -91,10 +91,10 @@ jobs:
                   {
                       echo "### \`$MAJOR_TAG\` held"
                       echo
-                      echo "\`$TARGET_SHA\` declares it needs \`apify-test-tools@>=${{ steps.check.outputs.min_version }}\`, which is not on npm."
+                      echo "\`$TARGET_SHA\` pins \`apify-test-tools@${{ steps.check.outputs.pinned_version }}\`, which is not on npm."
                       echo "Consumers keep running the workflows \`$MAJOR_TAG\` already points at."
                       echo
                       echo "Publish that version with the **Stable release** workflow. The tag moves on the"
                       echo "next master push, or immediately via the **Move major version tag** workflow."
                   } >> "$GITHUB_STEP_SUMMARY"
-                  echo "::warning::$MAJOR_TAG not moved: apify-test-tools >=${{ steps.check.outputs.min_version }} is not published yet."
+                  echo "::warning::$MAJOR_TAG not moved: apify-test-tools@${{ steps.check.outputs.pinned_version }} is not published yet."

@@ -254,14 +254,19 @@ Slack credentials in scope, so a postinstall script in the dependency tree canno
 The workflows and the npm package live in one repo but ship on their own schedules. Two pointers
 decide what a consumer repo actually runs:
 
-| Pointer                                 | What it selects                                | Moves when                                               |
-| --------------------------------------- | ---------------------------------------------- | -------------------------------------------------------- |
-| the `@v0` tag in `uses:`                | which workflows run                            | a master push, once the version floor below is published |
-| `.github/workflows-min-package-version` | oldest `apify-test-tools` the workflows accept | you edit it                                              |
+| Pointer                             | What it selects                                | Moves when                                               |
+| ----------------------------------- | ---------------------------------------------- | -------------------------------------------------------- |
+| the `@v0` tag in `uses:`            | which workflows run                            | a master push, once the version below is published       |
+| `.github/workflows-package-version` | which `apify-test-tools` the workflows install | a stable release writes it; you may set it ahead of time |
 
-The setup action installs `apify-test-tools@>=<floor>`, which resolves to the newest published stable
-— the same thing `@latest` gave before, except a floor that was never released fails with a plain
-version error instead of a confusing CLI error deep in a build.
+The setup action installs that **exact** version — not a range. A tag is therefore a complete
+statement: these workflows _and_ this library. The stable release writes the file into the same
+commit that bumps `package.json` and `CHANGELOG.md`, so a released commit always names the version
+it published, and rollout latency is unchanged: the release publishes and moves the tag in one run.
+
+Prereleases are excluded. Master pushes publish a `-beta` that consumer repos must never install, so
+the pin only moves on a stable release; betas stay reachable through the lockfile path in the setup
+action, which is how branch testing works.
 
 Nothing is coupled that doesn't need to be:
 
@@ -269,16 +274,23 @@ Nothing is coupled that doesn't need to be:
 - **Package-only change** — merge it, then cut a release when you want it out. The workflows are
   unchanged, so consumers see nothing until the release lands.
 - **A workflow that calls a new CLI feature** — the one case that can break consumers, and the only
-  one with any ceremony. Put the package change, the workflow change, and the floor bump in one PR.
-  On merge the tag is **held**: the CI job reports that the floor isn't on npm and leaves `v0` where
-  it is, so consumers keep running the previous workflows. Cut a stable release, and the tag moves
-  on its own. Run **Move major version tag** if you don't want to wait for the next master push.
+  one with any ceremony. Put the package change, the workflow change, and the new pin in one PR. On
+  merge the tag is **held**: the CI job reports that the pinned version isn't on npm and leaves `v0`
+  where it is, so consumers keep running the previous workflows. Cut a stable release, and the tag
+  moves on its own. Run **Move major version tag** if you don't want to wait for the next master
+  push.
 
 `v0` moving on every master push means `@v0` is as live as `@master` was — there's no staging step,
 just a gate on the package version. What the tag buys you is a `v1` for breaking workflow changes,
 so repos migrate one at a time instead of all at once, and a way to roll back by pointing the tag at
 an earlier commit. Bump `MAJOR_TAG` in `.github/workflows/_move_major_tag.yaml` to cut the next
 major; the old tag then freezes where it is and keeps working.
+
+Freezing is real, which is the whole reason the version is pinned rather than a floor. A frozen `v0`
+points at a commit whose pinned version never changes, so it keeps installing the library it was
+tested against no matter how far the package moves on. Had the workflows installed `>=<floor>`, a
+frozen `v0` would still resolve to whatever is newest — and since the release that enables `v1` is
+usually the same release that breaks `v0`, the migration window would have been zero.
 
 The tag tracks the **workflows'** contract, not the npm package version. They move independently on
 purpose, so `@v0` is expected to stay `@v0` after the package reaches 1.0 — bump it when a workflow

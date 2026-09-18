@@ -77,13 +77,18 @@ npm release relate — the short version:
 
 - changing only a workflow needs no npm release
 - changing only the package needs no workflow change
-- a workflow that calls a **new** CLI feature must raise the floor in
-  `.github/workflows-min-package-version` in the same PR. The `v0` tag is then held until that
-  version is on npm, so merging can't ship a workflow that calls a CLI that doesn't exist yet.
+- a workflow that calls a **new** CLI feature must set `.github/workflows-package-version` to the
+  version that will contain it, in the same PR. The `v0` tag is then held until that version is on
+  npm, so merging can't ship a workflow that calls a CLI that doesn't exist yet.
 
-The `Floor bump needed` check enforces that last point: a PR touching both a `public_` workflow (or
-the composite action) and `bin/`, `lib/` or `index.ts` has to raise the floor. When the two changes
-are unrelated and the workflow doesn't need the new code, label the PR `no-floor-bump-needed`.
+`.github/workflows-package-version` holds one exact version, and the stable release writes it. The
+workflows install exactly it, which is what makes a frozen major tag stay frozen — it keeps the
+library it was tested with instead of following `latest` forever.
+
+The `Package version bump needed` check enforces the point above: a PR touching both a `public_`
+workflow (or the composite action) and `bin/`, `lib/` or `index.ts` has to move the pin. When the
+two changes are unrelated and the workflow doesn't need the new code, label the PR
+`no-version-bump-needed`.
 
 It only looks at a single PR, so it won't catch a workflow that starts using a CLI feature merged in
 an earlier, still-unreleased PR. That needs someone to land a CLI change and sit on it unreleased;

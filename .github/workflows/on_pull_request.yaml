@@ -23,10 +23,10 @@ jobs:
         uses: ./.github/workflows/_tests.yaml
 
     # Catches the one combination that breaks consumers: a workflow starting to use a CLI feature
-    # from the same PR. Merging ships the workflow immediately, so the floor has to be raised in the
-    # same change or the workflow goes live calling something that is not published.
-    floor_bump_needed:
-        name: Floor bump needed
+    # from the same PR. Merging ships the workflow immediately, so the pinned version has to move in
+    # the same change or the workflow goes live calling something that is not published.
+    package_version_bump_needed:
+        name: Package version bump needed
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
@@ -35,37 +35,37 @@ jobs:
                   fetch-depth: 0
                   ref: ${{ github.event.pull_request.head.sha }}
 
-            - name: Check whether this PR needs a floor bump
+            - name: Check whether this PR needs a version bump
               env:
                   BASE_REF: ${{ github.base_ref }}
                   PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
               run: |
                   git fetch --no-tags origin "$BASE_REF"
-                  git diff --name-only FETCH_HEAD...HEAD | node .github/scripts/check-floor-bump.mjs
+                  git diff --name-only FETCH_HEAD...HEAD | node .github/scripts/check-package-version-bump.mjs
 
     # Reports whether merging this PR will ship the workflows or hold the major tag until a release.
-    # Never fails: raising the floor ahead of the release that satisfies it is a supported way to
+    # Never fails: pinning a version ahead of the release that publishes it is a supported way to
     # land the package change and the workflow change that needs it in one PR.
-    workflows_package_floor:
-        name: Workflows package floor
+    workflows_package_version:
+        name: Workflows package version
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6
 
-            - name: Check the required package version is published
+            - name: Check the pinned package version is published
               run: |
-                  min_version=$(cat .github/workflows-min-package-version)
-                  if npm view "apify-test-tools@>=$min_version" version >/dev/null 2>&1; then
-                      echo "Workflows require apify-test-tools >=$min_version, which is published."
+                  pinned_version=$(cat .github/workflows-package-version)
+                  if npm view "apify-test-tools@$pinned_version" version >/dev/null 2>&1; then
+                      echo "Workflows pin apify-test-tools@$pinned_version, which is published."
                       echo "The major tag moves on merge and these workflows go live." >> "$GITHUB_STEP_SUMMARY"
                   else
                       {
                           echo "### Major tag will be held on merge"
                           echo
-                          echo "These workflows require \`apify-test-tools@>=$min_version\`, which is not on npm yet."
+                          echo "These workflows pin \`apify-test-tools@$pinned_version\`, which is not on npm yet."
                           echo "Merging is fine: consumers keep running the current workflows until you cut a"
                           echo "stable release, and the tag moves once that version is published."
                       } >> "$GITHUB_STEP_SUMMARY"
-                      echo "::notice::Merging will not ship these workflows until apify-test-tools $min_version is released."
+                      echo "::notice::Merging will not ship these workflows until apify-test-tools $pinned_version is released."
                   fi

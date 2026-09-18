@@ -27,7 +27,7 @@ outputs:
 # Sets common steps and ensure we use cached node_modules
 # To test a change here, repoint the `uses:` refs in the reusable workflows at your branch, and
 # change them back before merging. Merging to master no longer ships it: consumers track the `v0`
-# tag, which only moves once the package version in .github/workflows-min-package-version is on npm.
+# tag, which only moves once the package version in .github/workflows-package-version is on npm.
 runs:
     using: 'composite'
     steps:
@@ -104,12 +104,14 @@ runs:
                 echo "Beta version detected, reinstalling $locked_version to ensure cache consistency"
                 npm install apify-test-tools@$locked_version --audit=false --no-fund;
               else
-                # These workflows and the package release independently, so the workflows declare the
-                # oldest package version they can run against. `>=` resolves to the newest published
-                # stable, which is `latest` in the normal case, and fails loudly with a version
-                # mismatch instead of a confusing CLI error if the floor was never released.
-                # npm excludes pre-releases from a plain `>=` range, so betas are never picked here.
-                min_version=$(cat "${{ github.action_path }}/../../workflows-min-package-version")
-                echo "Installing newest apify-test-tools >=$min_version (required by these workflows)"
-                npm install "apify-test-tools@>=$min_version" --audit=false --no-fund;
+                # The workflows name the exact package version they ship with, so a tag is a complete
+                # statement: these workflows and this library. A frozen major tag then keeps
+                # installing what it was tested against however far the package moves on. A `>=`
+                # floor could not do that — being open-ended, it resolves to the newest release
+                # forever, so freezing the tag would freeze the workflow files but not their
+                # dependency. The stable release writes this file, so it always names a published
+                # version; the release that publishes X is the commit that pins X.
+                pinned_version=$(cat "${{ github.action_path }}/../../workflows-package-version")
+                echo "Installing apify-test-tools@$pinned_version (pinned by these workflows)"
+                npm install "apify-test-tools@$pinned_version" --audit=false --no-fund;
               fi

@@ -14,7 +14,8 @@ import { getPushData } from './github.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
 import type { Config } from './types.js';
-import { readConfigFile, setCwd, spawnCommandInGhWorkspace } from './utils.js';
+import { setCwd, spawnCommandInGhWorkspace } from './utils.js';
+import { readConfigFile } from './utils/config/load-config.js';
 
 /**
  * Middlewares to be run before every command execution

@@ -1,6 +1,7 @@
 import z from 'zod';
 
 import { CONFIG_FILE_STRATEGY, type ResolvedActorConfig, type StrategyParser } from './structures/base.js';
+import { GROUPED_PARSER } from './structures/grouped.js';
 import { LEGACY_PARSER } from './structures/legacy.js';
 
 const CONFIG_FILE_STRATEGIES: {
@@ -8,6 +9,7 @@ const CONFIG_FILE_STRATEGIES: {
     [key in CONFIG_FILE_STRATEGY]: StrategyParser & { mode: key };
 } = {
     [CONFIG_FILE_STRATEGY.LEGACY]: LEGACY_PARSER,
+    [CONFIG_FILE_STRATEGY.GROUPED]: GROUPED_PARSER,
 } as const;
 
 const ModeSelectionSchema = z.enum(CONFIG_FILE_STRATEGY).default(CONFIG_FILE_STRATEGY.LEGACY);

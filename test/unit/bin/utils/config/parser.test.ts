@@ -117,8 +117,6 @@ describe('verifyConfiguration', () => {
     });
 });
 
-// The seam that matters: a differently shaped config file only has to reach this function's output
-// to work with everything downstream.
 describe('parseConfigFile', () => {
     it('validates and normalizes a plain object without touching the filesystem', () => {
         expect(parseConfigFile({ actors: [actor({ folder: 'actors/shopify/' })] })).toEqual([
@@ -126,13 +124,14 @@ describe('parseConfigFile', () => {
         ]);
     });
 
-    it('surfaces schema violations from the selected strategy', () => {
-        expect(() => parseConfigFile({ actors: [actor({ folder: 123 })] })).toThrow(/at actors\[0\]\.folder/);
-    });
-
-    it('surfaces cross-entry violations the schema cannot see', () => {
-        expect(() => parseConfigFile({ actors: [actor({ actorFullName: 'myteam/actor-a' }), actor()] })).toThrow(
-            /Duplicate folder/,
-        );
+    it('surfaces cross-entry violations from verifyConfiguration', () => {
+        expect(() =>
+            parseConfigFile({
+                actors: [
+                    actor({ actorFullName: 'myteam/actor-a', folder: 'collide/collide' }),
+                    actor({ actorFullName: 'myteam/actor-b', folder: 'collide/collide' }),
+                ],
+            }),
+        ).toThrow(/Duplicate folder/);
     });
 });

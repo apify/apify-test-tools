@@ -15,10 +15,6 @@ export const CONFIG_FILE_NAME = 'apify-test-tools.config.json';
 //   2. plain object        -> ResolvedActorConfig[] (parseConfigFile — picks a strategy, validates
 //                                                    and normalizes; see ./parser.ts)
 //   3. ResolvedActorConfig -> ActorConfig           (loadActorConfig — merges in .actor/actor.json)
-//
-// Stages 1-2 are the "what did the user write" half and stage 3 the "what does the repo look like"
-// half. A differently shaped config file only has to reach stage 2's output — a new strategy under
-// ./structures/ — to work with the rest of the tool.
 
 // #region utils
 
@@ -65,8 +61,6 @@ const readConfigFileContents = async (): Promise<Record<string, unknown>> => {
             );
     }
 };
-
-// Stage 2 lives in ./parser.ts.
 
 /**
  * Stage 3 — resolves one normalized entry against the repo, reading the actor's `.actor/actor.json`

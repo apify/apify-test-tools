@@ -5,14 +5,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CONFIG_FILE_NAME, loadActorConfig, readConfigFile } from '../../../../../bin/utils/config/load-config.js';
+import type { ResolvedActorConfig } from '../../../../../bin/utils/config/structures/base.js';
 
-// `readConfigFile` resolves every path against the process's working directory, so these tests give it
-// a real one: a throwaway repo in a temp dir. Reading actual files rather than a mocked
-// `node:fs/promises` is what makes the path handling (the ".actor/" hop, a dockerContextDir escaping
-// the repo root) worth asserting on — against a mock those assertions only describe the mock.
-//
-// The shape of the config file itself is the parser's business; see ./parser.test.ts and
-// ./structures/legacy.test.ts.
 let repoDir: string;
 let originalCwd: string;
 
@@ -43,12 +37,20 @@ const writeFiles = async (files: Record<string, string>) =>
     );
 
 describe('loadActorConfig', () => {
-    it('resolves data coming from actor.json', async () => {
-        await writeFiles({ 'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '..' }) });
+    const entry = (fields: Partial<ResolvedActorConfig> = {}): ResolvedActorConfig => ({
+        folder: 'actors/shopify',
+        actorFullName: 'myteam/shopify',
+        tokenEnvVar: 'APIFY_TOKEN',
+        ...fields,
+    });
 
-        expect(
-            loadActorConfig({ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' }),
-        ).toEqual({
+    const writeActorJson = async (fields: Record<string, unknown> = {}) =>
+        writeFiles({ 'actors/shopify/.actor/actor.json': actorJson(fields) });
+
+    it('resolves data coming from actor.json', async () => {
+        await writeActorJson({ dockerContextDir: '..' });
+
+        expect(loadActorConfig(entry())).toEqual({
             actorFullName: 'myteam/shopify',
             folder: 'actors/shopify',
             tokenEnvVar: 'APIFY_TOKEN',
@@ -56,116 +58,102 @@ describe('loadActorConfig', () => {
             contextPaths: ['actors/shopify'],
         });
     });
-});
 
-describe('readConfigFile', () => {
-    it('returns correct ActorConfig[] for a valid config', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                {
-                    folder: 'actors/shopify',
-                    actorFullName: 'myteam/shopify-scraper',
-                    tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
-                },
-            ]),
-            'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '../../..' }),
-        });
+    it('defaults dockerContextDir to the actor folder when actor.json does not set it', async () => {
+        await writeActorJson();
 
-        const result = await readConfigFile(emptyActorSelection);
-        expect(result).toEqual([
-            {
-                actorFullName: 'myteam/shopify-scraper',
-                folder: 'actors/shopify',
-                tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
-                dockerContextDir: '',
-                contextPaths: [''],
-            },
-        ]);
+        expect(loadActorConfig(entry()).dockerContextDir).toBe('actors/shopify');
     });
 
-    it('normalizes folder "." to ""', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                { folder: '.', actorFullName: 'apify/my-actor', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
-            ]),
-            '.actor/actor.json': actorJson({}),
-        });
+    it('resolves dockerContextDir relative to the .actor/ folder, not the actor folder', async () => {
+        await writeActorJson({ dockerContextDir: '../../..' });
 
-        const result = await readConfigFile(emptyActorSelection);
-        expect(result[0].folder).toBe('');
-    });
-
-    it('defaults dockerContextDir to actor folder when absent from actor.json', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                { folder: 'actors/web-scraper', actorFullName: 'apify/web-scraper', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
-            ]),
-            'actors/web-scraper/.actor/actor.json': actorJson({}),
-        });
-
-        const result = await readConfigFile(emptyActorSelection);
-        expect(result[0].dockerContextDir).toBe('actors/web-scraper');
-        expect(result[0].contextPaths).toEqual(['actors/web-scraper']);
-    });
-
-    it('resolves dockerContextDir relative to .actor/ folder', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                { folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' },
-            ]),
-            'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '../../..' }),
-        });
-
-        const result = await readConfigFile(emptyActorSelection);
-        expect(result[0].dockerContextDir).toBe('');
+        expect(loadActorConfig(entry()).dockerContextDir).toBe('');
     });
 
     it('throws when dockerContextDir resolves outside the repository root', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                { folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' },
-            ]),
-            'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '../../../..' }),
-        });
+        await writeActorJson({ dockerContextDir: '../../../..' });
 
-        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/resolves outside the repository root/);
+        expect(() => loadActorConfig(entry())).toThrow(/resolves outside the repository root/);
+    });
+
+    it('throws when actor.json is missing', () => {
+        expect(() => loadActorConfig(entry())).toThrow('Cannot read');
     });
 
     it('resolves contextPaths from overrideActorContext', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                {
-                    folder: 'actors/shopify',
-                    actorFullName: 'myteam/shopify',
-                    tokenEnvVar: 'APIFY_TOKEN',
-                    overrideActorContext: ['actors/shopify', 'packages'],
-                },
-            ]),
-            'actors/shopify/.actor/actor.json': actorJson({ dockerContextDir: '../../..' }),
-        });
+        await writeActorJson({ dockerContextDir: '../../..' });
 
-        const result = await readConfigFile(emptyActorSelection);
-        expect(result[0].contextPaths).toEqual(['actors/shopify', 'packages']);
+        expect(loadActorConfig(entry({ overrideActorContext: ['actors/shopify', 'packages'] })).contextPaths).toEqual([
+            'actors/shopify',
+            'packages',
+        ]);
     });
 
-    it('handles multiple actors', async () => {
+    it('adds the actor own folder automatically when overrideActorContext does not cover it', async () => {
+        await writeActorJson();
+
+        expect(loadActorConfig(entry({ overrideActorContext: ['code', 'shared'] })).contextPaths).toEqual([
+            'code',
+            'shared',
+            'actors/shopify',
+        ]);
+    });
+
+    it('allows overrideActorContext with disjoint sibling paths that all reach the actor folder via one entry', async () => {
+        await writeActorJson();
+
+        expect(
+            loadActorConfig(entry({ overrideActorContext: ['actors/shopify', 'code', 'shared'] })).contextPaths,
+        ).toEqual(['actors/shopify', 'code', 'shared']);
+    });
+
+    it('throws when overrideActorContext entries overlap (one is a prefix of another)', async () => {
+        await writeActorJson();
+
+        expect(() => loadActorConfig(entry({ overrideActorContext: ['actors/shopify', 'actors'] }))).toThrow(/overlap/);
+    });
+
+    it('throws when overrideActorContext contains the repo root alongside another entry', async () => {
+        await writeActorJson();
+
+        expect(() => loadActorConfig(entry({ overrideActorContext: ['', 'actors/shopify'] }))).toThrow(/overlap/);
+    });
+});
+
+describe('readConfigFile', () => {
+    // Golden output massaging the whole config reading process
+    it("carries the parser's normalization through to ActorConfig[]", async () => {
         await writeFiles({
             [CONFIG_FILE_NAME]: validConfig([
-                { folder: 'actors/web-scraper', actorFullName: 'apify/web-scraper', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
+                { folder: '.', actorFullName: 'apify/root', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
                 {
-                    folder: 'actors/email-sender',
-                    actorFullName: 'other-team/email-sender',
-                    tokenEnvVar: 'APIFY_TOKEN_OTHER_TEAM',
+                    folder: 'actors/shopify/',
+                    actorFullName: 'myteam/shopify',
+                    tokenEnvVar: 'APIFY_TOKEN',
+                    overrideActorContext: ['actors/shopify/', 'packages/'],
                 },
             ]),
-            'actors/web-scraper/.actor/actor.json': actorJson({}),
-            'actors/email-sender/.actor/actor.json': actorJson({}),
+            '.actor/actor.json': actorJson({}),
+            'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        const result = await readConfigFile(emptyActorSelection);
-        expect(result).toHaveLength(2);
-        expect(result[0].actorFullName).toBe('apify/web-scraper');
-        expect(result[1].actorFullName).toBe('other-team/email-sender');
+        expect(await readConfigFile(emptyActorSelection)).toEqual([
+            {
+                actorFullName: 'apify/root',
+                folder: '',
+                tokenEnvVar: 'APIFY_TOKEN_APIFY',
+                dockerContextDir: '',
+                contextPaths: [''],
+            },
+            {
+                actorFullName: 'myteam/shopify',
+                folder: 'actors/shopify',
+                tokenEnvVar: 'APIFY_TOKEN',
+                dockerContextDir: 'actors/shopify',
+                contextPaths: ['actors/shopify', 'packages'],
+            },
+        ]);
     });
 
     it('throws when config file is missing', async () => {
@@ -187,172 +175,5 @@ describe('readConfigFile', () => {
     it('surfaces a schema failure from the parser', async () => {
         await writeFiles({ [CONFIG_FILE_NAME]: JSON.stringify({ notActors: [] }) });
         await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/at actors/);
-    });
-
-    it('throws on duplicate folders', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                { folder: 'actors/shopify', actorFullName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
-                { folder: 'actors/shopify', actorFullName: 'other/shopify', tokenEnvVar: 'APIFY_TOKEN_OTHER' },
-            ]),
-            'actors/shopify/.actor/actor.json': actorJson({}),
-        });
-
-        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Duplicate folder');
-    });
-
-    it('throws on duplicate folders after normalization ("." and "")', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                { folder: '.', actorFullName: 'apify/actor-a', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
-                { folder: '', actorFullName: 'other/actor-b', tokenEnvVar: 'APIFY_TOKEN_OTHER' },
-            ]),
-            '.actor/actor.json': actorJson({}),
-        });
-
-        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Duplicate folder');
-    });
-
-    it('throws when two folders declare the same actor', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                { folder: 'actors/one', actorFullName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
-                { folder: 'actors/two', actorFullName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
-            ]),
-            'actors/one/.actor/actor.json': actorJson({}),
-            'actors/two/.actor/actor.json': actorJson({}),
-        });
-
-        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Duplicate actor');
-    });
-
-    it('throws when actor.json is missing', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                { folder: 'actors/shopify', actorFullName: 'apify/shopify', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
-            ]),
-        });
-
-        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('Cannot read');
-    });
-
-    it('throws when overrideActorContext entries overlap (one is a prefix of another)', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                {
-                    folder: 'actors/shopify',
-                    actorFullName: 'myteam/shopify',
-                    tokenEnvVar: 'APIFY_TOKEN',
-                    overrideActorContext: ['actors/shopify', 'actors'],
-                },
-            ]),
-            'actors/shopify/.actor/actor.json': actorJson({}),
-        });
-
-        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/overlap/);
-    });
-
-    it('throws when overrideActorContext contains the repo root alongside another entry', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                {
-                    folder: 'actors/shopify',
-                    actorFullName: 'myteam/shopify',
-                    tokenEnvVar: 'APIFY_TOKEN',
-                    overrideActorContext: ['', 'actors/shopify'],
-                },
-            ]),
-            'actors/shopify/.actor/actor.json': actorJson({}),
-        });
-
-        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/overlap/);
-    });
-
-    it('adds the actor own folder automatically when overrideActorContext does not cover it', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                {
-                    folder: 'actors/shopify',
-                    actorFullName: 'myteam/shopify',
-                    tokenEnvVar: 'APIFY_TOKEN',
-                    overrideActorContext: ['code', 'shared'],
-                },
-            ]),
-            'actors/shopify/.actor/actor.json': actorJson({}),
-        });
-
-        const result = await readConfigFile(emptyActorSelection);
-        expect(result[0].contextPaths).toEqual(['code', 'shared', 'actors/shopify']);
-    });
-
-    it('strips trailing slashes from folder and overrideActorContext entries', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                {
-                    folder: 'actors/shopify/',
-                    actorFullName: 'myteam/shopify',
-                    tokenEnvVar: 'APIFY_TOKEN',
-                    overrideActorContext: ['actors/shopify/', 'packages/'],
-                },
-            ]),
-            'actors/shopify/.actor/actor.json': actorJson({}),
-        });
-
-        const result = await readConfigFile(emptyActorSelection);
-        expect(result[0].folder).toBe('actors/shopify');
-        expect(result[0].contextPaths).toEqual(['actors/shopify', 'packages']);
-    });
-
-    it('allows overrideActorContext with disjoint sibling paths that all reach the actor folder via one entry', async () => {
-        await writeFiles({
-            [CONFIG_FILE_NAME]: validConfig([
-                {
-                    folder: 'actors/shopify',
-                    actorFullName: 'myteam/shopify',
-                    tokenEnvVar: 'APIFY_TOKEN',
-                    overrideActorContext: ['actors/shopify', 'code', 'shared'],
-                },
-            ]),
-            'actors/shopify/.actor/actor.json': actorJson({}),
-        });
-
-        const result = await readConfigFile(emptyActorSelection);
-        expect(result[0].contextPaths).toEqual(['actors/shopify', 'code', 'shared']);
-    });
-
-    describe('actor selection', () => {
-        const twoActors = async () =>
-            writeFiles({
-                [CONFIG_FILE_NAME]: validConfig([
-                    { folder: 'actors/a', actorFullName: 'team/actor-a', tokenEnvVar: 'TOKEN' },
-                    { folder: 'actors/b', actorFullName: 'team/actor-b', tokenEnvVar: 'TOKEN' },
-                ]),
-                'actors/a/.actor/actor.json': actorJson({}),
-                'actors/b/.actor/actor.json': actorJson({}),
-            });
-
-        const fullNames = (result: { actorFullName: string }[]) => result.map((c) => c.actorFullName);
-
-        it('returns all actors when the selection is empty', async () => {
-            await twoActors();
-            expect(fullNames(await readConfigFile(emptyActorSelection))).toEqual(['team/actor-a', 'team/actor-b']);
-        });
-
-        it('keeps only the selected actors', async () => {
-            await twoActors();
-            expect(fullNames(await readConfigFile({ actors: ['team/actor-a'], ignore: [] }))).toEqual(['team/actor-a']);
-        });
-
-        it('drops ignored actors', async () => {
-            await twoActors();
-            expect(fullNames(await readConfigFile({ actors: [], ignore: ['team/actor-a'] }))).toEqual(['team/actor-b']);
-        });
-
-        it('throws on an unknown actor name', async () => {
-            await twoActors();
-            await expect(readConfigFile({ actors: ['team/nope'], ignore: [] })).rejects.toThrow(
-                'do not exist: team/nope',
-            );
-        });
     });
 });

@@ -1,13 +1,13 @@
 import z from 'zod';
 
-import { CONFIG_FILE_STRATEGY, defineStrategy } from './base.js';
+import { ACTOR_FULL_NAME_REGEX, CONFIG_FILE_STRATEGY, defineStrategy } from './base.js';
 
 const schema = z.object({
     actors: z
         .array(
             z.object({
                 folder: z.string(),
-                actorFullName: z.string().regex(/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/),
+                actorFullName: z.string().regex(ACTOR_FULL_NAME_REGEX),
                 tokenEnvVar: z.string(),
                 overrideActorContext: z.array(z.string()).optional(),
             }),

@@ -1,5 +1,16 @@
 import { prettifyError, type ZodType } from 'zod';
 
+import { ACTOR_NAME, USERNAME } from '@apify/consts';
+
+function stripRegexAnchor(regex: string): string {
+    return regex.replace(/^\^/, '').replace(/\$$/, '');
+}
+
+export const ACTOR_FULL_NAME_REGEX = new RegExp(
+    `^${stripRegexAnchor(USERNAME.REGEX.source)}/${stripRegexAnchor(ACTOR_NAME.REGEX.source)}$`,
+    USERNAME.REGEX.flags + ACTOR_NAME.REGEX.flags,
+);
+
 export interface ResolvedActorConfig {
     actorFullName: string;
     folder: string;

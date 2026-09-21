@@ -43,7 +43,6 @@ describe('LEGACY_PARSER', () => {
         ['no slash', 'shopify-scraper'],
         ['an empty owner', '/shopify'],
         ['an empty name', 'myteam/'],
-        ['an uppercase owner', 'MyTeam/shopify'],
         ['more than two halves', 'myteam/shopify/extra'],
     ])('rejects an actorFullName with %s', (_name, actorFullName) => {
         expect(() => LEGACY_PARSER.parse({ actors: [entry({ actorFullName })] })).toThrow(
@@ -51,7 +50,8 @@ describe('LEGACY_PARSER', () => {
         );
     });
 
-    it.each([['myteam/shopify'], ['my.team/web-scraper'], ['my_team/a1'], ['apify/web-scraper']])(
+    // Uppercase owners are legal on the platform; ./base.test.ts covers why that is easy to lose.
+    it.each([['myteam/shopify'], ['my.team/web-scraper'], ['my_team/a1'], ['apify/web-scraper'], ['MyTeam/shopify']])(
         'accepts the actorFullName %s',
         (actorFullName) => {
             expect(() => LEGACY_PARSER.parse({ actors: [entry({ actorFullName })] })).not.toThrow();

@@ -15,15 +15,15 @@ const actor = (fields: Record<string, unknown> = {}) => ({
 
 describe('selectStrategy', () => {
     it('falls back to the legacy strategy when no mode is declared', () => {
-        expect(selectStrategy({ actors: [] })).toBe(LEGACY_PARSER);
+        expect(selectStrategy(undefined)).toBe(LEGACY_PARSER);
     });
 
     it('honours an explicit mode', () => {
-        expect(selectStrategy({ mode: CONFIG_FILE_STRATEGY.LEGACY, actors: [] })).toBe(LEGACY_PARSER);
+        expect(selectStrategy(CONFIG_FILE_STRATEGY.LEGACY)).toBe(LEGACY_PARSER);
     });
 
     it('throws on a mode no strategy is registered for', () => {
-        expect(() => selectStrategy({ mode: 'brand-new' })).toThrow(/at mode/);
+        expect(() => selectStrategy('some-nonexistent-mode')).toThrow(/Invalid input/);
     });
 });
 

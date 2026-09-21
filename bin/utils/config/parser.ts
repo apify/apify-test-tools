@@ -10,18 +10,15 @@ const CONFIG_FILE_STRATEGIES: {
     [CONFIG_FILE_STRATEGY.LEGACY]: LEGACY_PARSER,
 } as const;
 
-const ModeSelectionSchema = z.object({
-    mode: z.enum(CONFIG_FILE_STRATEGY).default(CONFIG_FILE_STRATEGY.LEGACY),
-});
+const ModeSelectionSchema = z.enum(CONFIG_FILE_STRATEGY).default(CONFIG_FILE_STRATEGY.LEGACY);
 
-function selectStrategy(body: Record<string, unknown>): StrategyParser {
-    const parsed = ModeSelectionSchema.safeParse(body);
+function selectStrategy(mode: unknown): StrategyParser {
+    const parsed = ModeSelectionSchema.safeParse(mode);
     if (!parsed.success) {
         throw new Error(z.prettifyError(parsed.error));
     }
 
-    const { mode } = parsed.data;
-    return CONFIG_FILE_STRATEGIES[mode];
+    return CONFIG_FILE_STRATEGIES[parsed.data];
 }
 
 // Strips a trailing slash so config-declared paths ("actors/shopify/" vs "actors/shopify") compare equal.
@@ -82,8 +79,10 @@ export const _privates = {
 };
 
 export function parseConfigFile(body: Record<string, unknown>): ResolvedActorConfig[] {
-    const strategy = selectStrategy(body);
-    const resolved = strategy.parse(body);
+    const { mode, ...rest } = body;
+    const strategy = selectStrategy(mode);
+
+    const resolved = strategy.parse(rest);
     const validated = verifyConfiguration(resolved);
     return validated;
 }

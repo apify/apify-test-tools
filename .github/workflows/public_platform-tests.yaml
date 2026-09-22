@@ -37,7 +37,7 @@ jobs:
         steps:
             - name: Setup repository and dependencies
               # For testing, you have to temporarily change the branch
-              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@v0
+              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
               with:
                   working-directory: ${{ inputs.working-directory }}
                   additional-working-directory: ${{ inputs.additional-working-directory }}

@@ -14,7 +14,7 @@ on:
                 description: Label added after a successful review and never removed. Set to an empty string to disable.
                 required: false
             prompt-ref:
-                default: v0
+                default: workflows-v0
                 type: string
                 description: >-
                     Ref of this repository to fetch the review instructions from. Defaults to the

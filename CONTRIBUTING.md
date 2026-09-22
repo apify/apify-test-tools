@@ -71,14 +71,20 @@ this repo's own triggers.
 A `public_` filename is part of the contract — it is baked into every consumer's `uses:` line, so
 renaming one is a breaking change that needs a major tag bump, not a tidy-up.
 
-Consumers pin `@v0`, not `@master`. See
+The tag is not semver, so `git-cliff` would abort on it. It is skipped only because
+`apify/actions`' cliff.toml sets `tag_pattern = "v[0-9]+\."` — a release failing with
+`Semver error: unexpected character` means that pattern changed, not that anything here is wrong.
+The action's "Nothing to release" guard resolves to this tag and no longer fires, so an empty stable
+release fails at `npm publish` instead of erroring cleanly.
+
+Consumers pin `@workflows-v0`, not `@master`. See
 [Versioning and releases](./README.md#versioning-and-releases) in the README for how the tag and the
 npm release relate — the short version:
 
 - changing only a workflow needs no npm release
 - changing only the package needs no workflow change
 - a workflow that calls a **new** CLI feature must set `.github/workflows-package-version` to the
-  version that will contain it, in the same PR. The `v0` tag is then held until that version is on
+  version that will contain it, in the same PR. The `workflows-v0` tag is then held until that version is on
   npm, so merging can't ship a workflow that calls a CLI that doesn't exist yet.
 
 `.github/workflows-package-version` holds one exact version, and the stable release writes it. The
@@ -99,5 +105,5 @@ pushing workflow changes.
 
 `public_review` is the odd one out: it fetches `.github/review-prompt.md` over HTTP at run time, because a
 reusable workflow runs with the caller's repo checked out and never gets its own. Its `prompt-ref`
-input defaults to `v0` so the instructions come from the same release as the workflow — leaving it
+input defaults to `workflows-v0` so the instructions come from the same release as the workflow — leaving it
 at `master` would run released workflows against unreleased instructions.

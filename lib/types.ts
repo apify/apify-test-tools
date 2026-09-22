@@ -10,7 +10,15 @@ export type ActorBuild = {
 
 export type RunOptions<T> = {
     input: Omit<T, 'actorName'>;
-    options?: ActorCallOptions;
+    options?: Omit<ActorCallOptions, 'timeout'> & {
+        /**
+         * Timeout for the actor run in seconds. Zero value means there is no timeout.
+         * - If `undefined`, the run uses timeout of the default Actor run configuration.
+         *
+         * @default 3540 // 59 minutes (finish the run before the test)
+         */
+        timeout?: number;
+    };
     prefilledInput?: boolean;
     /**
      * If you specify `runId`, all the other options will be ignored and this run's data will
@@ -138,8 +146,8 @@ export type ActorTestOptions = Omit<TestOptions, 'retry' | 'timeout'> & {
     // we are just extending the docs here to replace the default value, otherwise it's the exact same
     retry?: TestOptions['retry'];
     /**
-     * Timeout for the actor run in milliseconds. Zero value means there is no timeout.
-     * - If `undefined`, the run uses timeout of the default Actor run configuration.
+     * Timeout for the test in milliseconds. Zero value means there is no timeout.
+     * - If `undefined`, the run uses timeout of the default test configuration.
      *
      * @default 60 * 60 * 1000 // 1 hour
      */

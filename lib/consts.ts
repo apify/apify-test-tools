@@ -17,6 +17,10 @@ export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
  */
 export const DEFAULT_TEST_RUN_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
+// Prevent orphaned runs - timeout the Actor 1 minute before the test does so everything is logged correctly.
+//      - Otherwise the run link URL can get lost.
+export const DEFAULT_TEST_ACTOR_TIMEOUT_SECS = DEFAULT_TEST_RUN_DURATION_MS / 1000 - 60;
+
 /**
  * Delay before checking the dataset and statistics after a run finishes to resolve eventual consistency.
  * - This value should ensure that the dataset and statistics are fully updated before any assertions are made.

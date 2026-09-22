@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 <!-- git-cliff-unreleased-start -->
 ## 0.9.1 - **not yet released**
 
+### 🚀 Features
+
+- **config/modes:** Lay groundwork for multiple configuration structures ([#142](https://github.com/apify/apify-test-tools/pull/142)) ([7e18638](https://github.com/apify/apify-test-tools/commit/7e18638a8d3523154dbe819312c2b16b54c548ff)) by [@JuanGalilea](https://github.com/JuanGalilea)
+
+### 🐛 Bug Fixes
+
+- Apply default actor timeout to runs ([#134](https://github.com/apify/apify-test-tools/pull/134)) ([82f5f7d](https://github.com/apify/apify-test-tools/commit/82f5f7d4de990db7ad8edf940c19ffd6b20bad13)) by [@Patai5](https://github.com/Patai5)
+
 
 <!-- git-cliff-unreleased-end -->
 ## [0.9.0](https://github.com/apify/apify-test-tools/releases/tag/v0.9.0) (2026-08-11)

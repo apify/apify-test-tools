@@ -36,7 +36,7 @@ const walk = (rel) => {
 
 const problems = [];
 
-// Self-references, e.g. `uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@v0`.
+// Self-references, e.g. `uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0`.
 // The ref charset stops at a backtick or quote so a ref quoted in prose isn't captured with its
 // punctuation; git refnames cannot end in a dot, so a sentence-final one is trimmed.
 const SELF_REF = /apify\/apify-test-tools\/\.github\/\S*?@([A-Za-z0-9._/-]+)/g;

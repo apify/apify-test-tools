@@ -62,9 +62,7 @@ describe('GROUPED_PARSER', () => {
         );
     });
 
-    // Unlike the legacy schema, which requires at least one actor, a record with no groups is valid and
-    // resolves to no actors at all. Every command downstream then runs against an empty set.
-    it('accepts a config with no groups and resolves it to no actors', () => {
+    it('rejects a config with no groups (and thus no actors)', () => {
         expect(() => GROUPED_PARSER.parse({})).toThrow();
     });
 

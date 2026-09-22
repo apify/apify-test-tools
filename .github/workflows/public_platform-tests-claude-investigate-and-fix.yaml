@@ -52,9 +52,14 @@ on:
                     Use available tools to check previous workflow runs, git history, and existing GitHub issues to gather context and avoid creating duplicate issues. For deeper context,
                     use tools to investigate the run on Apify platform, review its logs, datasets, key-value stores.
 
-                    When you create the issue:
-                    - Title: short and clean, describing the actual problem — no dates, run numbers, or other noise. Prefix it with a conventional-commit-style type, e.g. "fix: blocking issue on detail endpoint" or "test(platform): flaky video views count expectation".
-                    - Body: a short, descriptive summary of the root cause and evidence (relevant log lines, links to the failing run). Aim for well under 10 lines — only go longer if the issue genuinely can't be understood without more detail. Skip filler like restating the workflow name or generic troubleshooting steps.
+                    Look specifically for debug traces, not just the top-level error:
+                    - Debug snapshots: often stored as a field on dataset items (e.g. `_debugSnapshots`) or as records in a key-value store, keyed so they can be matched to the log line for the failing request.
+                    - Any other debug artifacts the Actor produced (extra logs, error/state fields on output items) that narrow down the failing request.
+
+                    When you create the issue, write it like an incident postmortem: a short summary and impact up top for anyone skimming, full technical detail below for whoever fixes it. Don't water down the engineering detail to make the top readable.
+                    - Title: short and clean, describing the actual problem in plain terms — no dates, run numbers, or other noise. Prefix it with a conventional-commit-style type, e.g. "fix: blocking issue on detail endpoint".
+                    - Body, section 1 ("## Summary"): one line stating what's broken plus its impact, in plain language a PM can understand at a glance — no jargon, internal field names, or stack traces (e.g. "Scraping product detail pages fails when a listing has no reviews, affecting N% of runs").
+                    - A `---` divider, then section 2 ("## Details"): the engineering bug report — root cause, relevant log lines, links to the failing run, and any other internals an engineer needs. If a single item/request failed among otherwise-good ones, show or link that specific one (e.g. the dataset item index/id, or its matching debug snapshot) rather than just describing the run as failed.
 
                     If you create a new issue, you MUST write its issue number (just the number, nothing else) to $GITHUB_WORKSPACE/issue-number.txt as the very last thing you do. If you skip creating one because a duplicate already exists, do not create the file.
                 description: Prompt given to Claude for the investigation phase. Override to customize how issues are investigated, titled, and described.
@@ -78,7 +83,7 @@ jobs:
             issue_number: ${{ steps.issue.outputs.number }}
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
 
             - name: Run Claude Code
               id: claude
@@ -104,7 +109,7 @@ jobs:
 
             - name: Upload Claude output (for debugging)
               if: always()
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v6
               with:
                   name: claude-output-investigate
                   path: /home/runner/work/_temp/claude-execution-output.json
@@ -162,7 +167,7 @@ jobs:
             actions: read
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
 
             - name: Run Claude Code
               id: claude
@@ -177,7 +182,7 @@ jobs:
 
             - name: Upload Claude output (for debugging)
               if: always()
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v6
               with:
                   name: claude-output-fix
                   path: /home/runner/work/_temp/claude-execution-output.json

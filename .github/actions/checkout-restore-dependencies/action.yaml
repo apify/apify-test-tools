@@ -40,9 +40,12 @@ runs:
               ref: ${{ github.head_ref || github.ref }}
 
         - name: Use Node.js 24
-          uses: actions/setup-node@v4
+          uses: actions/setup-node@v5
           with:
               node-version: 24
+              # v5 caches automatically when package.json has a `packageManager` field.
+              # The node_modules cache below is the only cache we want.
+              package-manager-cache: false
 
         # `github.action_path` only resolves inside this composite action, but the steps that use
         # .github/scripts/ live in the calling workflows. Resolving it once here and exposing it as

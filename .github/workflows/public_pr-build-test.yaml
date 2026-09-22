@@ -78,12 +78,41 @@ jobs:
                     npx apify-test-tools build "${args[@]}")
                   echo "actor_builds=$actor_builds" | tee -a "$GITHUB_OUTPUT"
 
+            # Test files are outside every actor's Docker build context, so the diff above finds nothing
+            # to build and every test skips. Right for "rebuild?", wrong for "test?".
+            - name: Find changed platform tests
+              id: changed_tests
+              env:
+                  # Branch names are attacker-controlled on fork PRs, so they reach the script as
+                  # environment variables rather than being interpolated into it.
+                  HEAD_REF: ${{ github.head_ref }}
+                  BASE_REF: ${{ github.base_ref }}
+                  WORKING_DIRECTORY: ${{ inputs.working-directory }}
+              run: |
+                  work_dir="$WORKING_DIRECTORY"
+                  [ "$work_dir" = "." ] && work_dir=""
+                  prefix="${work_dir:+$work_dir/}test/platform/"
+                  changed=$(git diff --name-only --diff-filter=d "origin/$BASE_REF...HEAD" -- "$prefix" \
+                    | sed "s|^$prefix|./test/platform/|" | tr '\n' ' ')
+                  branch_actors=$(npx apify-test-tools get-affected-actors \
+                    --source-branch "origin/$HEAD_REF" \
+                    --target-branch "origin/$BASE_REF")
+                  if [ -n "$changed" ] && [ "$branch_actors" = "[]" ]; then
+                    echo "target=$changed" | tee -a "$GITHUB_OUTPUT"
+                  elif [ -n "$changed" ]; then
+                    echo "Platform tests: the changed platform tests did not run. This branch also changes actor code validated at an earlier commit, so they could only have run against the deployed build, which lacks those changes. Re-run this job from scratch to rebuild and test together." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.
             - name: Test
               env:
                   ACTOR_BUILDS: ${{ steps.build.outputs.actor_builds }}
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-              run: npx vitest ./test/platform/${{ inputs.test-files-glob }} --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100
+                  # No build to pin to, so lift the per-actor gate and let each run use the deployed build.
+                  RUN_ALL_PLATFORM_TESTS: ${{ steps.changed_tests.outputs.target && '1' || '' }}
+              # `related` runs the tests that import each changed file, so a changed helper runs its dependents.
+              # A plain filter would match no test for a helper and exit 1; `related` exits 0 when nothing imports it.
+              run: npx vitest ${{ steps.changed_tests.outputs.target && format('related {0}', steps.changed_tests.outputs.target) || format('./test/platform/{0}', inputs.test-files-glob) }} --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100
 
             # NOTE: This is an optimization that if we did functional changes and later only cosmetic changes (e.g. dev readme), we will compare changes files only for the last commit. This must run after tests because we want to cache the latest commit only if the tests are successful
             - name: Store last validated commit to cache

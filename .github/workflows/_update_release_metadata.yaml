@@ -77,6 +77,18 @@ jobs:
                   write-mode: overwrite
                   contents: ${{ needs.release_metadata.outputs.changelog }}
 
+            # The reusable workflows install this exact version, so the commit that releases a
+            # version is the commit that pins it. That is what lets a frozen major tag keep
+            # installing the library it was tested against instead of drifting to whatever is
+            # newest.
+            #
+            # Skipped for prereleases: master pushes release a `-beta` that consumer repos must
+            # never install. Their pin stays on the last stable, and the beta stays reachable
+            # through the lockfile path in the setup action, which is how branch testing works.
+            - name: Update the version the workflows pin
+              if: inputs.release_type != 'prerelease'
+              run: echo "${{ needs.release_metadata.outputs.version_number }}" > .github/workflows-package-version
+
             - name: Commit changes
               id: commit
               uses: apify/actions/signed-commit@v1.0.0

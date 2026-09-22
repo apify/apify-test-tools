@@ -1,4 +1,10 @@
 CHANGELOG.md
 
+# Operating instructions read by Claude, not prose for humans. Prettier collapses the nested bullet
+# list under "do not visit, fetch, infer, or evaluate the following external links" into one run-on
+# line, which changes what the model is told. Keeping it byte-identical also makes re-syncing it
+# from the old workflows repo a plain copy.
+.github/review-prompt.md
+
 # Fixtures must stay byte-exact — several are deliberately malformed or empty
 test/fixtures

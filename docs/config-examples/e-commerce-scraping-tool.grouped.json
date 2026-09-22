@@ -1,0 +1,68 @@
+{
+    "mode": "grouped",
+
+    "mini-actors": {
+        "tokenEnvVar": "APIFY_TOKEN_E_COMMERCE",
+        "reportSlackChannel": "#notif-e-commerce-scraping-tool",
+        "overrideActorContext": ["actors/e-commerce-scraper", "packages/external/protocol"],
+        "actors": [
+            {
+                "folder": "actors/e-commerce-scraper/actors/apify_e-commerce-scraper",
+                "actorFullName": "apify/e-commerce-scraping-tool",
+                "tokenEnvVar": "APIFY_TOKEN_APIFY",
+                "releaseSlackChannel": "#delivery-public-actors"
+            },
+            {
+                "folder": "actors/e-commerce-scraper/actors/apify_e-commerce-food-delivery",
+                "actorFullName": "e-commerce/e-commerce-food-delivery"
+            },
+            {
+                "folder": "actors/e-commerce-scraper/actors/apify_e-commerce-influencer",
+                "actorFullName": "e-commerce/e-commerce-influencer"
+            },
+            {
+                "folder": "actors/e-commerce-scraper/actors/apify_e-commerce-product",
+                "actorFullName": "e-commerce/e-commerce-products"
+            },
+            {
+                "folder": "actors/e-commerce-scraper/actors/apify_e-commerce-reviews",
+                "actorFullName": "e-commerce/e-commerce-reviews"
+            },
+            {
+                "folder": "actors/e-commerce-scraper/actors/apify_e-commerce-search-engine",
+                "actorFullName": "e-commerce/e-commerce-search-engine"
+            },
+            {
+                "folder": "actors/e-commerce-scraper/actors/apify_e-commerce-seller",
+                "actorFullName": "e-commerce/e-commerce-seller"
+            }
+        ]
+    },
+
+    "standby-core": {
+        "tokenEnvVar": "APIFY_TOKEN_E_COMMERCE",
+        "reportSlackChannel": "#notif-e-commerce-scraping-tool",
+        "overrideActorContext": ["packages/external/protocol", "packages/internal/architecture", "test/platform"],
+        "actors": [
+            { "folder": "actors/ebay", "actorFullName": "e-commerce/ebay-standby" },
+            { "folder": "actors/shopify", "actorFullName": "e-commerce/shopify-standby" }
+        ]
+    },
+
+    "standby-experimental": {
+        "tokenEnvVar": "APIFY_TOKEN_E_COMMERCE",
+        "reportSlackChannel": "#notif-e-commerce-scraping-tool",
+        "overrideActorContext": ["packages/external/protocol", "packages/internal/architecture"],
+        "envVars": {
+            "GHOST_FETCH_URL": { "fromEnv": "GHOST_FETCH_URL", "isSecret": false, "isShared": true }
+        },
+        "actors": [
+            { "folder": "actors-experimental/gap-inc", "actorFullName": "e-commerce/e-commerce-standby-gap-inc" },
+            {
+                "folder": "actors-experimental/abercrombie",
+                "actorFullName": "e-commerce/e-commerce-standby-abercrombie"
+            },
+            { "folder": "actors-experimental/chicos", "actorFullName": "e-commerce/e-commerce-standby-chicos" }
+        ]
+    }
+}

@@ -1,0 +1,35 @@
+{
+    "mode": "grouped",
+
+    "actors": [
+        { "actorFullName": "apify/website-content-crawler", "folder": "." },
+        { "actorFullName": "apify/website-content-crawler-data-viz", "folder": "data-visualizations" }
+    ],
+
+    "configs": [
+        {
+            "actorNameGlob": "apify/*",
+            "tokenEnvVar": "APIFY_ACTOR_BUILD_TOKEN",
+            "reportSlackChannel": "#notif-store-website-content-crawler",
+            "envVars": {
+                "RENDERING_TYPE_DETECTION_RESULT_DB_URI": {
+                    "fromEnv": "RENDERING_TYPE_DETECTION_RESULT_DB_URI",
+                    "isSecret": true,
+                    "isShared": true
+                }
+            }
+        },
+        {
+            "actors": ["apify/website-content-crawler"],
+            "envVars": {
+                "WEB_BOT_AUTH_PRIVATE_KEY": {
+                    "fromEnv": "WEB_BOT_AUTH_PRIVATE_KEY",
+                    "isSecret": true,
+                    "isShared": true
+                },
+                "UNBLOCKER_PROXY_TOKEN": { "fromEnv": "UNBLOCKER_PROXY_TOKEN", "isSecret": true, "isShared": true },
+                "UNBLOCKER_STATS_TOKEN": { "fromEnv": "UNBLOCKER_STATS_TOKEN", "isSecret": true, "isShared": false }
+            }
+        }
+    ]
+}

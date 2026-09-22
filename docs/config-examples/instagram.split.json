@@ -1,0 +1,64 @@
+{
+    "mode": "grouped",
+
+    "actors": [
+        { "actorFullName": "apify/instagram-api-scraper", "folder": "actors/apify_instagram-api-scraper" },
+        { "actorFullName": "apify/instagram-comment-scraper", "folder": "actors/apify_instagram-comment-scraper" },
+        {
+            "actorFullName": "apify/instagram-followers-count-scraper",
+            "folder": "actors/apify_instagram-followers-count-scraper"
+        },
+        {
+            "actorFullName": "apify/instagram-followers-following-scraper",
+            "folder": "actors/apify_instagram-followers-following-scraper"
+        },
+        {
+            "actorFullName": "apify/instagram-hashtag-analytics-scraper",
+            "folder": "actors/apify_instagram-hashtag-analytics-scraper"
+        },
+        { "actorFullName": "apify/instagram-hashtag-scraper", "folder": "actors/apify_instagram-hashtag-scraper" },
+        { "actorFullName": "apify/instagram-post-scraper", "folder": "actors/apify_instagram-post-scraper" },
+        { "actorFullName": "apify/instagram-profile-scraper", "folder": "actors/apify_instagram-profile-scraper" },
+        { "actorFullName": "apify/instagram-reel-scraper", "folder": "actors/apify_instagram-reel-scraper" },
+        { "actorFullName": "apify/instagram-scraper", "folder": "actors/apify_instagram-scraper" },
+        { "actorFullName": "apify/instagram-search-scraper", "folder": "actors/apify_instagram-search-scraper" },
+        { "actorFullName": "apify/instagram-tagged-scraper", "folder": "actors/apify_instagram-tagged-scraper" },
+        {
+            "actorFullName": "apify/export-instagram-comments-posts",
+            "folder": "standalone-actors/apify_export-instagram-comments-posts"
+        }
+    ],
+
+    "configs": [
+        {
+            "actorNameGlob": "apify/*",
+            "tokenEnvVar": "APIFY_TOKEN_APIFY",
+            "reportSlackChannel": "#notif-instagram",
+            "releaseSlackChannel": "#delivery-public-actors"
+        },
+        {
+            "folderGlob": "actors/*",
+            "envVars": {
+                "OPENAI_API_KEY": { "fromEnv": "OPENAI_API_KEY", "isSecret": true, "isShared": true },
+                "SOCIAL_DATA_API_KEY": { "fromEnv": "SOCIAL_DATA_API_KEY", "isSecret": true, "isShared": true },
+                "SOCIALIZERS_TOKEN": { "fromEnv": "SOCIALIZERS_TOKEN", "isSecret": true, "isShared": true },
+                "ORCHESTRATOR_ENCRYPTION_KEY": {
+                    "fromEnv": "ORCHESTRATOR_ENCRYPTION_KEY",
+                    "isSecret": true,
+                    "isShared": true
+                },
+                "PARSER_COMPARISON_TOKEN": { "fromEnv": "PARSER_COMPARISON_TOKEN", "isSecret": true, "isShared": false }
+            }
+        },
+        {
+            "actors": ["apify/instagram-scraper", "apify/export-instagram-comments-posts"],
+            "envVars": {
+                "SLACK_WEBHOOK_URL_DATASET_VALIDATION": {
+                    "fromEnv": "SLACK_WEBHOOK_URL_DATASET_VALIDATION",
+                    "isSecret": true,
+                    "isShared": false
+                }
+            }
+        }
+    ]
+}

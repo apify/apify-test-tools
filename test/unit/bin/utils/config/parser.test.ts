@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { _privates, parseConfigFile } from '../../../../../bin/utils/config/parser.js';
 import { CONFIG_FILE_STRATEGY } from '../../../../../bin/utils/config/structures/base.js';
+import { GLOBS_PARSER } from '../../../../../bin/utils/config/structures/globs.js';
 import { GROUPED_PARSER } from '../../../../../bin/utils/config/structures/grouped.js';
 import { LEGACY_PARSER } from '../../../../../bin/utils/config/structures/legacy.js';
 
@@ -22,6 +23,7 @@ describe('selectStrategy', () => {
     it.each([
         [CONFIG_FILE_STRATEGY.LEGACY, LEGACY_PARSER],
         [CONFIG_FILE_STRATEGY.GROUPED, GROUPED_PARSER],
+        [CONFIG_FILE_STRATEGY.GLOBS, GLOBS_PARSER],
     ])('honours an explicit "%s" mode', (mode, expected) => {
         expect(selectStrategy({ mode })).toBe(expected);
     });

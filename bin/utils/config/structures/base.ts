@@ -21,6 +21,7 @@ export interface ResolvedActorConfig {
 export enum CONFIG_FILE_STRATEGY {
     LEGACY = 'legacy',
     GROUPED = 'grouped',
+    GLOBS = 'globs',
 }
 
 export type StrategyParser = {

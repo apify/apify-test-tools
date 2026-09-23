@@ -16,14 +16,14 @@ const actor = (fields: Record<string, unknown> = {}) => ({
 
 describe('selectStrategy', () => {
     it('falls back to the legacy strategy when no mode is declared', () => {
-        expect(selectStrategy(undefined)).toBe(LEGACY_PARSER);
+        expect(selectStrategy({})).toBe(LEGACY_PARSER);
     });
 
     it.each([
         [CONFIG_FILE_STRATEGY.LEGACY, LEGACY_PARSER],
         [CONFIG_FILE_STRATEGY.GROUPED, GROUPED_PARSER],
     ])('honours an explicit "%s" mode', (mode, expected) => {
-        expect(selectStrategy(mode)).toBe(expected);
+        expect(selectStrategy({ mode })).toBe(expected);
     });
 
     it('throws on a mode no strategy is registered for', () => {
@@ -132,9 +132,11 @@ describe('parseConfigFile', () => {
         expect(
             parseConfigFile({
                 mode: CONFIG_FILE_STRATEGY.GROUPED,
-                myteam: {
-                    actors: [{ folder: 'actors/shopify/', actorFullName: 'myteam/shopify' }],
-                    tokenEnvVar: 'APIFY_TOKEN',
+                groups: {
+                    myteam: {
+                        actors: [{ folder: 'actors/shopify/', actorFullName: 'myteam/shopify' }],
+                        tokenEnvVar: 'APIFY_TOKEN',
+                    },
                 },
             }),
         ).toEqual([

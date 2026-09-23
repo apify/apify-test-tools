@@ -11,11 +11,14 @@ export const ACTOR_FULL_NAME_REGEX = new RegExp(
     USERNAME.REGEX.flags + ACTOR_NAME.REGEX.flags,
 );
 
+// All fields must exist, even if their value can be undefined.
+// This makes typescript enforce all configs to have resolution for EVERY field.
+// So adding an extra field here creates TS errors in every config file that doesn't have it.
 export interface ResolvedActorConfig {
     actorFullName: string;
     folder: string;
     tokenEnvVar: string;
-    overrideActorContext?: string[];
+    overrideActorContext: string[] | undefined;
 }
 
 export enum CONFIG_FILE_STRATEGY {

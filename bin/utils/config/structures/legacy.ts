@@ -17,4 +17,6 @@ const schema = z.object({
 
 type LegacyConfig = z.infer<typeof schema>;
 
-export const LEGACY_PARSER = defineStrategy(CONFIG_FILE_STRATEGY.LEGACY, schema, (body: LegacyConfig) => body.actors);
+export const LEGACY_PARSER = defineStrategy(CONFIG_FILE_STRATEGY.LEGACY, schema, (body: LegacyConfig) =>
+    body.actors.map((x) => ({ overrideActorContext: undefined, ...x })),
+);

@@ -15,34 +15,9 @@ npm i -D apify-test-tools
 
 ### 2. Create the config file
 
-Every repo that uses `apify-test-tools` must have an `apify-test-tools.config.json` file at the root. This file tells the tool which actors live in the repo, how to identify them, and which token to use.
+Every repo that uses `apify-test-tools` must have an `apify-test-tools.config.json` file at the root. It lists the actors in the repo, their folders, their full names on the platform, and which env var holds the token to use for each. A top-level `mode` field picks the file's layout; leave it out to use the default `"legacy"` layout.
 
-```json
-{
-    "actors": [
-        {
-            "folder": "actors/web-scraper",
-            "actorFullName": "myteam/web-scraper",
-            "tokenEnvVar": "APIFY_TOKEN_MYTEAM"
-        },
-        {
-            "folder": "actors/email-sender",
-            "actorFullName": "myteam/email-sender",
-            "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
-            "overrideActorContext": ["actors/email-sender", "packages/shared"]
-        }
-    ]
-}
-```
-
-Each entry has:
-
-| Field                  | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `folder`               | yes      | Relative path from repo root to the actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`), the actor's README/CHANGELOG, and its source. Use `"."` for a single-actor repo where `.actor/` is at the root.                                                                                                                                                                                                                          |
-| `actorFullName`        | yes      | Full actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                               |
-| `tokenEnvVar`          | yes      | Name of the environment variable holding the Apify API token for this actor. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                                    |
-| `overrideActorContext` | no       | Array of paths (relative to repo root) that define which files are relevant to this actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
+See [Config file](#config-file) for the available modes and every field.
 
 ### 3. Set up actor folders
 
@@ -96,6 +71,82 @@ mkdir -p test/platform/core
 ### 5. Set up GitHub workflows
 
 See the [GitHub workflows](#github-worklows) section below.
+
+## Config file
+
+`apify-test-tools.config.json` lives at the repo root and tells the tool which actors live in the repo, how to identify them, and which token to use.
+
+### Actor fields
+
+Every actor in the config is described by these fields, whatever the mode:
+
+| Field                  | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `folder`               | yes      | Relative path from repo root to the actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`), the actor's README/CHANGELOG, and its source. Use `"."` for a single-actor repo where `.actor/` is at the root.                                                                                                                                                                                                                          |
+| `actorFullName`        | yes      | Full actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                               |
+| `tokenEnvVar`          | yes      | Name of the environment variable holding the Apify API token for this actor. In [grouped mode](#grouped-mode) it's inherited from the group unless the actor sets its own. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                      |
+| `overrideActorContext` | no       | Array of paths (relative to repo root) that define which files are relevant to this actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
+
+### Modes
+
+The file's layout is picked by the top-level `mode` field. Each mode is a different way of writing the same thing: every mode resolves to a list of actors with the fields above, and the same rules apply to all of them — no two actors may share a `folder`, and no two entries may point at the same `actorFullName`. If `mode` is left out, [`"legacy"`](#legacy-mode) is used, so existing config files keep working unchanged.
+
+### Legacy mode
+
+The default. A flat `actors` array where every entry carries all of its settings. Good for repos with a few actors, or where every actor has different settings.
+
+```json
+{
+    "mode": "legacy",
+    "actors": [
+        {
+            "folder": "actors/web-scraper",
+            "actorFullName": "myteam/web-scraper",
+            "tokenEnvVar": "APIFY_TOKEN_MYTEAM"
+        },
+        {
+            "folder": "actors/email-sender",
+            "actorFullName": "myteam/email-sender",
+            "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
+            "overrideActorContext": ["actors/email-sender", "packages/shared"]
+        }
+    ]
+}
+```
+
+`actors` must hold at least one entry. Every entry takes all the [actor fields](#actor-fields) directly, and `tokenEnvVar` is required on each one.
+
+### Grouped mode
+
+Actors are organized into `groups`, and each group sets `tokenEnvVar` and `overrideActorContext` once for all of its actors. Good for repos where many actors share the same token or context.
+
+```json
+{
+    "mode": "grouped",
+    "groups": {
+        "myteam": {
+            "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
+            "overrideActorContext": ["packages/shared"],
+            "actors": [
+                { "folder": "actors/web-scraper", "actorFullName": "myteam/web-scraper" },
+                {
+                    "folder": "actors/email-sender",
+                    "actorFullName": "myteam/email-sender",
+                    "overrideActorContext": ["actors/email-sender", "packages/mailer"]
+                }
+            ]
+        },
+        "partner": {
+            "tokenEnvVar": "APIFY_TOKEN_PARTNER",
+            "actors": [{ "folder": "actors/partner-crawler", "actorFullName": "partner/crawler" }]
+        }
+    }
+}
+```
+
+`groups` is an object with at least one group. The group key (`myteam`, `partner` above) is only a label for readability; it has no effect on the result, and it does not need to match any folder or username. Each group needs a `tokenEnvVar` and at least one actor, and can optionally set `overrideActorContext`.
+
+An actor inside a group can set its own `tokenEnvVar` or `overrideActorContext`, and that value replaces the group's for that actor only. Values are replaced, not merged: in the example above, `myteam/email-sender` gets `["actors/email-sender", "packages/mailer"]`, not `packages/shared` as well.
 
 ## Github worklows
 

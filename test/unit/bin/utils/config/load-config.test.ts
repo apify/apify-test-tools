@@ -41,6 +41,7 @@ describe('loadActorConfig', () => {
         folder: 'actors/shopify',
         actorFullName: 'myteam/shopify',
         tokenEnvVar: 'APIFY_TOKEN',
+        overrideActorContext: undefined,
         ...fields,
     });
 

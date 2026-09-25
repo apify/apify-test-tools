@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 ### 🐛 Bug Fixes
 
 - Apply default actor timeout to runs ([#134](https://github.com/apify/apify-test-tools/pull/134)) ([82f5f7d](https://github.com/apify/apify-test-tools/commit/82f5f7d4de990db7ad8edf940c19ffd6b20bad13)) by [@Patai5](https://github.com/Patai5)
+- Copy cli to zip to KV store local builds ([#151](https://github.com/apify/apify-test-tools/pull/151)) ([ecdda58](https://github.com/apify/apify-test-tools/commit/ecdda58b68a8c7173a023e3a92689bc4fa0ce53c)) by [@gytelio](https://github.com/gytelio), closes [#140](https://github.com/apify/apify-test-tools/issues/140)
 
 ### 🚜 Refactor
 

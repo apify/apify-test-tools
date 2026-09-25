@@ -1,4 +1,4 @@
-import type { Actor, ActorVersion, Build } from 'apify-client';
+import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType, ApifyClient } from 'apify-client';
 
 import { normalizeRepoUrl } from './git.js';
@@ -9,7 +9,7 @@ type BuildPrActorOptions = {
     versionNumber: string;
     gitRepoUrl: string;
     actorConfig: ActorConfig;
-    actorInfo: Actor;
+    actorInfo: ApifyClientTypes.Actor;
     useDockerCache: boolean;
 };
 
@@ -26,7 +26,7 @@ const ACTOR_SETUP_REQUIREMENT =
  * Finds the Actor's default version: the one whose build the default build tag points to.
  * Usually tagged 'latest' but not necessarily (can be e.g. 'version-0').
  */
-export const resolveDefaultVersion = (actorFullName: string, actorInfo: Actor) => {
+export const resolveDefaultVersion = (actorFullName: string, actorInfo: ApifyClientTypes.Actor) => {
     const defaultBuildTag = actorInfo.defaultRunOptions.build;
     console.error(`Default build tag for ${actorFullName} is ${defaultBuildTag}`);
 
@@ -59,7 +59,7 @@ export const resolveDefaultVersion = (actorFullName: string, actorInfo: Actor) =
  */
 export const assertRepoUrlMatchesDefaultVersion = (
     actorFullName: string,
-    defaultVersion: ActorVersion | undefined,
+    defaultVersion: ApifyClientTypes.ActorVersion | undefined,
     repoUrl: string,
 ) => {
     if (!defaultVersion) {
@@ -88,7 +88,7 @@ export class ApifyBuilder {
         private readonly actorFullName: string,
     ) {}
 
-    getActorInfo = async (): Promise<Actor> => {
+    getActorInfo = async (): Promise<ApifyClientTypes.Actor> => {
         const actorInfo = await this.apifyClient.actor(this.actorFullName).get();
         if (!actorInfo) {
             throw new Error(
@@ -103,9 +103,9 @@ export class ApifyBuilder {
     // Pass actorInfo when the caller already fetched it, to save an API call
     createVersionAndBuild = async (
         versionNumber: string,
-        actorVersion: ActorVersion,
+        actorVersion: ApifyClientTypes.ActorVersion,
         useCache: boolean,
-        actorInfo?: Actor,
+        actorInfo?: ApifyClientTypes.Actor,
     ): Promise<BuildData> => {
         const actorClient = this.apifyClient.actor(this.actorFullName);
         const { versions } = actorInfo ?? (await this.getActorInfo());
@@ -127,7 +127,7 @@ export class ApifyBuilder {
         return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
     };
 
-    waitForBuildToFinish = async (buildId: string): Promise<Build> => {
+    waitForBuildToFinish = async (buildId: string): Promise<ApifyClientTypes.Build> => {
         const build = await this.apifyClient.build(buildId).waitForFinish();
         const versionNumber = build.buildNumber;
         if (build.status === 'FAILED' || build.status === 'TIMED-OUT') {
@@ -371,7 +371,7 @@ export const runBuilds = async ({
             gitRepoUrl,
             useDockerCache: useCache,
         } = buildConfigsByActorFullName.get(actorConfig.actorFullName)!;
-        const actorVersion: ActorVersion = {
+        const actorVersion: ApifyClientTypes.ActorVersion = {
             buildTag,
             versionNumber,
             gitRepoUrl,

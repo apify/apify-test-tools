@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { ActorVersion, ActorVersionSourceFile } from 'apify-client';
+import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType } from 'apify-client';
 
 import { dryRunBuildData, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
@@ -18,7 +18,10 @@ import { getGitignoredPaths, isOutsideDir, listRepoFilePaths, toActorVersionSour
 const SKIP_FILE_PATTERNS = [/^\.env(\..+)?$/, /\.pem$/, /\.key$/, /\.pfx$/, /\.p12$/];
 const isSecretFile = (fileName: string): boolean => SKIP_FILE_PATTERNS.some((pattern) => pattern.test(fileName));
 
-export const collectSourceFiles = async (actorName: string, actorDir: string): Promise<ActorVersionSourceFile[]> => {
+export const collectSourceFiles = async (
+    actorName: string,
+    actorDir: string,
+): Promise<ApifyClientTypes.ActorVersionSourceFile[]> => {
     const repoRoot = process.cwd();
     const absActorDir = path.resolve(actorDir);
 
@@ -203,7 +206,7 @@ export const runBuildsFromLocal = async ({
 
     return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {
         const sourceFiles = await collectSourceFiles(actorConfig.actorFullName, actorConfig.folder);
-        const actorVersion: ActorVersion = {
+        const actorVersion: ApifyClientTypes.ActorVersion = {
             versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
             sourceFiles,
             sourceType: ActorSourceType.SourceFiles,

@@ -1,4 +1,4 @@
-import type { Actor, ActorVersion } from 'apify-client';
+import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType } from 'apify-client';
 import { describe, expect, it } from 'vitest';
 
@@ -7,7 +7,7 @@ import { assertRepoUrlMatchesDefaultVersion, resolveDefaultVersion } from '../..
 const ACTOR = 'owner/actor';
 const REPO_URL = 'git@github.com:owner/repo';
 
-const makeActorInfo = (overrides: Partial<Actor> = {}): Actor =>
+const makeActorInfo = (overrides: Partial<ApifyClientTypes.Actor> = {}): ApifyClientTypes.Actor =>
     ({
         defaultRunOptions: { build: 'latest' },
         taggedBuilds: { latest: { buildNumber: '0.1.5' } },
@@ -15,7 +15,7 @@ const makeActorInfo = (overrides: Partial<Actor> = {}): Actor =>
             { versionNumber: '0.1', sourceType: ActorSourceType.GitRepo, gitRepoUrl: `${REPO_URL}#master:actors/a` },
         ],
         ...overrides,
-    }) as unknown as Actor;
+    }) as unknown as ApifyClientTypes.Actor;
 
 describe('resolveDefaultVersion', () => {
     it('should resolve the version the default build tag points to', () => {
@@ -52,7 +52,7 @@ describe('assertRepoUrlMatchesDefaultVersion', () => {
     });
 
     it('should throw when the default version is not built from a Git repository', () => {
-        const sourceFilesVersion: ActorVersion = {
+        const sourceFilesVersion: ApifyClientTypes.ActorVersion = {
             versionNumber: '0.1',
             sourceType: ActorSourceType.SourceFiles,
             sourceFiles: [],

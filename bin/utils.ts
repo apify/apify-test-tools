@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import type { ActorVersionSourceFile } from 'apify-client';
+import type * as ApifyClientTypes from 'apify-client';
 
 import { SOURCE_FILE_FORMATS } from '@apify/consts';
 
@@ -57,7 +57,10 @@ export const getGitignoredPaths = (relativePaths: string[]): Set<string> => {
 
 const isBinary = (buffer: Buffer): boolean => buffer.includes(0);
 
-export const toActorVersionSourceFile = async (absPath: string, rootDir: string): Promise<ActorVersionSourceFile> => {
+export const toActorVersionSourceFile = async (
+    absPath: string,
+    rootDir: string,
+): Promise<ApifyClientTypes.ActorVersionSourceFile> => {
     const buffer = await fs.readFile(absPath);
     const name = path.relative(rootDir, absPath).split(path.sep).join('/');
     return isBinary(buffer)

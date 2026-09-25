@@ -37,9 +37,7 @@ export const collectSourceFiles = async (actorName: string, actorDir: string): P
     const keptFilePaths = collectNonIgnoredFiles(dockerContextDirAbs, repoRoot);
 
     if (!isMonorepoActor) {
-        return Promise.all(
-            keptFilePaths.map(async (filePath) => readSourceFile(filePath, dockerContextDirAbs)),
-        );
+        return Promise.all(keptFilePaths.map(async (filePath) => readSourceFile(filePath, dockerContextDirAbs)));
     }
 
     const { tempDir, filePaths } = await flattenMonorepoContext(

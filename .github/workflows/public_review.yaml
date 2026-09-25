@@ -26,13 +26,6 @@ on:
                 type: string
                 description: Model to use for Claude Code (best, sonnet, opus, haiku, sonnet[1m], opus[1m], opusplan)
                 required: false
-            working-directory:
-                type: string
-                default: .
-                required: false
-            additional-working-directory:
-                type: string
-                required: false
         secrets:
             ANTHROPIC_API_KEY:
                 required: true

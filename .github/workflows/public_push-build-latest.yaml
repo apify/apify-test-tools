@@ -3,13 +3,6 @@ name: Build latest and report to slack
 on:
     workflow_call:
         inputs:
-            working-directory:
-                type: string
-                default: .
-                required: false
-            additional-working-directory:
-                type: string
-                required: false
             # Defaults to #notif-<repo-name> when empty, matching the previous behavior.
             report-slack-channel:
                 type: string
@@ -24,18 +17,12 @@ jobs:
             !contains(github.event.head_commit.message, '[skip platform-test]')
 
         runs-on: ubuntu-latest
-        defaults:
-            run:
-                working-directory: ${{ inputs.working-directory }}
-
         steps:
             - name: Setup repository and dependencies
               id: setup
               # For testing, you have to temporarily change the branch
               uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
               with:
-                  working-directory: ${{ inputs.working-directory }}
-                  additional-working-directory: ${{ inputs.additional-working-directory }}
                   npm-token: ${{ secrets.NPM_TOKEN }}
 
             # run-with-apify-tokens.mjs reads the token names from in apify-test-tools.config.json

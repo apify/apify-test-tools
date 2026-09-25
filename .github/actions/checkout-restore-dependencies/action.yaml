@@ -1,13 +1,6 @@
 name: Checkout and restore dependencies
 description: Checkout and restore dependencies
 inputs:
-    working-directory:
-        description: Working directory
-        required: false
-        default: .
-    additional-working-directory:
-        description: Additional working directory
-        required: false
     npm-token:
         description: >-
             Token for installing private npm packages. Exported as both NPM_TOKEN (what a
@@ -60,30 +53,12 @@ runs:
           id: check-dependencies-cache
           uses: actions/cache@v5
           with:
-              path: ${{ inputs.working-directory }}/node_modules
-              key: modules-npm-${{ inputs.working-directory }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
-
-        - name: Cache additional dependencies npm
-          id: check-additional-dependencies-cache
-          if: inputs.additional-working-directory != ''
-          uses: actions/cache@v5
-          with:
-              path: ${{ inputs.additional-working-directory }}/node_modules
-              key: modules-npm-${{ inputs.additional-working-directory }}-${{ hashFiles(format('{0}/package-lock.json', inputs.additional-working-directory)) }}
+              path: node_modules
+              key: modules-npm-${{ hashFiles('package-lock.json') }}
 
         - name: install npm dependencies
           if: steps.check-dependencies-cache.outputs.cache-hit != 'true'
           shell: bash
-          working-directory: ${{ inputs.working-directory }}
-          env:
-              NPM_TOKEN: ${{ inputs.npm-token }}
-              NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
-          run: npm ci
-
-        - name: install additional npm dependencies
-          if: inputs.additional-working-directory != '' && steps.check-additional-dependencies-cache.outputs.cache-hit != 'true'
-          shell: bash
-          working-directory: ${{ inputs.additional-working-directory }}
           env:
               NPM_TOKEN: ${{ inputs.npm-token }}
               NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
@@ -96,7 +71,6 @@ runs:
           # Needs the npm token too: a repo whose .npmrc routes all traffic through a private
           # registry has to authenticate even for public packages.
           shell: bash
-          working-directory: ${{ inputs.working-directory }}
           env:
               NPM_TOKEN: ${{ inputs.npm-token }}
               NODE_AUTH_TOKEN: ${{ inputs.npm-token }}

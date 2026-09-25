@@ -3,13 +3,6 @@ name: Test
 on:
     workflow_call:
         inputs:
-            working-directory:
-                type: string
-                default: .
-                required: false
-            additional-working-directory:
-                type: string
-                required: false
             skip-platform-tests:
                 type: boolean
                 default: false
@@ -28,17 +21,12 @@ jobs:
     platformTest:
         if: ${{ !inputs.skip-platform-tests }}
         runs-on: ubuntu-latest
-        defaults:
-            run:
-                working-directory: ${{ inputs.working-directory }}
         steps:
             - name: Setup repository and dependencies
               id: setup
               # For testing, you have to temporarily change the branch
               uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
               with:
-                  working-directory: ${{ inputs.working-directory }}
-                  additional-working-directory: ${{ inputs.additional-working-directory }}
                   # Some repos use private npm packages, they need to pass NPM_TOKEN secret to this workflow
                   npm-token: ${{ secrets.NPM_TOKEN }}
 
@@ -87,13 +75,9 @@ jobs:
                   # environment variables rather than being interpolated into it.
                   HEAD_REF: ${{ github.head_ref }}
                   BASE_REF: ${{ github.base_ref }}
-                  WORKING_DIRECTORY: ${{ inputs.working-directory }}
               run: |
-                  work_dir="$WORKING_DIRECTORY"
-                  [ "$work_dir" = "." ] && work_dir=""
-                  prefix="${work_dir:+$work_dir/}test/platform/"
-                  changed=$(git diff --name-only --diff-filter=d "origin/$BASE_REF...HEAD" -- "$prefix" \
-                    | sed "s|^$prefix|./test/platform/|" | tr '\n' ' ')
+                  changed=$(git diff --name-only --diff-filter=d "origin/$BASE_REF...HEAD" -- test/platform/ \
+                    | sed "s|^|./|" | tr '\n' ' ')
                   branch_actors=$(npx apify-test-tools get-affected-actors \
                     --source-branch "origin/$HEAD_REF" \
                     --target-branch "origin/$BASE_REF")
@@ -135,17 +119,11 @@ jobs:
     unitTest:
         # TODO: only run on changes to code
         runs-on: ubuntu-latest
-        defaults:
-            run:
-                working-directory: ${{ inputs.working-directory }}
-
         steps:
             - name: Setup repository and dependencies
               # For testing, you have to temporarily change the branch
               uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
               with:
-                  working-directory: ${{ inputs.working-directory }}
-                  additional-working-directory: ${{ inputs.additional-working-directory }}
                   npm-token: ${{ secrets.NPM_TOKEN }}
 
             - name: TypeScript

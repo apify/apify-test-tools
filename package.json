@@ -18,6 +18,7 @@
     "dependencies": {
         "@apify/consts": "^2.43.0",
         "@slack/web-api": "^7.9.2",
+        "adm-zip": "^0.6.1",
         "apify-client": "^2.22.2",
         "ignore": "^7.0.5",
         "yargs": "^18.0.0",
@@ -26,6 +27,7 @@
     "devDependencies": {
         "@apify/eslint-config": "^1.0.0",
         "@apify/tsconfig": "^0.1.1",
+        "@types/adm-zip": "^0.5.8",
         "@types/node": "^24.0.0",
         "@types/yargs": "^17.0.33",
         "eslint": "^9.29.0",

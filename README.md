@@ -568,7 +568,7 @@ Remove `--dry-run` to actually trigger builds and update the branch names/ The c
 
 #### Build from local source (no push needed)
 
-If you don't want to push a dummy branch just to test a change and wait for all the tests to finish, `build-from-local` builds Actors directly from your local files (zipped and uploaded as `SOURCE_FILES`), skipping steps 1-4 above.
+If you don't want to push a dummy branch just to test a change and wait for all the tests to finish, `build-from-local` builds Actors directly from your local files (zipped into the Actor's `actor-<id>-source` key-value store and built as `TARBALL`, like `apify push`), skipping steps 1-4 above.
 
 ```bash
 APIFY_TOKEN_JOHN_DOE=<token> \

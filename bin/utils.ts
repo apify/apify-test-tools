@@ -2,10 +2,6 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import type * as ApifyClientTypes from 'apify-client';
-
-import { SOURCE_FILE_FORMATS } from '@apify/consts';
-
 // Returns true when `childPath` is not inside `parentPath`.
 // Used to detect monorepo actors whose dockerContextDir escapes the actor directory.
 export const isOutsideDir = (childPath: string, parentPath: string): boolean =>
@@ -55,18 +51,12 @@ export const getGitignoredPaths = (relativePaths: string[]): Set<string> => {
     return new Set(result.stdout.toString().split('\n').filter(Boolean));
 };
 
-const isBinary = (buffer: Buffer): boolean => buffer.includes(0);
+export type SourceFile = { name: string; content: Buffer };
 
-export const toActorVersionSourceFile = async (
-    absPath: string,
-    rootDir: string,
-): Promise<ApifyClientTypes.ActorVersionSourceFile> => {
-    const buffer = await fs.readFile(absPath);
-    const name = path.relative(rootDir, absPath).split(path.sep).join('/');
-    return isBinary(buffer)
-        ? { name, format: SOURCE_FILE_FORMATS.BASE64, content: buffer.toString('base64') }
-        : { name, format: SOURCE_FILE_FORMATS.TEXT, content: buffer.toString('utf8') };
-};
+export const readSourceFile = async (absPath: string, rootDir: string): Promise<SourceFile> => ({
+    name: path.relative(rootDir, absPath).split(path.sep).join('/'),
+    content: await fs.readFile(absPath),
+});
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
     console.error(command, args.join(' '));

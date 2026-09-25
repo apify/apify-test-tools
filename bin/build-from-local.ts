@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import AdmZip from 'adm-zip';
 import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType } from 'apify-client';
 
@@ -9,7 +10,8 @@ import { dryRunBuildData, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } f
 import { buildDockerIgnoreMatcher } from './dockerignore.js';
 import { isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, BuildData } from './types.js';
-import { getGitignoredPaths, isOutsideDir, listRepoFilePaths, toActorVersionSourceFile } from './utils.js';
+import type { SourceFile } from './utils.js';
+import { getGitignoredPaths, isOutsideDir, listRepoFilePaths, readSourceFile } from './utils.js';
 
 // JUST IN CASE. File patterns that commonly hold credentials — never ship these into a build, regardless
 // of sourceType or of whether the repo's .gitignore happens to list them. Everything else that should be
@@ -18,10 +20,7 @@ import { getGitignoredPaths, isOutsideDir, listRepoFilePaths, toActorVersionSour
 const SKIP_FILE_PATTERNS = [/^\.env(\..+)?$/, /\.pem$/, /\.key$/, /\.pfx$/, /\.p12$/];
 const isSecretFile = (fileName: string): boolean => SKIP_FILE_PATTERNS.some((pattern) => pattern.test(fileName));
 
-export const collectSourceFiles = async (
-    actorName: string,
-    actorDir: string,
-): Promise<ApifyClientTypes.ActorVersionSourceFile[]> => {
+export const collectSourceFiles = async (actorName: string, actorDir: string): Promise<SourceFile[]> => {
     const repoRoot = process.cwd();
     const absActorDir = path.resolve(actorDir);
 
@@ -38,9 +37,7 @@ export const collectSourceFiles = async (
     const keptFilePaths = collectNonIgnoredFiles(dockerContextDirAbs, repoRoot);
 
     if (!isMonorepoActor) {
-        return Promise.all(
-            keptFilePaths.map(async (filePath) => toActorVersionSourceFile(filePath, dockerContextDirAbs)),
-        );
+        return Promise.all(keptFilePaths.map(async (filePath) => readSourceFile(filePath, dockerContextDirAbs)));
     }
 
     const { tempDir, filePaths } = await flattenMonorepoContext(
@@ -51,7 +48,7 @@ export const collectSourceFiles = async (
         keptFilePaths,
     );
     try {
-        return await Promise.all(filePaths.map(async (filePath) => toActorVersionSourceFile(filePath, tempDir)));
+        return await Promise.all(filePaths.map(async (filePath) => readSourceFile(filePath, tempDir)));
     } finally {
         // Only the flattened copy is temporary — never delete the actor's own directory.
         await fs.rm(tempDir, { recursive: true, force: true });
@@ -205,11 +202,15 @@ export const runBuildsFromLocal = async ({
     }
 
     return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {
-        const sourceFiles = await collectSourceFiles(actorConfig.actorFullName, actorConfig.folder);
+        // Zipped and uploaded like `apify push` does, since inline SOURCE_FILES are capped at ~9 MB.
+        const zip = new AdmZip();
+        for (const { name, content } of await collectSourceFiles(actorConfig.actorFullName, actorConfig.folder)) {
+            zip.addFile(name, content);
+        }
         const actorVersion: ApifyClientTypes.ActorVersion = {
             versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
-            sourceFiles,
-            sourceType: ActorSourceType.SourceFiles,
+            tarballUrl: await builder.uploadSourceZip(LOCAL_SOURCE_VERSION_NUMBER, zip.toBuffer()),
+            sourceType: ActorSourceType.Tarball,
         };
         return builder.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false);
     });

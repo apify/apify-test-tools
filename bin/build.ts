@@ -100,6 +100,22 @@ export class ApifyBuilder {
 
     getDefaultVersionAndTag = async () => resolveDefaultVersion(this.actorFullName, await this.getActorInfo());
 
+    // Mirrors `apify push`: stores the zip in the Actor's `actor-<id>-source` KV store and returns a signed
+    // record URL the builder can download without a token.
+    uploadSourceZip = async (versionNumber: string, zip: Buffer): Promise<string> => {
+        const actorInfo = await this.apifyClient.actor(this.actorFullName).get();
+        if (!actorInfo) throw new Error(`No actor named '${this.actorFullName}' was found on the platform.`);
+
+        const store = await this.apifyClient.keyValueStores().getOrCreate(`actor-${actorInfo.id}-source`);
+        const storeClient = this.apifyClient.keyValueStore(store.id);
+        const key = `version-${versionNumber}.zip`;
+        await storeClient.setRecord({ key, value: zip as never, contentType: 'application/zip' });
+
+        const url = new URL(await storeClient.getRecordPublicUrl(key));
+        url.searchParams.set('disableRedirect', 'true');
+        return url.toString();
+    };
+
     // Pass actorInfo when the caller already fetched it, to save an API call
     createVersionAndBuild = async (
         versionNumber: string,

@@ -1,0 +1,17 @@
+# The consumer template's platform-tests-*.yaml. The harness dispatches it instead of waiting for a
+# schedule, which would only ever fire on the sandbox repo's default branch.
+name: Platform tests
+
+on:
+    workflow_dispatch:
+        inputs:
+            test-files-glob:
+                type: string
+                default: ''
+
+jobs:
+    platformTests:
+        uses: ./.github/workflows/public_platform-tests.yaml
+        with:
+            test-files-glob: ${{ inputs.test-files-glob }}
+        secrets: inherit

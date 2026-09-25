@@ -8,6 +8,11 @@ on:
                 type: string
                 default: ''
                 required: false
+            # Where changelog additions are announced. Test repos point this away from the real channel.
+            release-slack-channel:
+                type: string
+                default: '#delivery-public-actors'
+                required: false
 
 jobs:
     pushBuildLatest:
@@ -32,9 +37,11 @@ jobs:
               env:
                   ALL_SECRETS: ${{ toJSON(secrets) }}
                   SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
+                  RELEASE_SLACK_CHANNEL: ${{ inputs.release-slack-channel }}
+                  REPORT_SLACK_CHANNEL: ${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}
               run: |
                   node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
-                    npx apify-test-tools release --push-event-path ${{ github.event_path }} --release-slack-channel "#delivery-public-actors" --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" --use-docker-cache
+                    npx apify-test-tools release --push-event-path ${{ github.event_path }} --release-slack-channel "$RELEASE_SLACK_CHANNEL" --report-slack-channel "$REPORT_SLACK_CHANNEL" --use-docker-cache
 
             - name: Delete old builds
               env:

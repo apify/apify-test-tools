@@ -1,0 +1,13 @@
+# The consumer template's pr-build-devel-test.yaml (see the README of apify-test-tools), except that it
+# calls the copy of the reusable workflow the e2e harness puts next to it, and its base branches are
+# the harness's ephemeral ones.
+name: PR Test
+
+on:
+    pull_request:
+        branches: ['e2e/*/base']
+
+jobs:
+    buildDevelAndTest:
+        uses: ./.github/workflows/public_pr-build-test.yaml
+        secrets: inherit

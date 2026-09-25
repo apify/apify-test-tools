@@ -1,0 +1,19 @@
+{
+    "actors": [
+        {
+            "folder": "actors/lukaskrivka_testing-github-integration",
+            "actorFullName": "lukaskrivka/testing-github-integration",
+            "tokenEnvVar": "APIFY_TOKEN_LUKASKRIVKA"
+        },
+        {
+            "folder": "actors/lukaskrivka_testing-github-integration-2",
+            "actorFullName": "lukaskrivka/testing-github-integration-2",
+            "tokenEnvVar": "APIFY_TOKEN_LUKASKRIVKA"
+        },
+        {
+            "folder": "standalone-actors/lukaskrivka_test-standalone",
+            "actorFullName": "lukaskrivka/test-standalone",
+            "tokenEnvVar": "APIFY_TOKEN_LUKASKRIVKA"
+        }
+    ]
+}

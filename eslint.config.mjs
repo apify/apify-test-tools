@@ -6,14 +6,14 @@ import tsEslint from 'typescript-eslint';
 
 // eslint-disable-next-line import/no-default-export
 export default [
-    { ignores: ['**/dist', 'eslint.config.mjs', '.github'] },
+    { ignores: ['**/dist', 'eslint.config.mjs', 'vitest.config.ts', '.github', 'e2e/fixture', 'e2e/.work'] },
     ...apify,
     prettier,
     {
         languageOptions: {
             parser: tsEslint.parser,
             parserOptions: {
-                project: 'tsconfig.json',
+                project: ['tsconfig.json', 'e2e/tsconfig.json'],
             },
             globals: {
                 ...globals.node,

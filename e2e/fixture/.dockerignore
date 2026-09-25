@@ -1,0 +1,7 @@
+# Nothing below is needed to build or run the Actors. Listing it here also keeps the tools' change
+# detection from treating edits to it as functional changes of the root-context Actors.
+.git
+node_modules
+storage
+test
+vendor

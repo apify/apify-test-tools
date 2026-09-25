@@ -22,6 +22,15 @@ jobs:
         name: Tests
         uses: ./.github/workflows/_tests.yaml
 
+    e2e:
+        name: E2E
+        uses: ./.github/workflows/_e2e.yaml
+        secrets: inherit
+        # A new push supersedes the previous run of the same PR, including one queued for the sandbox.
+        concurrency:
+            group: e2e-${{ github.event.pull_request.number }}
+            cancel-in-progress: true
+
     # Catches the one combination that breaks consumers: a workflow starting to use a CLI feature
     # from the same PR. Merging ships the workflow immediately, so the pinned version has to move in
     # the same change or the workflow goes live calling something that is not published.

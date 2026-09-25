@@ -32,31 +32,29 @@ npm i
 npm run build
 ```
 
-For testing purposes, we use `testing-repo-for-github-actions` repo so that we don't mess with the production repos:
-
-```sh
-git clone git@github.com:apify-store/testing-repo-for-github-actions.git
-```
+For trying the CLI on a real consumer repo, use the e2e fixture in `e2e/fixture`, or any Actor repo
+you have checked out. The end-to-end tests (`e2e/README.md`) run the CLI, the library and the
+workflows together on every PR, in the `testing-repo-for-github-actions` sandbox repo.
 
 #### Working on the CLI
 
 To work on the library, you just need to define `GITHUB_WORKSPACE` to tell the cli where you repo is located:
 
 ```sh
-export GITHUB_WORKSPACE=../path/to/testing-repo-for-github-actions # path to the repo
+export GITHUB_WORKSPACE=../path/to/actor-repo # path to the repo
 npx tsx bin/main.ts --help
 npx tsx bin/main.ts get-commits --target-branch master --source-branch feat/testing-feature-branch
 ```
 
 #### Working on the library
 
-You need to istall the local version of `apify-test-tools` in your cloned `testing-repo-for-github-actions`:
+You need to install the local version of `apify-test-tools` in the Actor repo you test with:
 
 ```sh
 npm i -D ../path/to/apify-test-tools
 ```
 
-You need to run `npm run build` inside `apify-test-tools` repo everytime you want to test your changes in `testing-repo-for-github-actions`.
+You need to run `npm run build` inside `apify-test-tools` repo every time you want to test your changes there.
 
 ## Reusable workflows
 
@@ -101,7 +99,9 @@ an earlier, still-unreleased PR. That needs someone to land a CLI change and sit
 catching it would mean flagging every workflow edit made while any package change is unreleased.
 
 `npm run lint` and `actionlint` (via the `Code checks` workflow) both gate master, so run them before
-pushing workflow changes.
+pushing workflow changes. The e2e tests then run the changed workflows for real; see
+[e2e/README.md](./e2e/README.md), including what to update when a public workflow is added or its
+composite-action ref or default-branch guard changes shape.
 
 `public_review` is the odd one out: it fetches `.github/review-prompt.md` over HTTP at run time, because a
 reusable workflow runs with the caller's repo checked out and never gets its own. Its `prompt-ref`

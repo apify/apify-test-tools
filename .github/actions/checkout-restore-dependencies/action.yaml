@@ -76,8 +76,13 @@ runs:
               NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
           run: |
               locked_version=$(jq -r '.packages["node_modules/apify-test-tools"].version' package-lock.json)
+              locked_resolved=$(jq -r '.packages["node_modules/apify-test-tools"].resolved // ""' package-lock.json)
               echo "Package-lock version of apify-test-tools: $locked_version"
-              if [[ "$locked_version" == *"-beta"* ]]; then
+              if [[ "$locked_resolved" == file:* ]]; then
+                # A tarball packed from a checkout, which is how the e2e tests (e2e/README.md) run
+                # unreleased code through these workflows. `npm ci` already installed exactly it.
+                echo "apify-test-tools is installed from $locked_resolved, keeping it"
+              elif [[ "$locked_version" == *"-beta"* ]]; then
                 echo "Beta version detected, reinstalling $locked_version to ensure cache consistency"
                 npm install apify-test-tools@$locked_version --audit=false --no-fund;
               else

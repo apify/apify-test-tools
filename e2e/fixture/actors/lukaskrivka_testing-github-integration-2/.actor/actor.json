@@ -1,0 +1,14 @@
+{
+	"actorSpecification": 1,
+	"name": "store-testing-repo-for-github-test",
+	"title": "apify-test-tools e2e fixture",
+	"description": "Root-context Actor of the apify-test-tools e2e fixture.",
+	"version": "0.0",
+	"meta": {
+		"templateId": "miscccccc"
+	},
+    "dockerfile": "../../../Dockerfile",
+    "dockerContextDir": "../../..",
+    "changelog": "../../../CHANGELOG.md", 
+	"input": "./input_schema.json"
+}

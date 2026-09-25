@@ -1,0 +1,25 @@
+{
+    "name": "apify-test-tools-e2e-fixture",
+    "version": "0.0.1",
+    "private": true,
+    "type": "module",
+    "description": "Consumer repo that the apify-test-tools end-to-end tests push to the sandbox repo.",
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "dependencies": {
+        "@crawlee/cheerio": "^3.16.0",
+        "apify": "^3.1.10"
+    },
+    "devDependencies": {
+        "apify-test-tools": "file:vendor/apify-test-tools.tgz",
+        "typescript": "^5.9.3",
+        "vitest": "^3.2.4"
+    },
+    "scripts": {
+        "start": "node src/main.js",
+        "lint": "node --check src/main.js",
+        "test": "vitest run test/unit"
+    },
+    "license": "ISC"
+}

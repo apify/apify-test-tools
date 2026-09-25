@@ -172,6 +172,9 @@ jobs:
         secrets: inherit
 ```
 
+Changelog additions are announced in `#delivery-public-actors`, and the full release report goes to
+`#notif-<repo-name>`. Override them with the `release-slack-channel` and `report-slack-channel` inputs.
+
 ### `claude-review.yaml`
 
 Optional. Reviews a PR against the shared guidelines when you add the trigger label, and again on
@@ -302,12 +305,14 @@ and those refs disagree, which is the mistake that would otherwise ship silently
 
 ### Testing workflow changes
 
-- Point [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions)
-  at your branch (`uses: ...@your-branch`). It has real attached Actors and tests. Because the
-  package lives here too, a master push publishes a `beta`, and the lockfile-beta path in the setup
-  action installs that exact version — so one branch tests both halves of a change together.
-- To change the composite action itself, repoint the `uses:` refs inside the reusable workflows at
-  your branch as well, and change them back before merging.
+- Every PR that touches the workflows, the composite action, the CLI or the library runs the
+  [end-to-end tests](e2e/README.md). They push this PR's workflows, composite action and packed
+  package to throwaway branches of
+  [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions),
+  drive real PRs, a merge and a scheduled run there, and check the builds and test runs they cause on
+  Apify. Nothing needs repointing by hand, including the composite action's refs.
+- `npm run e2e -- local` checks the scenarios' change detection offline in seconds, and
+  `npm run e2e -- run` runs the whole suite from your machine. See [e2e/README.md](e2e/README.md).
 - Make sure the shell code actually works on your laptop first.
 - After merging, watch the workflow on a real project before moving on.
 

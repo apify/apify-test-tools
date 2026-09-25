@@ -8,3 +8,7 @@ CHANGELOG.md
 
 # Fixtures must stay byte-exact — several are deliberately malformed or empty
 test/fixtures
+
+# A consumer repo the e2e harness copies verbatim; its scenario edits match exact strings in it
+e2e/fixture
+e2e/.work

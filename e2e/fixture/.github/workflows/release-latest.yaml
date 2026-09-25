@@ -1,0 +1,14 @@
+# The consumer template's release-latest.yaml, see pr-build-test.yaml for how it differs.
+name: Release latest
+
+on:
+    push:
+        branches: ['e2e/*/base']
+
+jobs:
+    buildLatest:
+        uses: ./.github/workflows/public_push-build-latest.yaml
+        with:
+            # Release notes of test Actors must not reach the real release channel.
+            release-slack-channel: '#notif-testing-repo-for-github-actions'
+        secrets: inherit

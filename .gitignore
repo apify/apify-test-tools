@@ -9,3 +9,5 @@ dist
 .venv
 .DS_Store
 local-clone
+# e2e harness working copies (see e2e/README.md)
+e2e/.work

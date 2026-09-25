@@ -1,0 +1,127 @@
+name: E2E tests
+
+# Runs the CLI, the library and the public_ workflows of this checkout together, end to end, in the
+# sandbox repo apify-store/testing-repo-for-github-actions. What it does and how to set it up is in
+# e2e/README.md.
+
+on:
+    workflow_call:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    offline:
+        name: E2E change detection (offline)
+        runs-on: ubuntu-latest
+        outputs:
+            sandbox: ${{ steps.relevant.outputs.sandbox }}
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+
+            - name: Use Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+                  cache: 'npm'
+                  cache-dependency-path: 'package-lock.json'
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Check the scenarios' expectations against the CLI
+              run: npm run e2e -- local
+
+            # The sandbox run takes about half an hour and real Apify builds, so it only runs when the
+            # PR touches something it exercises. Manual runs always go ahead.
+            - name: Decide whether the sandbox run is needed
+              id: relevant
+              env:
+                  BASE_REF: ${{ github.base_ref }}
+              run: |
+                  if [ -z "$BASE_REF" ]; then
+                      echo "sandbox=true" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+                  git fetch --no-tags origin "$BASE_REF"
+                  pattern='^(bin/|lib/|index\.ts$|package(-lock)?\.json$|e2e/|\.github/(actions/|scripts/|workflows-package-version$|workflows/(public_|_e2e\.yaml$)))'
+                  if git diff --name-only FETCH_HEAD...HEAD | grep -qE "$pattern"; then
+                      echo "sandbox=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "sandbox=false" >> "$GITHUB_OUTPUT"
+                      echo "Nothing the sandbox run exercises changed, skipping it." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+
+    sandbox:
+        name: E2E in the sandbox repo
+        needs: [offline]
+        # Fork PRs get no secrets. Without the app configured (see e2e/README.md) there is nothing to run with.
+        if: >-
+            needs.offline.outputs.sandbox == 'true' &&
+            vars.E2E_GITHUB_APP_ID != '' &&
+            (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        runs-on: ubuntu-latest
+        timeout-minutes: 75
+        # Every run builds the same test Actors, and two builds of one Actor version at once race for its
+        # source. Runs queue instead. GitHub keeps one pending run per group, so a third run arriving
+        # while one is pending replaces it.
+        concurrency:
+            group: e2e-sandbox
+            cancel-in-progress: false
+        env:
+            RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Use Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+                  cache: 'npm'
+                  cache-dependency-path: 'package-lock.json'
+
+            - name: Install dependencies
+              run: npm ci
+
+            # Packs this checkout and builds the sandbox branch. No credentials in this step: it runs
+            # npm against the fixture's dependencies.
+            - name: Prepare the sandbox branch
+              run: npm run e2e -- prepare --run-id "$RUN_ID"
+
+            - name: Get a token for the sandbox repo
+              id: token
+              uses: actions/create-github-app-token@v2
+              with:
+                  app-id: ${{ vars.E2E_GITHUB_APP_ID }}
+                  private-key: ${{ secrets.E2E_GITHUB_APP_PRIVATE_KEY }}
+                  owner: apify-store
+                  repositories: testing-repo-for-github-actions
+
+            - name: Run the scenarios in the sandbox repo
+              env:
+                  SANDBOX_GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+                  E2E_APIFY_TOKEN: ${{ secrets.E2E_APIFY_TOKEN }}
+                  E2E_TESTER_APIFY_TOKEN: ${{ secrets.E2E_TESTER_APIFY_TOKEN }}
+              run: npm run e2e -- run --run-id "$RUN_ID"
+
+            # App tokens expire after an hour, which a slow run can outlast, so cleanup gets its own.
+            - name: Get a token for cleanup
+              id: cleanup-token
+              if: always()
+              uses: actions/create-github-app-token@v2
+              with:
+                  app-id: ${{ vars.E2E_GITHUB_APP_ID }}
+                  private-key: ${{ secrets.E2E_GITHUB_APP_PRIVATE_KEY }}
+                  owner: apify-store
+                  repositories: testing-repo-for-github-actions
+
+            - name: Clean up the sandbox repo
+              if: always() && steps.cleanup-token.outputs.token != ''
+              env:
+                  SANDBOX_GITHUB_TOKEN: ${{ steps.cleanup-token.outputs.token }}
+              run: npm run e2e -- cleanup --run-id "$RUN_ID"

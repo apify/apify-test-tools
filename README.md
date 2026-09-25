@@ -12,6 +12,9 @@ npm i -D apify-test-tools
 
 - Requires `vitest` version `3.2.0` or later (uses [annotate](https://vitest.dev/guide/test-context.html#annotate))
 - Make sure `target` and `module` in your `tsconfig.json`'s `compilerOptions` are set to `ES2022`
+- Every Actor must already have at least one build under its default build tag (usually `latest`), built
+  from a Git repository version whose URL points to this repository. Build it once manually on the
+  platform before CI takes over. See [Repository check](#repository-check).
 
 ### 2. Create the config file
 
@@ -171,6 +174,10 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
         secrets: inherit
 ```
+
+This workflow runs `apify-test-tools release --base-commit ${{ github.event.before }}`. See
+[Releasing Actors](#releasing-actors-release) for how the released range is determined and what to
+pass if you call the CLI from somewhere else.
 
 ### `claude-review.yaml`
 
@@ -537,7 +544,7 @@ The main local flow is:
 4. Build Actors on Apify (with your new code)
 5. Run tests against those builds. You can change tests and run on the same builds.
 
-`cd` into the actor repository you want to work with (or use `--workspace`).
+Run every command from the root of the actor repository you want to work with (or point `--workspace` at it).
 
 #### 4. Build affected Actors
 
@@ -547,7 +554,6 @@ Requires `APIFY_TOKEN_<USERNAME>` for all Apify users that own your Actors (e.g.
 
 ```bash
 APIFY_TOKEN_JOHN_DOE=<token> \
-GITHUB_WORKSPACE=. \
   npx apify-test-tools build \
     --target-branch origin/master \
     --source-branch origin/my-dummy-branch \
@@ -566,7 +572,6 @@ If you don't want to push a dummy branch just to test a change and wait for all 
 
 ```bash
 APIFY_TOKEN_JOHN_DOE=<token> \
-GITHUB_WORKSPACE=. \
   npx apify-test-tools build-from-local --actors john.doe/my-actor
 ```
 
@@ -575,8 +580,7 @@ Pass a hardcoded actor name via `--actors` to build only that Actor (comma-separ
 ```bash
 # Build from local source and capture output
 BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
-  GITHUB_WORKSPACE=. \
-  npx apify-test-tools build-from-local --actors apify/my-actor)
+    npx apify-test-tools build-from-local --actors apify/my-actor)
 ```
 
 Since you already scoped the build to just the Actor(s) you care about, point vitest at a specific test file (or a `-t` name filter) instead of the whole `test/platform` directory — you get feedback on that one test without waiting for the full suite to run.
@@ -598,8 +602,7 @@ TESTER_APIFY_TOKEN=<token> \
 ```bash
 # Build and capture output
 BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
-  GITHUB_WORKSPACE=. \
-  npx apify-test-tools build \
+    npx apify-test-tools build \
     --target-branch origin/master \
     --source-branch origin/my-dummy-branch)
 
@@ -609,10 +612,64 @@ TESTER_APIFY_TOKEN=apify_api_yyy \
   npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
 ```
 
+### Releasing Actors (`release`)
+
+`release` builds the `latest` (default) version of every Actor changed since the last release and
+posts release notes to Slack. It reads everything else from git: the branch from the checked-out
+`HEAD`, the commits and changed files from the range `<base-commit>..HEAD`, and the repository from
+the `origin` remote.
+
+```bash
+npx apify-test-tools release --base-commit <sha> --release-slack-channel "#releases" --dry-run
+```
+
+#### `--base-commit`
+
+The last commit that is **already released**. Everything after it, up to `HEAD`, is released. It is
+required: git alone can't tell which commits a push brought, and guessing wrong silently leaves Actors
+on old code.
+
+The changed files come from diffing `<base-commit>` and `HEAD` directly, so this works for every
+merge strategy as long as the base commit is the branch tip from **before** the push:
+
+| Merge strategy                 | What lands on the branch          | What to pass                                                           |
+| ------------------------------ | --------------------------------- | ---------------------------------------------------------------------- |
+| Squash and merge               | 1 new commit                      | the push's "before" commit (`HEAD~1` also works)                       |
+| Merge commit                   | the PR's commits + 1 merge commit | the push's "before" commit (`HEAD^1`, the first parent, also works)    |
+| Rebase and merge / direct push | N new commits                     | the push's "before" commit (`HEAD~1` would miss the first N-1 commits) |
+
+On GitHub, the push's "before" commit is `${{ github.event.before }}`, which the reusable workflow
+passes for you. On other CIs use the equivalent, e.g. `$CI_COMMIT_BEFORE_SHA` on GitLab. The checkout
+needs the full history (`fetch-depth: 0` in `actions/checkout`) so the base commit is available locally.
+
+`release` fails instead of guessing when:
+
+- the base commit is all zeros (GitHub sends this for a push that created the branch)
+- the base commit isn't in the local history (shallow checkout) or isn't an ancestor of `HEAD`
+  (the branch was force-pushed)
+
+In those cases, release the Actors explicitly with `--actors` and a base commit you pick yourself.
+If `HEAD` is the base commit, there is nothing to release and the command exits successfully.
+
+A failed release isn't retried by the next push: that push's base commit is the failed one's head, so
+its changes are skipped. Re-run the failed workflow run, or release the Actors manually.
+
+#### Repository check
+
+`release` and `build` point each Actor's version at the `origin` remote. Because a build overwrites the
+version's Git URL, building from a fork or a mirror would repoint the Actor. So, before building, the
+remote is compared with the Git URL of the Actor's default version (the one its default build tag
+points to), and the command fails if they differ or if the default version isn't built from a Git
+repository. The URL form doesn't matter (`https://github.com/org/repo` equals
+`git@github.com:org/repo.git`).
+
+To build from a different repository on purpose, e.g. when moving an Actor, pass `--repo-url`. That
+skips the check.
+
 #### Dev mode
 
 For development on `apify-test-tools` itself, use `tsx` directly:
 
 ```bash
-GITHUB_WORKSPACE=local-clone tsx bin/main.ts get-actor-configs
+tsx bin/main.ts --workspace local-clone get-actor-configs
 ```

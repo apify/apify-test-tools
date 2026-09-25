@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import AdmZip from 'adm-zip';
-import type { ActorVersion } from 'apify-client';
+import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType } from 'apify-client';
 
 import { dryRunBuildData, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
@@ -207,7 +207,7 @@ export const runBuildsFromLocal = async ({
         for (const { name, content } of await collectSourceFiles(actorConfig.actorFullName, actorConfig.folder)) {
             zip.addFile(name, content);
         }
-        const actorVersion: ActorVersion = {
+        const actorVersion: ApifyClientTypes.ActorVersion = {
             versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
             tarballUrl: await builder.uploadSourceZip(LOCAL_SOURCE_VERSION_NUMBER, zip.toBuffer()),
             sourceType: ActorSourceType.Tarball,

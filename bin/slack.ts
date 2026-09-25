@@ -14,6 +14,9 @@ type NotifyToSlackOptions = {
     reportSlackChannel?: string;
 };
 
+// Git authors come as "Name<email>", Slack only needs the name
+const displayName = (author: string) => author.replace(/\s*<[^>]*>$/, '');
+
 export const notifyToSlack = async ({
     changedFiles,
     commits,
@@ -30,7 +33,7 @@ export const notifyToSlack = async ({
         console.warn('No new changelog entries found, did you forget to update it?');
     }
 
-    let shortMessage = `*${repository}* – New release (by ${author}):\n\n`;
+    let shortMessage = `*${repository}* – New release (by ${displayName(author)}):\n\n`;
 
     // This one is just for broader public that only cares about public facing changes
     if (changelog && releaseSlackChannel) {
@@ -49,7 +52,7 @@ export const notifyToSlack = async ({
     const commitsMessage = `${commits
         .map(
             ({ author: commitAuthor, message }, index) =>
-                `${index + 1}. Commit message: ${message}\n\tAuthor: ${commitAuthor}.`,
+                `${index + 1}. Commit message: ${message}\n\tAuthor: ${displayName(commitAuthor)}.`,
         )
         .join('\n')}`;
     const changedFilesMessage = `*Files changed*: ${changedFiles.map((file) => `\`${file}\``).join(', ')}`;

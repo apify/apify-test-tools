@@ -5,8 +5,13 @@ import {
     getBranchOnlyChangedFiles,
     getChangedFiles,
     getCommits,
+    getCurrentBranch,
+    getReleaseChanges,
+    getRepoName,
     hasMergeFromTarget,
+    normalizeRepoUrl,
     parseBaseCommit,
+    resolveReleaseBaseCommit,
 } from '../../../bin/git.js';
 import * as Utils from '../../../bin/utils.js';
 
@@ -248,5 +253,122 @@ describe('parseBaseCommit', () => {
     it('should throw when JSON contains an invalid sha field', () => {
         const badJson = JSON.stringify({ sha: 'bad', author: 'test', date: 'now', message: 'msg' });
         expect(() => parseBaseCommit(badJson)).toThrow('Invalid base commit SHA');
+    });
+});
+
+describe('getCurrentBranch', () => {
+    it('should return the checked-out branch', () => {
+        vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockReturnValue('master');
+        expect(getCurrentBranch()).toBe('master');
+    });
+
+    it('should throw on a detached HEAD', () => {
+        vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockReturnValue('HEAD');
+        expect(() => getCurrentBranch()).toThrow('HEAD is detached');
+    });
+});
+
+describe('normalizeRepoUrl', () => {
+    it.each([
+        'git@github.com:Apify-Store/google-maps.git',
+        'git@github.com:apify-store/google-maps',
+        'https://github.com/apify-store/google-maps',
+        'https://github.com/apify-store/google-maps.git/',
+        'ssh://git@github.com/apify-store/google-maps',
+        'git@github.com:apify-store/google-maps#master:actors/foo',
+        'https://github.com/apify-store/google-maps#master',
+    ])('should normalize %s', (url) => {
+        expect(normalizeRepoUrl(url)).toBe('github.com/apify-store/google-maps');
+    });
+
+    it('should tell different repositories apart', () => {
+        expect(normalizeRepoUrl('git@github.com:my-fork/google-maps.git')).not.toBe(
+            normalizeRepoUrl('git@github.com:apify-store/google-maps.git'),
+        );
+    });
+});
+
+describe('getRepoName', () => {
+    it('should return the repository name', () => {
+        expect(getRepoName('git@github.com:apify-store/google-maps.git')).toBe('google-maps');
+    });
+});
+
+describe('resolveReleaseBaseCommit', () => {
+    const baseSha = 'b'.repeat(40);
+
+    it('should return the base commit when it is an ancestor of HEAD', () => {
+        vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockImplementation((cmd: string) => {
+            if (cmd.startsWith('git rev-parse --verify')) return baseSha;
+            if (cmd.startsWith('git merge-base')) return baseSha;
+            return '';
+        });
+        expect(resolveReleaseBaseCommit(baseSha)).toBe(baseSha);
+    });
+
+    it('should throw on the all-zeros SHA of a newly created branch', () => {
+        const spy = vi.spyOn(Utils, 'spawnCommandInGhWorkspace');
+        expect(() => resolveReleaseBaseCommit('0'.repeat(40))).toThrow('the branch was just created');
+        expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('should throw when the base commit is missing from the local history', () => {
+        vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockReturnValue('');
+        expect(() => resolveReleaseBaseCommit(baseSha)).toThrow('is not in the local git history');
+    });
+
+    it('should throw when the base commit is not an ancestor of HEAD (force push)', () => {
+        vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockImplementation((cmd: string) => {
+            if (cmd.startsWith('git rev-parse --verify')) return baseSha;
+            if (cmd.startsWith('git merge-base')) return 'c'.repeat(40);
+            return '';
+        });
+        expect(() => resolveReleaseBaseCommit(baseSha)).toThrow('is not an ancestor of HEAD');
+    });
+
+    it('should throw on an invalid SHA', () => {
+        expect(() => resolveReleaseBaseCommit('not-a-sha')).toThrow('Invalid base commit SHA');
+    });
+});
+
+describe('getReleaseChanges', () => {
+    const baseSha = 'b'.repeat(40);
+    const headSha = 'd'.repeat(40);
+    const mergedBranchCommit = `${'1'.repeat(40)}»¦«Dev<dev@example.com>»¦«Date1»¦«feat: branch change`;
+    const mergeCommit = `${headSha}»¦«Dev<dev@example.com>»¦«Date2»¦«Merge pull request #1`;
+
+    let gitCommandSpy: MockInstance;
+
+    beforeEach(() => {
+        gitCommandSpy = vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockImplementation((cmd: string) => {
+            if (cmd === 'git rev-parse HEAD') return headSha;
+            if (cmd.startsWith('git log')) return `${mergeCommit}\n${mergedBranchCommit}`;
+            if (cmd.startsWith('git diff --name-only')) return 'actors/foo/src/main.ts\nCHANGELOG.md';
+            if (cmd === 'git')
+                return 'diff --git a/CHANGELOG.md b/CHANGELOG.md\n--- a/CHANGELOG.md\n+++ b/CHANGELOG.md\n@@ -1 +1,2 @@\n+- Added foo\n # Changelog';
+            return '';
+        });
+    });
+
+    it('should diff the range directly and return the commits oldest first', () => {
+        const changes = getReleaseChanges(baseSha);
+
+        expect(changes).toStrictEqual({
+            commits: [
+                { sha: '1'.repeat(40), author: 'Dev<dev@example.com>', date: 'Date1', message: 'feat: branch change' },
+                { sha: headSha, author: 'Dev<dev@example.com>', date: 'Date2', message: 'Merge pull request #1' },
+            ],
+            changedFiles: ['actors/foo/src/main.ts', 'CHANGELOG.md'],
+            changelog: '- Added foo',
+        });
+        // Not from the parent of the oldest commit, which may predate the base commit for merge commits
+        expect(gitCommandSpy).toHaveBeenCalledWith(`git diff --name-only ${baseSha} HEAD`);
+        expect(gitCommandSpy).toHaveBeenCalledWith(
+            `git log --pretty=format:'%H»¦«%aN<%aE>»¦«%aD»¦«%s' ${baseSha}..HEAD`,
+        );
+    });
+
+    it('should return null when HEAD is the base commit', () => {
+        expect(getReleaseChanges(headSha)).toBeNull();
     });
 });

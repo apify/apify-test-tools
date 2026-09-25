@@ -14,11 +14,11 @@ import {
     getChangedFiles,
     getCommits,
     getCurrentBranch,
-    getOriginRepoUrl,
     getReleaseChanges,
     getRepoName,
     hasMergeFromTarget,
     resolveReleaseBaseCommit,
+    resolveRepoUrl,
 } from './git.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
@@ -60,11 +60,6 @@ const repoUrlOptions = <T>(y: Argv<T>) => {
         type: 'string',
     });
 };
-
-const resolveRepoUrl = (explicitRepoUrl: string | undefined) => ({
-    repoUrl: explicitRepoUrl ?? getOriginRepoUrl(),
-    verifyRepoUrl: explicitRepoUrl === undefined,
-});
 
 /**
  * Actor-selection flags, applied to every command that reads the actor config so a caller can
@@ -212,7 +207,7 @@ await yargs()
                 return;
             }
             const { commits, changedFiles, changelog } = changes;
-            const { repoUrl, verifyRepoUrl } = resolveRepoUrl(args.repoUrl);
+            const { repoUrl, shouldVerifyRepoUrl } = resolveRepoUrl(args.repoUrl);
 
             const isLatest = true;
             const actorConfigs = await readConfigFile(args);
@@ -226,7 +221,7 @@ await yargs()
             const builds = await runBuilds({
                 isLatest,
                 repoUrl,
-                verifyRepoUrl,
+                shouldVerifyRepoUrl,
                 actorConfigs: actorsChanged,
                 branch,
                 dryRun,

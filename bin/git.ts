@@ -164,12 +164,22 @@ export const getCurrentBranch = (): string => {
  * Reads the repository URL from the `origin` remote, rewritten to the SSH form the Apify platform
  * uses for Git repo sources, e.g. git@github.com:apify-store/google-maps
  */
-export const getOriginRepoUrl = (): string => {
+const getOriginRepoUrl = (): string => {
     return spawnCommandInGhWorkspace('git remote get-url origin').replace(
         /^https:\/\/github\.com\//,
         'git@github.com:',
     );
 };
+
+/**
+ * Picks the repo URL to build from. By default it's the `origin` remote, and runBuilds then checks it against
+ * each Actor's default version, so a fork or mirror remote can't repoint a published Actor. An explicit
+ * --repo-url skips that check: passing it is how you move an Actor to another repository on purpose.
+ */
+export const resolveRepoUrl = (explicitRepoUrl: string | undefined) => ({
+    repoUrl: explicitRepoUrl ?? getOriginRepoUrl(),
+    shouldVerifyRepoUrl: explicitRepoUrl === undefined,
+});
 
 /**
  * Makes repo URLs comparable regardless of their form. All of these normalize to `github.com/org/repo`:

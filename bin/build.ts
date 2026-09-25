@@ -322,7 +322,7 @@ type RunBuildsOptions = {
     isLatest?: boolean;
     repoUrl: string;
     // False when the repo URL was passed explicitly, see assertRepoUrlMatchesDefaultVersion
-    verifyRepoUrl: boolean;
+    shouldVerifyRepoUrl: boolean;
     branch: string;
     dryRun: boolean;
     useDockerCache: boolean;
@@ -330,7 +330,7 @@ type RunBuildsOptions = {
 
 export const runBuilds = async ({
     repoUrl,
-    verifyRepoUrl,
+    shouldVerifyRepoUrl,
     branch,
     actorConfigs,
     isLatest = false,
@@ -345,7 +345,7 @@ export const runBuilds = async ({
                 actorConfig.actorFullName,
                 actorInfo,
             );
-            if (verifyRepoUrl) {
+            if (shouldVerifyRepoUrl) {
                 assertRepoUrlMatchesDefaultVersion(actorConfig.actorFullName, defaultVersion, repoUrl);
             }
 

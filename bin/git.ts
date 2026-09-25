@@ -145,3 +145,132 @@ export const parseCommit = (commitString: string): Commit => {
         message,
     };
 };
+
+/**
+ * Returns the currently checked-out branch. Release builds point the Actor version at this branch,
+ * so a detached HEAD (no branch to point at) is an error rather than a guess.
+ */
+export const getCurrentBranch = (): string => {
+    const branch = spawnCommandInGhWorkspace('git rev-parse --abbrev-ref HEAD');
+    if (branch === 'HEAD') {
+        throw new Error(
+            'Cannot determine the branch to release: HEAD is detached. Check out the branch you want to release.',
+        );
+    }
+    return branch;
+};
+
+/**
+ * Reads the repository URL from the `origin` remote, rewritten to the SSH form the Apify platform
+ * uses for Git repo sources, e.g. git@github.com:apify-store/google-maps
+ */
+export const getOriginRepoUrl = (): string => {
+    return spawnCommandInGhWorkspace('git remote get-url origin').replace(
+        /^https:\/\/github\.com\//,
+        'git@github.com:',
+    );
+};
+
+/**
+ * Makes repo URLs comparable regardless of their form. All of these normalize to `github.com/org/repo`:
+ * - git@github.com:org/repo.git
+ * - https://github.com/org/repo
+ * - ssh://git@github.com/org/repo#master:actors/foo (Actor versions carry a `#branch:folder` fragment)
+ */
+export const normalizeRepoUrl = (repoUrl: string): string => {
+    return repoUrl
+        .trim()
+        .split('#')[0]
+        .replace(/^[a-z+]+:\/\//i, '')
+        .replace(/^[^@/]+@/, '')
+        .replace(':', '/')
+        .replace(/\/+$/, '')
+        .replace(/\.git$/, '')
+        .toLowerCase();
+};
+
+/** Repository name from its URL, e.g. `google-maps` for git@github.com:apify-store/google-maps.git */
+export const getRepoName = (repoUrl: string): string => {
+    return normalizeRepoUrl(repoUrl).split('/').pop()!;
+};
+
+// Sent by e.g. GitHub as the "before" commit of a push that created the branch
+const ZERO_SHA_REGEX = /^0{40}$/;
+
+/**
+ * Validates the base commit of a release: the last commit whose changes are already released.
+ * Unlike the PR path (getCommits), there is no lenient fallback. Falling back to "everything"
+ * would rebuild the latest build of every Actor and post it to Slack, so every problem is an error.
+ */
+export const resolveReleaseBaseCommit = (baseCommit: string): string => {
+    const sha = parseBaseCommit(baseCommit);
+    if (!sha) {
+        throw new Error('--base-commit is required for release. See the README section "Releasing Actors".');
+    }
+    if (ZERO_SHA_REGEX.test(sha)) {
+        throw new Error(
+            `Base commit is ${sha}, which means the branch was just created and there is no previous release to diff against. ` +
+                `Release the Actors explicitly with --actors and --base-commit set to the commit before your changes.`,
+        );
+    }
+    // --quiet makes rev-parse print nothing (instead of an error) when the commit is missing
+    if (!spawnCommandInGhWorkspace(`git rev-parse --verify --quiet "${sha}^{commit}"`)) {
+        throw new Error(
+            `Base commit ${sha} is not in the local git history. Either the checkout is shallow ` +
+                `(fetch the full history, e.g. fetch-depth: 0 in actions/checkout) or the branch was force-pushed.`,
+        );
+    }
+    // git merge-base A B outputs the common ancestor. If that equals A, then A is an ancestor of B.
+    if (spawnCommandInGhWorkspace(`git merge-base ${sha} HEAD`) !== sha) {
+        throw new Error(
+            `Base commit ${sha} is not an ancestor of HEAD, most likely because the branch was force-pushed. ` +
+                `The changed files cannot be determined reliably, release the Actors explicitly with --actors.`,
+        );
+    }
+    return sha;
+};
+
+const CHANGELOG_PATH = 'CHANGELOG.md';
+
+/** Returns the lines added to the root CHANGELOG.md between baseSha and HEAD, or null if it didn't change. */
+const getChangelogAdditions = (baseSha: string, changedFiles: string[]): string | null => {
+    if (!changedFiles.includes(CHANGELOG_PATH)) {
+        return null;
+    }
+    const diff = spawnCommandInGhWorkspace('git', ['diff', baseSha, 'HEAD', '--', CHANGELOG_PATH]);
+
+    const added: string[] = [];
+    let startedChangelog = false;
+    for (const line of diff.split('\n')) {
+        // The diff is already limited to the changelog but better to double check
+        if (line.startsWith('+++') && line.toLowerCase().includes(CHANGELOG_PATH.toLowerCase())) {
+            startedChangelog = true;
+            continue;
+        }
+        if (startedChangelog) {
+            if (line.startsWith('diff')) {
+                break;
+            }
+            if (line.startsWith('+')) {
+                added.push(line.slice(1).trim());
+            }
+        }
+    }
+    return added.join('\n').trim();
+};
+
+/**
+ * Everything that changed since the last release (baseSha, exclusive) up to HEAD, or null when there
+ * are no new commits. Changed files come from diffing the range directly instead of from the commit
+ * list: with a merge commit, the oldest commit of the merged branch can be older than baseSha, and
+ * diffing from its parent would pull in already-released changes.
+ */
+export const getReleaseChanges = (baseSha: string) => {
+    if (spawnCommandInGhWorkspace('git rev-parse HEAD') === baseSha) {
+        return null;
+    }
+    const commits = fetchAllBranchCommits('HEAD', baseSha);
+    const changedFiles = spawnCommandInGhWorkspace(`git diff --name-only ${baseSha} HEAD`).split('\n').filter(Boolean);
+    const changelog = getChangelogAdditions(baseSha, changedFiles);
+    return { commits, changedFiles, changelog };
+};

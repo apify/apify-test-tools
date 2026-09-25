@@ -9,12 +9,21 @@ import { hideBin } from 'yargs/helpers';
 import { deleteOldBuilds, runBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedActors } from './diff-changes.js';
-import { getBranchOnlyChangedFiles, getChangedFiles, getCommits, hasMergeFromTarget } from './git.js';
-import { getPushData } from './github.js';
+import {
+    getBranchOnlyChangedFiles,
+    getChangedFiles,
+    getCommits,
+    getCurrentBranch,
+    getOriginRepoUrl,
+    getReleaseChanges,
+    getRepoName,
+    hasMergeFromTarget,
+    resolveReleaseBaseCommit,
+} from './git.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
 import type { Config } from './types.js';
-import { setCwd, spawnCommandInGhWorkspace } from './utils.js';
+import { setCwd } from './utils.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
 /**
@@ -41,6 +50,21 @@ export const buildOptions = <T>(y: Argv<T>) => {
             demandOption: false,
         });
 };
+
+/**
+ * Where to build the Actors from. Defaults to the `origin` remote, which is then checked against each
+ * Actor's default version. Passing it explicitly skips that check (see assertRepoUrlMatchesDefaultVersion).
+ */
+const repoUrlOptions = <T>(y: Argv<T>) => {
+    return y.option('repo-url', {
+        type: 'string',
+    });
+};
+
+const resolveRepoUrl = (explicitRepoUrl: string | undefined) => ({
+    repoUrl: explicitRepoUrl ?? getOriginRepoUrl(),
+    verifyRepoUrl: explicitRepoUrl === undefined,
+});
 
 /**
  * Actor-selection flags, applied to every command that reads the actor config so a caller can
@@ -150,18 +174,15 @@ await yargs()
     .command(
         'build',
         '',
-        (args) => actorSelectionOptions(buildOptions(args)).option('dry-run', { type: 'boolean', default: false }),
+        (args) =>
+            repoUrlOptions(actorSelectionOptions(buildOptions(args))).option('dry-run', {
+                type: 'boolean',
+                default: false,
+            }),
         async (config) => {
             const actorsChanged = await resolveChangedActors(config, { isLatest: false });
-            // https://github.com/apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
-            // git@github.com:apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
-            const repoUrl = spawnCommandInGhWorkspace(`git remote get-url origin`).replace(
-                /^https:\/\/github\.com\//,
-                'git@github.com:',
-            );
-
             const builds = await runBuilds({
-                repoUrl,
+                ...resolveRepoUrl(config.repoUrl),
                 actorConfigs: actorsChanged,
                 branch: config.sourceBranch.replace('origin/', ''),
                 dryRun: config.dryRun,
@@ -174,16 +195,25 @@ await yargs()
         'release',
         '',
         (args) =>
-            actorSelectionOptions(args)
-                .option('push-event-path', { type: 'string', demandOption: true })
+            repoUrlOptions(actorSelectionOptions(args))
+                // The last commit that is already released, everything after it up to HEAD gets released.
+                // Required, see the README section "Releasing Actors" for how to set it for each merge strategy.
+                .option('base-commit', { type: 'string', demandOption: true })
                 .option('dry-run', { type: 'boolean', default: false })
                 .option('report-slack-channel', { type: 'string' })
                 .option('release-slack-channel', { type: 'string' })
                 .option('use-docker-cache', { type: 'boolean', default: false }),
         async (args) => {
-            const { branch, changedFiles, repoUrl, commits, changelog, repository, author } = await getPushData(
-                args.pushEventPath,
-            );
+            const baseSha = resolveReleaseBaseCommit(args.baseCommit);
+            const branch = getCurrentBranch();
+            const changes = getReleaseChanges(baseSha);
+            if (!changes) {
+                console.error(`HEAD is the base commit ${baseSha}, there is nothing new to release`);
+                return;
+            }
+            const { commits, changedFiles, changelog } = changes;
+            const { repoUrl, verifyRepoUrl } = resolveRepoUrl(args.repoUrl);
+
             const isLatest = true;
             const actorConfigs = await readConfigFile(args);
             const actorsChanged = getChangedActors({
@@ -196,6 +226,7 @@ await yargs()
             const builds = await runBuilds({
                 isLatest,
                 repoUrl,
+                verifyRepoUrl,
                 actorConfigs: actorsChanged,
                 branch,
                 dryRun,
@@ -207,9 +238,10 @@ await yargs()
                 changedFiles,
                 commits,
                 changelog,
-                repository,
+                repository: getRepoName(repoUrl),
                 dryRun,
-                author,
+                // The newest commit, same as the pushed head commit
+                author: commits[commits.length - 1].author,
                 reportSlackChannel,
                 releaseSlackChannel,
             });

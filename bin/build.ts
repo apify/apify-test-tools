@@ -1,6 +1,7 @@
-import type { ActorVersion, Build } from 'apify-client';
+import type { Actor, ActorVersion, Build } from 'apify-client';
 import { ActorSourceType, ApifyClient } from 'apify-client';
 
+import { normalizeRepoUrl } from './git.js';
 import type { ActorConfig, BuildData } from './types.js';
 
 type BuildPrActorOptions = {
@@ -8,6 +9,7 @@ type BuildPrActorOptions = {
     versionNumber: string;
     gitRepoUrl: string;
     actorConfig: ActorConfig;
+    actorInfo: Actor;
     useDockerCache: boolean;
 };
 
@@ -15,69 +17,102 @@ type BuildPrActorOptions = {
 export const LOCAL_SOURCE_VERSION_NUMBER = '0.98';
 const DEFAULT_TEST_VERSION_NUMBER = '0.99';
 
+// Shown whenever an Actor isn't set up the way CI builds need it
+const ACTOR_SETUP_REQUIREMENT =
+    'Before using apify-test-tools, every Actor needs at least one build under its default build tag (usually "latest"), ' +
+    'built from a Git repository version whose URL points to this repository. Build it once manually on the platform.';
+
+/**
+ * Finds the Actor's default version: the one whose build the default build tag points to.
+ * Usually tagged 'latest' but not necessarily (can be e.g. 'version-0').
+ */
+export const resolveDefaultVersion = (actorFullName: string, actorInfo: Actor) => {
+    const defaultBuildTag = actorInfo.defaultRunOptions.build;
+    console.error(`Default build tag for ${actorFullName} is ${defaultBuildTag}`);
+
+    // We could technically allow this but in most cases this is accidentally set wrongly and there is a workaround
+    if (defaultBuildTag.match(/\d+\.\d+\.\d+/)) {
+        throw new Error(
+            `[${actorFullName}] Default build is a build number, not a tag. While this could work, ` +
+                `we want to have a default as tag so this is often an accidental misconfiguration from the dev`,
+        );
+    }
+    // I reported that buildNumber should probably not be optional
+    const defaultBuildNumber = actorInfo.taggedBuilds?.[defaultBuildTag]?.buildNumber;
+    if (!defaultBuildNumber) {
+        throw new Error(`[${actorFullName}] No build found for tag "${defaultBuildTag}". ${ACTOR_SETUP_REQUIREMENT}`);
+    }
+    const defaultVersionNumber = defaultBuildNumber.match(/(\d+\.\d+)\.\d+/)![1];
+    console.error(`Default version for ${actorFullName} is ${defaultVersionNumber}`);
+
+    const defaultVersion = actorInfo.versions.find((version) => version.versionNumber === defaultVersionNumber);
+
+    return { defaultBuildNumber, defaultVersionNumber, defaultBuildTag, defaultVersion };
+};
+
+/**
+ * Guards against building an Actor from a different repository than it is published from, e.g. when the
+ * local `origin` remote is a fork or a mirror. Every build overwrites the version's Git URL, so building
+ * from the wrong remote would silently repoint the Actor. The default version is the source of truth
+ * since it is what users run. Skipped when the repo URL is passed explicitly, which is how you move an
+ * Actor to a new repository on purpose.
+ */
+export const assertRepoUrlMatchesDefaultVersion = (
+    actorFullName: string,
+    defaultVersion: ActorVersion | undefined,
+    repoUrl: string,
+) => {
+    if (!defaultVersion) {
+        throw new Error(
+            `[${actorFullName}] The version of the default build no longer exists. ${ACTOR_SETUP_REQUIREMENT}`,
+        );
+    }
+    if (defaultVersion.sourceType !== ActorSourceType.GitRepo) {
+        throw new Error(
+            `[${actorFullName}] Default version ${defaultVersion.versionNumber} has source type "${defaultVersion.sourceType}", ` +
+                `not "${ActorSourceType.GitRepo}". ${ACTOR_SETUP_REQUIREMENT}`,
+        );
+    }
+    if (normalizeRepoUrl(defaultVersion.gitRepoUrl) !== normalizeRepoUrl(repoUrl)) {
+        throw new Error(
+            `[${actorFullName}] Repository mismatch: the git remote "origin" is ${repoUrl} but default version ` +
+                `${defaultVersion.versionNumber} is built from ${defaultVersion.gitRepoUrl}. Fix the remote or the Actor's source, ` +
+                `or pass --repo-url to build from a different repository on purpose.`,
+        );
+    }
+};
+
 export class ApifyBuilder {
     private constructor(
         private readonly apifyClient: ApifyClient,
         private readonly actorFullName: string,
     ) {}
 
-    // Usually 'latest' but not necessarily (can be e.g. 'version-0')
-    getDefaultVersionAndTag = async (): Promise<{
-        defaultBuildNumber: string;
-        defaultVersionNumber: string;
-        defaultBuildTag: string;
-    }> => {
-        const actorClient = this.apifyClient.actor(this.actorFullName);
-        const actorInfo = await actorClient.get();
-
+    getActorInfo = async (): Promise<Actor> => {
+        const actorInfo = await this.apifyClient.actor(this.actorFullName).get();
         if (!actorInfo) {
             throw new Error(
                 `[${this.actorFullName}] not found. It is not published or we are missing token to access it privately or its name is misspelled`,
             );
         }
-
-        const defaultBuildTag = actorInfo.defaultRunOptions.build;
-        console.error(`Default build tag for ${this.actorFullName} is ${defaultBuildTag}`);
-
-        // We could technically allow this but in most cases this is accidentally set wrongly and there is a workaround
-        if (defaultBuildTag.match(/\d+\.\d+\.\d+/)) {
-            throw new Error(
-                `[${this.actorFullName}] Default build is a build number, not a tag. While this could work, ` +
-                    `we want to have a default as tag so this is often an accidental misconfiguration from the dev`,
-            );
-        }
-        // I reported that buildNumber should probably not be optional
-        if (!actorInfo.taggedBuilds?.[defaultBuildTag]?.buildNumber) {
-            throw new Error(
-                `[${this.actorFullName}] No build found for tag "${defaultBuildTag}". ` +
-                    `The first build must be triggered manually on the platform before CI can take over.`,
-            );
-        }
-        const defaultBuildNumber = actorInfo.taggedBuilds![defaultBuildTag].buildNumber!;
-        const defaultVersionNumber = defaultBuildNumber.match(/(\d+\.\d+)\.\d+/)![1];
-        console.error(`Default version for ${this.actorFullName} is ${defaultVersionNumber}`);
-
-        return { defaultBuildNumber, defaultVersionNumber, defaultBuildTag };
+        return actorInfo;
     };
 
+    getDefaultVersionAndTag = async () => resolveDefaultVersion(this.actorFullName, await this.getActorInfo());
+
+    // Pass actorInfo when the caller already fetched it, to save an API call
     createVersionAndBuild = async (
         versionNumber: string,
         actorVersion: ActorVersion,
         useCache: boolean,
+        actorInfo?: Actor,
     ): Promise<BuildData> => {
         const actorClient = this.apifyClient.actor(this.actorFullName);
-        const actorInfo = await actorClient.get();
-        if (!actorInfo) {
-            throw new Error(
-                `No actor named '${this.actorFullName}' was found on the platform. If this` +
-                    ' is unexpected, make sure the actor you are targeting is spelled the' +
-                    ' same as the folder in the repository.',
-            );
-        }
+        const { versions } = actorInfo ?? (await this.getActorInfo());
 
         // Prepare version
-        const versionExists = !actorInfo.versions.find((version) => version.versionNumber === versionNumber);
-        if (versionExists) {
+        const versionMissing = !versions.find((version) => version.versionNumber === versionNumber);
+        if (versionMissing) {
             // create new version
             await actorClient.versions().create(actorVersion);
         } else {
@@ -152,7 +187,7 @@ export class ApifyBuilder {
         const DEFAULT_DAYS_BACK_PROD_VERSIONS = 30;
         const DEFAULT_DAYS_BACK_DEVEL = 7;
 
-        const actorInfo = (await this.apifyClient.actor(this.actorFullName).get())!;
+        const actorInfo = await this.getActorInfo();
 
         // 'devel' used to be hardcoded for testing version 0.99, once we get rid of this tag everywhere, we can remove this code
         const taggedDevelBuildNumber: string | undefined = actorInfo.taggedBuilds!.devel?.buildNumber;
@@ -167,7 +202,7 @@ export class ApifyBuilder {
         const { items } = await this.apifyClient.actor(this.actorFullName).builds().list();
 
         // Deleting default build throws an error, so we skip it
-        const { defaultBuildNumber, defaultBuildTag } = await this.getDefaultVersionAndTag();
+        const { defaultBuildNumber, defaultBuildTag } = resolveDefaultVersion(this.actorFullName, actorInfo);
 
         const daysAgoUnixProd = Date.now() - DEFAULT_DAYS_BACK_PROD_VERSIONS * 24 * 60 * 60 * 1000;
         const daysAgoUnixDevel = Date.now() - DEFAULT_DAYS_BACK_DEVEL * 24 * 60 * 60 * 1000;
@@ -270,6 +305,8 @@ type RunBuildsOptions = {
     actorConfigs: ActorConfig[];
     isLatest?: boolean;
     repoUrl: string;
+    // False when the repo URL was passed explicitly, see assertRepoUrlMatchesDefaultVersion
+    verifyRepoUrl: boolean;
     branch: string;
     dryRun: boolean;
     useDockerCache: boolean;
@@ -277,34 +314,40 @@ type RunBuildsOptions = {
 
 export const runBuilds = async ({
     repoUrl,
+    verifyRepoUrl,
     branch,
     actorConfigs,
     isLatest = false,
     dryRun,
     useDockerCache,
 }: RunBuildsOptions): Promise<BuildData[]> => {
-    const buildConfigs: BuildPrActorOptions[] = [];
+    // Fetched once per Actor and reused for the checks, the version numbers and the build itself
+    const buildConfigs: BuildPrActorOptions[] = await Promise.all(
+        actorConfigs.map(async (actorConfig) => {
+            const actorInfo = await ApifyBuilder.fromActorConfig(actorConfig).getActorInfo();
+            const { defaultVersionNumber, defaultBuildTag, defaultVersion } = resolveDefaultVersion(
+                actorConfig.actorFullName,
+                actorInfo,
+            );
+            if (verifyRepoUrl) {
+                assertRepoUrlMatchesDefaultVersion(actorConfig.actorFullName, defaultVersion, repoUrl);
+            }
 
-    for (const actorConfig of actorConfigs) {
-        let versionNumber: string;
-        let buildTag: string | undefined;
-
-        if (isLatest) {
-            const { defaultVersionNumber, defaultBuildTag } =
-                await ApifyBuilder.fromActorConfig(actorConfig).getDefaultVersionAndTag();
-            versionNumber = defaultVersionNumber;
-            buildTag = defaultBuildTag;
-        } else {
-            versionNumber = DEFAULT_TEST_VERSION_NUMBER;
-        }
-
-        // Depending on if these are miniactors or standaloneActors
-        let gitRepoUrl = `${repoUrl}#${branch}`;
-        if (actorConfig.folder) {
-            gitRepoUrl = `${gitRepoUrl}:${actorConfig.folder}`;
-        }
-        buildConfigs.push({ actorConfig, gitRepoUrl, versionNumber, buildTag, useDockerCache });
-    }
+            // Depending on if these are miniactors or standaloneActors
+            let gitRepoUrl = `${repoUrl}#${branch}`;
+            if (actorConfig.folder) {
+                gitRepoUrl = `${gitRepoUrl}:${actorConfig.folder}`;
+            }
+            return {
+                actorConfig,
+                actorInfo,
+                gitRepoUrl,
+                versionNumber: isLatest ? defaultVersionNumber : DEFAULT_TEST_VERSION_NUMBER,
+                buildTag: isLatest ? defaultBuildTag : undefined,
+                useDockerCache,
+            };
+        }),
+    );
 
     if (dryRun) {
         console.error('[DRY RUN] Would build:');
@@ -322,6 +365,7 @@ export const runBuilds = async ({
 
     return runAndSummarizeBuilds(actorConfigs, 'BUILDS', async (actorConfig, builder) => {
         const {
+            actorInfo,
             buildTag,
             versionNumber,
             gitRepoUrl,
@@ -333,7 +377,7 @@ export const runBuilds = async ({
             gitRepoUrl,
             sourceType: ActorSourceType.GitRepo,
         };
-        return builder.createVersionAndBuild(versionNumber, actorVersion, useCache);
+        return builder.createVersionAndBuild(versionNumber, actorVersion, useCache, actorInfo);
     });
 };
 

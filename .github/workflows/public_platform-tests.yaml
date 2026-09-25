@@ -13,13 +13,6 @@ on:
                 type: string
                 default: ''
                 required: false
-            working-directory:
-                type: string
-                default: .
-                required: false
-            additional-working-directory:
-                type: string
-                required: false
             # Defaults to #notif-<repo-name> when empty, matching the previous behavior.
             report-slack-channel:
                 type: string
@@ -31,16 +24,11 @@ jobs:
         name: Scheduled Platform tests
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         runs-on: ubuntu-latest
-        defaults:
-            run:
-                working-directory: ${{ inputs.working-directory }}
         steps:
             - name: Setup repository and dependencies
               # For testing, you have to temporarily change the branch
               uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
               with:
-                  working-directory: ${{ inputs.working-directory }}
-                  additional-working-directory: ${{ inputs.additional-working-directory }}
                   npm-token: ${{ secrets.NPM_TOKEN }}
 
             - name: Test

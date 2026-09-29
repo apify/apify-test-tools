@@ -5,6 +5,14 @@ import path from 'node:path';
 // Git and the config file always use "/", so paths are POSIX regardless of the host OS.
 const { posix } = path;
 
+// A file path cannot end in "/", ".", "..", or be empty: each of those names a directory.
+const assertNamesFile = (raw: string): void => {
+    const lastSegment = raw.slice(raw.lastIndexOf('/') + 1);
+    if (lastSegment === '' || lastSegment === '.' || lastSegment === '..') {
+        throw new Error(`Expected a file path, got directory path "${raw}".`);
+    }
+};
+
 // Shared by the file and directory paths. Use it as a parameter type where either kind is fine.
 export abstract class AbstractPath {
     readonly #path: string;
@@ -18,8 +26,9 @@ export abstract class AbstractPath {
         this.assertNoEscape(value);
     }
 
+    // A file and a directory are never equal, even when spelled the same.
     isEqualTo(other: AbstractPath): boolean {
-        return this.#path === other.#path;
+        return this.constructor === other.constructor && this.#path === other.#path;
     }
 
     get path(): string {
@@ -49,6 +58,8 @@ export class RelativeDir extends AbstractPath {
     }
 
     joinFile(relative: string): RelativeFile {
+        // Must be checked before joining: posix.join('actors/foo', '.') is "actors/foo", which looks like a file.
+        assertNamesFile(relative);
         return new RelativeFile(this.join(relative));
     }
 
@@ -84,6 +95,11 @@ export class RelativeDir extends AbstractPath {
 }
 
 export class RelativeFile extends AbstractPath {
+    constructor(value: string) {
+        assertNamesFile(value);
+        super(value);
+    }
+
     // The directory containing this file.
     get parent(): RelativeDir {
         return new RelativeDir(posix.dirname(this.path));
@@ -112,5 +128,12 @@ export class RelativeFile extends AbstractPath {
         if (!stats) throw new Error(`Expected file "${this}" to exist.`);
         if (!stats.isFile()) throw new Error(`Expected "${this}" to be a file.`);
         return this;
+    }
+}
+
+export class ExistingFile extends RelativeFile {
+    static initialize(file: RelativeFile): ExistingFile {
+        file.assertIsFile();
+        return new ExistingFile(file.path);
     }
 }

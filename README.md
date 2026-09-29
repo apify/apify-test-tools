@@ -648,7 +648,10 @@ needs the full history (`fetch-depth: 0` in `actions/checkout`) so the base comm
 - the base commit isn't in the local history (shallow checkout) or isn't an ancestor of `HEAD`
   (the branch was force-pushed)
 
-In those cases, release the Actors explicitly with `--actors` and a base commit you pick yourself.
+In those cases, rerun `release` with a `--base-commit` you pick yourself: an ancestor of `HEAD` from
+before the changes you want to release (for a shallow checkout, fetch the full history instead).
+`--actors` only narrows which of the changed Actors get released; it never forces a build, so on its
+own it doesn't get past these errors.
 If `HEAD` is the base commit, there is nothing to release and the command exits successfully.
 
 A failed release isn't retried by the next push: that push's base commit is the failed one's head, so

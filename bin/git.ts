@@ -220,7 +220,7 @@ export const resolveReleaseBaseCommit = (baseCommit: string): string => {
     if (ZERO_SHA_REGEX.test(sha)) {
         throw new Error(
             `Base commit is ${sha}, which means the branch was just created and there is no previous release to diff against. ` +
-                `Release the Actors explicitly with --actors and --base-commit set to the commit before your changes.`,
+                `Rerun with --base-commit set to the last commit before the changes you want to release.`,
         );
     }
     // --quiet makes rev-parse print nothing (instead of an error) when the commit is missing
@@ -234,7 +234,8 @@ export const resolveReleaseBaseCommit = (baseCommit: string): string => {
     if (spawnCommandInGhWorkspace(`git merge-base ${sha} HEAD`) !== sha) {
         throw new Error(
             `Base commit ${sha} is not an ancestor of HEAD, most likely because the branch was force-pushed. ` +
-                `The changed files cannot be determined reliably, release the Actors explicitly with --actors.`,
+                `The changed files cannot be determined reliably. Rerun with --base-commit set to an ancestor of HEAD ` +
+                `from before the changes you want to release.`,
         );
     }
     return sha;

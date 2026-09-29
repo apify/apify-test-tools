@@ -75,6 +75,15 @@ describe('RelativeDir', () => {
             expect(actorDir.joinDir('../bar').toString()).toBe('actors/bar');
         });
 
+        it.each(['', '.', '..', 'src/', 'src/.', 'src/..'])('rejects %j as a file path', (raw) => {
+            expect(() => actorDir.joinFile(raw)).toThrow('Expected a file path');
+            expect(() => file(`actors/foo/${raw}`)).toThrow('Expected a file path');
+        });
+
+        it('rejects a file path through a file, too', () => {
+            expect(() => file('actors/foo/main.ts').joinFile('.')).toThrow('Expected a file path');
+        });
+
         it('rejects results that escape the repo root', () => {
             expect(() => actorDotDir.joinDir('../../../..')).toThrow('escapes the repo root');
         });
@@ -98,6 +107,11 @@ describe('RelativeDir', () => {
 
         it('does not match different paths', () => {
             expect(dir('actors/foo').isEqualTo(dir('actors/foobar'))).toBe(false);
+        });
+
+        it('does not match a file and a directory spelled the same', () => {
+            expect(dir('actors/foo').isEqualTo(file('actors/foo'))).toBe(false);
+            expect(file('actors/foo').isEqualTo(dir('actors/foo'))).toBe(false);
         });
     });
 
@@ -139,6 +153,11 @@ describe('RelativeDir', () => {
             expect(ROOT.contains(foo)).toBe(true);
             expect(ROOT.contains(file('README.md'))).toBe(true);
             expect(ROOT.contains(ROOT)).toBe(true);
+        });
+
+        it('does not contain a file spelled the same as itself', () => {
+            expect(foo.contains(file('actors/foo'))).toBe(false);
+            expect(foo.isStrictAncestorOf(file('actors/foo'))).toBe(false);
         });
 
         it('does not make a subfolder contain the root', () => {

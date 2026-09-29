@@ -2,7 +2,7 @@
 
 import process from 'node:process';
 
-import yargs, { type Argv } from 'yargs';
+import yargs, { type Options } from 'yargs';
 // eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
@@ -22,44 +22,40 @@ import { readConfigFile } from './utils/config/load-config.js';
  */
 const middlewares = [setCwd];
 
-export const buildOptions = <T>(y: Argv<T>) => {
-    return y
-        .option('target-branch', {
-            type: 'string',
-            demandOption: true,
-        })
-        .option('source-branch', {
-            type: 'string',
-            demandOption: true,
-        })
-        .option('use-docker-cache', {
-            type: 'boolean',
-            default: false,
-        })
-        .option('base-commit', {
-            type: 'string',
-            demandOption: false,
-        });
-};
+/*
+ * Option groups shared across commands. Each is a plain object passed to `.options()`, so a command's
+ * builder composes them by chaining (`y.options(gitRangeOptions).options(actorSelectionOptions)`)
+ * instead of nesting wrapper functions. `as const` keeps literals like `demandOption: true` so yargs
+ * can infer non-optional types; `satisfies` validates the shape without widening it.
+ */
+
+/** Commit range to inspect: everything on `source-branch` since it diverged from `target-branch`. */
+const gitRangeOptions = {
+    'target-branch': { type: 'string', demandOption: true },
+    'source-branch': { type: 'string', demandOption: true },
+    'base-commit': { type: 'string', demandOption: false },
+} as const satisfies Record<string, Options>;
 
 /**
  * Actor-selection flags, applied to every command that reads the actor config so a caller can
  * narrow the set it operates on (e.g. two-stage releases: `--ignore X`, then `--actors X`).
- * Kept separate from `buildOptions` so the read-only git commands don't advertise flags they ignore.
+ * Kept separate from `gitRangeOptions` so the read-only git commands don't advertise flags they ignore.
  */
-export const actorSelectionOptions = <T>(y: Argv<T>) => {
-    return y
-        .option('actors', {
-            type: 'string',
-            array: true,
-            default: [] as string[],
-        })
-        .option('ignore', {
-            type: 'string',
-            array: true,
-            default: [] as string[],
-        });
-};
+const actorSelectionOptions = {
+    actors: { type: 'string', array: true, default: [] as string[] },
+    ignore: { type: 'string', array: true, default: [] as string[] },
+} as const satisfies Record<string, Options>;
+
+/** Flags for commands that trigger Apify builds. */
+const buildOptions = {
+    'use-docker-cache': { type: 'boolean', default: false },
+} as const satisfies Record<string, Options>;
+
+/** Global flags, available to every command. */
+const globalOptions = {
+    'dry-run': { type: 'boolean', default: false },
+    workspace: { type: 'string' },
+} as const satisfies Record<string, Options>;
 
 const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: boolean }) => {
     const actorConfigs = await readConfigFile(config);
@@ -98,37 +94,51 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
 
 await yargs()
     .scriptName('public-actors-utils')
-    .option('dry-run', {
-        type: 'boolean',
-        default: false,
-    })
-    .option('workspace', {
-        type: 'string',
-    })
+    .options(globalOptions)
     .middleware(middlewares)
-    .command('get-commits', '', buildOptions, (args) => {
-        const commits = getCommits(args);
-        console.log(JSON.stringify(commits));
-    })
-    .command('get-latest-commit', '', buildOptions, (args) => {
-        const commits = getCommits(args);
-        if (commits.length > 0) {
-            console.log(JSON.stringify(commits[commits.length - 1]));
-        }
-    })
-    .command('get-changed-files', '', buildOptions, (args) => {
-        const commits = getCommits(args);
-        const changedFiles = getChangedFiles(commits);
-        console.log(JSON.stringify(changedFiles));
-    })
-    .command('get-actor-configs', '', actorSelectionOptions, async ({ actors, ignore }) => {
-        const actorConfigs = await readConfigFile({ actors, ignore });
-        console.log(JSON.stringify(actorConfigs));
-    })
+    .command(
+        'get-commits',
+        '',
+        (y) => y.options(gitRangeOptions),
+        (args) => {
+            const commits = getCommits(args);
+            console.log(JSON.stringify(commits));
+        },
+    )
+    .command(
+        'get-latest-commit',
+        '',
+        (y) => y.options(gitRangeOptions),
+        (args) => {
+            const commits = getCommits(args);
+            if (commits.length > 0) {
+                console.log(JSON.stringify(commits[commits.length - 1]));
+            }
+        },
+    )
+    .command(
+        'get-changed-files',
+        '',
+        (y) => y.options(gitRangeOptions),
+        (args) => {
+            const commits = getCommits(args);
+            const changedFiles = getChangedFiles(commits);
+            console.log(JSON.stringify(changedFiles));
+        },
+    )
+    .command(
+        'get-actor-configs',
+        '',
+        (y) => y.options(actorSelectionOptions),
+        async ({ actors, ignore }) => {
+            const actorConfigs = await readConfigFile({ actors, ignore });
+            console.log(JSON.stringify(actorConfigs));
+        },
+    )
     .command(
         'get-affected-actors',
         '',
-        (args) => actorSelectionOptions(buildOptions(args)),
+        (y) => y.options(gitRangeOptions).options(actorSelectionOptions),
         async (config) => {
             const actorsChanged = await resolveChangedActors(config, { isLatest: false });
             console.log(JSON.stringify(actorsChanged));
@@ -137,8 +147,8 @@ await yargs()
     .command(
         'report-tests',
         '',
-        (args) =>
-            args
+        (y) =>
+            y
                 .option('report-file', { type: 'string', demandOption: true })
                 .option('report-slack-channel', { type: 'string' })
                 .option('job-url', { type: 'string' })
@@ -150,7 +160,7 @@ await yargs()
     .command(
         'build',
         '',
-        (args) => actorSelectionOptions(buildOptions(args)).option('dry-run', { type: 'boolean', default: false }),
+        (y) => y.options(gitRangeOptions).options(actorSelectionOptions).options(buildOptions),
         async (config) => {
             const actorsChanged = await resolveChangedActors(config, { isLatest: false });
             // https://github.com/apify-store/google-maps#:actors/lukaskrivka_google-maps-with-contact-details
@@ -173,13 +183,13 @@ await yargs()
     .command(
         'release',
         '',
-        (args) =>
-            actorSelectionOptions(args)
+        (y) =>
+            y
+                .options(actorSelectionOptions)
+                .options(buildOptions)
                 .option('push-event-path', { type: 'string', demandOption: true })
-                .option('dry-run', { type: 'boolean', default: false })
                 .option('report-slack-channel', { type: 'string' })
-                .option('release-slack-channel', { type: 'string' })
-                .option('use-docker-cache', { type: 'boolean', default: false }),
+                .option('release-slack-channel', { type: 'string' }),
         async (args) => {
             const { branch, changedFiles, repoUrl, commits, changelog, repository, author } = await getPushData(
                 args.pushEventPath,
@@ -218,17 +228,22 @@ await yargs()
     .command(
         'build-from-local',
         '',
-        (args) => actorSelectionOptions(args).option('dry-run', { type: 'boolean', default: false }),
+        (y) => y.options(actorSelectionOptions),
         async ({ actors, ignore, dryRun }) => {
             const actorConfigs = await readConfigFile({ actors, ignore });
             const builds = await runBuildsFromLocal({ actorConfigs, dryRun });
             console.log(JSON.stringify(builds));
         },
     )
-    .command('delete-old-builds', '', actorSelectionOptions, async ({ actors, ignore }) => {
-        const actorConfigs = await readConfigFile({ actors, ignore });
-        await deleteOldBuilds(actorConfigs);
-    })
+    .command(
+        'delete-old-builds',
+        '',
+        (y) => y.options(actorSelectionOptions),
+        async ({ actors, ignore }) => {
+            const actorConfigs = await readConfigFile({ actors, ignore });
+            await deleteOldBuilds(actorConfigs);
+        },
+    )
     .strictCommands()
     .demandCommand(1, 'Command is required')
     .fail((msg, err, yargsInstance) => {

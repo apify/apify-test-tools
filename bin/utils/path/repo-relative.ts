@@ -28,7 +28,9 @@ export abstract class AbstractPath {
 
     // A file and a directory are never equal, even when spelled the same.
     isEqualTo(other: AbstractPath): boolean {
-        return this.constructor === other.constructor && this.#path === other.#path;
+        // inheritance safe check, at least one of the two is a subclass of the other
+        const isRelativeOf = this instanceof other.constructor || other instanceof this.constructor;
+        return isRelativeOf && this.#path === other.#path;
     }
 
     get path(): string {
@@ -132,8 +134,12 @@ export class RelativeFile extends AbstractPath {
 }
 
 export class ExistingFile extends RelativeFile {
+    constructor(value: string) {
+        super(value);
+        this.assertIsFile();
+    }
+
     static initialize(file: RelativeFile): ExistingFile {
-        file.assertIsFile();
         return new ExistingFile(file.path);
     }
 }

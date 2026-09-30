@@ -16,6 +16,13 @@ on:
                 description: Commit to move the tag to. Defaults to the commit that triggered the caller.
                 type: string
                 default: ''
+            wait_for_publish:
+                description: >-
+                    Set by a release that has just published the pinned version. npm accepts a publish
+                    before the version is readable, so the check waits instead of treating the gap as
+                    a held tag, and fails if the version never appears.
+                type: boolean
+                default: false
 
 permissions:
     contents: read
@@ -58,22 +65,49 @@ jobs:
 
             - name: Check the required package version is published
               id: check
+              env:
+                  # npm accepts a publish and processes it asynchronously ("Your package is being
+                  # processed and may take a few minutes to become available"). Observed at ~19
+                  # minutes for a provenance-signed release, so the release path waits well past
+                  # npm's own estimate rather than shipping a tag consumers cannot install against.
+                  WAIT_SECONDS: ${{ inputs.wait_for_publish && 2400 || 0 }}
               run: |
                   pinned_version=$(cat .github/workflows-package-version)
                   echo "pinned_version=$pinned_version" >> "$GITHUB_OUTPUT"
 
-                  # The publish that satisfies a pin bump can still be in flight when this runs, so
-                  # give it a short grace period before deciding the tag has to stay put.
-                  for attempt in 1 2 3 4 5 6; do
-                      if npm view "apify-test-tools@$pinned_version" version >/dev/null 2>&1; then
+                  deadline=$(( $(date +%s) + WAIT_SECONDS ))
+                  while :; do
+                      # --prefer-online so a 404 cached from an earlier attempt cannot outlive the
+                      # publish it was polling for.
+                      if output=$(npm view "apify-test-tools@$pinned_version" version --prefer-online 2>&1); then
                           echo "apify-test-tools@$pinned_version is on npm"
                           echo "published=true" >> "$GITHUB_OUTPUT"
                           exit 0
                       fi
-                      echo "apify-test-tools@$pinned_version is not on npm yet (attempt $attempt/6)"
-                      if [ "$attempt" -lt 6 ]; then sleep 20; fi
+
+                      # Anything that is not "this version does not exist" is a registry, network or
+                      # auth problem. Sitting in the retry loop would hide it behind a held tag.
+                      if ! grep -q 'code E404' <<< "$output"; then
+                          echo "::error::npm view failed for a reason other than the version being absent."
+                          echo "$output"
+                          exit 1
+                      fi
+
+                      if [ "$(date +%s)" -ge "$deadline" ]; then
+                          break
+                      fi
+                      echo "apify-test-tools@$pinned_version is not on npm yet, retrying in 30s"
+                      sleep 30
                   done
+
                   echo "published=false" >> "$GITHUB_OUTPUT"
+
+                  # A release waited for its own publish and never saw it. That is a broken release,
+                  # not a held tag, and it has to be red so it can be re-run once npm catches up.
+                  if [ "$WAIT_SECONDS" -gt 0 ]; then
+                      echo "::error::apify-test-tools@$pinned_version was published by this run but is still not readable after $((WAIT_SECONDS / 60))m. Re-run this job once it appears on npm."
+                      exit 1
+                  fi
 
             - name: Move tag
               if: steps.check.outputs.published == 'true'

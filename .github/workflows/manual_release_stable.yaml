@@ -91,3 +91,4 @@ jobs:
         uses: ./.github/workflows/_move_major_tag.yaml
         with:
             ref: ${{ needs.release_metadata.outputs.changelog_commitish }}
+            wait_for_publish: true

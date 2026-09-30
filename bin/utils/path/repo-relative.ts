@@ -96,6 +96,17 @@ export class RelativeDir extends AbstractPath {
     }
 }
 
+export class ExistingDir extends RelativeDir {
+    constructor(value: string) {
+        super(value);
+        this.assertIsDir();
+    }
+
+    static initialize(dir: RelativeDir): ExistingDir {
+        return new ExistingDir(dir.path);
+    }
+}
+
 export class RelativeFile extends AbstractPath {
     constructor(value: string) {
         assertNamesFile(value);

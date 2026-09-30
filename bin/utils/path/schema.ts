@@ -1,6 +1,6 @@
 import z from 'zod';
 
-import { ExistingFile, RelativeDir, RelativeFile } from './repo-relative.js';
+import { ExistingDir, ExistingFile, RelativeDir, RelativeFile } from './repo-relative.js';
 
 const parsePath = <T>(construct: (value: string) => T) =>
     z.string().transform((value, ctx): T | typeof z.NEVER => {
@@ -13,5 +13,6 @@ const parsePath = <T>(construct: (value: string) => T) =>
     });
 
 export const RelativeDirSchema = parsePath((value) => new RelativeDir(value));
+export const ExistingDirSchema = parsePath((value) => new ExistingDir(value));
 export const RelativeFileSchema = parsePath((value) => new RelativeFile(value));
 export const ExistingFileSchema = parsePath((value) => new ExistingFile(value));

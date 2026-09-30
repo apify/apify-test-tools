@@ -1,17 +1,25 @@
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { safeReadJsonObjectFile } from '../../../../bin/utils/json-file.js';
+import { ExistingFile } from '../../../../bin/utils/path/repo-relative.js';
 
-// These tests read real fixture files rather than mocking `node:fs`: the whole point of
-// `safeReadJsonObjectFile` is how it reacts to real stat/readFile outcomes (missing path, directory,
-// symlink, unreadable file), so mocking those away would only assert the mock back to itself.
+// These tests read real fixture files rather than mocking `node:fs`. Existence and file-kind checks
+// happen when constructing ExistingFile; this reader tests JSON parsing and read failures after that.
 const FIXTURE_DIR = fileURLToPath(new URL('../../../fixtures/bin/utils/files/', import.meta.url));
 
-const fixture = (name: string) => path.join(FIXTURE_DIR, name);
+let originalCwd: string;
+
+beforeEach(() => {
+    originalCwd = process.cwd();
+    process.chdir(FIXTURE_DIR);
+});
+
+afterEach(() => process.chdir(originalCwd));
+
+const fixture = (name: string): ExistingFile => new ExistingFile(name);
 
 const NESTED_FIXTURE = {
     storages: { datasets: { default: { title: 'Default' } } },
@@ -42,29 +50,6 @@ describe('safeReadJsonObjectFile', () => {
     });
 
     describe('filesystem-level handling', () => {
-        it('fails when the path does not exist', () => {
-            const filePath = fixture('does-not-exist.json');
-
-            const result = safeReadJsonObjectFile(filePath);
-
-            expect(result).toMatchObject({
-                success: false,
-                reason: 'unreadable',
-            });
-        });
-
-        // The fixture is named `directory.json` on purpose — the check is `stat().isFile()`, not the extension.
-        it('fails when the path is a directory', () => {
-            const filePath = fixture('directory.json');
-
-            const result = safeReadJsonObjectFile(filePath);
-
-            expect(result).toMatchObject({
-                success: false,
-                reason: 'not-a-file',
-            });
-        });
-
         // Regression guard: `lstat` would report the link itself as "not a file" and reject it, even
         // though `readFile` follows symlinks and would have read the target without complaint.
         it('follows a symlink to its target file', () => {
@@ -76,14 +61,15 @@ describe('safeReadJsonObjectFile', () => {
         // Git only tracks the executable bit, so this is the one case whose fixture cannot carry its own
         // mode — `unreadable.json` is committed readable and stripped of permissions just for this test.
         describe('unreadable file', () => {
-            const filePath = fixture('unreadable.json');
+            const filePath = 'unreadable.json';
 
             afterEach(async () => fs.chmod(filePath, 0o644));
 
             it.runIf(process.getuid?.() !== 0)('fails when the file exists but cannot be read', async () => {
+                const file = fixture(filePath);
                 await fs.chmod(filePath, 0o000);
 
-                const result = safeReadJsonObjectFile(filePath);
+                const result = safeReadJsonObjectFile(file);
 
                 expect(result).toMatchObject({
                     success: false,
@@ -135,7 +121,7 @@ describe('safeReadJsonObjectFile', () => {
             const result = safeReadJsonObjectFile(filePath);
 
             expect(result).toMatchObject({ success: false, reason: 'invalid-json' });
-            expect((result as { failure: Error }).failure.message).toContain(`Failed to parse ${filePath}`);
+            expect((result as { failure: Error }).failure.message).toContain(`Failed to parse ${filePath.path}`);
         });
 
         it('fails on an empty file', () => {
@@ -144,7 +130,7 @@ describe('safeReadJsonObjectFile', () => {
             const result = safeReadJsonObjectFile(filePath);
 
             expect(result).toMatchObject({ success: false, reason: 'invalid-json' });
-            expect((result as { failure: Error }).failure.message).toContain(`Failed to parse ${filePath}`);
+            expect((result as { failure: Error }).failure.message).toContain(`Failed to parse ${filePath.path}`);
         });
 
         it.fails('reads jsonc', () => {

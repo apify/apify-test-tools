@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CONFIG_FILE_NAME, loadActorConfig, readConfigFile } from '../../../../../bin/utils/config/load-config.js';
 import type { ResolvedActorConfig } from '../../../../../bin/utils/config/structures/base.js';
+import { ExistingDir, RelativeDir } from '../../../../../bin/utils/path/repo-relative.js';
 
 let repoDir: string;
 let originalCwd: string;
@@ -15,6 +16,7 @@ beforeEach(async () => {
     // `realpath` because macOS hands out a symlinked temp dir, while `process.cwd()` reports the target.
     repoDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'apify-test-tools-config-')));
     process.chdir(repoDir);
+    await fs.mkdir('actors/shopify', { recursive: true });
 });
 
 afterEach(async () => {
@@ -37,12 +39,11 @@ const writeFiles = async (files: Record<string, string>) =>
     );
 
 describe('loadActorConfig', () => {
-    const entry = (fields: Partial<ResolvedActorConfig> = {}): ResolvedActorConfig => ({
-        folder: 'actors/shopify',
-        actorFullName: 'myteam/shopify',
-        tokenEnvVar: 'APIFY_TOKEN',
-        overrideActorContext: undefined,
-        ...fields,
+    const entry = (fields: Partial<ResolvedActorConfig> = {}) => ({
+        folder: new ExistingDir(fields.folder ?? 'actors/shopify'),
+        actorFullName: fields.actorFullName ?? 'myteam/shopify',
+        tokenEnvVar: fields.tokenEnvVar ?? 'APIFY_TOKEN',
+        overrideActorContext: fields.overrideActorContext?.map((contextPath) => new RelativeDir(contextPath)),
     });
 
     const writeActorJson = async (fields: Record<string, unknown> = {}) =>

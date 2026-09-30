@@ -1,6 +1,12 @@
 import z from 'zod';
 
-import { CONFIG_FILE_STRATEGY, type ResolvedActorConfig, type StrategyParser } from './structures/base.js';
+import { ExistingDirSchema, RelativeDirSchema } from '../path/schema.js';
+import {
+    CONFIG_FILE_STRATEGY,
+    type ResolvedActorConfig,
+    type StrategyParser,
+    type ValidatedActorConfig,
+} from './structures/base.js';
 import { GROUPED_PARSER } from './structures/grouped.js';
 import { LEGACY_PARSER } from './structures/legacy.js';
 
@@ -32,32 +38,34 @@ const normalizeFolder = (folder: string): string => {
     return stripped === '.' ? '' : stripped;
 };
 
-/**
- * Normalizes the paths the user wrote and checks the cross-entry invariants a per-entry schema
- * cannot: that no two actors claim the same folder once normalized, nor the same actor on the
- * platform. Collects every violation before throwing, so one run reports all of them rather than
- * only the first.
- *
- * @returns the actors it vouched for, with their paths normalized.
- * @throws Error listing every problem found.
- */
-function verifyConfiguration(body: ResolvedActorConfig[]): ResolvedActorConfig[] {
-    const seenFolders = new Set<string>();
-    const seenActorFullNames = new Set<string>();
-    const errors: string[] = [];
+const ValidatedConfigSchema = z.array(
+    z.object({
+        actorFullName: z.string(),
+        folder: ExistingDirSchema,
+        tokenEnvVar: z.string(),
+        overrideActorContext: z.array(RelativeDirSchema).optional(),
+    }),
+);
 
+/** Normalize and validate paths, then check collisions using their final spelling. */
+function verifyConfiguration(body: ResolvedActorConfig[]): ValidatedActorConfig[] {
     const normalized = body.map((entry) => ({
         ...entry,
         folder: normalizeFolder(entry.folder),
         overrideActorContext: entry.overrideActorContext?.map(stripTrailingSlash),
     }));
+    const parsed = ValidatedConfigSchema.safeParse(normalized);
+    if (!parsed.success) throw new Error(z.prettifyError(parsed.error));
 
-    for (const [index, entry] of normalized.entries()) {
+    const seenFolders = new Set<string>();
+    const seenActorFullNames = new Set<string>();
+    const errors: string[] = [];
+    for (const [index, entry] of parsed.data.entries()) {
         // TODO: drop folder uniqueness (this requires several changes on other places)
-        if (seenFolders.has(entry.folder)) {
+        if (seenFolders.has(entry.folder.path)) {
             errors.push(`Duplicate folder "${body[index].folder}". Each actor must have a unique folder.`);
         } else {
-            seenFolders.add(entry.folder);
+            seenFolders.add(entry.folder.path);
         }
 
         if (seenActorFullNames.has(entry.actorFullName)) {
@@ -67,11 +75,8 @@ function verifyConfiguration(body: ResolvedActorConfig[]): ResolvedActorConfig[]
         }
     }
 
-    if (errors.length > 0) {
-        throw new Error(errors.join('\n'));
-    }
-
-    return normalized;
+    if (errors.length > 0) throw new Error(errors.join('\n'));
+    return parsed.data;
 }
 
 // eslint-disable-next-line no-underscore-dangle
@@ -80,10 +85,10 @@ export const _privates = {
     verifyConfiguration,
 };
 
-export function parseConfigFile(body: Record<string, unknown>): ResolvedActorConfig[] {
-    const strategy = selectStrategy(body);
+export function parseConfigFile(body: Record<string, unknown>): ValidatedActorConfig[] {
+    const { mode, ...rest } = body;
+    const strategy = selectStrategy(mode);
 
-    const resolved = strategy.parse(body);
-    const validated = verifyConfiguration(resolved);
-    return validated;
+    const resolved = strategy.parse(rest);
+    return verifyConfiguration(resolved);
 }

@@ -2,6 +2,8 @@ import { prettifyError, type ZodType } from 'zod';
 
 import { ACTOR_NAME, USERNAME } from '@apify/consts';
 
+import type { ExistingDir, RelativeDir } from '../../path/repo-relative.js';
+
 function stripRegexAnchor(regex: string): string {
     return regex.replace(/^\^/, '').replace(/\$$/, '');
 }
@@ -19,6 +21,11 @@ export interface ResolvedActorConfig {
     folder: string;
     tokenEnvVar: string;
     overrideActorContext: string[] | undefined;
+}
+
+export interface ValidatedActorConfig extends Omit<ResolvedActorConfig, 'folder' | 'overrideActorContext'> {
+    folder: ExistingDir;
+    overrideActorContext?: RelativeDir[];
 }
 
 export enum CONFIG_FILE_STRATEGY {

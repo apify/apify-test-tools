@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { ExistingFile, RelativeDir, RelativeFile } from '../../../../../bin/utils/path/repo-relative.js';
-import { ExistingFileSchema, RelativeDirSchema, RelativeFileSchema } from '../../../../../bin/utils/path/schema.js';
+import { ExistingDir, ExistingFile, RelativeDir, RelativeFile } from '../../../../../bin/utils/path/repo-relative.js';
+import {
+    ExistingDirSchema,
+    ExistingFileSchema,
+    RelativeDirSchema,
+    RelativeFileSchema,
+} from '../../../../../bin/utils/path/schema.js';
 
 describe('RelativeDirSchema', () => {
     it('normalizes a repo-relative directory', () => {
@@ -15,6 +20,20 @@ describe('RelativeDirSchema', () => {
         expect(RelativeDirSchema.safeParse('../outside').success).toBe(false);
         expect(RelativeDirSchema.safeParse('/absolute').success).toBe(false);
         expect(RelativeDirSchema.safeParse(123).success).toBe(false);
+    });
+});
+
+describe('ExistingDirSchema', () => {
+    it('parses an existing directory, including the repo root', () => {
+        const parsed = ExistingDirSchema.parse('./bin/');
+        expect(parsed).toBeInstanceOf(ExistingDir);
+        expect(parsed.path).toBe('bin');
+        expect(ExistingDirSchema.parse('').path).toBe('.');
+    });
+
+    it('rejects missing directories and files', () => {
+        expect(ExistingDirSchema.safeParse('missing-dir').success).toBe(false);
+        expect(ExistingDirSchema.safeParse('package.json').success).toBe(false);
     });
 });
 

@@ -2,12 +2,36 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ExistingFile, RelativeDir, type RelativeFile } from '../../../../../bin/utils/path/repo-relative.js';
+import {
+    ExistingDir,
+    ExistingFile,
+    RelativeDir,
+    type RelativeFile,
+} from '../../../../../bin/utils/path/repo-relative.js';
 
 // Paths from the config file and from git all enter through the root.
 const { ROOT } = RelativeDir;
 const dir = (raw: string): RelativeDir => ROOT.joinDir(raw);
 const file = (raw: string): RelativeFile => ROOT.joinFile(raw);
+
+describe('ExistingDir', () => {
+    it('validates directories through both construction paths', () => {
+        expect(ExistingDir.initialize(dir('bin')).path).toBe('bin');
+        expect(new ExistingDir('./bin/').path).toBe('bin');
+        expect(new ExistingDir('.').path).toBe('.');
+        expect(() => ExistingDir.initialize(dir('missing-dir'))).toThrow('to exist');
+        expect(() => new ExistingDir('package.json')).toThrow('to be a directory');
+    });
+
+    it('preserves directory equality after existence validation', () => {
+        const relative = dir('./bin');
+        const existing = ExistingDir.initialize(relative);
+
+        expect(relative.isEqualTo(existing)).toBe(true);
+        expect(existing.isEqualTo(relative)).toBe(true);
+        expect(existing.isEqualTo(file('bin'))).toBe(false);
+    });
+});
 
 describe('ExistingFile', () => {
     it('validates files through initialize', () => {

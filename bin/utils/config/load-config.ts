@@ -1,9 +1,8 @@
-import path from 'node:path';
-
 import { selectActors } from '../../actor-filtering.js';
-import { isPathWithinScope } from '../../path-utils.js';
 import type { ActorConfig } from '../../types.js';
 import { safeReadJsonObjectFile } from '../json-file.js';
+import { type ExistingDir, ExistingFile, type RelativeDir } from '../path/repo-relative.js';
+import { type ActorJsonPaths, readActorJson } from './actor-json.js';
 import { parseConfigFile } from './parser.js';
 import type { ValidatedActorConfig } from './structures/base.js';
 
@@ -14,17 +13,14 @@ export const CONFIG_FILE_NAME = 'apify-test-tools.config.json';
 //   1. file                -> plain object          (safeReadJsonObjectFile)
 //   2. plain object        -> ValidatedActorConfig[] (parseConfigFile — picks a strategy, validates
 //                                                    and normalizes; see ./parser.ts)
-//   3. ValidatedActorConfig -> ActorConfig          (loadActorConfig — merges in .actor/actor.json)
+//   3. ValidatedActorConfig -> LoadedActorConfig    (loadActorConfig — reads .actor/actor.json)
 
 // #region utils
 
-const findOverlappingContextPaths = (contextPaths: string[]): [string, string] | undefined => {
+const findOverlappingContextPaths = (contextPaths: RelativeDir[]): [RelativeDir, RelativeDir] | undefined => {
     for (let i = 0; i < contextPaths.length; i++) {
         for (let j = i + 1; j < contextPaths.length; j++) {
-            if (
-                isPathWithinScope(contextPaths[i], contextPaths[j]) ||
-                isPathWithinScope(contextPaths[j], contextPaths[i])
-            ) {
+            if (contextPaths[i].contains(contextPaths[j]) || contextPaths[j].contains(contextPaths[i])) {
                 return [contextPaths[i], contextPaths[j]];
             }
         }
@@ -32,9 +28,17 @@ const findOverlappingContextPaths = (contextPaths: string[]): [string, string] |
     return undefined;
 };
 
-// The repo root is spelled "" internally but "." in a config file, so report it the way a reader
-// would have written it.
-const displayFolder = (folder: string): string => folder || '.';
+// Downstream ActorConfig consumers still use "" for the repo root.
+const legacyPath = (dir: RelativeDir): string => (dir.path === '.' ? '' : dir.path);
+
+export interface LoadedActorConfig {
+    actorFullName: string;
+    folder: ExistingDir;
+    tokenEnvVar: string;
+    actorJson: ActorJsonPaths;
+    dockerContextDir: RelativeDir;
+    contextPaths: RelativeDir[];
+}
 
 // #endregion
 
@@ -42,7 +46,16 @@ const displayFolder = (folder: string): string => folder || '.';
 
 /** Stage 1 — the config file as a plain object, or a failure phrased for whoever wrote it. */
 const readConfigFileContents = async (): Promise<Record<string, unknown>> => {
-    const file = safeReadJsonObjectFile(CONFIG_FILE_NAME);
+    let configFile: ExistingFile;
+    try {
+        configFile = new ExistingFile(CONFIG_FILE_NAME);
+    } catch {
+        throw new Error(
+            `Config file "${CONFIG_FILE_NAME}" not found in the current directory. ` +
+                `Please create one with the required actor entries.`,
+        );
+    }
+    const file = safeReadJsonObjectFile(configFile);
     if (file.success) {
         return file.contents;
     }
@@ -66,58 +79,43 @@ const readConfigFileContents = async (): Promise<Record<string, unknown>> => {
  * Stage 3 — resolves one normalized entry against the repo, reading the actor's `.actor/actor.json`
  * for its `dockerContextDir` and deciding which paths count as the actor's context.
  */
-export const loadActorConfig = (entry: ValidatedActorConfig): ActorConfig => {
-    const folder = entry.folder.path === '.' ? '' : entry.folder.path;
-    const actorJsonPath = folder ? `${folder}/.actor/actor.json` : '.actor/actor.json';
-
-    const actorJson = safeReadJsonObjectFile(actorJsonPath);
-    if (!actorJson.success) {
-        throw new Error(
-            `Cannot read "${actorJsonPath}". Every actor entry in "${CONFIG_FILE_NAME}" ` +
-                `must have a corresponding .actor/actor.json file.`,
-        );
-    }
-
-    const actorDotDir = folder ? `${folder}/.actor` : '.actor';
-    const rawDockerContextDir =
-        typeof actorJson.contents.dockerContextDir === 'string' ? actorJson.contents.dockerContextDir : '..';
-    const resolved = path.resolve(process.cwd(), actorDotDir, rawDockerContextDir);
-    const dockerContextDir = path.relative(process.cwd(), resolved);
-
-    if (dockerContextDir.startsWith('..')) {
-        throw new Error(
-            `"dockerContextDir" for folder "${displayFolder(folder)}" resolves outside the repository root. ` +
-                `Resolved path: "${dockerContextDir}".`,
-        );
-    }
-
-    const normalizedDockerContextDir = dockerContextDir === '.' ? '' : dockerContextDir;
-    const contextPaths = entry.overrideActorContext?.map((contextPath) =>
-        contextPath.path === '.' ? '' : contextPath.path,
-    ) ?? [normalizedDockerContextDir];
+export const loadActorConfig = (entry: ValidatedActorConfig): LoadedActorConfig => {
+    const { folder } = entry;
+    const actorJson = readActorJson(entry);
+    const { dockerContextDir } = actorJson;
+    const contextPaths = [...(entry.overrideActorContext ?? [dockerContextDir])];
 
     // The actor's own folder is always part of its context. When an explicit "overrideActorContext"
     // doesn't already cover it, add it automatically instead of failing the workflow.
-    if (!contextPaths.some((contextPath) => isPathWithinScope(folder, contextPath))) {
+    if (!contextPaths.some((contextPath) => contextPath.contains(folder))) {
         contextPaths.push(folder);
     }
 
     const overlap = findOverlappingContextPaths(contextPaths);
     if (overlap) {
         throw new Error(
-            `Invalid context paths for folder "${displayFolder(folder)}" in "${CONFIG_FILE_NAME}": ` +
+            `Invalid context paths for folder "${folder}" in "${CONFIG_FILE_NAME}": ` +
                 `"${overlap[0]}" and "${overlap[1]}" overlap. Context paths must not be prefixes of one another.`,
         );
     }
 
     return {
         actorFullName: entry.actorFullName,
-        folder,
+        folder: entry.folder,
         tokenEnvVar: entry.tokenEnvVar,
-        dockerContextDir: normalizedDockerContextDir,
+        actorJson,
+        dockerContextDir,
         contextPaths,
     };
 };
+
+const toLegacyActorConfig = (entry: LoadedActorConfig): ActorConfig => ({
+    actorFullName: entry.actorFullName,
+    folder: legacyPath(entry.folder),
+    tokenEnvVar: entry.tokenEnvVar,
+    dockerContextDir: legacyPath(entry.dockerContextDir),
+    contextPaths: entry.contextPaths.map(legacyPath),
+});
 
 // #endregion
 
@@ -128,7 +126,7 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
     const actorConfigs: ActorConfig[] = [];
     for (const parsed of parsedConfigs) {
         // Sequential on purpose: the first actor with a problem should be the one reported.
-        actorConfigs.push(loadActorConfig(parsed));
+        actorConfigs.push(toLegacyActorConfig(loadActorConfig(parsed)));
     }
 
     return selectActors(selection, actorConfigs);

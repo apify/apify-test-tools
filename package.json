@@ -47,7 +47,7 @@
     },
     "scripts": {
         "start": "npm run dist/bin/main.js",
-        "start:dev": "GITHUB_WORKSPACE=local-clone tsx bin/main.ts",
+        "start:dev": "tsx bin/main.ts --workspace local-clone",
         "build": "tsc && chmod +x ./dist/bin/main.js",
         "lint": "eslint",
         "lint:fix": "eslint --fix",

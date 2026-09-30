@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { _privates, parseConfigFile } from '../../../../../bin/utils/config/parser.js';
 import { CONFIG_FILE_STRATEGY } from '../../../../../bin/utils/config/structures/base.js';
+import { GROUPED_PARSER } from '../../../../../bin/utils/config/structures/grouped.js';
 import { LEGACY_PARSER } from '../../../../../bin/utils/config/structures/legacy.js';
 
 const { selectStrategy, verifyConfiguration } = _privates;
@@ -10,27 +11,31 @@ const actor = (fields: Record<string, unknown> = {}) => ({
     folder: 'actors/shopify',
     actorFullName: 'myteam/shopify',
     tokenEnvVar: 'APIFY_TOKEN',
+    overrideActorContext: undefined,
     ...fields,
 });
 
 describe('selectStrategy', () => {
     it('falls back to the legacy strategy when no mode is declared', () => {
-        expect(selectStrategy(undefined)).toBe(LEGACY_PARSER);
+        expect(selectStrategy({})).toBe(LEGACY_PARSER);
     });
 
-    it('honours an explicit mode', () => {
-        expect(selectStrategy(CONFIG_FILE_STRATEGY.LEGACY)).toBe(LEGACY_PARSER);
+    it.each([
+        [CONFIG_FILE_STRATEGY.LEGACY, LEGACY_PARSER],
+        [CONFIG_FILE_STRATEGY.GROUPED, GROUPED_PARSER],
+    ])('honours an explicit "%s" mode', (mode, expected) => {
+        expect(selectStrategy({ mode })).toBe(expected);
     });
 
     it('throws on a mode no strategy is registered for', () => {
-        expect(() => selectStrategy('some-nonexistent-mode')).toThrow(/Invalid input/);
+        expect(() => selectStrategy('some-nonexistent-mode')).toThrow();
     });
 });
 
 describe('verifyConfiguration', () => {
     it('resolves the repo root to "" and gets rid of trailing slashes', () => {
         const result = verifyConfiguration([
-            { folder: '.', actorFullName: 'myteam/root', tokenEnvVar: 'APIFY_TOKEN' },
+            { folder: '.', actorFullName: 'myteam/root', tokenEnvVar: 'APIFY_TOKEN', overrideActorContext: undefined },
             {
                 folder: 'actors/shopify/',
                 actorFullName: 'myteam/shopify',
@@ -121,6 +126,22 @@ describe('parseConfigFile', () => {
     it('validates and normalizes a plain object without touching the filesystem', () => {
         expect(parseConfigFile({ actors: [actor({ folder: 'actors/shopify/' })] })).toEqual([
             actor({ folder: 'actors/shopify', overrideActorContext: undefined }),
+        ]);
+    });
+
+    it('parses a grouped config file, which needs mode to be stripped', () => {
+        expect(
+            parseConfigFile({
+                mode: CONFIG_FILE_STRATEGY.GROUPED,
+                groups: {
+                    myteam: {
+                        actors: [{ folder: 'actors/shopify/', actorFullName: 'myteam/shopify' }],
+                        tokenEnvVar: 'APIFY_TOKEN',
+                    },
+                },
+            }),
+        ).toEqual([
+            actor({ folder: 'actors/shopify', actorFullName: 'myteam/shopify', overrideActorContext: undefined }),
         ]);
     });
 

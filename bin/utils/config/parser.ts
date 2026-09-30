@@ -1,6 +1,7 @@
 import z from 'zod';
 
 import { CONFIG_FILE_STRATEGY, type ResolvedActorConfig, type StrategyParser } from './structures/base.js';
+import { GROUPED_PARSER } from './structures/grouped.js';
 import { LEGACY_PARSER } from './structures/legacy.js';
 
 const CONFIG_FILE_STRATEGIES: {
@@ -8,9 +9,10 @@ const CONFIG_FILE_STRATEGIES: {
     [key in CONFIG_FILE_STRATEGY]: StrategyParser & { mode: key };
 } = {
     [CONFIG_FILE_STRATEGY.LEGACY]: LEGACY_PARSER,
+    [CONFIG_FILE_STRATEGY.GROUPED]: GROUPED_PARSER,
 } as const;
 
-const ModeSelectionSchema = z.enum(CONFIG_FILE_STRATEGY).default(CONFIG_FILE_STRATEGY.LEGACY);
+const ModeSelectionSchema = z.object({ mode: z.enum(CONFIG_FILE_STRATEGY).default(CONFIG_FILE_STRATEGY.LEGACY) });
 
 function selectStrategy(mode: unknown): StrategyParser {
     const parsed = ModeSelectionSchema.safeParse(mode);
@@ -18,7 +20,7 @@ function selectStrategy(mode: unknown): StrategyParser {
         throw new Error(z.prettifyError(parsed.error));
     }
 
-    return CONFIG_FILE_STRATEGIES[parsed.data];
+    return CONFIG_FILE_STRATEGIES[parsed.data.mode];
 }
 
 // Strips a trailing slash so config-declared paths ("actors/shopify/" vs "actors/shopify") compare equal.
@@ -79,10 +81,9 @@ export const _privates = {
 };
 
 export function parseConfigFile(body: Record<string, unknown>): ResolvedActorConfig[] {
-    const { mode, ...rest } = body;
-    const strategy = selectStrategy(mode);
+    const strategy = selectStrategy(body);
 
-    const resolved = strategy.parse(rest);
+    const resolved = strategy.parse(body);
     const validated = verifyConfiguration(resolved);
     return validated;
 }

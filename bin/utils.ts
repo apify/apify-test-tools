@@ -84,11 +84,10 @@ export const getEnvVar = (varName: string, defaultValue?: string): string => {
     return value;
 };
 
+// Commands expect to run from the repository root (config file and Actor folders are relative to it).
+// That is the current directory by default, --workspace points elsewhere, e.g. for local development.
 export const setCwd = ({ workspace }: { workspace: string | undefined }) => {
     if (workspace) {
         process.chdir(workspace);
-        return;
     }
-    const ghWorkspace = getEnvVar('GITHUB_WORKSPACE', process.cwd());
-    process.chdir(ghWorkspace);
 };

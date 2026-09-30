@@ -10,7 +10,6 @@ The package consists of three parts:
 
 - `bin/build.ts` actor building
 - `bin/git.ts` git wrappers for getting relevant git commits and changed files
-- `bin/github.ts` github push event parsing
 - `bin/main.ts` entrypoing
 - `bin/slack.ts` sending notifications to slack
 - `bin/test-report.ts` processing vitest's test reports
@@ -40,12 +39,11 @@ git clone git@github.com:apify-store/testing-repo-for-github-actions.git
 
 #### Working on the CLI
 
-To work on the library, you just need to define `GITHUB_WORKSPACE` to tell the cli where you repo is located:
+To work on the library, point the cli to your repo with `--workspace` (it defaults to the current directory):
 
 ```sh
-export GITHUB_WORKSPACE=../path/to/testing-repo-for-github-actions # path to the repo
 npx tsx bin/main.ts --help
-npx tsx bin/main.ts get-commits --target-branch master --source-branch feat/testing-feature-branch
+npx tsx bin/main.ts --workspace ../path/to/testing-repo-for-github-actions get-commits --target-branch master --source-branch feat/testing-feature-branch
 ```
 
 #### Working on the library

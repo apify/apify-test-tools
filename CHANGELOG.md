@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 
 - **config/modes:** Lay groundwork for multiple configuration structures ([#142](https://github.com/apify/apify-test-tools/pull/142)) ([7e18638](https://github.com/apify/apify-test-tools/commit/7e18638a8d3523154dbe819312c2b16b54c548ff)) by [@JuanGalilea](https://github.com/JuanGalilea)
 - **workflows:** Host the reusable GitHub workflows in this repo ([#120](https://github.com/apify/apify-test-tools/pull/120)) ([10f089d](https://github.com/apify/apify-test-tools/commit/10f089d85146ceb7cdae964cfa1fc2577df43a37)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- **mode:** Add grouped config mode ([#143](https://github.com/apify/apify-test-tools/pull/143)) ([9d0b93e](https://github.com/apify/apify-test-tools/commit/9d0b93e194a2cd810a31bcef4ca9457fd9ebfb9b)) by [@JuanGalilea](https://github.com/JuanGalilea)
 
 ### 🐛 Bug Fixes
 
@@ -18,6 +19,7 @@ All notable changes to this project will be documented in this file.
 ### 🚜 Refactor
 
 - **workflows:** [**breaking**] Rename the floating tag to workflows-v0 ([#146](https://github.com/apify/apify-test-tools/pull/146)) ([c48fb22](https://github.com/apify/apify-test-tools/commit/c48fb223c885c4e5de7e5f64d8c14f6d03fcc7de)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- **bin:** [**breaking**] Remove GitHub event dependency from release command ([#153](https://github.com/apify/apify-test-tools/pull/153)) ([e6953aa](https://github.com/apify/apify-test-tools/commit/e6953aa095d1a92638c6d72441e1b312d9f835c3)) by [@metalwarrior665](https://github.com/metalwarrior665), closes [#131](https://github.com/apify/apify-test-tools/issues/131)
 
 
 <!-- git-cliff-unreleased-end -->

@@ -25,6 +25,8 @@ jobs:
               with:
                   npm-token: ${{ secrets.NPM_TOKEN }}
 
+            # --base-commit is the last commit that is already released: the push's "before" commit.
+            # Everything after it up to HEAD gets released. See the "Releasing Actors" section of the README.
             # run-with-apify-tokens.mjs reads the token names from in apify-test-tools.config.json
             # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
             # The library never sees secrets it doesn't need
@@ -34,7 +36,7 @@ jobs:
                   SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
               run: |
                   node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
-                    npx apify-test-tools release --push-event-path ${{ github.event_path }} --release-slack-channel "#delivery-public-actors" --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" --use-docker-cache
+                    npx apify-test-tools release --base-commit ${{ github.event.before }} --release-slack-channel "#delivery-public-actors" --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" --use-docker-cache
 
             - name: Delete old builds
               env:

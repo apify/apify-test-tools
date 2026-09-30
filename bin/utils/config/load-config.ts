@@ -5,16 +5,16 @@ import { isPathWithinScope } from '../../path-utils.js';
 import type { ActorConfig } from '../../types.js';
 import { safeReadJsonObjectFile } from '../json-file.js';
 import { parseConfigFile } from './parser.js';
-import type { ResolvedActorConfig } from './structures/base.js';
+import type { ValidatedActorConfig } from './structures/base.js';
 
 export const CONFIG_FILE_NAME = 'apify-test-tools.config.json';
 
 // Reading the config happens in three stages, each one swappable on its own:
 //
 //   1. file                -> plain object          (safeReadJsonObjectFile)
-//   2. plain object        -> ResolvedActorConfig[] (parseConfigFile — picks a strategy, validates
+//   2. plain object        -> ValidatedActorConfig[] (parseConfigFile — picks a strategy, validates
 //                                                    and normalizes; see ./parser.ts)
-//   3. ResolvedActorConfig -> ActorConfig           (loadActorConfig — merges in .actor/actor.json)
+//   3. ValidatedActorConfig -> ActorConfig          (loadActorConfig — merges in .actor/actor.json)
 
 // #region utils
 
@@ -66,8 +66,8 @@ const readConfigFileContents = async (): Promise<Record<string, unknown>> => {
  * Stage 3 — resolves one normalized entry against the repo, reading the actor's `.actor/actor.json`
  * for its `dockerContextDir` and deciding which paths count as the actor's context.
  */
-export const loadActorConfig = (entry: ResolvedActorConfig): ActorConfig => {
-    const { folder } = entry;
+export const loadActorConfig = (entry: ValidatedActorConfig): ActorConfig => {
+    const folder = entry.folder.path === '.' ? '' : entry.folder.path;
     const actorJsonPath = folder ? `${folder}/.actor/actor.json` : '.actor/actor.json';
 
     const actorJson = safeReadJsonObjectFile(actorJsonPath);
@@ -92,7 +92,9 @@ export const loadActorConfig = (entry: ResolvedActorConfig): ActorConfig => {
     }
 
     const normalizedDockerContextDir = dockerContextDir === '.' ? '' : dockerContextDir;
-    const contextPaths = [...(entry.overrideActorContext ?? [normalizedDockerContextDir])];
+    const contextPaths = entry.overrideActorContext?.map((contextPath) =>
+        contextPath.path === '.' ? '' : contextPath.path,
+    ) ?? [normalizedDockerContextDir];
 
     // The actor's own folder is always part of its context. When an explicit "overrideActorContext"
     // doesn't already cover it, add it automatically instead of failing the workflow.

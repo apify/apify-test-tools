@@ -63,6 +63,12 @@ on:
 
                     If you create a new issue, you MUST write its issue number (just the number, nothing else) to $GITHUB_WORKSPACE/issue-number.txt as the very last thing you do. If you skip creating one because a duplicate already exists, do not create the file.
                 description: Prompt given to Claude for the investigation phase. Override to customize how issues are investigated, titled, and described.
+            mock_issue_number:
+                required: true
+                type: string
+            mock_checkout_ref:
+                required: true
+                type: string
         secrets:
             ANTHROPIC_API_KEY:
                 required: true
@@ -85,78 +91,9 @@ jobs:
         outputs:
             issue_number: ${{ steps.issue.outputs.number }}
         steps:
-            - name: Checkout repository
-              uses: actions/checkout@v5
-
-            - name: Run Claude Code
-              id: claude
-              uses: anthropics/claude-code-action@8251c103ac8c1d761882c86aba1412c7f583c844 # v1.0.213
-              env:
-                  TESTER_APIFY_TOKEN_READ_ONLY: ${{ secrets.TESTER_APIFY_TOKEN_READ_ONLY }}
-              with:
-                  prompt: |
-                      The failing E2E platform test ran in workflow run ${{ github.run_id }} of this repo.
-
-                      ${{ inputs.investigate_prompt }}
-                  github_token: ${{ secrets.GITHUB_TOKEN }}
-                  anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-                  # The `tools` query parameter below selects which tools the Apify MCP server
-                  # exposes: reading an Actor run — its status, exit code, storage ids and log — and
-                  # reading that run's dataset items and its key-value store keys and records, e.g.
-                  # INPUT, OUTPUT and error snapshots. WARN: the server adds `abort-actor-run` on top
-                  # even when not listed here, see https://github.com/apify/apify-mcp-server
-                  claude_args: |
-                      --mcp-config '{"mcpServers":{"apify":{"type":"http","url":"https://mcp.apify.com/?tools=get-actor-run,get-actor-log,get-dataset-list,get-dataset,get-dataset-items,get-key-value-store-list,get-key-value-store,get-key-value-store-keys,get-key-value-store-record","headers":{"Authorization":"Bearer ${TESTER_APIFY_TOKEN_READ_ONLY}"}}}}'
-                      --model ${{ inputs.model }}
-                      --dangerously-skip-permissions
-
-            - name: Upload Claude output (for debugging)
-              if: always()
-              uses: actions/upload-artifact@v6
-              with:
-                  name: claude-output-investigate
-                  path: /home/runner/work/_temp/claude-execution-output.json
-
             - name: Read created issue
               id: issue
-              # Claude writes the issue number to a file because there is no direct way to pass
-              # structured output from a Claude Code action step to subsequent steps.
-              run: |
-                  if [ -f "$GITHUB_WORKSPACE/issue-number.txt" ]; then
-                      ISSUE_NUMBER=$(cat "$GITHUB_WORKSPACE/issue-number.txt")
-                      echo "number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-                      echo "Issue created: #$ISSUE_NUMBER"
-                  else
-                      echo "number=" >> "$GITHUB_OUTPUT"
-                      echo "No issue created (duplicate skipped)"
-                  fi
-
-            # Adds the "claude" label for visibility. Normally this would trigger the claude.yaml
-            # workflow, but scheduled runs lack the permissions to trigger other workflows, so the
-            # PR phase is driven by the fix job dependency instead.
-            - name: Add Claude label to issue
-              if: steps.issue.outputs.number != ''
-              uses: actions/github-script@v7
-              with:
-                  github-token: ${{ secrets.GITHUB_TOKEN }}
-                  script: |
-                      try {
-                          await github.rest.issues.createLabel({
-                              owner: context.repo.owner,
-                              repo: context.repo.repo,
-                              name: "claude",
-                              color: "d93f0b",
-                          });
-                      } catch (e) {
-                          // Label already exists
-                      }
-
-                      await github.rest.issues.addLabels({
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          issue_number: parseInt('${{ steps.issue.outputs.number }}'),
-                          labels: ["claude"],
-                      });
+              run: echo "number=${{ inputs.mock_issue_number }}" >> "$GITHUB_OUTPUT"
 
     fix:
         needs: investigate
@@ -171,6 +108,8 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v5
+              with:
+                  ref: ${{ inputs.mock_checkout_ref }}
 
             - name: Use Node.js 24
               uses: actions/setup-node@v5
@@ -202,23 +141,3 @@ jobs:
               with:
                   name: claude-output-fix
                   path: /home/runner/work/_temp/claude-execution-output.json
-
-            # Adds "claude:done" to the issue to signal that a fix PR was opened. Pure status
-            # tracking — does not trigger any further automation.
-            - name: Mark issue as processed by Claude
-              if: steps.claude.conclusion == 'success'
-              uses: actions/github-script@v7
-              with:
-                  github-token: ${{ secrets.GITHUB_TOKEN }}
-                  script: |
-                      try {
-                          await github.rest.issues.addLabels({
-                              owner: context.repo.owner,
-                              repo: context.repo.repo,
-                              issue_number: parseInt('${{ needs.investigate.outputs.issue_number }}'),
-                              labels: ['claude:done']
-                          });
-                          console.log('Label claude:done added to issue.');
-                      } catch (e) {
-                          console.log('Label claude:done does not exist. Skipping.');
-                      }

@@ -70,6 +70,9 @@ on:
             TESTER_APIFY_TOKEN_READ_ONLY:
                 required: true
                 description: Apify token used only for read-only investigation — reading the failing run, its log and its storages.
+            NPM_TOKEN:
+                required: false
+                description: Read-only token for installing private npm packages before Claude runs.
 
 jobs:
     investigate:
@@ -168,6 +171,19 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v5
+
+            - name: Use Node.js 24
+              uses: actions/setup-node@v5
+              with:
+                  node-version: 24
+                  package-manager-cache: false
+
+            - name: Install npm dependencies
+              if: hashFiles('package-lock.json') != ''
+              env:
+                  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+              run: npm ci
 
             - name: Run Claude Code
               id: claude

@@ -87,7 +87,7 @@ export const _privates = {
 
 export function parseConfigFile(body: Record<string, unknown>): ValidatedActorConfig[] {
     const { mode, ...rest } = body;
-    const strategy = selectStrategy(mode);
+    const strategy = selectStrategy({ mode });
 
     const resolved = strategy.parse(rest);
     return verifyConfiguration(resolved);

@@ -1,8 +1,7 @@
-import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
 import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
 import { logger } from './logger.js';
-import { findContainingScope, hoistPath, isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, Commit } from './types.js';
+import { type RelativeDir, RelativeFile } from './utils/path/repo-relative.js';
 
 interface ShouldBuildAndTestOptions {
     filepathsChanged: string[];
@@ -21,9 +20,10 @@ const IGNORED_TOP_LEVEL_FILES = [
     '.editorconfig',
 ];
 
-// Expects an already-hoisted path (relative to the matched context entry, see findContainingScope).
-const isIgnoredTopLevelFile = (hoistedLowercaseFilePath: string): boolean =>
-    IGNORED_TOP_LEVEL_FILES.some((pattern) => hoistedLowercaseFilePath.startsWith(pattern));
+const isIgnoredTopLevelFile = (filePath: RelativeFile, contextPath: RelativeDir): boolean => {
+    const pathWithinContext = contextPath.relativePathTo(filePath.path);
+    return IGNORED_TOP_LEVEL_FILES.some((pattern) => pathWithinContext.startsWith(pattern));
+};
 
 type FileChangeForActor =
     | { impact: 'ignored' }
@@ -34,81 +34,61 @@ type FileChangeForActor =
 /**
  * Classify a single file change for a single actor.
  *
- * Steps (in order):
- * 1. CHANGELOG.md, by filename, anywhere → cosmetic. There is a single repo-wide shared changelog,
- *    not one per actor, so it applies to every actor regardless of context/folder.
- * 2. Context matching (actorConfig.contextPaths) → outside-context if no match
- * 3. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
- * 4. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
- *    dir → ignored if matched
- * 5. README.md by filename → cosmetic if inside the actor's own folder, otherwise ignored
- * 6. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
- * 7. Everything else → functional
+ * Configured changelog and readme paths are cosmetic even outside the actor's context.
+ * Other files must be inside a context path. Ignore known development files at the top
+ * of that context, then treat files in the actor's `.actor/` directory as functional.
+ * A remaining README.md is cosmetic inside the actor folder and ignored elsewhere.
+ * For other files, apply the Docker context's `.dockerignore`; anything left is functional.
  */
 const classifyFileChange = (
-    originalFilePath: string,
+    changedFile: RelativeFile,
     actorConfig: ActorConfig,
-    commits: Commit[],
     dockerIgnoreMatcher: DockerIgnoreMatcher,
 ): FileChangeForActor => {
-    const lowercaseFilePath = originalFilePath.toLowerCase();
-
-    // TODO: hardcodes that there's a single repo-wide changelog belonging to every actor. Should instead
-    // be derived from parsing actor.json (readme, changelog, schema paths), see
-    // https://github.com/apify/apify-test-tools/issues/106
-    if (lowercaseFilePath.endsWith('changelog.md')) {
+    // Actor metadata can reference documentation outside the configured context.
+    const isChangelog = actorConfig.actorJson.changelog?.isEqualTo(changedFile);
+    const isReadme = actorConfig.actorJson.readme?.isEqualTo(changedFile);
+    if (isChangelog || isReadme) {
         return { impact: 'cosmetic', semanticallyVerified: false };
     }
 
-    const lowercaseContextPaths = actorConfig.contextPaths.map((contextPath) => contextPath.toLowerCase());
-
-    const matchedContext = findContainingScope(lowercaseFilePath, lowercaseContextPaths);
-    if (matchedContext === undefined) {
+    const matchedContext = actorConfig.contextPaths.find((contextPath) => contextPath.contains(changedFile));
+    if (!matchedContext) {
         return { impact: 'outside-context' };
     }
 
-    const hoistedFilePath = hoistPath(lowercaseFilePath, matchedContext);
-    if (isIgnoredTopLevelFile(hoistedFilePath)) {
+    if (isIgnoredTopLevelFile(changedFile, matchedContext)) {
         return { impact: 'ignored' };
     }
 
-    const lowercaseFolder = actorConfig.folder.toLowerCase();
-    const actorDotDir = lowercaseFolder ? `${lowercaseFolder}/.actor` : '.actor';
-    const isUnderActorDotDir = isPathWithinScope(lowercaseFilePath, actorDotDir);
+    const isUnderActorDotDir = actorConfig.actorJson.file.parent.contains(changedFile);
 
-    // .actor/ can legitimately be listed in .dockerignore (the Apify platform evaluates it before
-    // the Docker build, so excluding it from the build context is a valid caching optimization) —
-    // that shouldn't cause changes to .actor/ itself to be ignored here.
-    if (!isUnderActorDotDir && dockerIgnoreMatcher(originalFilePath)) {
-        return { impact: 'ignored' };
+    // Other actor metadata can affect behavior, even when excluded from the Docker context.
+    if (isUnderActorDotDir) {
+        return { impact: 'functional' };
     }
 
-    const isInActorFolder = isPathWithinScope(lowercaseFilePath, lowercaseFolder);
+    const isInActorFolder = changedFile.isWithin(actorConfig.folder);
 
-    if (lowercaseFilePath.endsWith('readme.md')) {
+    if (changedFile.path.endsWith('README.md')) {
         return isInActorFolder ? { impact: 'cosmetic', semanticallyVerified: false } : { impact: 'ignored' };
     }
 
-    if (lowercaseFilePath.endsWith('.json') && isUnderActorDotDir) {
-        const isCosmetic = isCosmeticOnlyJsonSchemaChange(commits, originalFilePath);
-        if (isCosmetic) {
-            return { impact: 'cosmetic', semanticallyVerified: true };
-        }
+    // Match remaining files against patterns relative to the Docker context directory.
+    if (dockerIgnoreMatcher(changedFile.path)) {
+        return { impact: 'ignored' };
     }
 
     return { impact: 'functional' };
 };
 
 /**
- * Check if a file falls inside another actor's folder.
- * Root actors (folder === "") never exclude files from siblings.
+ * Exclude files inside another actor's non-root folder, including for an actor at the repo root.
  */
-const isExcludedBySibling = (lowercaseFilePath: string, actor: ActorConfig, allActors: ActorConfig[]): boolean => {
+const isExcludedBySibling = (filePath: RelativeFile, actor: ActorConfig, allActors: ActorConfig[]): boolean => {
     return allActors.some(
         (other) =>
-            other.folder !== actor.folder &&
-            other.folder !== '' &&
-            isPathWithinScope(lowercaseFilePath, other.folder.toLowerCase()),
+            !other.folder.isEqualTo(actor.folder) && other.folder.path !== '.' && filePath.isWithin(other.folder),
     );
 };
 
@@ -171,7 +151,6 @@ export const getChangedActors = ({
     filepathsChanged,
     actorConfigs,
     isLatest = false,
-    commits,
 }: ShouldBuildAndTestOptions): ActorConfig[] => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
 
@@ -179,20 +158,20 @@ export const getChangedActors = ({
         const dockerIgnoreMatcher = loadDockerIgnore(actorConfig.dockerContextDir);
 
         for (const originalFilePath of filepathsChanged) {
-            const lowercaseFilePath = originalFilePath.toLowerCase();
+            const filePath = new RelativeFile(originalFilePath);
 
-            if (isExcludedBySibling(lowercaseFilePath, actorConfig, actorConfigs)) {
+            if (isExcludedBySibling(filePath, actorConfig, actorConfigs)) {
                 continue;
             }
 
-            const change = classifyFileChange(originalFilePath, actorConfig, commits, dockerIgnoreMatcher);
+            const change = classifyFileChange(filePath, actorConfig, dockerIgnoreMatcher);
 
             if (change.impact === 'ignored' || change.impact === 'outside-context') continue;
             if (change.impact === 'cosmetic' && !isLatest) continue;
 
-            const entry = actorsChangedMap.get(actorConfig.folder) ?? { actorConfig, files: [] };
+            const entry = actorsChangedMap.get(actorConfig.folder.path) ?? { actorConfig, files: [] };
             entry.files.push(originalFilePath);
-            actorsChangedMap.set(actorConfig.folder, entry);
+            actorsChangedMap.set(actorConfig.folder.path, entry);
         }
     }
 

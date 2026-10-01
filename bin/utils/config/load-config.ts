@@ -1,8 +1,8 @@
 import { selectActors } from '../../actor-filtering.js';
 import type { ActorConfig } from '../../types.js';
 import { safeReadJsonObjectFile } from '../json-file.js';
-import { type ExistingDir, ExistingFile, type RelativeDir } from '../path/repo-relative.js';
-import { type ActorJsonPaths, readActorJson } from './actor-json.js';
+import { ExistingFile, type RelativeDir } from '../path/repo-relative.js';
+import { readActorJson } from './actor-json.js';
 import { parseConfigFile } from './parser.js';
 import type { ValidatedActorConfig } from './structures/base.js';
 
@@ -27,18 +27,6 @@ const findOverlappingContextPaths = (contextPaths: RelativeDir[]): [RelativeDir,
     }
     return undefined;
 };
-
-// Downstream ActorConfig consumers still use "" for the repo root.
-const legacyPath = (dir: RelativeDir): string => (dir.path === '.' ? '' : dir.path);
-
-export interface LoadedActorConfig {
-    actorFullName: string;
-    folder: ExistingDir;
-    tokenEnvVar: string;
-    actorJson: ActorJsonPaths;
-    dockerContextDir: RelativeDir;
-    contextPaths: RelativeDir[];
-}
 
 // #endregion
 
@@ -79,7 +67,7 @@ const readConfigFileContents = async (): Promise<Record<string, unknown>> => {
  * Stage 3 — resolves one normalized entry against the repo, reading the actor's `.actor/actor.json`
  * for its `dockerContextDir` and deciding which paths count as the actor's context.
  */
-export const loadActorConfig = (entry: ValidatedActorConfig): LoadedActorConfig => {
+export const loadActorConfig = (entry: ValidatedActorConfig): ActorConfig => {
     const { folder } = entry;
     const actorJson = readActorJson(entry);
     const { dockerContextDir } = actorJson;
@@ -109,14 +97,6 @@ export const loadActorConfig = (entry: ValidatedActorConfig): LoadedActorConfig 
     };
 };
 
-const toLegacyActorConfig = (entry: LoadedActorConfig): ActorConfig => ({
-    actorFullName: entry.actorFullName,
-    folder: legacyPath(entry.folder),
-    tokenEnvVar: entry.tokenEnvVar,
-    dockerContextDir: legacyPath(entry.dockerContextDir),
-    contextPaths: entry.contextPaths.map(legacyPath),
-});
-
 // #endregion
 
 export const readConfigFile = async (selection: { actors: string[]; ignore: string[] }): Promise<ActorConfig[]> => {
@@ -126,7 +106,7 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
     const actorConfigs: ActorConfig[] = [];
     for (const parsed of parsedConfigs) {
         // Sequential on purpose: the first actor with a problem should be the one reported.
-        actorConfigs.push(toLegacyActorConfig(loadActorConfig(parsed)));
+        actorConfigs.push(loadActorConfig(parsed));
     }
 
     return selectActors(selection, actorConfigs);

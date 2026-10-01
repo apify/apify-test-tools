@@ -171,19 +171,21 @@ describe('parseConfigFile', () => {
     });
 
     it('parses a grouped config file, which needs mode to be stripped', () => {
-        expect(
-            parseConfigFile({
-                mode: CONFIG_FILE_STRATEGY.GROUPED,
-                groups: {
-                    myteam: {
-                        actors: [{ folder: 'actors/shopify/', actorFullName: 'myteam/shopify' }],
-                        tokenEnvVar: 'APIFY_TOKEN',
-                    },
+        const parsed = parseConfigFile({
+            mode: CONFIG_FILE_STRATEGY.GROUPED,
+            groups: {
+                myteam: {
+                    actors: [{ folder: 'actors/shopify/', actorFullName: 'myteam/shopify' }],
+                    tokenEnvVar: 'APIFY_TOKEN',
                 },
-            }),
-        ).toEqual([
-            actor({ folder: 'actors/shopify', actorFullName: 'myteam/shopify', overrideActorContext: undefined }),
-        ]);
+            },
+        });
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0].folder).toBeInstanceOf(ExistingDir);
+        expect(parsed[0].folder.path).toBe('actors/shopify');
+        expect(parsed[0].actorFullName).toBe('myteam/shopify');
+        expect(parsed[0].tokenEnvVar).toBe('APIFY_TOKEN');
+        expect(parsed[0].overrideActorContext).toBeUndefined();
     });
 
     it('surfaces cross-entry violations from verifyConfiguration', () => {

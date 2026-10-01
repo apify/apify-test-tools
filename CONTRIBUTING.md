@@ -39,11 +39,12 @@ git clone git@github.com:apify-store/testing-repo-for-github-actions.git
 
 #### Working on the CLI
 
-To work on the library, point the cli to your repo with `--workspace` (it defaults to the current directory):
+To work on the library, run the cli from the root of your testing repo:
 
 ```sh
-npx tsx bin/main.ts --help
-npx tsx bin/main.ts --workspace ../path/to/testing-repo-for-github-actions get-commits --target-branch master --source-branch feat/testing-feature-branch
+cd /path/to/testing-repo-for-github-actions
+npx tsx /path/to/apify-test-tools/bin/main.ts --help
+npx tsx /path/to/apify-test-tools/bin/main.ts get-commits --target-branch master --source-branch feat/testing-feature-branch
 ```
 
 #### Working on the library

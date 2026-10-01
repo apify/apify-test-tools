@@ -2,7 +2,6 @@ export interface Config {
     targetBranch: string;
     sourceBranch: string;
     baseCommit?: string;
-    workspace?: string;
     actors: string[];
     ignore: string[];
 }

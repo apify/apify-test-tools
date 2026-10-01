@@ -595,7 +595,7 @@ The main local flow is:
 4. Build Actors on Apify (with your new code)
 5. Run tests against those builds. You can change tests and run on the same builds.
 
-Run every command from the root of the actor repository you want to work with (or point `--workspace` at it).
+Run every command from the root of the actor repository you want to work with.
 
 #### 4. Build affected Actors
 
@@ -725,5 +725,5 @@ skips the check.
 For development on `apify-test-tools` itself, use `tsx` directly:
 
 ```bash
-tsx bin/main.ts --workspace local-clone get-actor-configs
+cd local-clone && tsx ../bin/main.ts get-actor-configs
 ```

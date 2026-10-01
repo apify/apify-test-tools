@@ -30,9 +30,7 @@ describe('getCommits', () => {
     let gitCommandSpy: MockInstance;
 
     beforeEach(() => {
-        gitCommandSpy = vi
-            .spyOn(Utils, 'spawnCommandInGhWorkspace')
-            .mockReturnValue(`${commit3}\n${commit2}\n${commit1}`);
+        gitCommandSpy = vi.spyOn(Utils, 'spawnCommand').mockReturnValue(`${commit3}\n${commit2}\n${commit1}`);
     });
 
     it('should return commits between source and target branches', () => {
@@ -102,7 +100,7 @@ describe('getChangedFiles', () => {
     let gitCommandSpy: MockInstance;
 
     beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockReturnValue('file1.txt\nfolder/file2.txt');
+        gitCommandSpy = vi.spyOn(Utils, 'spawnCommand').mockReturnValue('file1.txt\nfolder/file2.txt');
     });
 
     it('should return changed files between commits', () => {
@@ -156,7 +154,7 @@ describe('hasMergeFromTarget', () => {
     let gitCommandSpy: MockInstance;
 
     beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'spawnCommandInGhWorkspace');
+        gitCommandSpy = vi.spyOn(Utils, 'spawnCommand');
     });
 
     it('should return false when there are no merge commits on the branch', () => {
@@ -205,7 +203,7 @@ describe('getBranchOnlyChangedFiles', () => {
     let gitCommandSpy: MockInstance;
 
     beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'spawnCommandInGhWorkspace');
+        gitCommandSpy = vi.spyOn(Utils, 'spawnCommand');
     });
 
     it('should return files touched by non-merge commits', () => {
@@ -258,12 +256,12 @@ describe('parseBaseCommit', () => {
 
 describe('getCurrentBranch', () => {
     it('should return the checked-out branch', () => {
-        vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockReturnValue('master');
+        vi.spyOn(Utils, 'spawnCommand').mockReturnValue('master');
         expect(getCurrentBranch()).toBe('master');
     });
 
     it('should throw on a detached HEAD', () => {
-        vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockReturnValue('HEAD');
+        vi.spyOn(Utils, 'spawnCommand').mockReturnValue('HEAD');
         expect(() => getCurrentBranch()).toThrow('HEAD is detached');
     });
 });
@@ -298,7 +296,7 @@ describe('resolveReleaseBaseCommit', () => {
     const baseSha = 'b'.repeat(40);
 
     it('should return the base commit when it is an ancestor of HEAD', () => {
-        vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockImplementation((cmd: string) => {
+        vi.spyOn(Utils, 'spawnCommand').mockImplementation((cmd: string) => {
             if (cmd.startsWith('git rev-parse --verify')) return baseSha;
             if (cmd.startsWith('git merge-base')) return baseSha;
             return '';
@@ -307,18 +305,18 @@ describe('resolveReleaseBaseCommit', () => {
     });
 
     it('should throw on the all-zeros SHA of a newly created branch', () => {
-        const spy = vi.spyOn(Utils, 'spawnCommandInGhWorkspace');
+        const spy = vi.spyOn(Utils, 'spawnCommand');
         expect(() => resolveReleaseBaseCommit('0'.repeat(40))).toThrow('the branch was just created');
         expect(spy).not.toHaveBeenCalled();
     });
 
     it('should throw when the base commit is missing from the local history', () => {
-        vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockReturnValue('');
+        vi.spyOn(Utils, 'spawnCommand').mockReturnValue('');
         expect(() => resolveReleaseBaseCommit(baseSha)).toThrow('is not in the local git history');
     });
 
     it('should throw when the base commit is not an ancestor of HEAD (force push)', () => {
-        vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockImplementation((cmd: string) => {
+        vi.spyOn(Utils, 'spawnCommand').mockImplementation((cmd: string) => {
             if (cmd.startsWith('git rev-parse --verify')) return baseSha;
             if (cmd.startsWith('git merge-base')) return 'c'.repeat(40);
             return '';
@@ -340,7 +338,7 @@ describe('getReleaseChanges', () => {
     let gitCommandSpy: MockInstance;
 
     beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'spawnCommandInGhWorkspace').mockImplementation((cmd: string) => {
+        gitCommandSpy = vi.spyOn(Utils, 'spawnCommand').mockImplementation((cmd: string) => {
             if (cmd === 'git rev-parse HEAD') return headSha;
             if (cmd.startsWith('git log')) return `${mergeCommit}\n${mergedBranchCommit}`;
             if (cmd.startsWith('git diff --name-only')) return 'actors/foo/src/main.ts\nCHANGELOG.md';

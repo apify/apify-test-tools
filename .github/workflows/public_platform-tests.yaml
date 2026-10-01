@@ -49,7 +49,6 @@ jobs:
                   return_code=$?
                   npx apify-test-tools report-tests \
                     --report-file ./test-output.json \
-                    --workspace . \
                     --workflow-name "${{ github.workflow }}" \
                     --job-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
                     --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}"

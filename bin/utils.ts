@@ -58,7 +58,7 @@ export const readSourceFile = async (absPath: string, rootDir: string): Promise<
     content: await fs.readFile(absPath),
 });
 
-export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
+export const spawnCommand = (command: string, args: string[] = []) => {
     console.error(command, args.join(' '));
     const commandResult = spawnSync(command, args, { shell: true, maxBuffer: 100 * 1024 * 1024 });
 
@@ -82,12 +82,4 @@ export const getEnvVar = (varName: string, defaultValue?: string): string => {
         throw new Error(`${varName} not defined`);
     }
     return value;
-};
-
-// Commands expect to run from the repository root (config file and Actor folders are relative to it).
-// That is the current directory by default, --workspace points elsewhere, e.g. for local development.
-export const setCwd = ({ workspace }: { workspace: string | undefined }) => {
-    if (workspace) {
-        process.chdir(workspace);
-    }
 };

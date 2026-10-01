@@ -65,7 +65,8 @@ runs:
           run: npm ci
 
         # Repos can still have older version locally but on cloud we enforce uniformity.
-        # This causes minor mismatch in package-lock.json and node_modules but it shouldn't cause any issues.
+        # --no-save swaps the package in node_modules only and leaves the repo's package.json and
+        # package-lock.json untouched, so node_modules is ahead of the lockfile but the checkout stays clean.
         - name: Enforce test tools version required by these workflows
           # We don't override beta so we can use it to test branch-specific versions of apify-test-tools
           # Needs the npm token too: a repo whose .npmrc routes all traffic through a private
@@ -79,7 +80,7 @@ runs:
               echo "Package-lock version of apify-test-tools: $locked_version"
               if [[ "$locked_version" == *"-beta"* ]]; then
                 echo "Beta version detected, reinstalling $locked_version to ensure cache consistency"
-                npm install apify-test-tools@$locked_version --audit=false --no-fund;
+                npm install "apify-test-tools@$locked_version" --no-save --audit=false --no-fund;
               else
                 # The workflows name the exact package version they ship with, so a tag is a complete
                 # statement: these workflows and this library. A frozen major tag then keeps
@@ -90,5 +91,5 @@ runs:
                 # version; the release that publishes X is the commit that pins X.
                 pinned_version=$(cat "${{ github.action_path }}/../../workflows-package-version")
                 echo "Installing apify-test-tools@$pinned_version (pinned by these workflows)"
-                npm install "apify-test-tools@$pinned_version" --audit=false --no-fund;
+                npm install "apify-test-tools@$pinned_version" --no-save --audit=false --no-fund;
               fi

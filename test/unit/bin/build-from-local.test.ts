@@ -13,7 +13,9 @@ import {
     // @ts-ignore: editor-only TS6059 — test/tsconfig.json's rootDir doesn't span bin/, but the root
     // tsconfig (used for the real build and for eslint's type-aware linting) has no such restriction.
 } from '../../../bin/build-from-local.js';
+import type { ActorConfig } from '../../../bin/types.js';
 import * as Utils from '../../../bin/utils.js';
+import { ExistingDir, ExistingFile, RelativeDir } from '../../../bin/utils/path/repo-relative.js';
 
 const mkTempDir = async (prefix: string) => fs.mkdtemp(path.join(os.tmpdir(), prefix));
 
@@ -32,17 +34,53 @@ describe('build-from-local helpers', () => {
 
             await fs.writeFile(path.join(rootDir, 'main.js'), 'console.log(1)');
             await fs.writeFile(path.join(rootDir, '.env'), 'SECRET=1');
+            await fs.writeFile(path.join(rootDir, 'docker-ignored.txt'), 'ignored');
+            await fs.writeFile(path.join(rootDir, '.dockerignore'), 'docker-ignored.txt\n');
             await fs.mkdir(path.join(rootDir, 'sub'));
             await fs.writeFile(path.join(rootDir, 'sub', 'ignored.log'), 'log');
 
-            vi.spyOn(Utils, 'listRepoFilePaths').mockResolvedValue(['main.js', '.env', 'sub/ignored.log']);
+            vi.spyOn(Utils, 'listRepoFilePaths').mockResolvedValue([
+                'main.js',
+                '.env',
+                'docker-ignored.txt',
+                'sub/ignored.log',
+            ]);
             vi.spyOn(Utils, 'getGitignoredPaths').mockImplementation(
                 async (relativePaths) => new Set(relativePaths.filter((p) => p.endsWith('.log'))),
             );
 
-            const result = await collectNonIgnoredFiles(rootDir, rootDir);
+            const originalCwd = process.cwd();
+            process.chdir(rootDir);
+            try {
+                expect(await collectNonIgnoredFiles(RelativeDir.ROOT, rootDir)).toStrictEqual([
+                    path.join(rootDir, 'main.js'),
+                ]);
+            } finally {
+                process.chdir(originalCwd);
+            }
+        });
 
-            expect(result).toStrictEqual([path.join(rootDir, 'main.js')]);
+        it('matches .dockerignore relative to a nested Docker context', async () => {
+            const rootDir = await mkTempDir('apify-test-tools-nested-context-');
+            tempDirs.push(rootDir);
+            await fs.mkdir(path.join(rootDir, 'actors', 'shopify'), { recursive: true });
+            await fs.writeFile(path.join(rootDir, 'actors', 'shopify', '.dockerignore'), 'dist/\n');
+
+            vi.spyOn(Utils, 'listRepoFilePaths').mockResolvedValue([
+                'actors/shopify/dist/bundle.js',
+                'actors/shopify/src/main.ts',
+            ]);
+            vi.spyOn(Utils, 'getGitignoredPaths').mockResolvedValue(new Set());
+
+            const originalCwd = process.cwd();
+            process.chdir(rootDir);
+            try {
+                expect(await collectNonIgnoredFiles(new RelativeDir('actors/shopify'), rootDir)).toStrictEqual([
+                    path.join(rootDir, 'actors', 'shopify', 'src', 'main.ts'),
+                ]);
+            } finally {
+                process.chdir(originalCwd);
+            }
         });
     });
 
@@ -148,11 +186,19 @@ describe('build-from-local helpers', () => {
                     'actors/owner_actor/.actor/actor.json',
                     'package.json',
                 ]);
-                vi.spyOn(Utils, 'getGitignoredPaths').mockResolvedValue(
-                    new Set(['actors/owner_actor/.actor/actor.json']),
-                );
-
-                const sourceFiles = await collectSourceFiles('owner/actor', actorDir);
+                vi.spyOn(Utils, 'getGitignoredPaths').mockResolvedValue(new Set());
+                const actorConfig: ActorConfig = {
+                    actorFullName: 'owner/actor',
+                    folder: new ExistingDir('actors/owner_actor'),
+                    tokenEnvVar: 'APIFY_TOKEN',
+                    actorJson: {
+                        file: new ExistingFile('actors/owner_actor/.actor/actor.json'),
+                        dockerContextDir: RelativeDir.ROOT,
+                    },
+                    dockerContextDir: RelativeDir.ROOT,
+                    contextPaths: [RelativeDir.ROOT],
+                };
+                const sourceFiles = await collectSourceFiles(actorConfig);
                 expect(sourceFiles.map((file) => file.name)).toContain('.actor/actor.json');
             } finally {
                 process.chdir(originalCwd);

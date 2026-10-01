@@ -2,6 +2,7 @@ import fs from 'node:fs';
 
 import ignore from 'ignore';
 
+import { logger } from './logger.js';
 import type { RelativeDir, RelativeFile } from './utils/path/repo-relative.js';
 
 export type DockerIgnoreMatcher = (repoRelativePath: string) => boolean;
@@ -50,7 +51,7 @@ export const loadDockerIgnore = (dockerContextDir: RelativeDir): DockerIgnoreMat
         const dockerIgnorePath = dockerContextDir.joinFile('.dockerignore');
         return buildDockerIgnoreMatcher(dockerIgnorePath);
     } catch {
-        console.warn(`[.dockerignore] not found in "${dockerContextDir}".`);
+        logger.warn(`[.dockerignore] not found in "${dockerContextDir}".`);
         return () => false;
     }
 };

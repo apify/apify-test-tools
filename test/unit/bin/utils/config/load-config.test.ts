@@ -176,13 +176,22 @@ describe('readConfigFile', () => {
             'actors/shopify/.actor/actor.json': actorJson({}),
         });
 
-        expect(await readConfigFile(emptyActorSelection)).toEqual([
+        const actors = await readConfigFile(emptyActorSelection);
+        expect(
+            actors.map(({ actorFullName, folder, tokenEnvVar, dockerContextDir, contextPaths }) => ({
+                actorFullName,
+                folder: folder.path,
+                tokenEnvVar,
+                dockerContextDir: dockerContextDir.path,
+                contextPaths: contextPaths.map((contextPath) => contextPath.path),
+            })),
+        ).toEqual([
             {
                 actorFullName: 'apify/root',
-                folder: '',
+                folder: '.',
                 tokenEnvVar: 'APIFY_TOKEN_APIFY',
-                dockerContextDir: '',
-                contextPaths: [''],
+                dockerContextDir: '.',
+                contextPaths: ['.'],
             },
             {
                 actorFullName: 'myteam/shopify',
@@ -192,6 +201,9 @@ describe('readConfigFile', () => {
                 contextPaths: ['actors/shopify', 'packages'],
             },
         ]);
+        expect(actors.every((actor) => actor.folder instanceof ExistingDir)).toBe(true);
+        expect(actors.every((actor) => actor.dockerContextDir instanceof RelativeDir)).toBe(true);
+        expect(actors.every((actor) => actor.actorJson.file instanceof ExistingFile)).toBe(true);
     });
 
     it('throws when config file is missing', async () => {

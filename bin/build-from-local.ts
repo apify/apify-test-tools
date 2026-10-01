@@ -7,12 +7,13 @@ import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType } from 'apify-client';
 
 import { dryRunBuildData, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
-import { buildDockerIgnoreMatcher } from './dockerignore.js';
+import { loadDockerIgnore } from './dockerignore.js';
 import { logger } from './logger.js';
 import { isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, BuildData } from './types.js';
 import type { SourceFile } from './utils.js';
 import { getGitignoredPaths, isOutsideDir, listRepoFilePaths, readSourceFile } from './utils.js';
+import type { RelativeDir } from './utils/path/repo-relative.js';
 
 // JUST IN CASE. File patterns that commonly hold credentials — never ship these into a build, regardless
 // of sourceType or of whether the repo's .gitignore happens to list them. Everything else that should be
@@ -21,30 +22,27 @@ import { getGitignoredPaths, isOutsideDir, listRepoFilePaths, readSourceFile } f
 const SKIP_FILE_PATTERNS = [/^\.env(\..+)?$/, /\.pem$/, /\.key$/, /\.pfx$/, /\.p12$/];
 const isSecretFile = (fileName: string): boolean => SKIP_FILE_PATTERNS.some((pattern) => pattern.test(fileName));
 
-export const collectSourceFiles = async (actorName: string, actorDir: string): Promise<SourceFile[]> => {
+export const collectSourceFiles = async (actorConfig: ActorConfig): Promise<SourceFile[]> => {
     const repoRoot = process.cwd();
-    const absActorDir = path.resolve(actorDir);
+    const absActorDir = path.resolve(actorConfig.folder.path);
 
-    // Read actor.json to check if this is a monorepo actor with an external dockerContextDir.
-    // Monorepo actors point their dockerContextDir to a parent directory (e.g. "../../.."),
-    // which means the Docker build context is the repo root, not the actor directory itself.
-    const actorJsonPath = path.join(absActorDir, '.actor', 'actor.json');
-    const actorJson = JSON.parse(await fs.readFile(actorJsonPath, 'utf8')) as Record<string, unknown>;
-    const rawContextDir = actorJson.dockerContextDir as string | undefined;
-    const contextAbsDir = rawContextDir ? path.resolve(absActorDir, '.actor', rawContextDir) : undefined;
-    const isMonorepoActor = !!contextAbsDir && isOutsideDir(contextAbsDir, absActorDir);
+    // Config loading has already resolved dockerContextDir. Keep the raw actor.json contents
+    // for rewriting its path fields if this actor needs a flattened build context.
+    const actorJson = JSON.parse(await fs.readFile(actorConfig.actorJson.file.path, 'utf8')) as Record<string, unknown>;
+    const isMonorepoActor = !actorConfig.folder.contains(actorConfig.dockerContextDir);
 
-    const dockerContextDirAbs = isMonorepoActor ? contextAbsDir! : absActorDir;
-    const keptFilePaths = collectNonIgnoredFiles(dockerContextDirAbs, repoRoot);
+    const sourceRoot = isMonorepoActor ? actorConfig.dockerContextDir : actorConfig.folder;
+    const sourceRootAbs = path.resolve(sourceRoot.path);
+    const keptFilePaths = collectNonIgnoredFiles(sourceRoot, repoRoot);
 
     if (!isMonorepoActor) {
-        return Promise.all(keptFilePaths.map(async (filePath) => readSourceFile(filePath, dockerContextDirAbs)));
+        return Promise.all(keptFilePaths.map(async (filePath) => readSourceFile(filePath, sourceRootAbs)));
     }
 
     const { tempDir, filePaths } = await flattenMonorepoContext(
-        actorName,
+        actorConfig.actorFullName,
         absActorDir,
-        contextAbsDir!,
+        sourceRootAbs,
         actorJson,
         keptFilePaths,
     );
@@ -65,16 +63,10 @@ export const collectSourceFiles = async (actorName: string, actorDir: string): P
 // regardless of .gitignore/.dockerignore, matching Apify CLI's own behavior. Files matching the
 // hardcoded secret-pattern backstop (keys, certs, .env variants) are dropped unconditionally,
 // .actor/ included, since those should never ship regardless of what the ignore files say.
-export const collectNonIgnoredFiles = (dockerContextDir: string, repoRoot: string): string[] => {
-    const relativePaths = listRepoFilePaths(repoRoot, dockerContextDir);
+export const collectNonIgnoredFiles = (dockerContextDir: RelativeDir, repoRoot: string): string[] => {
+    const relativePaths = listRepoFilePaths(repoRoot, path.resolve(repoRoot, dockerContextDir.path));
     const ignoredPaths = getGitignoredPaths(relativePaths);
-    const rootRelativePaths = new Map(
-        relativePaths.map((relPath) => [
-            relPath,
-            path.relative(dockerContextDir, path.join(repoRoot, relPath)).split(path.sep).join('/'),
-        ]),
-    );
-    const isDockerIgnored = buildDockerIgnoreMatcher(dockerContextDir);
+    const isDockerIgnored = loadDockerIgnore(dockerContextDir);
 
     return relativePaths
         .filter((relPath) => {
@@ -82,7 +74,7 @@ export const collectNonIgnoredFiles = (dockerContextDir: string, repoRoot: strin
             const isUnderActorDir = relPath.split('/').includes('.actor');
             if (isUnderActorDir) return true;
             if (ignoredPaths.has(relPath)) return false;
-            return !isDockerIgnored(rootRelativePaths.get(relPath)!);
+            return !isDockerIgnored(relPath);
         })
         .map((relPath) => path.join(repoRoot, relPath));
 };
@@ -205,7 +197,7 @@ export const runBuildsFromLocal = async ({
     return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {
         // Zipped and uploaded like `apify push` does, since inline SOURCE_FILES are capped at ~9 MB.
         const zip = new AdmZip();
-        for (const { name, content } of await collectSourceFiles(actorConfig.actorFullName, actorConfig.folder)) {
+        for (const { name, content } of await collectSourceFiles(actorConfig)) {
             zip.addFile(name, content);
         }
         const actorVersion: ApifyClientTypes.ActorVersion = {

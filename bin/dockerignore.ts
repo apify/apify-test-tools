@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import path from 'node:path';
 
 import ignore from 'ignore';
 
-import { hoistPath, isPathWithinScope } from './path-utils.js';
+import type { RelativeDir, RelativeFile } from './utils/path/repo-relative.js';
 
 export type DockerIgnoreMatcher = (repoRelativePath: string) => boolean;
 
@@ -15,36 +14,43 @@ export type DockerIgnoreMatcher = (repoRelativePath: string) => boolean;
 const normalizeDockerignorePattern = (line: string): string => line.replace(/^(!?)(?:\.\/)+/, '$1');
 
 /**
- * Reads `.dockerignore` from `absoluteRootDir` and returns a matcher for paths relative to
- * `hoistFrom`. `hoistFrom` defaults to '', meaning callers already pass paths relative to
- * `absoluteRootDir` directly — isPathWithinScope/hoistPath both treat '' as "matches everything" /
- * identity, so the scope-check and hoist collapse to a no-op in that case, not via a branch.
+ * Reads a `.dockerignore` file and returns a matcher for repo-relative paths within its parent
+ * directory. Paths outside that directory never match. Matching is performed on paths relative to
+ * the `.dockerignore` file's parent, and leading `./` prefixes are removed from patterns to match
+ * Docker's normalization behavior.
  *
- * Returns a no-op matcher (always returns false) when the file is absent.
+ * Returns a matcher that always returns `false` if the file cannot be read.
  */
-export const buildDockerIgnoreMatcher = (absoluteRootDir: string, hoistFrom = ''): DockerIgnoreMatcher => {
+export const buildDockerIgnoreMatcher = (dockerIgnore: RelativeFile): DockerIgnoreMatcher => {
     let content: string;
     try {
-        content = fs.readFileSync(path.join(absoluteRootDir, '.dockerignore'), 'utf-8');
+        content = fs.readFileSync(dockerIgnore.path, 'utf-8');
     } catch {
         return () => false;
     }
 
     const matcher = ignore().add(content.split('\n').map(normalizeDockerignorePattern).join('\n'));
-
+    const rootDir = dockerIgnore.parent;
     return (filePath: string): boolean => {
-        if (!isPathWithinScope(filePath.toLowerCase(), hoistFrom.toLowerCase())) {
+        if (!rootDir.containsPath(filePath)) {
             return false;
         }
 
-        return matcher.ignores(hoistPath(filePath, hoistFrom));
+        return matcher.ignores(rootDir.relativePathTo(filePath));
     };
 };
 
 /**
- * Load .dockerignore from the root of an actor's dockerContextDir and return a matcher
- * that accepts repo-root-relative file paths. Patterns are resolved relative to
- * dockerContextDir, matching Docker's own behavior.
+ * Loads `.dockerignore` from the root of `dockerContextDir` and returns a matcher that accepts
+ * repo-relative file paths. Patterns are matched relative to `dockerContextDir`, consistent with
+ * Docker's build-context behavior. If the file cannot be read, the matcher always returns `false`.
  */
-export const loadDockerIgnore = (dockerContextDir: string): DockerIgnoreMatcher =>
-    buildDockerIgnoreMatcher(path.resolve(dockerContextDir), dockerContextDir);
+export const loadDockerIgnore = (dockerContextDir: RelativeDir): DockerIgnoreMatcher => {
+    try {
+        const dockerIgnorePath = dockerContextDir.joinFile('.dockerignore');
+        return buildDockerIgnoreMatcher(dockerIgnorePath);
+    } catch {
+        console.warn(`[.dockerignore] not found in "${dockerContextDir}".`);
+        return () => false;
+    }
+};

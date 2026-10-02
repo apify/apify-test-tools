@@ -1,11 +1,42 @@
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { _privates, parseConfigFile } from '../../../../../bin/utils/config/parser.js';
 import { CONFIG_FILE_STRATEGY } from '../../../../../bin/utils/config/structures/base.js';
 import { GROUPED_PARSER } from '../../../../../bin/utils/config/structures/grouped.js';
 import { LEGACY_PARSER } from '../../../../../bin/utils/config/structures/legacy.js';
+import { ExistingDir, RelativeDir } from '../../../../../bin/utils/path/repo-relative.js';
 
 const { selectStrategy, verifyConfiguration } = _privates;
+
+let repoDir: string;
+const originalCwd = process.cwd();
+
+beforeAll(async () => {
+    repoDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'apify-test-tools-parser-')));
+    for (const folder of [
+        'actors/shopify',
+        'actors/a',
+        'actors/b',
+        'actors/c',
+        'actors/d',
+        'bin',
+        'test',
+        'collide/collide',
+    ]) {
+        await fs.mkdir(path.join(repoDir, folder), { recursive: true });
+    }
+    await fs.writeFile(path.join(repoDir, 'package.json'), '{}');
+    process.chdir(repoDir);
+});
+
+afterAll(async () => {
+    process.chdir(originalCwd);
+    await fs.rm(repoDir, { recursive: true, force: true });
+});
 
 const actor = (fields: Record<string, unknown> = {}) => ({
     folder: 'actors/shopify',
@@ -33,7 +64,7 @@ describe('selectStrategy', () => {
 });
 
 describe('verifyConfiguration', () => {
-    it('resolves the repo root to "" and gets rid of trailing slashes', () => {
+    it('resolves the repo root and gets rid of trailing slashes', () => {
         const result = verifyConfiguration([
             { folder: '.', actorFullName: 'myteam/root', tokenEnvVar: 'APIFY_TOKEN', overrideActorContext: undefined },
             {
@@ -44,15 +75,11 @@ describe('verifyConfiguration', () => {
             },
         ]);
 
-        expect(result).toEqual([
-            { folder: '', actorFullName: 'myteam/root', tokenEnvVar: 'APIFY_TOKEN', overrideActorContext: undefined },
-            {
-                folder: 'actors/shopify',
-                actorFullName: 'myteam/shopify',
-                tokenEnvVar: 'APIFY_TOKEN',
-                overrideActorContext: ['packages'],
-            },
-        ]);
+        expect(result[0].folder).toBeInstanceOf(ExistingDir);
+        expect(result[0].folder.path).toBe('.');
+        expect(result[1].folder.path).toBe('actors/shopify');
+        expect(result[1].overrideActorContext?.[0]).toBeInstanceOf(RelativeDir);
+        expect(result[1].overrideActorContext?.[0].path).toBe('packages');
     });
 
     it.each([
@@ -123,26 +150,42 @@ describe('verifyConfiguration', () => {
 });
 
 describe('parseConfigFile', () => {
-    it('validates and normalizes a plain object without touching the filesystem', () => {
-        expect(parseConfigFile({ actors: [actor({ folder: 'actors/shopify/' })] })).toEqual([
-            actor({ folder: 'actors/shopify', overrideActorContext: undefined }),
-        ]);
+    it('validates and normalizes paths after resolving the config', () => {
+        const [parsed] = parseConfigFile({ actors: [actor({ folder: './bin/', overrideActorContext: ['test/'] })] });
+        expect(parsed.folder).toBeInstanceOf(ExistingDir);
+        expect(parsed.folder.path).toBe('bin');
+        expect(parsed.overrideActorContext?.[0]).toBeInstanceOf(RelativeDir);
+        expect(parsed.overrideActorContext?.[0].path).toBe('test');
+    });
+
+    it('accepts the repo root as an existing directory', () => {
+        expect(parseConfigFile({ actors: [actor({ folder: '' })] })[0].folder.path).toBe('.');
+    });
+
+    it('reports invalid paths at their config fields', () => {
+        expect(() => parseConfigFile({ actors: [actor({ folder: 'missing-actor-dir' })] })).toThrow(/\[0\]\.folder/);
+        expect(() => parseConfigFile({ actors: [actor({ folder: 'package.json' })] })).toThrow(/to be a directory/);
+        expect(() =>
+            parseConfigFile({ actors: [actor({ folder: 'bin', overrideActorContext: ['../outside'] })] }),
+        ).toThrow(/\[0\]\.overrideActorContext\[0\]/);
     });
 
     it('parses a grouped config file, which needs mode to be stripped', () => {
-        expect(
-            parseConfigFile({
-                mode: CONFIG_FILE_STRATEGY.GROUPED,
-                groups: {
-                    myteam: {
-                        actors: [{ folder: 'actors/shopify/', actorFullName: 'myteam/shopify' }],
-                        tokenEnvVar: 'APIFY_TOKEN',
-                    },
+        const parsed = parseConfigFile({
+            mode: CONFIG_FILE_STRATEGY.GROUPED,
+            groups: {
+                myteam: {
+                    actors: [{ folder: 'actors/shopify/', actorFullName: 'myteam/shopify' }],
+                    tokenEnvVar: 'APIFY_TOKEN',
                 },
-            }),
-        ).toEqual([
-            actor({ folder: 'actors/shopify', actorFullName: 'myteam/shopify', overrideActorContext: undefined }),
-        ]);
+            },
+        });
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0].folder).toBeInstanceOf(ExistingDir);
+        expect(parsed[0].folder.path).toBe('actors/shopify');
+        expect(parsed[0].actorFullName).toBe('myteam/shopify');
+        expect(parsed[0].tokenEnvVar).toBe('APIFY_TOKEN');
+        expect(parsed[0].overrideActorContext).toBeUndefined();
     });
 
     it('surfaces cross-entry violations from verifyConfiguration', () => {
@@ -154,5 +197,16 @@ describe('parseConfigFile', () => {
                 ],
             }),
         ).toThrow(/Duplicate folder/);
+    });
+
+    it('rejects folders that collide after resolving dot segments', () => {
+        expect(() =>
+            parseConfigFile({
+                actors: [
+                    actor({ actorFullName: 'myteam/actor-a', folder: 'bin/../test' }),
+                    actor({ actorFullName: 'myteam/actor-b', folder: 'test' }),
+                ],
+            }),
+        ).toThrow('Duplicate folder "test"');
     });
 });

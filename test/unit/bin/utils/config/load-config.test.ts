@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CONFIG_FILE_NAME, loadActorConfig, readConfigFile } from '../../../../../bin/utils/config/load-config.js';
 import type { ResolvedActorConfig } from '../../../../../bin/utils/config/structures/base.js';
+import { ExistingDir, ExistingFile, RelativeDir, RelativeFile } from '../../../../../bin/utils/path/repo-relative.js';
 
 let repoDir: string;
 let originalCwd: string;
@@ -15,6 +16,7 @@ beforeEach(async () => {
     // `realpath` because macOS hands out a symlinked temp dir, while `process.cwd()` reports the target.
     repoDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'apify-test-tools-config-')));
     process.chdir(repoDir);
+    await fs.mkdir('actors/shopify', { recursive: true });
 });
 
 afterEach(async () => {
@@ -37,12 +39,11 @@ const writeFiles = async (files: Record<string, string>) =>
     );
 
 describe('loadActorConfig', () => {
-    const entry = (fields: Partial<ResolvedActorConfig> = {}): ResolvedActorConfig => ({
-        folder: 'actors/shopify',
-        actorFullName: 'myteam/shopify',
-        tokenEnvVar: 'APIFY_TOKEN',
-        overrideActorContext: undefined,
-        ...fields,
+    const entry = (fields: Partial<ResolvedActorConfig> = {}) => ({
+        folder: new ExistingDir(fields.folder ?? 'actors/shopify'),
+        actorFullName: fields.actorFullName ?? 'myteam/shopify',
+        tokenEnvVar: fields.tokenEnvVar ?? 'APIFY_TOKEN',
+        overrideActorContext: fields.overrideActorContext?.map((contextPath) => new RelativeDir(contextPath)),
     });
 
     const writeActorJson = async (fields: Record<string, unknown> = {}) =>
@@ -51,31 +52,64 @@ describe('loadActorConfig', () => {
     it('resolves data coming from actor.json', async () => {
         await writeActorJson({ dockerContextDir: '..' });
 
-        expect(loadActorConfig(entry())).toEqual({
-            actorFullName: 'myteam/shopify',
-            folder: 'actors/shopify',
-            tokenEnvVar: 'APIFY_TOKEN',
-            dockerContextDir: 'actors/shopify',
-            contextPaths: ['actors/shopify'],
-        });
+        const loaded = loadActorConfig(entry());
+        expect(loaded.actorFullName).toBe('myteam/shopify');
+        expect(loaded.folder).toBeInstanceOf(ExistingDir);
+        expect(loaded.folder.path).toBe('actors/shopify');
+        expect(loaded.actorJson.file).toBeInstanceOf(ExistingFile);
+        expect(loaded.actorJson.file.path).toBe('actors/shopify/.actor/actor.json');
+        expect(loaded.dockerContextDir).toBeInstanceOf(RelativeDir);
+        expect(loaded.dockerContextDir.path).toBe('actors/shopify');
+        expect(loaded.contextPaths.map((contextPath) => contextPath.path)).toEqual(['actors/shopify']);
     });
 
     it('defaults dockerContextDir to the actor folder when actor.json does not set it', async () => {
         await writeActorJson();
 
-        expect(loadActorConfig(entry()).dockerContextDir).toBe('actors/shopify');
+        expect(loadActorConfig(entry()).dockerContextDir.path).toBe('actors/shopify');
+    });
+
+    it('resolves path fields from actor.json while allowing inline schemas', async () => {
+        await writeActorJson({
+            readme: '../README.md',
+            changelog: '../../CHANGELOG.md',
+            dockerfile: '../Dockerfile',
+            input: '../INPUT_SCHEMA.json',
+            output: { type: 'object' },
+            webServerSchema: './openapi.json',
+        });
+
+        const { actorJson: actorJsonPaths } = loadActorConfig(entry());
+        expect(actorJsonPaths.readme).toBeInstanceOf(RelativeFile);
+        expect(actorJsonPaths.readme?.path).toBe('actors/shopify/README.md');
+        expect(actorJsonPaths.changelog?.path).toBe('actors/CHANGELOG.md');
+        expect(actorJsonPaths.dockerfile?.path).toBe('actors/shopify/Dockerfile');
+        expect(actorJsonPaths.inputSchema?.path).toBe('actors/shopify/INPUT_SCHEMA.json');
+        expect(actorJsonPaths.outputSchema).toBeUndefined();
+        expect(actorJsonPaths.webServerSchema?.path).toBe('actors/shopify/.actor/openapi.json');
+    });
+
+    it('rejects malformed actor.json path fields', async () => {
+        await writeActorJson({ dockerContextDir: 123 });
+        expect(() => loadActorConfig(entry())).toThrow(/dockerContextDir/);
+
+        await writeActorJson({ readme: '/outside.md' });
+        expect(() => loadActorConfig(entry())).toThrow(/Invalid "readme"/);
+
+        await writeActorJson({ inputSchema: '/outside.json' });
+        expect(() => loadActorConfig(entry())).toThrow(/Invalid "inputSchema"/);
     });
 
     it('resolves dockerContextDir relative to the .actor/ folder, not the actor folder', async () => {
         await writeActorJson({ dockerContextDir: '../../..' });
 
-        expect(loadActorConfig(entry()).dockerContextDir).toBe('');
+        expect(loadActorConfig(entry()).dockerContextDir.path).toBe('.');
     });
 
     it('throws when dockerContextDir resolves outside the repository root', async () => {
         await writeActorJson({ dockerContextDir: '../../../..' });
 
-        expect(() => loadActorConfig(entry())).toThrow(/resolves outside the repository root/);
+        expect(() => loadActorConfig(entry())).toThrow(/escapes the repo root/);
     });
 
     it('throws when actor.json is missing', () => {
@@ -85,27 +119,30 @@ describe('loadActorConfig', () => {
     it('resolves contextPaths from overrideActorContext', async () => {
         await writeActorJson({ dockerContextDir: '../../..' });
 
-        expect(loadActorConfig(entry({ overrideActorContext: ['actors/shopify', 'packages'] })).contextPaths).toEqual([
-            'actors/shopify',
-            'packages',
-        ]);
+        expect(
+            loadActorConfig(entry({ overrideActorContext: ['actors/shopify', 'packages'] })).contextPaths.map(
+                (contextPath) => contextPath.path,
+            ),
+        ).toEqual(['actors/shopify', 'packages']);
     });
 
     it('adds the actor own folder automatically when overrideActorContext does not cover it', async () => {
         await writeActorJson();
 
-        expect(loadActorConfig(entry({ overrideActorContext: ['code', 'shared'] })).contextPaths).toEqual([
-            'code',
-            'shared',
-            'actors/shopify',
-        ]);
+        expect(
+            loadActorConfig(entry({ overrideActorContext: ['code', 'shared'] })).contextPaths.map(
+                (contextPath) => contextPath.path,
+            ),
+        ).toEqual(['code', 'shared', 'actors/shopify']);
     });
 
     it('allows overrideActorContext with disjoint sibling paths that all reach the actor folder via one entry', async () => {
         await writeActorJson();
 
         expect(
-            loadActorConfig(entry({ overrideActorContext: ['actors/shopify', 'code', 'shared'] })).contextPaths,
+            loadActorConfig(entry({ overrideActorContext: ['actors/shopify', 'code', 'shared'] })).contextPaths.map(
+                (contextPath) => contextPath.path,
+            ),
         ).toEqual(['actors/shopify', 'code', 'shared']);
     });
 

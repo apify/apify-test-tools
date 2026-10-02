@@ -1,6 +1,7 @@
 import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
 import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
 import { findContainingScope, hoistPath, isPathWithinScope } from './path-utils.js';
+import { createTestFileMatcher, type TestFileMatcher } from './test-files.js';
 import type { ActorConfig, Commit } from './types.js';
 
 interface ShouldBuildAndTestOptions {
@@ -8,6 +9,7 @@ interface ShouldBuildAndTestOptions {
     actorConfigs: ActorConfig[];
     isLatest?: boolean;
     commits: Commit[];
+    testFilesGlob?: string;
 }
 
 const IGNORED_TOP_LEVEL_FILES = [
@@ -25,6 +27,7 @@ const isIgnoredTopLevelFile = (hoistedLowercaseFilePath: string): boolean =>
     IGNORED_TOP_LEVEL_FILES.some((pattern) => hoistedLowercaseFilePath.startsWith(pattern));
 
 type FileChangeForActor =
+    | { impact: 'test' }
     | { impact: 'ignored' }
     | { impact: 'outside-context' }
     | { impact: 'cosmetic'; semanticallyVerified: boolean }
@@ -36,19 +39,21 @@ type FileChangeForActor =
  * Steps (in order):
  * 1. CHANGELOG.md, by filename, anywhere → cosmetic. There is a single repo-wide shared changelog,
  *    not one per actor, so it applies to every actor regardless of context/folder.
- * 2. Context matching (actorConfig.contextPaths) → outside-context if no match
- * 3. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
- * 4. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
+ * 2. Test files (matching the test files glob) → test, never triggers a build
+ * 3. Context matching (actorConfig.contextPaths) → outside-context if no match
+ * 4. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
+ * 5. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
  *    dir → ignored if matched
- * 5. README.md by filename → cosmetic if inside the actor's own folder, otherwise ignored
- * 6. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
- * 7. Everything else → functional
+ * 6. README.md by filename → cosmetic if inside the actor's own folder, otherwise ignored
+ * 7. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
+ * 8. Everything else → functional
  */
 const classifyFileChange = (
     originalFilePath: string,
     actorConfig: ActorConfig,
     commits: Commit[],
     dockerIgnoreMatcher: DockerIgnoreMatcher,
+    isTestFile: TestFileMatcher,
 ): FileChangeForActor => {
     const lowercaseFilePath = originalFilePath.toLowerCase();
 
@@ -57,6 +62,10 @@ const classifyFileChange = (
     // https://github.com/apify/apify-test-tools/issues/106
     if (lowercaseFilePath.endsWith('changelog.md')) {
         return { impact: 'cosmetic', semanticallyVerified: false };
+    }
+
+    if (isTestFile(originalFilePath)) {
+        return { impact: 'test' };
     }
 
     const lowercaseContextPaths = actorConfig.contextPaths.map((contextPath) => contextPath.toLowerCase());
@@ -171,8 +180,11 @@ export const getChangedActors = ({
     actorConfigs,
     isLatest = false,
     commits,
+    testFilesGlob,
 }: ShouldBuildAndTestOptions): ActorConfig[] => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
+    const isTestFile = createTestFileMatcher(testFilesGlob);
+    const testFilesChanged = filepathsChanged.filter(isTestFile);
 
     for (const actorConfig of actorConfigs) {
         const dockerIgnoreMatcher = loadDockerIgnore(actorConfig.dockerContextDir);
@@ -184,9 +196,9 @@ export const getChangedActors = ({
                 continue;
             }
 
-            const change = classifyFileChange(originalFilePath, actorConfig, commits, dockerIgnoreMatcher);
+            const change = classifyFileChange(originalFilePath, actorConfig, commits, dockerIgnoreMatcher, isTestFile);
 
-            if (change.impact === 'ignored' || change.impact === 'outside-context') continue;
+            if (change.impact !== 'functional' && change.impact !== 'cosmetic') continue;
             if (change.impact === 'cosmetic' && !isLatest) continue;
 
             const entry = actorsChangedMap.get(actorConfig.folder) ?? { actorConfig, files: [] };
@@ -202,6 +214,10 @@ export const getChangedActors = ({
     const fileToActors = buildFileToActorsMap(actorsChangedMap);
     const groups = groupFilesByActorSet(fileToActors);
     logChangeGroups(groups);
+
+    if (testFilesChanged.length > 0) {
+        console.error(`[DIFF]: Test files changed, they never trigger a build: ${testFilesChanged.join(', ')}`);
+    }
 
     if (actorsChanged.length > 0) {
         const actors = actorsChanged.map((config) => config.actorFullName);

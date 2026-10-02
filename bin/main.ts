@@ -21,9 +21,10 @@ import {
     resolveRepoUrl,
 } from './git.js';
 import { notifyToSlack } from './slack.js';
+import { createTestFileMatcher, DEFAULT_TEST_FILES_GLOB } from './test-files.js';
 import { reportTestResults } from './test-report.js';
 import type { Config } from './types.js';
-import { setCwd } from './utils.js';
+import { setCwd, spawnCommandInGhWorkspace } from './utils.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
 /**
@@ -63,6 +64,11 @@ const actorSelectionOptions = {
     ignore: { type: 'string', array: true, default: [] as string[] },
 } as const satisfies Record<string, Options>;
 
+/** Glob relative to the repo root. Matching files are platform tests and never trigger a build. */
+const testFilesOptions = {
+    'test-files-glob': { type: 'string', default: DEFAULT_TEST_FILES_GLOB },
+} as const satisfies Record<string, Options>;
+
 /** Flags for commands that trigger Apify builds. */
 const buildOptions = {
     'use-docker-cache': { type: 'boolean', default: false },
@@ -93,6 +99,7 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
             filepathsChanged: branchOnlyFiles,
             actorConfigs,
             commits: allBranchCommits,
+            testFilesGlob: config.testFilesGlob,
         });
         if (branchOnlyActorsChanged.length === 0) {
             console.error('[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests');
@@ -106,8 +113,17 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
     // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply baseCommit and check merge commits (they might be functional or just cosmetic)
     const commits = getCommits(config);
     const changedFiles = getChangedFiles(commits);
-    return getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest, commits });
+    return getChangedActors({
+        filepathsChanged: changedFiles,
+        actorConfigs,
+        isLatest,
+        commits,
+        testFilesGlob: config.testFilesGlob,
+    });
 };
+
+// Repo-root-relative like git diff, whatever the cwd
+const getTrackedFiles = () => spawnCommandInGhWorkspace('git ls-files --full-name :/').split('\n');
 
 await yargs()
     .scriptName('public-actors-utils')
@@ -144,6 +160,27 @@ await yargs()
         },
     )
     .command(
+        'get-changed-tests',
+        '',
+        (y) => y.options(gitRangeOptions).options(testFilesOptions),
+        (args) => {
+            const isTestFile = createTestFileMatcher(args.testFilesGlob);
+            const trackedFiles = new Set(getTrackedFiles());
+            const changedTests = getChangedFiles(getCommits(args)).filter(
+                (file) => isTestFile(file) && trackedFiles.has(file),
+            );
+            console.log(JSON.stringify(changedTests));
+        },
+    )
+    .command(
+        'get-test-files',
+        '',
+        (y) => y.options(testFilesOptions),
+        ({ testFilesGlob }) => {
+            console.log(JSON.stringify(getTrackedFiles().filter(createTestFileMatcher(testFilesGlob))));
+        },
+    )
+    .command(
         'get-actor-configs',
         '',
         (y) => y.options(actorSelectionOptions),
@@ -155,7 +192,7 @@ await yargs()
     .command(
         'get-affected-actors',
         '',
-        (y) => y.options(gitRangeOptions).options(actorSelectionOptions),
+        (y) => y.options(gitRangeOptions).options(actorSelectionOptions).options(testFilesOptions),
         async (config) => {
             const actorsChanged = await resolveChangedActors(config, { isLatest: false });
             console.log(JSON.stringify(actorsChanged));
@@ -177,7 +214,13 @@ await yargs()
     .command(
         'build',
         '',
-        (y) => y.options(gitRangeOptions).options(actorSelectionOptions).options(buildOptions).options(repoUrlOptions),
+        (y) =>
+            y
+                .options(gitRangeOptions)
+                .options(actorSelectionOptions)
+                .options(buildOptions)
+                .options(repoUrlOptions)
+                .options(testFilesOptions),
         async (config) => {
             const actorsChanged = await resolveChangedActors(config, { isLatest: false });
             const builds = await runBuilds({
@@ -198,6 +241,7 @@ await yargs()
                 .options(actorSelectionOptions)
                 .options(buildOptions)
                 .options(repoUrlOptions)
+                .options(testFilesOptions)
                 // The last commit that is already released, everything after it up to HEAD gets released.
                 // Required, see the README section "Releasing Actors" for how to set it for each merge strategy.
                 .option('base-commit', { type: 'string', demandOption: true })
@@ -221,6 +265,7 @@ await yargs()
                 actorConfigs,
                 isLatest,
                 commits,
+                testFilesGlob: args.testFilesGlob,
             });
             const { dryRun, reportSlackChannel, releaseSlackChannel } = args;
             const builds = await runBuilds({

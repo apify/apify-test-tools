@@ -55,6 +55,10 @@ export abstract class AbstractPath {
 export class RelativeDir extends AbstractPath {
     static readonly ROOT = new RelativeDir('.');
 
+    isRoot(): boolean {
+        return this.path === RelativeDir.ROOT.path;
+    }
+
     joinDir(relative: string): RelativeDir {
         return new RelativeDir(this.join(relative));
     }
@@ -63,6 +67,20 @@ export class RelativeDir extends AbstractPath {
         // Must be checked before joining: posix.join('actors/foo', '.') is "actors/foo", which looks like a file.
         assertNamesFile(relative);
         return new RelativeFile(this.join(relative));
+    }
+
+    relativePathTo(filePath: string): string {
+        // mainly for matching against .dockerignore since paths consumed by it are relative to the docker context dir
+        return posix.relative(this.path, filePath);
+    }
+
+    containsPath(filePath: string): boolean {
+        try {
+            // should be OK even if not a directory (e.g. a file)
+            return this.contains(new RelativeDir(filePath));
+        } catch {
+            return false;
+        }
     }
 
     // True when `other` is this directory itself or lies inside it.

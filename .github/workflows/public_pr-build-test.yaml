@@ -57,7 +57,10 @@ jobs:
               with:
                   # We have to call it base commit for the library but it makes more sense as "last validated commit"
                   # Using run_id ensures the key is always unique so the cache always saves at end-of-job (no "cache hit, not saving" issue)
-                  path: ./base_commit.txt
+                  # branch_builds.json: this branch's latest build of each Actor whose code the branch changes
+                  path: |
+                      ./base_commit.txt
+                      ./branch_builds.json
                   key: base_commit-${{ github.run_id }}
                   # This is needed to force overriding the cache with new entry at the end
                   restore-keys: base_commit-
@@ -82,6 +85,7 @@ jobs:
                     --source-branch "origin/$HEAD_REF"
                     --target-branch "origin/$BASE_REF"
                     --test-files-glob "$TEST_FILES_GLOB"
+                    --branch-builds-file branch_builds.json
                     --use-docker-cache
                   )
                   [ -n "$base_commit" ] && args+=(--base-commit "$base_commit")
@@ -89,8 +93,7 @@ jobs:
                     npx apify-test-tools build "${args[@]}")
                   echo "actor_builds=$actor_builds" | tee -a "$GITHUB_OUTPUT"
 
-            # Test files never trigger a build, so a test-only push builds nothing. Run the changed tests against
-            # the deployed builds instead, but only if the branch changes no Actor code: the deployed builds lack it.
+            # Test files never trigger a build, so changed tests run on their own, see the Test step
             - name: Find changed platform tests
               id: changed_tests
               env:
@@ -99,7 +102,6 @@ jobs:
                   HEAD_REF: ${{ github.head_ref }}
                   BASE_REF: ${{ github.base_ref }}
                   TEST_FILES_GLOB: ${{ steps.test_glob.outputs.glob }}
-                  ACTOR_BUILDS: ${{ steps.build.outputs.actor_builds }}
               run: |
                   base_commit=$(cat base_commit.txt 2>/dev/null || echo "")
                   args=(
@@ -109,52 +111,37 @@ jobs:
                   )
                   [ -n "$base_commit" ] && args+=(--base-commit "$base_commit")
                   changed=$(npx apify-test-tools get-changed-tests "${args[@]}" | jq -c 'map("./" + .)')
-                  if [ "$changed" = "[]" ]; then
-                    exit 0
-                  fi
-                  if [ "$ACTOR_BUILDS" != "[]" ]; then
-                    echo "::notice title=Changed platform tests::Only tests of the rebuilt Actors run. Changed tests did not run separately: $changed"
-                    exit 0
-                  fi
-
-                  # No --base-commit, so Actor code validated at an earlier commit counts too
-                  branch_actors=$(npx apify-test-tools get-affected-actors \
-                    --source-branch "origin/$HEAD_REF" \
-                    --target-branch "origin/$BASE_REF" \
-                    --test-files-glob "$TEST_FILES_GLOB" | jq -r 'map(.actorFullName) | join(", ")')
-                  if [ -z "$branch_actors" ]; then
-                    echo "target=$changed" | tee -a "$GITHUB_OUTPUT"
-                  else
-                    msg="Changed platform tests did NOT run: $changed. The branch changes $branch_actors, which the deployed builds lack. Re-run this job from scratch to rebuild and test together."
-                    echo "::warning title=Changed platform tests did not run::$msg"
-                    echo "$msg" >> "$GITHUB_STEP_SUMMARY"
-                  fi
+                  echo "target=$changed" | tee -a "$GITHUB_OUTPUT"
 
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.
             - name: Test
               env:
                   ACTOR_BUILDS: ${{ steps.build.outputs.actor_builds }}
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-                  # No build to pin to, so lift the per-actor gate and let each run use the deployed build.
-                  RUN_ALL_PLATFORM_TESTS: ${{ steps.changed_tests.outputs.target && '1' || '' }}
                   CHANGED_TESTS: ${{ steps.changed_tests.outputs.target }}
                   TEST_FILES_PATH_GLOB: ${{ inputs.test-files-path-glob }}
               run: |
                   opts=(--run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100)
-                  if [ -n "$CHANGED_TESTS" ]; then
-                    # `related` runs the tests that import each changed file, so a changed helper runs its dependents.
-                    # A plain filter would match no test for a helper and exit 1; `related` exits 0 when nothing imports it.
-                    mapfile -t changed_tests < <(jq -r '.[]' <<< "$CHANGED_TESTS")
-                    npx vitest related "${changed_tests[@]}" "${opts[@]}"
-                  elif [ -n "$TEST_FILES_PATH_GLOB" ]; then
-                    mapfile -t files < <(npx apify-test-tools get-test-files --test-files-glob "$TEST_FILES_PATH_GLOB" | jq -r '.[] | "./" + .')
-                    if [ ${#files[@]} -eq 0 ]; then
-                      echo "::error::No file matches test-files-path-glob '$TEST_FILES_PATH_GLOB'"
-                      exit 1
+                  if [ "$ACTOR_BUILDS" != "[]" ]; then
+                    if [ -n "$TEST_FILES_PATH_GLOB" ]; then
+                      mapfile -t files < <(npx apify-test-tools get-test-files --test-files-glob "$TEST_FILES_PATH_GLOB" | jq -r '.[] | "./" + .')
+                      if [ ${#files[@]} -eq 0 ]; then
+                        echo "::error::No file matches test-files-path-glob '$TEST_FILES_PATH_GLOB'"
+                        exit 1
+                      fi
+                      npx vitest "${files[@]}" "${opts[@]}"
+                    else
+                      npx vitest ./test/platform/${{ inputs.test-files-glob }} "${opts[@]}"
                     fi
-                    npx vitest "${files[@]}" "${opts[@]}"
-                  else
-                    npx vitest ./test/platform/${{ inputs.test-files-glob }} "${opts[@]}"
+                  fi
+
+                  if [ "$CHANGED_TESTS" != "[]" ]; then
+                    # All tests in the changed files and their dependents, on this branch's build of each Actor if it has
+                    # one, else the deployed build. Tests of the Actors rebuilt above already ran.
+                    mapfile -t changed_tests < <(jq -r '.[]' <<< "$CHANGED_TESTS")
+                    new_builds="$ACTOR_BUILDS"
+                    ACTOR_BUILDS="$(cat branch_builds.json)" SKIP_ACTOR_BUILDS="$new_builds" RUN_ALL_PLATFORM_TESTS=1 \
+                      npx vitest related "${changed_tests[@]}" "${opts[@]}"
                   fi
 
             # NOTE: This is an optimization that if we did functional changes and later only cosmetic changes (e.g. dev readme), we will compare changes files only for the last commit. This must run after tests because we want to cache the latest commit only if the tests are successful

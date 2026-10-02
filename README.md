@@ -65,7 +65,12 @@ When a PR is opened or code is pushed, the tool determines which actors need to 
 
 ### Test-only changes
 
-A push that changes only test files builds nothing. The PR workflow then runs the changed test files (and the tests importing a changed helper) against the deployed builds. If the branch also changes Actor code, the deployed builds don't contain it, so those tests don't run and the job shows a warning; re-run the job from scratch to rebuild and test together.
+Test files never trigger a build. The PR workflow runs the changed test files (and the tests importing a changed helper) on their own, each test against:
+
+- this branch's build of its Actor, when the branch changes that Actor's code. The workflow keeps the branch's latest builds in the Actions cache next to the last validated commit. An Actor the branch changes is never tested against its deployed build, which lacks the branch's code: when there is no earlier build of this branch for it, or that build was deleted, the Actor is built again.
+- the deployed build otherwise, since the branch doesn't change that Actor.
+
+When the same push also changes Actor code, the rebuilt Actors run their full tests first, and the changed test files then run only for the other Actors.
 
 Test files are found by the `test-files-path-glob` input of `public_pr-build-test.yaml`, a glob relative to the repo root (default `test/platform/**`), not by the Docker context, so `test/` may stay in `.dockerignore`. The older `test-files-glob` input (relative to `test/platform`) still works; v1 will replace it with `test-files-path-glob`.
 

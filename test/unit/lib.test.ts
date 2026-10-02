@@ -51,3 +51,32 @@ describe('createStartRunFn()', () => {
         expect(actorCallMock).toHaveBeenCalledWith({}, { build: undefined, log: null, timeout: 60 });
     });
 });
+
+describe('shouldRunTest()', () => {
+    const loadShouldRunTest = async (env: Record<string, string>) => {
+        vi.resetModules();
+        for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+        const { _private: reloaded } = await import('../../lib/lib.js');
+        vi.unstubAllEnvs();
+        return reloaded.shouldRunTest;
+    };
+    const builds = (actorFullName: string) =>
+        JSON.stringify([{ buildId: 'id', actorRawId: `raw-${actorFullName}`, buildNumber: '0.99.1', actorFullName }]);
+
+    it('runs only tests of Actors in ACTOR_BUILDS', async () => {
+        const shouldRunTest = await loadShouldRunTest({ ACTOR_BUILDS: builds('owner/a') });
+        expect(shouldRunTest('owner/a')).toBe(true);
+        expect(shouldRunTest('raw-owner/a')).toBe(true);
+        expect(shouldRunTest('owner/b')).toBe(false);
+    });
+
+    it('skips Actors in SKIP_ACTOR_BUILDS, even with RUN_ALL_PLATFORM_TESTS', async () => {
+        const shouldRunTest = await loadShouldRunTest({
+            RUN_ALL_PLATFORM_TESTS: '1',
+            SKIP_ACTOR_BUILDS: builds('owner/a'),
+        });
+        expect(shouldRunTest('owner/a')).toBe(false);
+        expect(shouldRunTest('raw-owner/a')).toBe(false);
+        expect(shouldRunTest('owner/b')).toBe(true);
+    });
+});

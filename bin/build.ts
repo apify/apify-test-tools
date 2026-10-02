@@ -164,6 +164,11 @@ export class ApifyBuilder {
         return build;
     };
 
+    buildExists = async (buildId: string): Promise<boolean> => {
+        const build = await this.apifyClient.build(buildId).get();
+        return build?.status === 'SUCCEEDED';
+    };
+
     static fromActorConfig = (actorConfig: ActorConfig): ApifyBuilder => {
         const { actorFullName, tokenEnvVar } = actorConfig;
         const token = process.env[tokenEnvVar];

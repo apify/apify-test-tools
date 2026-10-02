@@ -15,9 +15,8 @@ type PlanBranchBuildsOptions = {
 };
 
 /**
- * Tests of an Actor whose code the branch changes must run against a build of this branch, never against
- * the deployed build, which lacks that code. So each such Actor reuses its earlier build from this branch,
- * or is built again when there is none.
+ * An Actor that the branch changes is tested against a build of this branch, never against the deployed build.
+ * Reuse the earlier branch build if it still exists, otherwise build the Actor again.
  */
 export const planBranchBuilds = async ({
     branchActors,

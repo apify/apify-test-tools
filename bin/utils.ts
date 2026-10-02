@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { logger } from './logger.js';
+
 // Returns true when `childPath` is not inside `parentPath`.
 // Used to detect monorepo actors whose dockerContextDir escapes the actor directory.
 export const isOutsideDir = (childPath: string, parentPath: string): boolean =>
@@ -59,7 +61,7 @@ export const readSourceFile = async (absPath: string, rootDir: string): Promise<
 });
 
 export const spawnCommandInGhWorkspace = (command: string, args: string[] = []) => {
-    console.error(command, args.join(' '));
+    logger.info(command, args.join(' '));
     const commandResult = spawnSync(command, args, { shell: true, maxBuffer: 100 * 1024 * 1024 });
 
     if (commandResult.error) {

@@ -2,6 +2,7 @@ import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType, ApifyClient } from 'apify-client';
 
 import { normalizeRepoUrl } from './git.js';
+import { logger } from './logger.js';
 import type { ActorConfig, BuildData } from './types.js';
 
 type BuildPrActorOptions = {
@@ -28,7 +29,7 @@ const ACTOR_SETUP_REQUIREMENT =
  */
 export const resolveDefaultVersion = (actorFullName: string, actorInfo: ApifyClientTypes.Actor) => {
     const defaultBuildTag = actorInfo.defaultRunOptions.build;
-    console.error(`Default build tag for ${actorFullName} is ${defaultBuildTag}`);
+    logger.info(`Default build tag for ${actorFullName} is ${defaultBuildTag}`);
 
     // We could technically allow this but in most cases this is accidentally set wrongly and there is a workaround
     if (defaultBuildTag.match(/\d+\.\d+\.\d+/)) {
@@ -43,7 +44,7 @@ export const resolveDefaultVersion = (actorFullName: string, actorInfo: ApifyCli
         throw new Error(`[${actorFullName}] No build found for tag "${defaultBuildTag}". ${ACTOR_SETUP_REQUIREMENT}`);
     }
     const defaultVersionNumber = defaultBuildNumber.match(/(\d+\.\d+)\.\d+/)![1];
-    console.error(`Default version for ${actorFullName} is ${defaultVersionNumber}`);
+    logger.info(`Default version for ${actorFullName} is ${defaultVersionNumber}`);
 
     const defaultVersion = actorInfo.versions.find((version) => version.versionNumber === defaultVersionNumber);
 
@@ -139,7 +140,7 @@ export class ApifyBuilder {
         // We also get back actId so the testing actor can both match by actor ID and name
         const { id, actId, buildNumber } = await actorClient.build(versionNumber, { useCache });
 
-        console.error(`[${this.actorFullName}]: ${id} (${buildNumber})`);
+        logger.info(`[${this.actorFullName}]: ${id} (${buildNumber})`);
         return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
     };
 
@@ -147,20 +148,20 @@ export class ApifyBuilder {
         const build = await this.apifyClient.build(buildId).waitForFinish();
         const versionNumber = build.buildNumber;
         if (build.status === 'FAILED' || build.status === 'TIMED-OUT') {
-            console.error(`[${this.actorFullName}]: ${versionNumber}`);
+            logger.error(`[${this.actorFullName}]: ${versionNumber}`);
             try {
                 const log = await this.apifyClient.build(buildId).log().get();
                 const logTail = log?.split('\n').slice(-40).join('\n');
-                console.error(`\n--- BUILD LOG (last 40 lines) ---\n${logTail}\n---`);
+                logger.error(`\n--- BUILD LOG (last 40 lines) ---\n${logTail}\n---`);
             } catch (err) {
-                console.error(`[${this.actorFullName}]: Failed to fetch build log: ${err}`);
+                logger.error(`[${this.actorFullName}]: Failed to fetch build log: ${err}`);
             }
             throw new Error(
                 `[BUILD][${this.actorFullName}]: Build ${buildId} (${versionNumber}) failed. ` +
                     `Not continuing with other builds and tests.`,
             );
         }
-        console.error(`[${this.actorFullName}]: ${versionNumber}`);
+        logger.info(`[${this.actorFullName}]: ${versionNumber}`);
         return build;
     };
 
@@ -227,7 +228,7 @@ export class ApifyBuilder {
         type CorrectBuildColletionItem = (typeof items)[0] & { buildNumber: string };
         const buildsToDelete = (items as CorrectBuildColletionItem[]).filter((build) => {
             if (build.buildNumber === defaultBuildNumber) {
-                console.error(
+                logger.info(
                     `[DELETE OLD BUILDS][${this.actorFullName}]: Skipping default build ${defaultBuildNumber} (${defaultBuildTag}). ` +
                         `We never delete default builds`,
                 );
@@ -238,7 +239,7 @@ export class ApifyBuilder {
                 (protectedBuildNumber) => protectedBuildNumber.buildNumber === build.buildNumber,
             );
             if (protectedTagFound) {
-                console.error(
+                logger.info(
                     `[DELETE OLD BUILDS][${this.actorFullName}]: Skipping protected build ${protectedTagFound.buildNumber} (${protectedTagFound.tag}).`,
                 );
                 return false;
@@ -247,7 +248,7 @@ export class ApifyBuilder {
             if (taggedDevelBuildNumber && build.buildNumber === taggedDevelBuildNumber) {
                 const shouldDeleteDevelBuild = build.startedAt.getTime() < daysAgoUnixDevel;
                 if (shouldDeleteDevelBuild) {
-                    console.error(
+                    logger.info(
                         `[DELETE OLD BUILDS][${this.actorFullName}]: Removing olf devel build ${taggedDevelBuildNumber}.`,
                     );
                 }
@@ -256,7 +257,7 @@ export class ApifyBuilder {
             return build.startedAt.getTime() < daysAgoUnixProd;
         });
 
-        console.error(
+        logger.info(
             `[DELETE OLD BUILDS][${this.actorFullName}]: Deleting ${buildsToDelete.length} old builds that are non-default and ` +
                 `older than 30 days from total ${items.length}`,
         );
@@ -271,8 +272,8 @@ export const waitAndSummarizeBuilds = async (
     buildersMap: Map<string, ApifyBuilder>,
     label: string,
 ): Promise<BuildData[]> => {
-    console.error('=========================================');
-    console.error(`FINISHED ${label}:`);
+    logger.info('=========================================');
+    logger.info(`FINISHED ${label}:`);
     await Promise.all(
         startedBuilds.map(async (buildData) => {
             const builder = buildersMap.get(buildData.actorFullName)!;
@@ -280,12 +281,12 @@ export const waitAndSummarizeBuilds = async (
         }),
     );
 
-    console.error('=========================================');
-    console.error('SUMMARY:');
+    logger.info('=========================================');
+    logger.info('SUMMARY:');
     for (const buildData of startedBuilds.sort((a, b) => a.actorFullName.localeCompare(b.actorFullName))) {
-        console.error(`[${buildData.actorFullName}]: ${buildData.buildNumber}`);
+        logger.info(`[${buildData.actorFullName}]: ${buildData.buildNumber}`);
     }
-    console.error('=========================================');
+    logger.info('=========================================');
 
     return startedBuilds;
 };
@@ -298,8 +299,8 @@ export const runAndSummarizeBuilds = async (
     const buildersByActorFullName = new Map<string, ApifyBuilder>(
         actorConfigs.map((actorConfig) => [actorConfig.actorFullName, ApifyBuilder.fromActorConfig(actorConfig)]),
     );
-    console.error('=========================================');
-    console.error(`STARTED ${label}:`);
+    logger.info('=========================================');
+    logger.info(`STARTED ${label}:`);
     const startedBuilds = await Promise.all(
         actorConfigs.map(async (actorConfig) =>
             buildOneActor(actorConfig, buildersByActorFullName.get(actorConfig.actorFullName)!),
@@ -366,9 +367,9 @@ export const runBuilds = async ({
     );
 
     if (dryRun) {
-        console.error('[DRY RUN] Would build:');
+        logger.info('[DRY RUN] Would build:');
         for (const { actorConfig, versionNumber } of buildConfigs) {
-            console.error(`  ${actorConfig.actorFullName} (${versionNumber})`);
+            logger.info(`  ${actorConfig.actorFullName} (${versionNumber})`);
         }
         return buildConfigs.map(({ actorConfig, versionNumber }) =>
             dryRunBuildData(actorConfig.actorFullName, versionNumber),

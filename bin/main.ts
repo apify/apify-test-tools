@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs';
 import process from 'node:process';
 
 import yargs, { type Options } from 'yargs';
 // eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
-import { deleteOldBuilds, runBuilds } from './build.js';
+import { planBranchBuilds, readBranchBuilds } from './branch-builds.js';
+import { ApifyBuilder, deleteOldBuilds, runBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedActors } from './diff-changes.js';
 import {
@@ -23,7 +25,7 @@ import {
 import { notifyToSlack } from './slack.js';
 import { createTestFileMatcher, DEFAULT_TEST_FILES_GLOB } from './test-files.js';
 import { reportTestResults } from './test-report.js';
-import type { Config } from './types.js';
+import type { BuildData, Config } from './types.js';
 import { setCwd, spawnCommandInGhWorkspace } from './utils.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
@@ -220,16 +222,35 @@ await yargs()
                 .options(actorSelectionOptions)
                 .options(buildOptions)
                 .options(repoUrlOptions)
-                .options(testFilesOptions),
+                .options(testFilesOptions)
+                // JSON file with this branch's builds: read to reuse them, then rewritten with this run's builds
+                .option('branch-builds-file', { type: 'string' }),
         async (config) => {
             const actorsChanged = await resolveChangedActors(config, { isLatest: false });
+            let actorsToBuild = actorsChanged;
+            let reusedBuilds: BuildData[] = [];
+            if (config.branchBuildsFile) {
+                const branchActors = config.baseCommit
+                    ? await resolveChangedActors({ ...config, baseCommit: undefined }, { isLatest: false })
+                    : actorsChanged;
+                ({ actorsToBuild, reusedBuilds } = await planBranchBuilds({
+                    branchActors,
+                    actorsChanged,
+                    previousBuilds: readBranchBuilds(config.branchBuildsFile),
+                    buildExists: async (actorConfig, build) =>
+                        config.dryRun || ApifyBuilder.fromActorConfig(actorConfig).buildExists(build.buildId),
+                }));
+            }
             const builds = await runBuilds({
                 ...resolveRepoUrl(config.repoUrl),
-                actorConfigs: actorsChanged,
+                actorConfigs: actorsToBuild,
                 branch: config.sourceBranch.replace('origin/', ''),
                 dryRun: config.dryRun,
                 useDockerCache: config.useDockerCache,
             });
+            if (config.branchBuildsFile) {
+                fs.writeFileSync(config.branchBuildsFile, JSON.stringify([...reusedBuilds, ...builds]));
+            }
             console.log(JSON.stringify(builds));
         },
     )

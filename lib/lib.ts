@@ -29,6 +29,14 @@ const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
     return map;
 }, new Map<string, ActorBuild>());
 
+// Builds whose Actors' tests already ran earlier in the same job
+const skippedActors = new Set(
+    (JSON.parse(process.env.SKIP_ACTOR_BUILDS || '[]') as ActorBuild[]).flatMap((build) => [
+        build.actorFullName,
+        build.actorRawId,
+    ]),
+);
+
 export { ExpectStatic };
 
 const { TESTER_APIFY_TOKEN, RUN_ALL_PLATFORM_TESTS } = process.env;
@@ -52,6 +60,11 @@ export const describe = (name: string, fn?: SuiteFactory<object>, options: Actor
     vitestDescribe.runIf(!!TESTER_APIFY_TOKEN || !!RUN_ALL_PLATFORM_TESTS)(name, options, fn);
 };
 
+// `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
+// tests against - without it, every test would be filtered out as an actor we didn't build.
+const shouldRunTest = (actorId: string) =>
+    !skippedActors.has(actorId) && (!!RUN_ALL_PLATFORM_TESTS || config.has(actorId));
+
 /**
  * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
  */
@@ -64,9 +77,7 @@ export const testActor = <T>(
     const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
 
     const name = `${actorId}: ${testName}`;
-    // `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
-    // tests against - without it, every test would be filtered out as an actor we didn't build.
-    const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorId);
+    const shouldRun = shouldRunTest(actorId);
     vitestTest.runIf(shouldRun)(name, options, async <TYPE extends TestContext>(context: TYPE) => {
         const { expect, ...rest } = context;
         await fn({
@@ -96,9 +107,7 @@ export const testStandbyActor = <I = any, O = any>(
     const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
 
     const name = `${actorId}: ${testName}`;
-    // `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
-    // tests against - without it, every test would be filtered out as an actor we didn't build.
-    const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorId);
+    const shouldRun = shouldRunTest(actorId);
 
     vitestTest.runIf(shouldRun)(name, options, async <T extends TestContext>(context: T) => {
         const standbyTask = await createStandbyTask(actorId, config.get(actorId)?.buildNumber);
@@ -307,4 +316,4 @@ const generateRunLink = (run: ActorRun | ActorRunListItem): string => {
 
 /** Used for unit testing */
 // eslint-disable-next-line no-underscore-dangle
-export const _private = { createStartRunFn } as const;
+export const _private = { createStartRunFn, shouldRunTest } as const;

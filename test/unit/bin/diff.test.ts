@@ -13,7 +13,7 @@ describe('isCosmeticOnlyJsonSchemaChange', () => {
     let gitCommandSpy: MockInstance;
 
     beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'spawnCommandInGhWorkspace');
+        gitCommandSpy = vi.spyOn(Utils, 'spawnCommand');
     });
 
     const mockGitCalls = (oldJson: string, newJson: string) => {

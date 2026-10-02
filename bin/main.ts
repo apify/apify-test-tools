@@ -23,13 +23,7 @@ import {
 import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
 import type { Config } from './types.js';
-import { setCwd } from './utils.js';
 import { readConfigFile } from './utils/config/load-config.js';
-
-/**
- * Middlewares to be run before every command execution
- */
-const middlewares = [setCwd];
 
 /*
  * Option groups shared across commands. Each is a plain object passed to `.options()`, so a command's
@@ -71,7 +65,6 @@ const buildOptions = {
 /** Global flags, available to every command. */
 const globalOptions = {
     'dry-run': { type: 'boolean', default: false },
-    workspace: { type: 'string' },
 } as const satisfies Record<string, Options>;
 
 const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: boolean }) => {
@@ -112,7 +105,6 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
 await yargs()
     .scriptName('public-actors-utils')
     .options(globalOptions)
-    .middleware(middlewares)
     .command(
         'get-commits',
         '',

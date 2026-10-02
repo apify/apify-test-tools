@@ -108,8 +108,8 @@ jobs:
                     --test-files-glob "$TEST_FILES_GLOB"
                   )
                   [ -n "$base_commit" ] && args+=(--base-commit "$base_commit")
-                  changed=$(npx apify-test-tools get-changed-tests "${args[@]}" | jq -r 'map("./" + .) | join(" ")')
-                  if [ -z "$changed" ]; then
+                  changed=$(npx apify-test-tools get-changed-tests "${args[@]}" | jq -c 'map("./" + .)')
+                  if [ "$changed" = "[]" ]; then
                     exit 0
                   fi
                   if [ "$ACTOR_BUILDS" != "[]" ]; then
@@ -144,7 +144,7 @@ jobs:
                   if [ -n "$CHANGED_TESTS" ]; then
                     # `related` runs the tests that import each changed file, so a changed helper runs its dependents.
                     # A plain filter would match no test for a helper and exit 1; `related` exits 0 when nothing imports it.
-                    read -ra changed_tests <<< "$CHANGED_TESTS"
+                    mapfile -t changed_tests < <(jq -r '.[]' <<< "$CHANGED_TESTS")
                     npx vitest related "${changed_tests[@]}" "${opts[@]}"
                   elif [ -n "$TEST_FILES_PATH_GLOB" ]; then
                     mapfile -t files < <(npx apify-test-tools get-test-files --test-files-glob "$TEST_FILES_PATH_GLOB" | jq -r '.[] | "./" + .')

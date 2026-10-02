@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 
+import { logger } from './logger.js';
 import { sendSlackMessage } from './slack.js';
 import { getEnvVar } from './utils.js';
 
@@ -38,23 +39,23 @@ export const reportTestResults = async ({
 
     const failedAssertions: { message: string; runLink: string; actorId: string }[] = [];
 
-    console.error();
-    console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
-    console.error();
-    console.error('**************************************************');
-    console.error('*                   Successes                    *');
-    console.error('**************************************************');
-    console.error();
+    logger.info();
+    logger.info(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
+    logger.info();
+    logger.info('**************************************************');
+    logger.info('*                   Successes                    *');
+    logger.info('**************************************************');
+    logger.info();
     for (const [i, aResult] of passed.entries()) {
         const { fullName } = aResult;
-        console.error(`${i + 1}) ${fullName} ... ${aResult.meta.runLink}`);
-        console.error();
+        logger.info(`${i + 1}) ${fullName} ... ${aResult.meta.runLink}`);
+        logger.info();
     }
 
-    console.error('**************************************************');
-    console.error('*                   Failures                     *');
-    console.error('**************************************************');
-    console.error();
+    logger.info('**************************************************');
+    logger.info('*                   Failures                     *');
+    logger.info('**************************************************');
+    logger.info();
     for (const [i, aResult] of failed.entries()) {
         const { failureMessages, fullName, meta } = aResult;
         if (failureMessages) {
@@ -66,15 +67,15 @@ export const reportTestResults = async ({
                 })),
             );
         }
-        console.error(`${i + 1}) ${fullName} ... ${meta.runLink}`);
-        console.error();
+        logger.info(`${i + 1}) ${fullName} ... ${meta.runLink}`);
+        logger.info();
     }
-    console.error();
-    console.error(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
-    console.error();
+    logger.info();
+    logger.info(`PASSED: ${passed.length}, FAILED: ${failed.length}`);
+    logger.info();
 
     if (!reportSlackChannel) {
-        console.error(
+        logger.info(
             `Skipping slack notification. If you want to enable it, add --report-slack-channel flag and make sure SLACK_TOKEN_TESTS_BOT env variable is set.`,
         );
         return;
@@ -94,8 +95,8 @@ export const reportTestResults = async ({
         .slice(1)
         .map(({ message, runLink, actorId }) => `• ${message} --- <${runLink}|${actorId}>`);
 
-    console.error('SLACK:', slackMessage);
-    console.error('\tblocks:', blocks.join('\n\t\t'));
+    logger.info('SLACK:', slackMessage);
+    logger.info('\tblocks:', blocks.join('\n\t\t'));
 
     if (!reportSlackChannel) {
         return;

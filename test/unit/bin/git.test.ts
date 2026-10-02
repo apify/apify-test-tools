@@ -144,6 +144,21 @@ describe('getChangedFiles', () => {
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
         expect(gitCommandSpy).toHaveBeenCalledWith(`git diff --name-only ${onlySha}~..${onlySha}`);
     });
+
+    it('should return an empty list when the net diff is empty (e.g. a commit and its revert)', () => {
+        // Arrange
+        gitCommandSpy.mockReturnValue('');
+        const commits = [
+            { sha: '1'.repeat(40), author: '', date: '', message: '' },
+            { sha: '2'.repeat(40), author: '', date: '', message: '' },
+        ];
+
+        // Act
+        const changedFiles = getChangedFiles(commits);
+
+        // Assert
+        expect(changedFiles).toStrictEqual([]);
+    });
 });
 
 describe('hasMergeFromTarget', () => {

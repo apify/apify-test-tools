@@ -18,7 +18,7 @@ export const getChangedFiles = (commits: Commit[]) => {
         `git diff --name-only ${commits[0].sha}~..${commits[commits.length - 1].sha}`,
     );
 
-    const changedFiles = changedFilesString.split('\n');
+    const changedFiles = changedFilesString.split('\n').filter(Boolean);
     console.error(`Changed files (up to 50): ${changedFiles.slice(0, 50).join(', ')}`);
     return changedFiles;
 };

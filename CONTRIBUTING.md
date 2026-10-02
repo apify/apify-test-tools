@@ -14,6 +14,15 @@ The package consists of three parts:
 - `bin/slack.ts` sending notifications to slack
 - `bin/test-report.ts` processing vitest's test reports
 
+CLI command results use `writeJson` from `bin/output.ts` to write newline-terminated JSON to stdout.
+Use the CLI `logger` from `bin/logger.ts` for diagnostics; every level writes to stderr.
+ESLint rejects `console.log` throughout the codebase and all direct `console` calls in `bin/`.
+The importable library in `lib/` keeps its own diagnostics; CLI log levels apply only to `bin/`.
+
+The CLI's global `--log-level` option accepts `debug`, `info` (default), `warn`, `error`, or `silent`.
+It filters diagnostics without affecting command results. Use `logger.debug` for detailed troubleshooting,
+`logger.info` for progress, `logger.warn` for recoverable problems, and `logger.error` for failures.
+
 ## Test library
 
 - `lib/extend-expect.ts` - custom matchers

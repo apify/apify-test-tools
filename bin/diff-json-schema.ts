@@ -1,3 +1,4 @@
+import { logger } from './logger.js';
 import type { Commit } from './types.js';
 import { spawnCommand } from './utils.js';
 
@@ -41,7 +42,7 @@ export const isCosmeticOnlyJsonSchemaChange = (commits: Commit[], changedFilepat
         oldJson = JSON.parse(oldContent);
         newJson = JSON.parse(newContent);
     } catch {
-        console.error(
+        logger.info(
             `Failed to get or parse JSON content for ${changedFilepath} at refs ${oldRef} and ${newRef}, maybe it is new file or deleted? Treating it as a non-cosmetic change.`,
         );
         return false;

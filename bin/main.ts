@@ -20,10 +20,17 @@ import {
     resolveReleaseBaseCommit,
     resolveRepoUrl,
 } from './git.js';
+import { logger, logLevels } from './logger.js';
+import { writeJson } from './output.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
 import type { Config } from './types.js';
 import { readConfigFile } from './utils/config/load-config.js';
+
+/**
+ * Middlewares to be run before every command execution
+ */
+const middlewares = [(args: { logLevel: (typeof logLevels)[number] }) => logger.setLevel(args.logLevel)];
 
 /*
  * Option groups shared across commands. Each is a plain object passed to `.options()`, so a command's
@@ -64,6 +71,12 @@ const buildOptions = {
 
 /** Global flags, available to every command. */
 const globalOptions = {
+    'log-level': {
+        type: 'string',
+        choices: logLevels,
+        default: 'info',
+        describe: 'Minimum diagnostic level written to stderr; silent disables logging',
+    },
     'dry-run': { type: 'boolean', default: false },
 } as const satisfies Record<string, Options>;
 
@@ -76,7 +89,7 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
     // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
     // individually validated changes can have novel interactions when combined.
     if (hasMergeFromTarget(config.sourceBranch, config.targetBranch)) {
-        console.error(
+        logger.info(
             '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
         );
         const branchOnlyFiles = getBranchOnlyChangedFiles(config.sourceBranch, config.targetBranch);
@@ -88,10 +101,10 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
             commits: allBranchCommits,
         });
         if (branchOnlyActorsChanged.length === 0) {
-            console.error('[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests');
+            logger.info('[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests');
             return [];
         }
-        console.error(
+        logger.info(
             `[MERGE-FROM-TARGET-OPTIMIZATION]: Branch has ${branchOnlyActorsChanged.length} functional changes, cannot optimize, we continue with full check`,
         );
     }
@@ -105,13 +118,14 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
 await yargs()
     .scriptName('public-actors-utils')
     .options(globalOptions)
+    .middleware(middlewares)
     .command(
         'get-commits',
         '',
         (y) => y.options(gitRangeOptions),
         (args) => {
             const commits = getCommits(args);
-            console.log(JSON.stringify(commits));
+            writeJson(commits);
         },
     )
     .command(
@@ -121,7 +135,7 @@ await yargs()
         (args) => {
             const commits = getCommits(args);
             if (commits.length > 0) {
-                console.log(JSON.stringify(commits[commits.length - 1]));
+                writeJson(commits[commits.length - 1]);
             }
         },
     )
@@ -132,7 +146,7 @@ await yargs()
         (args) => {
             const commits = getCommits(args);
             const changedFiles = getChangedFiles(commits);
-            console.log(JSON.stringify(changedFiles));
+            writeJson(changedFiles);
         },
     )
     .command(
@@ -141,7 +155,7 @@ await yargs()
         (y) => y.options(actorSelectionOptions),
         async ({ actors, ignore }) => {
             const actorConfigs = await readConfigFile({ actors, ignore });
-            console.log(JSON.stringify(actorConfigs));
+            writeJson(actorConfigs);
         },
     )
     .command(
@@ -150,7 +164,7 @@ await yargs()
         (y) => y.options(gitRangeOptions).options(actorSelectionOptions),
         async (config) => {
             const actorsChanged = await resolveChangedActors(config, { isLatest: false });
-            console.log(JSON.stringify(actorsChanged));
+            writeJson(actorsChanged);
         },
     )
     .command(
@@ -179,7 +193,7 @@ await yargs()
                 dryRun: config.dryRun,
                 useDockerCache: config.useDockerCache,
             });
-            console.log(JSON.stringify(builds));
+            writeJson(builds);
         },
     )
     .command(
@@ -200,7 +214,7 @@ await yargs()
             const branch = getCurrentBranch();
             const changes = getReleaseChanges(baseSha);
             if (!changes) {
-                console.error(`HEAD is the base commit ${baseSha}, there is nothing new to release`);
+                logger.info(`HEAD is the base commit ${baseSha}, there is nothing new to release`);
                 return;
             }
             const { commits, changedFiles, changelog } = changes;
@@ -224,7 +238,7 @@ await yargs()
                 dryRun,
                 useDockerCache: args.useDockerCache,
             });
-            console.error(JSON.stringify(builds));
+            logger.info(JSON.stringify(builds));
 
             await notifyToSlack({
                 changedFiles,
@@ -246,7 +260,7 @@ await yargs()
         async ({ actors, ignore, dryRun }) => {
             const actorConfigs = await readConfigFile({ actors, ignore });
             const builds = await runBuildsFromLocal({ actorConfigs, dryRun });
-            console.log(JSON.stringify(builds));
+            writeJson(builds);
         },
     )
     .command(
@@ -265,11 +279,11 @@ await yargs()
         // or a missing config file) arrive here as `err`. A malformed selection must fail loudly
         // rather than silently operate on the wrong set of actors — print the message, no stack.
         if (err) {
-            console.error(`[ERROR]: ${err.message}`);
+            logger.error(`[ERROR]: ${err.message}`);
         } else {
             // Argument-parsing/validation failure — keep yargs' usage output.
-            console.error(yargsInstance.help());
-            console.error(`\n${msg}`);
+            logger.error(yargsInstance.help());
+            logger.error(`\n${msg}`);
         }
         process.exit(1);
     })

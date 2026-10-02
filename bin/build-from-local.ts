@@ -8,6 +8,7 @@ import { ActorSourceType } from 'apify-client';
 
 import { dryRunBuildData, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
 import { buildDockerIgnoreMatcher } from './dockerignore.js';
+import { logger } from './logger.js';
 import { isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, BuildData } from './types.js';
 import type { SourceFile } from './utils.js';
@@ -104,7 +105,7 @@ export const flattenMonorepoContext = async (
     actorJson: Record<string, unknown>,
     keptContextFiles: string[],
 ): Promise<{ tempDir: string; filePaths: string[] }> => {
-    console.error(`[${actorName}]: monorepo actor detected — flattening from Docker context`);
+    logger.info(`[${actorName}]: monorepo actor detected — flattening from Docker context`);
 
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `apify-build-${actorName.replace('/', '_')}-`));
     const filePaths: string[] = [];
@@ -194,9 +195,9 @@ export const runBuildsFromLocal = async ({
     dryRun: boolean;
 }): Promise<BuildData[]> => {
     if (dryRun) {
-        console.error('[DRY RUN] Would build from local source:');
+        logger.info('[DRY RUN] Would build from local source:');
         for (const { actorFullName, folder } of actorConfigs) {
-            console.error(`  ${actorFullName} (${folder})`);
+            logger.info(`  ${actorFullName} (${folder})`);
         }
         return actorConfigs.map(({ actorFullName }) => dryRunBuildData(actorFullName, LOCAL_SOURCE_VERSION_NUMBER));
     }

@@ -1,5 +1,6 @@
 import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
 import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
+import { logger } from './logger.js';
 import { findContainingScope, hoistPath, isPathWithinScope } from './path-utils.js';
 import type { ActorConfig, Commit } from './types.js';
 
@@ -159,9 +160,9 @@ const groupFilesByActorSet = (fileToActors: Map<string, Set<string>>): ChangeGro
 const logChangeGroups = (groups: ChangeGroup[]): void => {
     for (const { actors, files } of groups) {
         if (actors.length > 1) {
-            console.error(`[DIFF]: Shared changes for actors ${actors.join(', ')}: ${files.join(', ')}`);
+            logger.info(`[DIFF]: Shared changes for actors ${actors.join(', ')}: ${files.join(', ')}`);
         } else {
-            console.error(`[DIFF]: Changes specific to actor ${actors[0]}: ${files.join(', ')}`);
+            logger.info(`[DIFF]: Changes specific to actor ${actors[0]}: ${files.join(', ')}`);
         }
     }
 };
@@ -205,9 +206,9 @@ export const getChangedActors = ({
 
     if (actorsChanged.length > 0) {
         const actors = actorsChanged.map((config) => config.actorFullName);
-        console.error(`[DIFF]: Actors to be built and tested: ${actors.join(', ')}`);
+        logger.info(`[DIFF]: Actors to be built and tested: ${actors.join(', ')}`);
     } else {
-        console.error(`[DIFF]: No relevant files changed, skipping builds and tests`);
+        logger.info(`[DIFF]: No relevant files changed, skipping builds and tests`);
     }
 
     return actorsChanged;

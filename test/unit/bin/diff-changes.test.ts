@@ -367,6 +367,66 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
+    it('test file under the default glob never triggers a build, even when .dockerignore does not list it', () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => false);
+        const result = getChangedActors({
+            filepathsChanged: ['test/platform/daily/foo.test.ts'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('test file listed in .dockerignore is still a test file, not a build trigger', () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue((filePath) => filePath.startsWith('test/'));
+        const result = getChangedActors({
+            filepathsChanged: ['test/platform/daily/foo.test.ts'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('test file does not trigger a release build either', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['test/platform/daily/foo.test.ts'],
+            actorConfigs: [miniActor],
+            commits,
+            isLatest: true,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('test file matching a custom glob never triggers a build', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['actors/foo_bar/src/main.platform.test.ts'],
+            actorConfigs: [miniActor],
+            commits,
+            testFilesGlob: '**/*.platform.test.ts',
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('file outside a custom test glob is classified normally, even under test/platform', () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => false);
+        const result = getChangedActors({
+            filepathsChanged: ['test/platform/helpers.ts'],
+            actorConfigs: [miniActor],
+            commits,
+            testFilesGlob: '**/*.platform.test.ts',
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('code changed alongside a test file still triggers the build', () => {
+        const result = getChangedActors({
+            filepathsChanged: ['test/platform/daily/foo.test.ts', 'actors/foo_bar/src/main.ts'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
     it('JSON file in context but outside actor folder is functional (not checked for cosmetic)', () => {
         vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
         const result = getChangedActors({
@@ -522,6 +582,20 @@ describe('getChangedActors logging', () => {
             '[DIFF]: Changes specific to actor team/actor-b: actors/b/b-only.ts',
             '[DIFF]: Actors to be built and tested: team/actor-a, team/actor-b',
         ]);
+    });
+
+    it('logs changed test files once, not per actor', () => {
+        getChangedActors({
+            filepathsChanged: ['test/platform/a.test.ts', 'test/platform/b.test.ts'],
+            actorConfigs,
+            commits,
+        });
+
+        expect(console.error).toHaveBeenCalledTimes(2);
+        expect(console.error).toHaveBeenCalledWith(
+            '[DIFF]: Test files changed, they never trigger a build: test/platform/a.test.ts, test/platform/b.test.ts',
+        );
+        expect(console.error).toHaveBeenCalledWith('[DIFF]: No relevant files changed, skipping builds and tests');
     });
 
     it('logs no group lines when zero actors changed', () => {

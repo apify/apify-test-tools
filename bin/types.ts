@@ -5,6 +5,7 @@ export interface Config {
     workspace?: string;
     actors: string[];
     ignore: string[];
+    testFilesGlob?: string;
 }
 
 export type Commit = {

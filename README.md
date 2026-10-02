@@ -55,12 +55,28 @@ When a PR is opened or code is pushed, the tool determines which actors need to 
 
 1. **Sibling exclusion** — files inside another actor's `folder` are excluded first. This prevents an actor with broad context from being triggered by changes that belong to a sibling actor.
 2. **CHANGELOG classification** — a `CHANGELOG.md` file is always `cosmetic` (only triggers a release build, not tests), for every actor, regardless of context or folder. (See [issue #106](https://github.com/apify/apify-test-tools/issues/106).)
-3. **Context matching** — the file must fall within one of the actor's context paths (`dockerContextDir` from `actor.json` by default, or `overrideActorContext` from config if set). Files outside every context path are skipped.
-4. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it matched (e.g. a standalone actor's own `.eslintrc` is checked as just `.eslintrc`, not the full repo-root-relative path), then checked against repo-level dev file patterns (`.vscode/`, `.gitignore`, `.husky/`, `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`). There's no hardcoded special-casing for legacy `code/`/`shared/` layouts — repos that need those directories treated as top-level must list them explicitly in `overrideActorContext`.
-5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior.
-6. **README classification** — a `README.md` file is `cosmetic` (only triggers a release build, not tests) if it lives inside the actor's own `folder`; otherwise it's ignored entirely, since it isn't documentation for this actor.
-7. **Cosmetic JSON classification** — `.json` files inside the actor's own `.actor/` directory with only cosmetic schema changes (whitespace, key ordering) only trigger a release build.
-8. **Functional** — everything else triggers both build and tests.
+3. **Test files** — files matching the test files glob (`test/platform/**` by default) never trigger a build. See [Test-only changes](#test-only-changes).
+4. **Context matching** — the file must fall within one of the actor's context paths (`dockerContextDir` from `actor.json` by default, or `overrideActorContext` from config if set). Files outside every context path are skipped.
+5. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it matched (e.g. a standalone actor's own `.eslintrc` is checked as just `.eslintrc`, not the full repo-root-relative path), then checked against repo-level dev file patterns (`.vscode/`, `.gitignore`, `.husky/`, `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`). There's no hardcoded special-casing for legacy `code/`/`shared/` layouts — repos that need those directories treated as top-level must list them explicitly in `overrideActorContext`.
+6. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior.
+7. **README classification** — a `README.md` file is `cosmetic` (only triggers a release build, not tests) if it lives inside the actor's own `folder`; otherwise it's ignored entirely, since it isn't documentation for this actor.
+8. **Cosmetic JSON classification** — `.json` files inside the actor's own `.actor/` directory with only cosmetic schema changes (whitespace, key ordering) only trigger a release build.
+9. **Functional** — everything else triggers both build and tests.
+
+### Test-only changes
+
+A push that changes only test files builds nothing. The PR workflow then runs the changed test files (and the tests importing a changed helper) against the deployed builds. If the branch also changes Actor code, the deployed builds don't contain it, so those tests don't run and the job shows a warning; re-run the job from scratch to rebuild and test together.
+
+Test files are found by the `test-files-path-glob` input of `public_pr-build-test.yaml`, a glob relative to the repo root (default `test/platform/**`), not by the Docker context, so `test/` may stay in `.dockerignore`. The older `test-files-glob` input (relative to `test/platform`) still works; v1 will replace it with `test-files-path-glob`.
+
+```yaml
+jobs:
+    buildDevelAndTest:
+        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
+        with:
+            test-files-path-glob: 'test/platform/{daily,hourly}/**'
+        secrets: inherit
+```
 
 ### 4. Create test directories
 

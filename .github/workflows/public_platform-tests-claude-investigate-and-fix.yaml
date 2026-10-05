@@ -106,23 +106,19 @@ jobs:
             id-token: write
             actions: read
         steps:
-            - name: Checkout repository
-              uses: actions/checkout@v5
+            - name: Setup repository and dependencies
+              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@tmp/claude-fix-deps-mock
               with:
-                  ref: ${{ inputs.mock_checkout_ref }}
+                  npm-token: ${{ secrets.NPM_TOKEN }}
 
-            - name: Use Node.js 24
-              uses: actions/setup-node@v5
-              with:
-                  node-version: 24
-                  package-manager-cache: false
+            - name: Mock checkout ref
+              run: git checkout --detach ${{ inputs.mock_checkout_ref }}
 
-            - name: Install npm dependencies
-              if: hashFiles('package-lock.json') != ''
-              env:
-                  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-              run: npm ci
+            - name: Show dependency state before Claude (mock)
+              run: |
+                  echo "apify-test-tools in node_modules: $(node -p "require('./node_modules/apify-test-tools/package.json').version")"
+                  echo "apify-test-tools in package-lock.json: $(node -p "require('./package-lock.json').packages['node_modules/apify-test-tools'].version")"
+                  echo "git status:"; git status --porcelain
 
             - name: Run Claude Code
               id: claude

@@ -150,7 +150,7 @@ describe('build-from-local helpers', () => {
 
             const originalCwd = process.cwd();
             // We simulate the working directory being the repo root, since collectSourceFiles uses relative paths to the repo root.
-            Utils.setCwd({ workspace: repoRoot });
+            process.chdir(repoRoot);
             try {
                 const cwd = process.cwd();
                 const actorDir = path.join(cwd, 'actors', 'owner_actor');

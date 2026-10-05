@@ -1,5 +1,5 @@
 import type { Commit, Config } from './types.js';
-import { spawnCommandInGhWorkspace } from './utils.js';
+import { spawnCommand } from './utils.js';
 
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
@@ -14,11 +14,11 @@ export const getChangedFiles = (commits: Commit[]) => {
         throw new Error('Cannot get changed files: the commit list is empty. This should never happen.');
     }
 
-    const changedFilesString = spawnCommandInGhWorkspace(
+    const changedFilesString = spawnCommand(
         `git diff --name-only ${commits[0].sha}~..${commits[commits.length - 1].sha}`,
     );
 
-    const changedFiles = changedFilesString.split('\n');
+    const changedFiles = changedFilesString.split('\n').filter(Boolean);
     console.error(`Changed files (up to 50): ${changedFiles.slice(0, 50).join(', ')}`);
     return changedFiles;
 };
@@ -29,16 +29,16 @@ export const getChangedFiles = (commits: Commit[]) => {
  * Uses the full targetBranch..sourceBranch range, ignoring baseCommit.
  */
 export const hasMergeFromTarget = (sourceBranch: string, targetBranch: string): boolean => {
-    const mergeShas = spawnCommandInGhWorkspace(`git log --merges --pretty=format:%H ${targetBranch}..${sourceBranch}`)
+    const mergeShas = spawnCommand(`git log --merges --pretty=format:%H ${targetBranch}..${sourceBranch}`)
         .split('\n')
         .filter(Boolean);
 
     for (const sha of mergeShas) {
-        const parents = spawnCommandInGhWorkspace(`git log -1 --pretty=format:%P ${sha}`).trim().split(' ');
+        const parents = spawnCommand(`git log -1 --pretty=format:%P ${sha}`).trim().split(' ');
         for (const parent of parents) {
             // git merge-base A B outputs the common ancestor.
             // If that equals A, then A is an ancestor of B (i.e. parent is reachable from targetBranch).
-            const mergeBase = spawnCommandInGhWorkspace(`git merge-base ${parent} ${targetBranch}`);
+            const mergeBase = spawnCommand(`git merge-base ${parent} ${targetBranch}`);
             if (mergeBase === parent) {
                 return true;
             }
@@ -52,9 +52,7 @@ export const hasMergeFromTarget = (sourceBranch: string, targetBranch: string): 
  * Used to check whether the branch itself has any functional changes, independent of what master merged in.
  */
 export const getBranchOnlyChangedFiles = (sourceBranch: string, targetBranch: string): string[] => {
-    const output = spawnCommandInGhWorkspace(
-        `git log --no-merges --name-only --pretty=format: ${targetBranch}..${sourceBranch}`,
-    );
+    const output = spawnCommand(`git log --no-merges --name-only --pretty=format: ${targetBranch}..${sourceBranch}`);
     return output.split('\n').filter(Boolean);
 };
 
@@ -82,7 +80,7 @@ export const parseBaseCommit = (shaOrCommit: string | undefined): string | undef
 };
 
 const fetchAllBranchCommits = (sourceBranch: string, targetBranch: string): Commit[] => {
-    const commitsStrings = spawnCommandInGhWorkspace(
+    const commitsStrings = spawnCommand(
         `git log --pretty=format:'${GIT_LOG_FORMAT}' ${targetBranch}..${sourceBranch}`,
     ).split('\n');
     const commits = commitsStrings.map((commitString) => parseCommit(commitString));
@@ -151,7 +149,7 @@ export const parseCommit = (commitString: string): Commit => {
  * so a detached HEAD (no branch to point at) is an error rather than a guess.
  */
 export const getCurrentBranch = (): string => {
-    const branch = spawnCommandInGhWorkspace('git rev-parse --abbrev-ref HEAD');
+    const branch = spawnCommand('git rev-parse --abbrev-ref HEAD');
     if (branch === 'HEAD') {
         throw new Error(
             'Cannot determine the branch to release: HEAD is detached. Check out the branch you want to release.',
@@ -165,10 +163,7 @@ export const getCurrentBranch = (): string => {
  * uses for Git repo sources, e.g. git@github.com:apify-store/google-maps
  */
 const getOriginRepoUrl = (): string => {
-    return spawnCommandInGhWorkspace('git remote get-url origin').replace(
-        /^https:\/\/github\.com\//,
-        'git@github.com:',
-    );
+    return spawnCommand('git remote get-url origin').replace(/^https:\/\/github\.com\//, 'git@github.com:');
 };
 
 /**
@@ -224,14 +219,14 @@ export const resolveReleaseBaseCommit = (baseCommit: string): string => {
         );
     }
     // --quiet makes rev-parse print nothing (instead of an error) when the commit is missing
-    if (!spawnCommandInGhWorkspace(`git rev-parse --verify --quiet "${sha}^{commit}"`)) {
+    if (!spawnCommand(`git rev-parse --verify --quiet "${sha}^{commit}"`)) {
         throw new Error(
             `Base commit ${sha} is not in the local git history. Either the checkout is shallow ` +
                 `(fetch the full history, e.g. fetch-depth: 0 in actions/checkout) or the branch was force-pushed.`,
         );
     }
     // git merge-base A B outputs the common ancestor. If that equals A, then A is an ancestor of B.
-    if (spawnCommandInGhWorkspace(`git merge-base ${sha} HEAD`) !== sha) {
+    if (spawnCommand(`git merge-base ${sha} HEAD`) !== sha) {
         throw new Error(
             `Base commit ${sha} is not an ancestor of HEAD, most likely because the branch was force-pushed. ` +
                 `The changed files cannot be determined reliably. Rerun with --base-commit set to an ancestor of HEAD ` +
@@ -248,7 +243,7 @@ const getChangelogAdditions = (baseSha: string, changedFiles: string[]): string 
     if (!changedFiles.includes(CHANGELOG_PATH)) {
         return null;
     }
-    const diff = spawnCommandInGhWorkspace('git', ['diff', baseSha, 'HEAD', '--', CHANGELOG_PATH]);
+    const diff = spawnCommand('git', ['diff', baseSha, 'HEAD', '--', CHANGELOG_PATH]);
 
     const added: string[] = [];
     let startedChangelog = false;
@@ -277,11 +272,11 @@ const getChangelogAdditions = (baseSha: string, changedFiles: string[]): string 
  * diffing from its parent would pull in already-released changes.
  */
 export const getReleaseChanges = (baseSha: string) => {
-    if (spawnCommandInGhWorkspace('git rev-parse HEAD') === baseSha) {
+    if (spawnCommand('git rev-parse HEAD') === baseSha) {
         return null;
     }
     const commits = fetchAllBranchCommits('HEAD', baseSha);
-    const changedFiles = spawnCommandInGhWorkspace(`git diff --name-only ${baseSha} HEAD`).split('\n').filter(Boolean);
+    const changedFiles = spawnCommand(`git diff --name-only ${baseSha} HEAD`).split('\n').filter(Boolean);
     const changelog = getChangelogAdditions(baseSha, changedFiles);
     return { commits, changedFiles, changelog };
 };

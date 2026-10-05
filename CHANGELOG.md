@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 ### 🐛 Bug Fixes
 
 - **internal-workflows:** Wait out npm&#x27;s async publish before holding the major tag ([#160](https://github.com/apify/apify-test-tools/pull/160)) ([78434f0](https://github.com/apify/apify-test-tools/commit/78434f03d288ecbd383d55d56a1610f06ded298f)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- Skip builds and tests when the net diff is empty ([#171](https://github.com/apify/apify-test-tools/pull/171)) ([874d70c](https://github.com/apify/apify-test-tools/commit/874d70ca5506f7ec742a1808c9bf6c670f08552c)) by [@artogahr](https://github.com/artogahr)
 
 
 <!-- git-cliff-unreleased-end -->

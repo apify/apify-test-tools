@@ -169,21 +169,10 @@ jobs:
             id-token: write
             actions: read
         steps:
-            - name: Checkout repository
-              uses: actions/checkout@v5
-
-            - name: Use Node.js 24
-              uses: actions/setup-node@v5
+            - name: Setup repository and dependencies
+              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
               with:
-                  node-version: 24
-                  package-manager-cache: false
-
-            - name: Install npm dependencies
-              if: hashFiles('package-lock.json') != ''
-              env:
-                  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-              run: npm ci
+                  npm-token: ${{ secrets.NPM_TOKEN }}
 
             - name: Run Claude Code
               id: claude

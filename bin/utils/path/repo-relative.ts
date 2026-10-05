@@ -6,24 +6,24 @@ import path from 'node:path';
 const { posix } = path;
 
 // A file path cannot end in "/", ".", "..", or be empty: each of those names a directory.
-const assertNamesFile = (raw: string): void => {
-    const lastSegment = raw.slice(raw.lastIndexOf('/') + 1);
+const assertNamesFile = (rawPath: string): void => {
+    const lastSegment = rawPath.slice(rawPath.lastIndexOf('/') + 1);
     if (lastSegment === '' || lastSegment === '.' || lastSegment === '..') {
-        throw new Error(`Expected a file path, got directory path "${raw}".`);
+        throw new Error(`Expected a file path, got directory path "${rawPath}".`);
     }
 };
 
 // Shared by the file and directory paths. Use it as a parameter type where either kind is fine.
 export abstract class AbstractPath {
     readonly #path: string;
-    constructor(value: string) {
-        if (posix.isAbsolute(value)) {
-            throw new Error(`Expected a relative path, got absolute path "${value}".`);
+    constructor(rawPath: string) {
+        if (posix.isAbsolute(rawPath)) {
+            throw new Error(`Expected a relative path, got absolute path "${rawPath}".`);
         }
-        const normalized = posix.normalize(value);
+        const normalized = posix.normalize(rawPath);
         // normalize keeps a trailing slash ("actors/foo/"), which would make equal paths compare unequal.
         this.#path = normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
-        this.assertNoEscape(value);
+        this.assertNoEscape(rawPath);
     }
 
     // A file and a directory are never equal, even when spelled the same.
@@ -55,14 +55,14 @@ export abstract class AbstractPath {
 export class RelativeDir extends AbstractPath {
     static readonly ROOT = new RelativeDir('.');
 
-    joinDir(relative: string): RelativeDir {
-        return new RelativeDir(this.join(relative));
+    joinDir(relativePath: string): RelativeDir {
+        return new RelativeDir(this.join(relativePath));
     }
 
-    joinFile(relative: string): RelativeFile {
+    joinFile(relativePath: string): RelativeFile {
         // Must be checked before joining: posix.join('actors/foo', '.') is "actors/foo", which looks like a file.
-        assertNamesFile(relative);
-        return new RelativeFile(this.join(relative));
+        assertNamesFile(relativePath);
+        return new RelativeFile(this.join(relativePath));
     }
 
     // True when `other` is this directory itself or lies inside it.
@@ -87,18 +87,18 @@ export class RelativeDir extends AbstractPath {
         return this;
     }
 
-    private join(relative: string): string {
+    private join(relativePath: string): string {
         // Must be checked here: posix.join('.', '/etc') is "etc", so the constructor would not catch it.
-        if (posix.isAbsolute(relative)) {
-            throw new Error(`Expected a relative path to join with "${this}", got absolute path "${relative}".`);
+        if (posix.isAbsolute(relativePath)) {
+            throw new Error(`Expected a relative path to join with "${this}", got absolute path "${relativePath}".`);
         }
-        return posix.join(this.path, relative);
+        return posix.join(this.path, relativePath);
     }
 }
 
 export class ExistingDir extends RelativeDir {
-    constructor(value: string) {
-        super(value);
+    constructor(rawPath: string) {
+        super(rawPath);
         this.assertIsDir();
     }
 
@@ -108,9 +108,9 @@ export class ExistingDir extends RelativeDir {
 }
 
 export class RelativeFile extends AbstractPath {
-    constructor(value: string) {
-        assertNamesFile(value);
-        super(value);
+    constructor(rawPath: string) {
+        assertNamesFile(rawPath);
+        super(rawPath);
     }
 
     // The directory containing this file.
@@ -120,13 +120,13 @@ export class RelativeFile extends AbstractPath {
 
     // Resolves against the file's directory, the way a path written inside the file is meant
     // (e.g. `dockerContextDir: ".."` in `.actor/actor.json` is the actor folder).
-    joinDir(relative: string): RelativeDir {
-        return this.parent.joinDir(relative);
+    joinDir(relativePath: string): RelativeDir {
+        return this.parent.joinDir(relativePath);
     }
 
     // Resolves against the file's directory, e.g. a sibling file.
-    joinFile(relative: string): RelativeFile {
-        return this.parent.joinFile(relative);
+    joinFile(relativePath: string): RelativeFile {
+        return this.parent.joinFile(relativePath);
     }
 
     isWithin(scope: RelativeDir): boolean {
@@ -145,8 +145,8 @@ export class RelativeFile extends AbstractPath {
 }
 
 export class ExistingFile extends RelativeFile {
-    constructor(value: string) {
-        super(value);
+    constructor(rawPath: string) {
+        super(rawPath);
         this.assertIsFile();
     }
 

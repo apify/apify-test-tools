@@ -57,7 +57,7 @@ When a PR is opened or code is pushed, the tool determines which actors need to 
 2. **CHANGELOG classification** — a `CHANGELOG.md` file is always `cosmetic` (only triggers a release build, not tests), for every actor, regardless of context or folder. (See [issue #106](https://github.com/apify/apify-test-tools/issues/106).)
 3. **Context matching** — the file must fall within one of the actor's context paths (`dockerContextDir` from `actor.json` by default, or `overrideActorContext` from config if set). Files outside every context path are skipped.
 4. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it matched (e.g. a standalone actor's own `.eslintrc` is checked as just `.eslintrc`, not the full repo-root-relative path), then checked against repo-level dev file patterns (`.vscode/`, `.gitignore`, `.husky/`, `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`). There's no hardcoded special-casing for legacy `code/`/`shared/` layouts — repos that need those directories treated as top-level must list them explicitly in `overrideActorContext`.
-5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior.
+5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior. Test files are the exception: `build --test-files-glob <glob>` (relative to the repo root) skips this check for matching files, so a changed test triggers a build, and with it its tests, even when `.dockerignore` lists it. The PR workflow passes `test/platform/**`. Context matching still applies, so tests outside an actor's `dockerContextDir` (e.g. a root `test/` with standalone actors) need to be listed in its `overrideActorContext`; `build` logs a warning for changed test files outside every actor's context.
 6. **README classification** — a `README.md` file is `cosmetic` (only triggers a release build, not tests) if it lives inside the actor's own `folder`; otherwise it's ignored entirely, since it isn't documentation for this actor.
 7. **Cosmetic JSON classification** — `.json` files inside the actor's own `.actor/` directory with only cosmetic schema changes (whitespace, key ordering) only trigger a release build.
 8. **Functional** — everything else triggers both build and tests.
@@ -650,12 +650,15 @@ TESTER_APIFY_TOKEN=<token> \
 
 #### Full example
 
+Tests only run for Actors in `ACTOR_BUILDS`, so a custom workflow has to build (and pass) the Actors even when only tests changed. Pass `--test-files-glob` so test changes count even when `.dockerignore` lists them.
+
 ```bash
 # Build and capture output
 BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
     npx apify-test-tools build \
     --target-branch origin/master \
-    --source-branch origin/my-dummy-branch)
+    --source-branch origin/my-dummy-branch \
+    --test-files-glob 'test/platform/**')
 
 # Run tests with the builds
 ACTOR_BUILDS="$BUILDS" \

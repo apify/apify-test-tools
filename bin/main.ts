@@ -86,6 +86,7 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
             filepathsChanged: branchOnlyFiles,
             actorConfigs,
             commits: allBranchCommits,
+            testFilesGlob: config.testFilesGlob,
         });
         if (branchOnlyActorsChanged.length === 0) {
             console.error('[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests');
@@ -99,7 +100,13 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
     // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply baseCommit and check merge commits (they might be functional or just cosmetic)
     const commits = getCommits(config);
     const changedFiles = getChangedFiles(commits);
-    return getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest, commits });
+    return getChangedActors({
+        filepathsChanged: changedFiles,
+        actorConfigs,
+        isLatest,
+        commits,
+        testFilesGlob: config.testFilesGlob,
+    });
 };
 
 await yargs()
@@ -169,7 +176,13 @@ await yargs()
     .command(
         'build',
         '',
-        (y) => y.options(gitRangeOptions).options(actorSelectionOptions).options(buildOptions).options(repoUrlOptions),
+        (y) =>
+            y
+                .options(gitRangeOptions)
+                .options(actorSelectionOptions)
+                .options(buildOptions)
+                .options(repoUrlOptions)
+                .option('test-files-glob', { type: 'string' }),
         async (config) => {
             const actorsChanged = await resolveChangedActors(config, { isLatest: false });
             const builds = await runBuilds({

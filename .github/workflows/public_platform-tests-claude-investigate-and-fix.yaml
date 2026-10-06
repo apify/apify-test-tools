@@ -50,10 +50,6 @@ on:
                 default: |
                     Investigate the failing E2E platform test and open a GitHub issue documenting your findings. Start by reviewing the test logs, error messages, and recent workflow run history to determine the root cause.
 
-                    The failure will typically fall into one of these categories:
-                    - Flaky test: The test is non-deterministic or depends on timing/external state and fails intermittently. Check past workflow runs to see if this test has failed before.
-                    - Real bug: Genuine broken functionality — either a pre-existing issue or an environment/dependency change outside the codebase (e.g. a website changed its structure, an external API changed behavior).
-
                     Use available tools to check previous workflow runs, git history, and existing GitHub issues to gather context and avoid creating duplicate issues. For deeper context,
                     use tools to investigate the run on Apify platform, review its logs, datasets, key-value stores.
 
@@ -66,6 +62,7 @@ on:
                     When you create the issue, write it like an incident postmortem: a short summary and impact up top for anyone skimming, full technical detail below for whoever fixes it. Don't water down the engineering detail to make the top readable.
                     - Title: short and clean, describing the actual problem in plain terms — no dates, run numbers, or other noise. Prefix it with a conventional-commit-style type, e.g. "fix: blocking issue on detail endpoint".
                     - Body, section 1 ("## Summary"): one line stating what's broken plus its impact, in plain language a PM can understand at a glance — no jargon, internal field names, or stack traces (e.g. "Scraping product detail pages fails when a listing has no reviews, affecting N% of runs").
+                    - If you measured flakiness, a "## Flakiness" section right after the Summary, as the `measure-flakiness` skill describes.
                     - A `---` divider, then section 2 ("## Details"): the engineering bug report — root cause, relevant log lines, links to the failing run, and any other internals an engineer needs. If a single item/request failed among otherwise-good ones, show or link that specific one (e.g. the dataset item index/id, or its matching debug snapshot) rather than just describing the run as failed.
 
                     If you create a new issue, you MUST write its issue number (just the number, nothing else) to $GITHUB_WORKSPACE/issue-number.txt as the very last thing you do. If you skip creating one because a duplicate already exists, do not create the file.

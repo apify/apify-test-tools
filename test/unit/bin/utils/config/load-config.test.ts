@@ -69,6 +69,44 @@ describe('loadActorConfig', () => {
         expect(loadActorConfig(entry()).dockerContextDir.path).toBe('actors/shopify');
     });
 
+    it.each([
+        ['dockerfile', 'Dockerfile'],
+        ['readme', 'README.md'],
+        ['changelog', 'CHANGELOG.md'],
+    ] as const)('follows Apify default locations for %s', async (field, filename) => {
+        await writeActorJson();
+
+        expect(loadActorConfig(entry()).actorJson[field]).toBeUndefined();
+
+        await writeFiles({ [`actors/shopify/${filename}`]: '' });
+        expect(loadActorConfig(entry()).actorJson[field]?.path).toBe(`actors/shopify/${filename}`);
+
+        await writeFiles({ [`actors/shopify/.actor/${filename}`]: '' });
+        expect(loadActorConfig(entry()).actorJson[field]?.path).toBe(`actors/shopify/.actor/${filename}`);
+
+        await writeActorJson({ [field]: '../custom-file' });
+        expect(loadActorConfig(entry()).actorJson[field]?.path).toBe('actors/shopify/custom-file');
+    });
+
+    it.each([
+        ['dockerfile', 'Dockerfile'],
+        ['readme', 'rEaDmE.md'],
+        ['changelog', 'CHANGELOG.md'],
+    ] as const)(
+        'matches default %s filenames case insensitively and returns the actual path',
+        async (field, filename) => {
+            await writeActorJson();
+            await writeFiles({
+                [`actors/shopify/.actor/${filename.toLowerCase()}`]: '',
+                [`actors/shopify/${filename}`]: '',
+            });
+
+            expect(loadActorConfig(entry()).actorJson[field]?.path).toBe(
+                `actors/shopify/.actor/${filename.toLowerCase()}`,
+            );
+        },
+    );
+
     it('resolves path fields from actor.json while allowing inline schemas', async () => {
         await writeActorJson({
             readme: '../README.md',

@@ -39,6 +39,11 @@ on:
                 type: string
                 default: sonnet
                 description: Claude model to use for investigation and fix
+            flakiness_runs:
+                required: false
+                type: number
+                default: 50
+                description: How many times Claude re-runs the failing Actor run to measure how often the failure happens, when that isn't obvious.
             investigate_prompt:
                 required: false
                 type: string
@@ -56,6 +61,8 @@ on:
                     - Debug snapshots: often stored as a field on dataset items (e.g. `_debugSnapshots`) or as records in a key-value store, keyed so they can be matched to the log line for the failing request.
                     - Any other debug artifacts the Actor produced (extra logs, error/state fields on output items) that narrow down the failing request.
 
+                    Before you create a new issue, check whether the `platform-tests-investigate-and-fix:measure-flakiness` skill applies, and follow it if it does.
+
                     When you create the issue, write it like an incident postmortem: a short summary and impact up top for anyone skimming, full technical detail below for whoever fixes it. Don't water down the engineering detail to make the top readable.
                     - Title: short and clean, describing the actual problem in plain terms — no dates, run numbers, or other noise. Prefix it with a conventional-commit-style type, e.g. "fix: blocking issue on detail endpoint".
                     - Body, section 1 ("## Summary"): one line stating what's broken plus its impact, in plain language a PM can understand at a glance — no jargon, internal field names, or stack traces (e.g. "Scraping product detail pages fails when a listing has no reviews, affecting N% of runs").
@@ -67,9 +74,9 @@ on:
             ANTHROPIC_API_KEY:
                 required: true
                 description: Claude API key
-            TESTER_APIFY_TOKEN_READ_ONLY:
+            TESTER_APIFY_TOKEN:
                 required: true
-                description: Apify token used only for read-only investigation — reading the failing run, its log and its storages.
+                description: Apify token for investigating the failing run — reading it, its log and its storages — and re-running it to measure how often the failure happens.
             NPM_TOKEN:
                 required: false
                 description: Read-only token for installing private npm packages before Claude runs.
@@ -92,7 +99,8 @@ jobs:
               id: claude
               uses: anthropics/claude-code-action@8251c103ac8c1d761882c86aba1412c7f583c844 # v1.0.213
               env:
-                  TESTER_APIFY_TOKEN_READ_ONLY: ${{ secrets.TESTER_APIFY_TOKEN_READ_ONLY }}
+                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+                  FLAKINESS_RUNS: ${{ inputs.flakiness_runs }}
               with:
                   prompt: |
                       The failing E2E platform test ran in workflow run ${{ github.run_id }} of this repo.
@@ -103,12 +111,13 @@ jobs:
                   plugin_marketplaces: https://github.com/apify/apify-test-tools.git
                   plugins: platform-tests-investigate-and-fix@apify-test-tools
                   # The `tools` query parameter below selects which tools the Apify MCP server
-                  # exposes: reading an Actor run — its status, exit code, storage ids and log — and
-                  # reading that run's dataset items and its key-value store keys and records, e.g.
-                  # INPUT, OUTPUT and error snapshots. WARN: the server adds `abort-actor-run` on top
-                  # even when not listed here, see https://github.com/apify/apify-mcp-server
+                  # exposes: starting Actor runs, to measure how often a failure happens; reading an
+                  # Actor run — its status, exit code, storage ids and log — and reading that run's
+                  # dataset items and its key-value store keys and records, e.g. INPUT, OUTPUT and
+                  # error snapshots. WARN: the server adds `abort-actor-run` on top even when not
+                  # listed here, see https://github.com/apify/apify-mcp-server
                   claude_args: |
-                      --mcp-config '{"mcpServers":{"apify":{"type":"http","url":"https://mcp.apify.com/?tools=get-actor-run,get-actor-log,get-dataset-list,get-dataset,get-dataset-items,get-key-value-store-list,get-key-value-store,get-key-value-store-keys,get-key-value-store-record","headers":{"Authorization":"Bearer ${TESTER_APIFY_TOKEN_READ_ONLY}"}}}}'
+                      --mcp-config '{"mcpServers":{"apify":{"type":"http","url":"https://mcp.apify.com/?tools=call-actor,get-actor-run,get-actor-log,get-dataset-list,get-dataset,get-dataset-items,get-key-value-store-list,get-key-value-store,get-key-value-store-keys,get-key-value-store-record","headers":{"Authorization":"Bearer ${TESTER_APIFY_TOKEN}"}}}}'
                       --model ${{ inputs.model }}
                       --dangerously-skip-permissions
 

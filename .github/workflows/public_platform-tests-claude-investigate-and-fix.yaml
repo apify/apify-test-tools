@@ -100,6 +100,8 @@ jobs:
                       ${{ inputs.investigate_prompt }}
                   github_token: ${{ secrets.GITHUB_TOKEN }}
                   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+                  plugin_marketplaces: https://github.com/apify/apify-test-tools.git
+                  plugins: platform-tests-investigate-and-fix@apify-test-tools
                   # The `tools` query parameter below selects which tools the Apify MCP server
                   # exposes: reading an Actor run — its status, exit code, storage ids and log — and
                   # reading that run's dataset items and its key-value store keys and records, e.g.

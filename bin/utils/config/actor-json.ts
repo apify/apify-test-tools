@@ -1,3 +1,6 @@
+import { readdirSync } from 'node:fs';
+import path from 'node:path';
+
 import z from 'zod';
 
 import { safeReadJsonObjectFile } from '../json-file.js';
@@ -38,6 +41,25 @@ const resolveFile = (actorJsonFile: ExistingFile, field: string, value: unknown)
     }
 };
 
+const resolveDefaultFileLocations = (
+    actorJsonFile: ExistingFile,
+    defaults: readonly string[],
+): RelativeFile | undefined => {
+    for (const candidate of defaults) {
+        const file = actorJsonFile.joinFile(candidate);
+        const expectedName = path.posix.basename(file.path);
+        const entries = readdirSync(file.parent.path);
+        const actualName =
+            entries.find((entry) => entry === expectedName) ??
+            entries.find((entry) => entry.toLowerCase() === expectedName.toLowerCase());
+        if (actualName) {
+            const actualFile = file.parent.joinFile(actualName);
+            if (actualFile.exists()) return actualFile;
+        }
+    }
+    return undefined;
+};
+
 export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
     const actorJsonPath = config.folder.joinFile('.actor/actor.json');
     let actorJsonFile: ExistingFile;
@@ -66,9 +88,15 @@ export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
     return {
         file: actorJsonFile,
         dockerContextDir,
-        dockerfile: resolveFile(actorJsonFile, 'dockerfile', fields.dockerfile),
-        readme: resolveFile(actorJsonFile, 'readme', fields.readme),
-        changelog: resolveFile(actorJsonFile, 'changelog', fields.changelog),
+        dockerfile:
+            resolveFile(actorJsonFile, 'dockerfile', fields.dockerfile) ??
+            resolveDefaultFileLocations(actorJsonFile, ['./Dockerfile', '../Dockerfile']),
+        readme:
+            resolveFile(actorJsonFile, 'readme', fields.readme) ??
+            resolveDefaultFileLocations(actorJsonFile, ['./README.md', '../README.md']),
+        changelog:
+            resolveFile(actorJsonFile, 'changelog', fields.changelog) ??
+            resolveDefaultFileLocations(actorJsonFile, ['./CHANGELOG.md', '../CHANGELOG.md']),
         inputSchema: resolveFile(
             actorJsonFile,
             fields.input != null ? 'input' : 'inputSchema',

@@ -86,7 +86,7 @@ export class RelativeDir extends AbstractPath {
     // True when `other` is this directory itself or lies inside it.
     contains(other: AbstractPath): boolean {
         // the root contains every path
-        if (this.path === '.') return true;
+        if (this.isRoot()) return true;
         return this.isEqualTo(other) || other.path.startsWith(`${this.path}/`);
     }
 
@@ -151,14 +151,19 @@ export class RelativeFile extends AbstractPath {
         return scope.contains(this);
     }
 
+    exists(): boolean {
+        // `stat`, not `lstat`: a symlink must resolve to its target, matching what reading it does.
+        return statSync(this.path, { throwIfNoEntry: false })?.isFile() ?? false;
+    }
+
     // Throws unless this path exists and is a file. Paths resolve against the process working
     // directory, which is the repo root.
     assertIsFile(): this {
-        // `stat`, not `lstat`: a symlink must resolve to its target, matching what reading it does.
+        if (this.exists()) return this;
+
         const stats = statSync(this.path, { throwIfNoEntry: false });
         if (!stats) throw new Error(`Expected file "${this}" to exist.`);
-        if (!stats.isFile()) throw new Error(`Expected "${this}" to be a file.`);
-        return this;
+        throw new Error(`Expected "${this}" to be a file.`);
     }
 }
 

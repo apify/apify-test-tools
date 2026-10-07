@@ -65,8 +65,14 @@ export const hasMergeFromTarget = async (sourceBranch: string, targetBranch: str
  * Returns all files touched by non-merge commits on the branch (full history, ignoring baseCommit).
  * Used to check whether the branch itself has any functional changes, independent of what master merged in.
  */
-export const getBranchOnlyChangedFiles = (sourceBranch: string, targetBranch: string): string[] => {
-    const output = spawnCommand(`git log --no-merges --name-only --pretty=format: ${targetBranch}..${sourceBranch}`);
+export const getBranchOnlyChangedFiles = async (sourceBranch: string, targetBranch: string): Promise<string[]> => {
+    const output = await runGitCommand([
+        'log',
+        '--no-merges',
+        '--name-only',
+        '--pretty=format:',
+        `${targetBranch}..${sourceBranch}`,
+    ]);
     return output.split('\n').filter(Boolean);
 };
 

@@ -92,7 +92,7 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
         logger.info(
             '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
         );
-        const branchOnlyFiles = getBranchOnlyChangedFiles(config.sourceBranch, config.targetBranch);
+        const branchOnlyFiles = await getBranchOnlyChangedFiles(config.sourceBranch, config.targetBranch);
         // Omit baseCommit to get full branch history. Validated functional commits can still interact with merged ones
         const allBranchCommits = getCommits({ ...config, baseCommit: undefined });
         const branchOnlyActorsChanged = getChangedActors({

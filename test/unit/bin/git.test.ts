@@ -246,24 +246,28 @@ describe('getBranchOnlyChangedFiles', () => {
     let gitCommandSpy: MockInstance;
 
     beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'spawnCommand');
+        gitCommandSpy = vi.spyOn(Utils, 'runGitCommand');
     });
 
-    it('should return files touched by non-merge commits', () => {
-        gitCommandSpy.mockReturnValue('README.md\n\nactors/foo_bar/src/main.ts\n');
+    it('should return files touched by non-merge commits', async () => {
+        gitCommandSpy.mockResolvedValue('README.md\n\nactors/foo_bar/src/main.ts\n');
 
-        const result = getBranchOnlyChangedFiles(sourceBranch, targetBranch);
+        const result = await getBranchOnlyChangedFiles(sourceBranch, targetBranch);
 
         expect(result).toStrictEqual(['README.md', 'actors/foo_bar/src/main.ts']);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            `git log --no-merges --name-only --pretty=format: ${targetBranch}..${sourceBranch}`,
-        );
+        expect(gitCommandSpy).toHaveBeenCalledWith([
+            'log',
+            '--no-merges',
+            '--name-only',
+            '--pretty=format:',
+            `${targetBranch}..${sourceBranch}`,
+        ]);
     });
 
-    it('should return empty array when there are no non-merge commits', () => {
-        gitCommandSpy.mockReturnValue('');
+    it('should return empty array when there are no non-merge commits', async () => {
+        gitCommandSpy.mockResolvedValue('');
 
-        expect(getBranchOnlyChangedFiles(sourceBranch, targetBranch)).toStrictEqual([]);
+        await expect(getBranchOnlyChangedFiles(sourceBranch, targetBranch)).resolves.toStrictEqual([]);
     });
 });
 

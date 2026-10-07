@@ -99,10 +99,13 @@ export const parseBaseCommit = (shaOrCommit: string | undefined): string | undef
     return sha;
 };
 
-const fetchAllBranchCommits = (sourceBranch: string, targetBranch: string): Commit[] => {
-    const commitsStrings = spawnCommand(
-        `git log --pretty=format:'${GIT_LOG_FORMAT}' ${targetBranch}..${sourceBranch}`,
-    ).split('\n');
+const fetchAllBranchCommits = async (sourceBranch: string, targetBranch: string): Promise<Commit[]> => {
+    const output = await runGitCommand([
+        'log',
+        `--pretty=format:${GIT_LOG_FORMAT}`,
+        `${targetBranch}..${sourceBranch}`,
+    ]);
+    const commitsStrings = output.split('\n');
     const commits = commitsStrings.map((commitString) => parseCommit(commitString));
     commits.reverse();
     return commits;
@@ -112,13 +115,13 @@ const fetchAllBranchCommits = (sourceBranch: string, targetBranch: string): Comm
  * Gets the commits between sourceBranch and targetBranch (exclusive).
  * - If baseCommit is provided, only returns commits after the baseCommit.
  */
-export const getCommits = ({
+export const getCommits = async ({
     sourceBranch,
     targetBranch,
     baseCommit,
-}: Pick<Config, 'sourceBranch' | 'targetBranch' | 'baseCommit'>): Commit[] => {
+}: Pick<Config, 'sourceBranch' | 'targetBranch' | 'baseCommit'>): Promise<Commit[]> => {
     const baseCommitSha = parseBaseCommit(baseCommit);
-    const commits = fetchAllBranchCommits(sourceBranch, targetBranch);
+    const commits = await fetchAllBranchCommits(sourceBranch, targetBranch);
 
     // The last validated (base) commit being the branch HEAD means nothing new was pushed since the last
     // validation — the dev reran the workflow (or force-pushed to the same state) to trigger a clean test
@@ -289,11 +292,11 @@ const getChangelogAdditions = (baseSha: string, changedFiles: string[]): string 
  * list: with a merge commit, the oldest commit of the merged branch can be older than baseSha, and
  * diffing from its parent would pull in already-released changes.
  */
-export const getReleaseChanges = (baseSha: string) => {
+export const getReleaseChanges = async (baseSha: string) => {
     if (spawnCommand('git rev-parse HEAD') === baseSha) {
         return null;
     }
-    const commits = fetchAllBranchCommits('HEAD', baseSha);
+    const commits = await fetchAllBranchCommits('HEAD', baseSha);
     const changedFiles = spawnCommand(`git diff --name-only ${baseSha} HEAD`).split('\n').filter(Boolean);
     const changelog = getChangelogAdditions(baseSha, changedFiles);
     return { commits, changedFiles, changelog };

@@ -30,12 +30,12 @@ describe('getCommits', () => {
     let gitCommandSpy: MockInstance;
 
     beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'spawnCommand').mockReturnValue(`${commit3}\n${commit2}\n${commit1}`);
+        gitCommandSpy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(`${commit3}\n${commit2}\n${commit1}`);
     });
 
-    it('should return commits between source and target branches', () => {
+    it('should return commits between source and target branches', async () => {
         // Act
-        const commits = getCommits({ sourceBranch, targetBranch });
+        const commits = await getCommits({ sourceBranch, targetBranch });
 
         // Assert
         expect(commits).toStrictEqual([
@@ -45,14 +45,16 @@ describe('getCommits', () => {
         ]);
 
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            `git log --pretty=format:'%H»¦«%aN<%aE>»¦«%aD»¦«%s' main..feature-branch`,
-        );
+        expect(gitCommandSpy).toHaveBeenCalledWith([
+            'log',
+            '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s',
+            'main..feature-branch',
+        ]);
     });
 
-    it('should return commits after the base commit if provided', () => {
+    it('should return commits after the base commit if provided', async () => {
         // Act
-        const commits = getCommits({ sourceBranch, targetBranch, baseCommit: sha1 });
+        const commits = await getCommits({ sourceBranch, targetBranch, baseCommit: sha1 });
 
         // Assert
         expect(commits).toStrictEqual([
@@ -61,14 +63,16 @@ describe('getCommits', () => {
         ]);
 
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            `git log --pretty=format:'%H»¦«%aN<%aE>»¦«%aD»¦«%s' main..feature-branch`,
-        );
+        expect(gitCommandSpy).toHaveBeenCalledWith([
+            'log',
+            '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s',
+            'main..feature-branch',
+        ]);
     });
 
-    it('should ignore the base commit and return all commits when it is the branch HEAD (rerun or force push)', () => {
+    it('should ignore the base commit and return all commits when it is the branch HEAD (rerun or force push)', async () => {
         // Act
-        const commits = getCommits({ sourceBranch, targetBranch, baseCommit: sha3 });
+        const commits = await getCommits({ sourceBranch, targetBranch, baseCommit: sha3 });
 
         // Assert
         expect(commits).toStrictEqual([
@@ -78,9 +82,9 @@ describe('getCommits', () => {
         ]);
     });
 
-    it('should return all commits if base commit is not found', () => {
+    it('should return all commits if base commit is not found', async () => {
         // Act
-        const commits = getCommits({ sourceBranch, targetBranch, baseCommit: 'a'.repeat(40) });
+        const commits = await getCommits({ sourceBranch, targetBranch, baseCommit: 'a'.repeat(40) });
 
         // Assert
         expect(commits).toStrictEqual([
@@ -90,9 +94,11 @@ describe('getCommits', () => {
         ]);
 
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            `git log --pretty=format:'%H»¦«%aN<%aE>»¦«%aD»¦«%s' main..feature-branch`,
-        );
+        expect(gitCommandSpy).toHaveBeenCalledWith([
+            'log',
+            '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s',
+            'main..feature-branch',
+        ]);
     });
 });
 
@@ -383,11 +389,12 @@ describe('getReleaseChanges', () => {
     const mergeCommit = `${headSha}»¦«Dev<dev@example.com>»¦«Date2»¦«Merge pull request #1`;
 
     let gitCommandSpy: MockInstance;
+    let gitLogSpy: MockInstance;
 
     beforeEach(() => {
+        gitLogSpy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(`${mergeCommit}\n${mergedBranchCommit}`);
         gitCommandSpy = vi.spyOn(Utils, 'spawnCommand').mockImplementation((cmd: string) => {
             if (cmd === 'git rev-parse HEAD') return headSha;
-            if (cmd.startsWith('git log')) return `${mergeCommit}\n${mergedBranchCommit}`;
             if (cmd.startsWith('git diff --name-only')) return 'actors/foo/src/main.ts\nCHANGELOG.md';
             if (cmd === 'git')
                 return 'diff --git a/CHANGELOG.md b/CHANGELOG.md\n--- a/CHANGELOG.md\n+++ b/CHANGELOG.md\n@@ -1 +1,2 @@\n+- Added foo\n # Changelog';
@@ -395,8 +402,8 @@ describe('getReleaseChanges', () => {
         });
     });
 
-    it('should diff the range directly and return the commits oldest first', () => {
-        const changes = getReleaseChanges(baseSha);
+    it('should diff the range directly and return the commits oldest first', async () => {
+        const changes = await getReleaseChanges(baseSha);
 
         expect(changes).toStrictEqual({
             commits: [
@@ -408,12 +415,11 @@ describe('getReleaseChanges', () => {
         });
         // Not from the parent of the oldest commit, which may predate the base commit for merge commits
         expect(gitCommandSpy).toHaveBeenCalledWith(`git diff --name-only ${baseSha} HEAD`);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            `git log --pretty=format:'%H»¦«%aN<%aE>»¦«%aD»¦«%s' ${baseSha}..HEAD`,
-        );
+        expect(gitLogSpy).toHaveBeenCalledWith(['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', `${baseSha}..HEAD`]);
     });
 
-    it('should return null when HEAD is the base commit', () => {
-        expect(getReleaseChanges(headSha)).toBeNull();
+    it('should return null when HEAD is the base commit', async () => {
+        await expect(getReleaseChanges(headSha)).resolves.toBeNull();
+        expect(gitLogSpy).not.toHaveBeenCalled();
     });
 });

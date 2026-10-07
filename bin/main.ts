@@ -187,7 +187,7 @@ await yargs()
         async (config) => {
             const actorsChanged = await resolveChangedActors(config, { isLatest: false });
             const builds = await runBuilds({
-                ...resolveRepoUrl(config.repoUrl),
+                ...(await resolveRepoUrl(config.repoUrl)),
                 actorConfigs: actorsChanged,
                 branch: config.sourceBranch.replace('origin/', ''),
                 dryRun: config.dryRun,
@@ -218,7 +218,7 @@ await yargs()
                 return;
             }
             const { commits, changedFiles, changelog } = changes;
-            const { repoUrl, shouldVerifyRepoUrl } = resolveRepoUrl(args.repoUrl);
+            const { repoUrl, shouldVerifyRepoUrl } = await resolveRepoUrl(args.repoUrl);
 
             const isLatest = true;
             const actorConfigs = await readConfigFile(args);

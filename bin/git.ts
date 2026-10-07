@@ -183,8 +183,9 @@ export const getCurrentBranch = async (): Promise<string> => {
  * Reads the repository URL from the `origin` remote, rewritten to the SSH form the Apify platform
  * uses for Git repo sources, e.g. git@github.com:apify-store/google-maps
  */
-const getOriginRepoUrl = (): string => {
-    return spawnCommand('git remote get-url origin').replace(/^https:\/\/github\.com\//, 'git@github.com:');
+const getOriginRepoUrl = async (): Promise<string> => {
+    const rawUrl = await runGitCommand(['remote', 'get-url', 'origin']);
+    return rawUrl.replace(/^https:\/\/github\.com\//, 'git@github.com:');
 };
 
 /**
@@ -192,8 +193,8 @@ const getOriginRepoUrl = (): string => {
  * each Actor's default version, so a fork or mirror remote can't repoint a published Actor. An explicit
  * --repo-url skips that check: passing it is how you move an Actor to another repository on purpose.
  */
-export const resolveRepoUrl = (explicitRepoUrl: string | undefined) => ({
-    repoUrl: explicitRepoUrl ?? getOriginRepoUrl(),
+export const resolveRepoUrl = async (explicitRepoUrl: string | undefined) => ({
+    repoUrl: explicitRepoUrl ?? (await getOriginRepoUrl()),
     shouldVerifyRepoUrl: explicitRepoUrl === undefined,
 });
 

@@ -12,6 +12,7 @@ import {
     normalizeRepoUrl,
     parseBaseCommit,
     resolveReleaseBaseCommit,
+    resolveRepoUrl,
 } from '../../../bin/git.js';
 import * as Utils from '../../../bin/utils.js';
 
@@ -317,6 +318,30 @@ describe('getCurrentBranch', () => {
     it('should throw on a detached HEAD', async () => {
         vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('HEAD');
         await expect(getCurrentBranch()).rejects.toThrow('HEAD is detached');
+    });
+});
+
+describe('resolveRepoUrl', () => {
+    it('reads and rewrites the origin URL when no URL is supplied', async () => {
+        const gitCommandSpy = vi
+            .spyOn(Utils, 'runGitCommand')
+            .mockResolvedValue('https://github.com/apify/example.git');
+
+        await expect(resolveRepoUrl(undefined)).resolves.toStrictEqual({
+            repoUrl: 'git@github.com:apify/example.git',
+            shouldVerifyRepoUrl: true,
+        });
+        expect(gitCommandSpy).toHaveBeenCalledWith(['remote', 'get-url', 'origin']);
+    });
+
+    it('uses an explicit URL without reading Git', async () => {
+        const gitCommandSpy = vi.spyOn(Utils, 'runGitCommand');
+
+        await expect(resolveRepoUrl('git@github.com:other/example.git')).resolves.toStrictEqual({
+            repoUrl: 'git@github.com:other/example.git',
+            shouldVerifyRepoUrl: false,
+        });
+        expect(gitCommandSpy).not.toHaveBeenCalled();
     });
 });
 

@@ -1,4 +1,4 @@
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -53,24 +53,6 @@ export const readSourceFile = async (absPath: string, rootDir: string): Promise<
     name: path.relative(rootDir, absPath).split(path.sep).join('/'),
     content: await fs.readFile(absPath),
 });
-
-export const spawnCommand = (command: string, args: string[] = []) => {
-    logger.info(command, args.join(' '));
-    const commandResult = spawnSync(command, args, { shell: true, maxBuffer: 100 * 1024 * 1024 });
-
-    if (commandResult.error) {
-        throw new Error(`[Command failed]: ${command}\n${commandResult.error}`);
-    }
-
-    if (commandResult.stderr.toString().length > 0) {
-        // For some reason 'git' command prints stderr when checking out to detached HEAD state (we only use detached HEAD for testing though)
-        if (!commandResult.stderr.toString().includes(`You are in 'detached HEAD' state`)) {
-            throw new Error(`[Command printed stderr]: ${command}\n${commandResult.stderr.toString()}`);
-        }
-    }
-
-    return commandResult.stdout.toString().trim();
-};
 
 /** Runs Git asynchronously, passing each argument directly to Git without a shell. */
 export const runGitCommand = async (args: string[], cwd?: string): Promise<string> => {

@@ -8,7 +8,7 @@
         "url": "https://github.com/apify/apify-test-tools.git"
     },
     "engines": {
-        "node": ">=18.0.0"
+        "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
     },
     "bin": {
         "apify-test-tools": "dist/bin/main.js"
@@ -40,10 +40,10 @@
         "tsx": "^4.20.3",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.34.1",
-        "vitest": "^3.2.4"
+        "vitest": "^5.0.3"
     },
     "peerDependencies": {
-        "vitest": ">=3.2.4"
+        "vitest": "^5.0.3"
     },
     "scripts": {
         "start": "npm run dist/bin/main.js",

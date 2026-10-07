@@ -12,9 +12,11 @@ Use this only when both are true:
 
 ## Steps
 
-1. From the failing run (the run the failed test started; its link is in the test log), get the Actor ID, build number, memory, timeout and input.
+The Apify API token is in the `TESTER_APIFY_TOKEN` environment variable. It is always set, so there's no need to check for it.
+
+1. From the failing run (the run the failed test started; its link is in the test log), get the Actor ID, build number, memory, timeout and input. For example, you can get the first four from `GET https://api.apify.com/v2/actor-runs/{runId}`.
 2. Decide how to tell whether a finished run hit the same failure. Check what the failed test assertion checked — e.g. the run's status, its dataset item count against the expected minimum, a field missing from items, a log line.
-3. Start !`echo "$FLAKINESS_RUNS"` runs of the same Actor at once, with the same build, memory, timeout and input. If a run can't start because the account's memory limit is reached, start it once earlier runs finish.
+3. Start !`echo "$FLAKINESS_RUNS"` runs of the same Actor at once, with the same build, memory, timeout and input. For example, you can start each with `POST https://api.apify.com/v2/acts/{actorId}/runs`. If a run can't start because the account's memory limit is reached, start it once earlier runs finish.
 4. Wait until every run has finished, then apply the check from step 2 to each.
 5. Add a short `## Flakiness` section to the issue, right after the Summary:
     - The rate, e.g. "Fails in 28 of 47 runs (60%)". Leave out runs that failed for another reason, e.g. never started — only mention how many there were.

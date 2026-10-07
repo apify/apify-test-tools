@@ -12,5 +12,5 @@
         "lib": ["DOM", "es2021"],
         "skipLibCheck": true
     },
-    "include": ["./index.ts", "./bin/**/*", "./lib/**/*", "./test/**/*"]
+    "include": ["./index.ts", "./vitest.config.ts", "./bin/**/*", "./lib/**/*", "./test/**/*"]
 }

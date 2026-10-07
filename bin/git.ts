@@ -274,11 +274,11 @@ export const resolveReleaseBaseCommit = async (baseCommit: string): Promise<stri
 const CHANGELOG_PATH = 'CHANGELOG.md';
 
 /** Returns the lines added to the root CHANGELOG.md between baseSha and HEAD, or null if it didn't change. */
-const getChangelogAdditions = (baseSha: string, changedFiles: string[]): string | null => {
+const getChangelogAdditions = async (baseSha: string, changedFiles: string[]): Promise<string | null> => {
     if (!changedFiles.includes(CHANGELOG_PATH)) {
         return null;
     }
-    const diff = spawnCommand('git', ['diff', baseSha, 'HEAD', '--', CHANGELOG_PATH]);
+    const diff = await runGitCommand(['diff', baseSha, 'HEAD', '--', CHANGELOG_PATH]);
 
     const added: string[] = [];
     let startedChangelog = false;
@@ -312,6 +312,6 @@ export const getReleaseChanges = async (baseSha: string) => {
     }
     const commits = await fetchAllBranchCommits('HEAD', baseSha);
     const changedFiles = spawnCommand(`git diff --name-only ${baseSha} HEAD`).split('\n').filter(Boolean);
-    const changelog = getChangelogAdditions(baseSha, changedFiles);
+    const changelog = await getChangelogAdditions(baseSha, changedFiles);
     return { commits, changedFiles, changelog };
 };

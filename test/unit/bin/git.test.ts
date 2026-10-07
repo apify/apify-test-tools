@@ -374,37 +374,61 @@ describe('getRepoName', () => {
 describe('resolveReleaseBaseCommit', () => {
     const baseSha = 'b'.repeat(40);
 
-    it('should return the base commit when it is an ancestor of HEAD', () => {
-        vi.spyOn(Utils, 'spawnCommand').mockImplementation((cmd: string) => {
-            if (cmd.startsWith('git rev-parse --verify')) return baseSha;
-            if (cmd.startsWith('git merge-base')) return baseSha;
+    it('should return the base commit when it is an ancestor of HEAD', async () => {
+        const gitCommandSpy = vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
+            if (args[0] === 'rev-parse') return baseSha;
+            if (args[0] === 'merge-base') return baseSha;
             return '';
         });
-        expect(resolveReleaseBaseCommit(baseSha)).toBe(baseSha);
+        await expect(resolveReleaseBaseCommit(baseSha)).resolves.toBe(baseSha);
+        expect(gitCommandSpy).toHaveBeenCalledWith(['rev-parse', '--verify', '--quiet', `${baseSha}^{commit}`]);
+        expect(gitCommandSpy).toHaveBeenCalledWith(['merge-base', baseSha, 'HEAD']);
     });
 
-    it('should throw on the all-zeros SHA of a newly created branch', () => {
-        const spy = vi.spyOn(Utils, 'spawnCommand');
-        expect(() => resolveReleaseBaseCommit('0'.repeat(40))).toThrow('the branch was just created');
+    it('should throw on the all-zeros SHA of a newly created branch', async () => {
+        const spy = vi.spyOn(Utils, 'runGitCommand');
+        await expect(resolveReleaseBaseCommit('0'.repeat(40))).rejects.toThrow('the branch was just created');
         expect(spy).not.toHaveBeenCalled();
     });
 
-    it('should throw when the base commit is missing from the local history', () => {
-        vi.spyOn(Utils, 'spawnCommand').mockReturnValue('');
-        expect(() => resolveReleaseBaseCommit(baseSha)).toThrow('is not in the local git history');
+    it('should throw when the base commit is missing from the local history', async () => {
+        const spy = vi
+            .spyOn(Utils, 'runGitCommand')
+            .mockRejectedValue(Object.assign(new Error('missing'), { code: 1 }));
+        await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow('is not in the local git history');
+        expect(spy).toHaveBeenCalledTimes(1);
     });
 
-    it('should throw when the base commit is not an ancestor of HEAD (force push)', () => {
-        vi.spyOn(Utils, 'spawnCommand').mockImplementation((cmd: string) => {
-            if (cmd.startsWith('git rev-parse --verify')) return baseSha;
-            if (cmd.startsWith('git merge-base')) return 'c'.repeat(40);
+    it('should throw when rev-parse returns an empty result', async () => {
+        const spy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('');
+        await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow('is not in the local git history');
+        expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should throw when the base commit is not an ancestor of HEAD (force push)', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
+            if (args[0] === 'rev-parse') return baseSha;
+            if (args[0] === 'merge-base') return 'c'.repeat(40);
             return '';
         });
-        expect(() => resolveReleaseBaseCommit(baseSha)).toThrow('is not an ancestor of HEAD');
+        await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow('is not an ancestor of HEAD');
     });
 
-    it('should throw on an invalid SHA', () => {
-        expect(() => resolveReleaseBaseCommit('not-a-sha')).toThrow('Invalid base commit SHA');
+    it('should throw when merge-base reports no common ancestor', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
+            if (args[0] === 'rev-parse') return baseSha;
+            throw Object.assign(new Error('no common ancestor'), { code: 1 });
+        });
+        await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow('is not an ancestor of HEAD');
+    });
+
+    it('should propagate unexpected Git failures', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockRejectedValue(Object.assign(new Error('Git failed'), { code: 128 }));
+        await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow('Git failed');
+    });
+
+    it('should throw on an invalid SHA', async () => {
+        await expect(resolveReleaseBaseCommit('not-a-sha')).rejects.toThrow('Invalid base commit SHA');
     });
 });
 

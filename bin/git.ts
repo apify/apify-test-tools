@@ -229,7 +229,7 @@ const ZERO_SHA_REGEX = /^0{40}$/;
  * Unlike the PR path (getCommits), there is no lenient fallback. Falling back to "everything"
  * would rebuild the latest build of every Actor and post it to Slack, so every problem is an error.
  */
-export const resolveReleaseBaseCommit = (baseCommit: string): string => {
+export const resolveReleaseBaseCommit = async (baseCommit: string): Promise<string> => {
     const sha = parseBaseCommit(baseCommit);
     if (!sha) {
         throw new Error('--base-commit is required for release. See the README section "Releasing Actors".');
@@ -240,15 +240,28 @@ export const resolveReleaseBaseCommit = (baseCommit: string): string => {
                 `Rerun with --base-commit set to the last commit before the changes you want to release.`,
         );
     }
-    // --quiet makes rev-parse print nothing (instead of an error) when the commit is missing
-    if (!spawnCommand(`git rev-parse --verify --quiet "${sha}^{commit}"`)) {
+    const isMissingGitResult = (error: unknown): boolean =>
+        typeof error === 'object' && error !== null && 'code' in error && error.code === 1;
+
+    // --quiet suppresses Git's error text for a missing commit, but Git still exits with code 1.
+    const verifiedSha = await runGitCommand(['rev-parse', '--verify', '--quiet', `${sha}^{commit}`]).catch(
+        (error: unknown) => {
+            if (isMissingGitResult(error)) return '';
+            throw error;
+        },
+    );
+    if (!verifiedSha) {
         throw new Error(
             `Base commit ${sha} is not in the local git history. Either the checkout is shallow ` +
                 `(fetch the full history, e.g. fetch-depth: 0 in actions/checkout) or the branch was force-pushed.`,
         );
     }
     // git merge-base A B outputs the common ancestor. If that equals A, then A is an ancestor of B.
-    if (spawnCommand(`git merge-base ${sha} HEAD`) !== sha) {
+    const mergeBase = await runGitCommand(['merge-base', verifiedSha, 'HEAD']).catch((error: unknown) => {
+        if (isMissingGitResult(error)) return '';
+        throw error;
+    });
+    if (mergeBase !== sha) {
         throw new Error(
             `Base commit ${sha} is not an ancestor of HEAD, most likely because the branch was force-pushed. ` +
                 `The changed files cannot be determined reliably. Rerun with --base-commit set to an ancestor of HEAD ` +

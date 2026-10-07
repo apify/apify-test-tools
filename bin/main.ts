@@ -210,7 +210,7 @@ await yargs()
                 .option('report-slack-channel', { type: 'string' })
                 .option('release-slack-channel', { type: 'string' }),
         async (args) => {
-            const baseSha = resolveReleaseBaseCommit(args.baseCommit);
+            const baseSha = await resolveReleaseBaseCommit(args.baseCommit);
             const branch = await getCurrentBranch();
             const changes = await getReleaseChanges(baseSha);
             if (!changes) {

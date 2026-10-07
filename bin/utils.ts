@@ -1,8 +1,11 @@
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 
 import { logger } from './logger.js';
+
+const execFileAsync = promisify(execFile);
 
 // Returns true when `childPath` is not inside `parentPath`.
 // Used to detect monorepo actors whose dockerContextDir escapes the actor directory.
@@ -76,6 +79,13 @@ export const spawnCommand = (command: string, args: string[] = []) => {
     }
 
     return commandResult.stdout.toString().trim();
+};
+
+/** Runs Git asynchronously, passing each argument directly to Git without a shell. */
+export const runGitCommand = async (args: string[], cwd?: string): Promise<string> => {
+    logger.debug('git', args);
+    const { stdout } = await execFileAsync('git', args, { cwd, encoding: 'utf8', maxBuffer: 100 * 1024 * 1024 });
+    return stdout.trim();
 };
 
 export const getEnvVar = (varName: string, defaultValue?: string): string => {

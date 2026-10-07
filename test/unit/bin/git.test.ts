@@ -438,19 +438,15 @@ describe('getReleaseChanges', () => {
     const mergedBranchCommit = `${'1'.repeat(40)}»¦«Dev<dev@example.com>»¦«Date1»¦«feat: branch change`;
     const mergeCommit = `${headSha}»¦«Dev<dev@example.com>»¦«Date2»¦«Merge pull request #1`;
 
-    let gitCommandSpy: MockInstance;
     let gitRunSpy: MockInstance;
 
     beforeEach(() => {
         gitRunSpy = vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
+            if (args[0] === 'rev-parse') return headSha;
             if (args[0] === 'log') return `${mergeCommit}\n${mergedBranchCommit}`;
+            if (args.includes('--name-only')) return 'actors/foo/src/main.ts\nCHANGELOG.md';
             if (args[0] === 'diff')
                 return 'diff --git a/CHANGELOG.md b/CHANGELOG.md\n--- a/CHANGELOG.md\n+++ b/CHANGELOG.md\n@@ -1 +1,2 @@\n+- Added foo\n # Changelog';
-            return '';
-        });
-        gitCommandSpy = vi.spyOn(Utils, 'spawnCommand').mockImplementation((cmd: string) => {
-            if (cmd === 'git rev-parse HEAD') return headSha;
-            if (cmd.startsWith('git diff --name-only')) return 'actors/foo/src/main.ts\nCHANGELOG.md';
             return '';
         });
     });
@@ -467,20 +463,23 @@ describe('getReleaseChanges', () => {
             changelog: '- Added foo',
         });
         // Not from the parent of the oldest commit, which may predate the base commit for merge commits
-        expect(gitCommandSpy).toHaveBeenCalledWith(`git diff --name-only ${baseSha} HEAD`);
+        expect(gitRunSpy).toHaveBeenCalledWith(['rev-parse', 'HEAD']);
+        expect(gitRunSpy).toHaveBeenCalledWith(['diff', '--name-only', baseSha, 'HEAD']);
         expect(gitRunSpy).toHaveBeenCalledWith(['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', `${baseSha}..HEAD`]);
         expect(gitRunSpy).toHaveBeenCalledWith(['diff', baseSha, 'HEAD', '--', 'CHANGELOG.md']);
     });
 
     it('should return null when HEAD is the base commit', async () => {
         await expect(getReleaseChanges(headSha)).resolves.toBeNull();
-        expect(gitRunSpy).not.toHaveBeenCalled();
+        expect(gitRunSpy).toHaveBeenCalledOnce();
+        expect(gitRunSpy).toHaveBeenCalledWith(['rev-parse', 'HEAD']);
     });
 
     it('skips the changelog diff when CHANGELOG.md did not change', async () => {
-        gitCommandSpy.mockImplementation((cmd: string) => {
-            if (cmd === 'git rev-parse HEAD') return headSha;
-            if (cmd.startsWith('git diff --name-only')) return 'actors/foo/src/main.ts';
+        gitRunSpy.mockImplementation(async (args: string[]) => {
+            if (args[0] === 'rev-parse') return headSha;
+            if (args[0] === 'log') return `${mergeCommit}\n${mergedBranchCommit}`;
+            if (args.includes('--name-only')) return 'actors/foo/src/main.ts';
             return '';
         });
 

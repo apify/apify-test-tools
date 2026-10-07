@@ -1,6 +1,6 @@
 import { logger } from './logger.js';
 import type { Commit, Config } from './types.js';
-import { runGitCommand, spawnCommand } from './utils.js';
+import { runGitCommand } from './utils.js';
 
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
@@ -307,11 +307,11 @@ const getChangelogAdditions = async (baseSha: string, changedFiles: string[]): P
  * diffing from its parent would pull in already-released changes.
  */
 export const getReleaseChanges = async (baseSha: string) => {
-    if (spawnCommand('git rev-parse HEAD') === baseSha) {
+    if ((await runGitCommand(['rev-parse', 'HEAD'])) === baseSha) {
         return null;
     }
     const commits = await fetchAllBranchCommits('HEAD', baseSha);
-    const changedFiles = spawnCommand(`git diff --name-only ${baseSha} HEAD`).split('\n').filter(Boolean);
+    const changedFiles = (await runGitCommand(['diff', '--name-only', baseSha, 'HEAD'])).split('\n').filter(Boolean);
     const changelog = await getChangelogAdditions(baseSha, changedFiles);
     return { commits, changedFiles, changelog };
 };

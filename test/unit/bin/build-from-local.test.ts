@@ -56,7 +56,7 @@ describe('build-from-local helpers', () => {
                 (relativePaths) => new Set(relativePaths.filter((p) => p.endsWith('.log'))),
             );
 
-            const result = collectNonIgnoredFiles(rootDir, rootDir);
+            const result = await collectNonIgnoredFiles(rootDir, rootDir);
 
             expect(result).toStrictEqual([path.join(rootDir, 'main.js')]);
         });

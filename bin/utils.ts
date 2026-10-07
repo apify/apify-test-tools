@@ -19,18 +19,10 @@ export const isOutsideDir = (childPath: string, parentPath: string): boolean =>
  * to keep, e.g. because .actor/ must survive even if .gitignore would otherwise exclude it.
  * This also means .git/ itself is never walked, since git never lists its own internals here.
  */
-export const listRepoFilePaths = (repoRoot: string, subDir: string): string[] => {
+export const listRepoFilePaths = async (repoRoot: string, subDir: string): Promise<string[]> => {
     const relSubDir = path.relative(repoRoot, subDir).split(path.sep).join('/') || '.';
-    const result = spawnSync('git', ['ls-files', '--cached', '--others', '-z', '--', relSubDir], {
-        cwd: repoRoot,
-        maxBuffer: 100 * 1024 * 1024,
-    });
-
-    if (result.status !== 0) {
-        throw new Error(`[Command failed]: git ls-files\n${result.stderr.toString()}`);
-    }
-
-    return result.stdout.toString().split('\0').filter(Boolean);
+    const output = await runGitCommand(['ls-files', '--cached', '--others', '-z', '--', relSubDir], repoRoot);
+    return output.split('\0').filter(Boolean);
 };
 
 /**

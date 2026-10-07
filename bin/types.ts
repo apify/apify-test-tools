@@ -4,6 +4,7 @@ export interface Config {
     baseCommit?: string;
     actors: string[];
     ignore: string[];
+    testFilesGlob?: string;
 }
 
 export type Commit = {

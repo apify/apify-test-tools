@@ -16,10 +16,10 @@
     "types": "./dist/index.d.ts",
     "main": "./dist/lib/lib.js",
     "dependencies": {
-        "@apify/consts": "^2.43.0",
-        "@slack/web-api": "^7.9.2",
+        "@apify/consts": "^3.0.1",
+        "@slack/web-api": "^8.2.0",
         "adm-zip": "^0.6.1",
-        "apify-client": "^2.22.2",
+        "apify-client": "^2.25.0",
         "ignore": "^7.0.5",
         "picomatch": "^4.0.7",
         "yargs": "^18.0.0",

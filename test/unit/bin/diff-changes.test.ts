@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getChangedActors } from '../../../bin/diff-changes.js';
 import * as DiffJsonSchema from '../../../bin/diff-json-schema.js';
 import * as Dockerignore from '../../../bin/dockerignore.js';
+import { logger } from '../../../bin/logger.js';
 import type { ActorConfig } from '../../../bin/types.js';
 
 const miniActor: ActorConfig = {
@@ -511,7 +512,7 @@ describe('getChangedActors', () => {
 describe('getChangedActors logging', () => {
     beforeEach(() => {
         vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(false);
-        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.spyOn(logger, 'info').mockImplementation(() => undefined);
     });
 
     it('logs a single "specific" group for a single actor with one functional file', () => {
@@ -521,10 +522,10 @@ describe('getChangedActors logging', () => {
             commits,
         });
 
-        expect(console.error).toHaveBeenCalledWith(
+        expect(logger.info).toHaveBeenCalledWith(
             '[DIFF]: Changes specific to actor foo/bar: actors/foo_bar/src/main.ts',
         );
-        expect(console.error).toHaveBeenCalledWith('[DIFF]: Actors to be built and tested: foo/bar');
+        expect(logger.info).toHaveBeenCalledWith('[DIFF]: Actors to be built and tested: foo/bar');
     });
 
     it('logs a single "shared" group when two actors are triggered by the exact same file', () => {
@@ -549,11 +550,11 @@ describe('getChangedActors logging', () => {
             commits,
         });
 
-        expect(console.error).toHaveBeenCalledWith(
+        expect(logger.info).toHaveBeenCalledWith(
             '[DIFF]: Shared changes for actors team/actor-a, team/actor-b: shared/shared.ts',
         );
-        expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('Changes specific to actor'));
-        expect(console.error).toHaveBeenCalledWith('[DIFF]: Actors to be built and tested: team/actor-a, team/actor-b');
+        expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('Changes specific to actor'));
+        expect(logger.info).toHaveBeenCalledWith('[DIFF]: Actors to be built and tested: team/actor-a, team/actor-b');
     });
 
     it('logs shared and specific groups in descending-size order for partial overlap across actors', () => {
@@ -578,7 +579,7 @@ describe('getChangedActors logging', () => {
             commits,
         });
 
-        const errorCalls = (console.error as unknown as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]);
+        const errorCalls = (logger.info as unknown as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]);
 
         expect(errorCalls).toEqual([
             '[DIFF]: Shared changes for actors team/actor-a, team/actor-b: shared.ts',
@@ -633,8 +634,8 @@ describe('getChangedActors logging', () => {
             commits,
         });
 
-        expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('Shared changes'));
-        expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('Changes specific to'));
-        expect(console.error).toHaveBeenCalledWith('[DIFF]: No relevant files changed, skipping builds and tests');
+        expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('Shared changes'));
+        expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('Changes specific to'));
+        expect(logger.info).toHaveBeenCalledWith('[DIFF]: No relevant files changed, skipping builds and tests');
     });
 });

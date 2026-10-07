@@ -165,49 +165,77 @@ describe('hasMergeFromTarget', () => {
     const mergeSha = 'f'.repeat(40);
     const branchParentSha = 'b'.repeat(40);
     const targetParentSha = 't'.repeat(40);
+    const differentMergeBase = '0'.repeat(40);
 
     let gitCommandSpy: MockInstance;
 
     beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'spawnCommand');
+        gitCommandSpy = vi.spyOn(Utils, 'runGitCommand');
     });
 
-    it('should return false when there are no merge commits on the branch', () => {
-        gitCommandSpy.mockImplementation((cmd: string) => {
-            if (cmd.includes('--merges')) return '';
+    it('should return false when there are no merge commits on the branch', async () => {
+        gitCommandSpy.mockImplementation(async (args: string[]) => {
+            if (args.includes('--merges')) return '';
             return '';
         });
 
-        expect(hasMergeFromTarget(sourceBranch, targetBranch)).toBe(false);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            `git log --merges --pretty=format:%H ${targetBranch}..${sourceBranch}`,
-        );
+        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).resolves.toBe(false);
+        expect(gitCommandSpy).toHaveBeenCalledWith([
+            'log',
+            '--merges',
+            '--pretty=format:%H',
+            `${targetBranch}..${sourceBranch}`,
+        ]);
     });
 
-    it('should return true when a merge commit has a parent reachable from targetBranch', () => {
-        gitCommandSpy.mockImplementation((cmd: string) => {
-            if (cmd.includes('--merges')) return mergeSha;
-            if (cmd.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
-            if (cmd.startsWith(`git merge-base ${branchParentSha}`)) return branchParentSha; // not ancestor
-            if (cmd.startsWith(`git merge-base ${targetParentSha}`)) return targetParentSha; // is ancestor
+    it('should return true when a merge commit has a parent reachable from targetBranch', async () => {
+        gitCommandSpy.mockImplementation(async (args: string[]) => {
+            if (args.includes('--merges')) return mergeSha;
+            if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
+            if (args[0] === 'merge-base' && args[1] === branchParentSha) return differentMergeBase;
+            if (args[0] === 'merge-base' && args[1] === targetParentSha) return targetParentSha;
             return '';
         });
 
-        expect(hasMergeFromTarget(sourceBranch, targetBranch)).toBe(true);
+        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).resolves.toBe(true);
+        expect(gitCommandSpy).toHaveBeenCalledWith(['merge-base', targetParentSha, targetBranch]);
     });
 
-    it('should return false when the merge commit parent is not reachable from targetBranch (unrelated branch merge)', () => {
+    it('should return false when the merge commit parent is not reachable from targetBranch (unrelated branch merge)', async () => {
         const unrelatedSha = 'e'.repeat(40);
-        const differentMergeBase = '0'.repeat(40);
-        gitCommandSpy.mockImplementation((cmd: string) => {
-            if (cmd.includes('--merges')) return mergeSha;
-            if (cmd.includes('--pretty=format:%P')) return `${branchParentSha} ${unrelatedSha}`;
+        gitCommandSpy.mockImplementation(async (args: string[]) => {
+            if (args.includes('--merges')) return mergeSha;
+            if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${unrelatedSha}`;
             // merge-base returns something other than the parent — not an ancestor
-            if (cmd.startsWith('git merge-base')) return differentMergeBase;
+            if (args[0] === 'merge-base') return differentMergeBase;
             return '';
         });
 
-        expect(hasMergeFromTarget(sourceBranch, targetBranch)).toBe(false);
+        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).resolves.toBe(false);
+    });
+
+    it('continues after merge-base reports unrelated histories', async () => {
+        gitCommandSpy.mockImplementation(async (args: string[]) => {
+            if (args.includes('--merges')) return mergeSha;
+            if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
+            if (args[0] === 'merge-base' && args[1] === branchParentSha) {
+                throw Object.assign(new Error('no common ancestor'), { code: 1 });
+            }
+            if (args[0] === 'merge-base' && args[1] === targetParentSha) return targetParentSha;
+            return '';
+        });
+
+        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).resolves.toBe(true);
+    });
+
+    it('propagates unexpected Git failures', async () => {
+        gitCommandSpy.mockImplementation(async (args: string[]) => {
+            if (args.includes('--merges')) return mergeSha;
+            if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
+            throw Object.assign(new Error('Git failed'), { code: 128 });
+        });
+
+        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).rejects.toThrow('Git failed');
     });
 });
 

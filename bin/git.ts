@@ -31,17 +31,28 @@ export const getChangedFiles = async (commits: Commit[]) => {
  * (i.e. a genuine "merge from target" commit, not a merge of some unrelated branch).
  * Uses the full targetBranch..sourceBranch range, ignoring baseCommit.
  */
-export const hasMergeFromTarget = (sourceBranch: string, targetBranch: string): boolean => {
-    const mergeShas = spawnCommand(`git log --merges --pretty=format:%H ${targetBranch}..${sourceBranch}`)
+export const hasMergeFromTarget = async (sourceBranch: string, targetBranch: string): Promise<boolean> => {
+    const mergeShas = (
+        await runGitCommand(['log', '--merges', '--pretty=format:%H', `${targetBranch}..${sourceBranch}`])
+    )
         .split('\n')
         .filter(Boolean);
 
     for (const sha of mergeShas) {
-        const parents = spawnCommand(`git log -1 --pretty=format:%P ${sha}`).trim().split(' ');
+        const parents = (await runGitCommand(['log', '-1', '--pretty=format:%P', sha])).split(' ');
         for (const parent of parents) {
             // git merge-base A B outputs the common ancestor.
             // If that equals A, then A is an ancestor of B (i.e. parent is reachable from targetBranch).
-            const mergeBase = spawnCommand(`git merge-base ${parent} ${targetBranch}`);
+            let mergeBase: string;
+            try {
+                mergeBase = await runGitCommand(['merge-base', parent, targetBranch]);
+            } catch (error) {
+                // Exit code 1 means the histories have no common ancestor.
+                if (typeof error === 'object' && error !== null && 'code' in error && error.code === 1) {
+                    continue;
+                }
+                throw error;
+            }
             if (mergeBase === parent) {
                 return true;
             }

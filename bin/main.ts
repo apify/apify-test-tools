@@ -88,7 +88,7 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
     // since the branch has no functional changes of its own, there is nothing new to validate.
     // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
     // individually validated changes can have novel interactions when combined.
-    if (hasMergeFromTarget(config.sourceBranch, config.targetBranch)) {
+    if (await hasMergeFromTarget(config.sourceBranch, config.targetBranch)) {
         logger.info(
             '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
         );

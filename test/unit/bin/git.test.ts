@@ -308,14 +308,15 @@ describe('parseBaseCommit', () => {
 });
 
 describe('getCurrentBranch', () => {
-    it('should return the checked-out branch', () => {
-        vi.spyOn(Utils, 'spawnCommand').mockReturnValue('master');
-        expect(getCurrentBranch()).toBe('master');
+    it('should return the checked-out branch', async () => {
+        const gitCommandSpy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('master');
+        await expect(getCurrentBranch()).resolves.toBe('master');
+        expect(gitCommandSpy).toHaveBeenCalledWith(['rev-parse', '--abbrev-ref', 'HEAD']);
     });
 
-    it('should throw on a detached HEAD', () => {
-        vi.spyOn(Utils, 'spawnCommand').mockReturnValue('HEAD');
-        expect(() => getCurrentBranch()).toThrow('HEAD is detached');
+    it('should throw on a detached HEAD', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('HEAD');
+        await expect(getCurrentBranch()).rejects.toThrow('HEAD is detached');
     });
 });
 

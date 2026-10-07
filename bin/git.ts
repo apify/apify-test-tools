@@ -169,8 +169,8 @@ export const parseCommit = (commitString: string): Commit => {
  * Returns the currently checked-out branch. Release builds point the Actor version at this branch,
  * so a detached HEAD (no branch to point at) is an error rather than a guess.
  */
-export const getCurrentBranch = (): string => {
-    const branch = spawnCommand('git rev-parse --abbrev-ref HEAD');
+export const getCurrentBranch = async (): Promise<string> => {
+    const branch = await runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD']);
     if (branch === 'HEAD') {
         throw new Error(
             'Cannot determine the branch to release: HEAD is detached. Check out the branch you want to release.',

@@ -211,7 +211,7 @@ await yargs()
                 .option('release-slack-channel', { type: 'string' }),
         async (args) => {
             const baseSha = resolveReleaseBaseCommit(args.baseCommit);
-            const branch = getCurrentBranch();
+            const branch = await getCurrentBranch();
             const changes = await getReleaseChanges(baseSha);
             if (!changes) {
                 logger.info(`HEAD is the base commit ${baseSha}, there is nothing new to release`);

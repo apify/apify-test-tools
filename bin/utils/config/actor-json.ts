@@ -41,6 +41,10 @@ const resolveFile = (actorJsonFile: ExistingFile, field: string, value: unknown)
     }
 };
 
+/**
+ * Pretty inefficient way to do it, but it was either this bs or adding a matching library just for the insensitive matching of fallback files.
+ * So if this ever becomes a performance problem for anyone, they can explicitly state their files in the config and live happily ever after.
+ */
 const resolveDefaultFileLocations = (
     actorJsonFile: ExistingFile,
     defaults: readonly string[],
@@ -97,11 +101,12 @@ export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
         changelog:
             resolveFile(actorJsonFile, 'changelog', fields.changelog) ??
             resolveDefaultFileLocations(actorJsonFile, ['./CHANGELOG.md', '../CHANGELOG.md']),
-        inputSchema: resolveFile(
-            actorJsonFile,
-            fields.input != null ? 'input' : 'inputSchema',
-            fields.input ?? fields.inputSchema,
-        ),
+        inputSchema:
+            resolveFile(
+                actorJsonFile,
+                fields.input != null ? 'input' : 'inputSchema',
+                fields.input ?? fields.inputSchema,
+            ) ?? resolveDefaultFileLocations(actorJsonFile, ['./INPUT_SCHEMA.json', '../INPUT_SCHEMA.json']),
         outputSchema: resolveFile(
             actorJsonFile,
             fields.output != null ? 'output' : 'outputSchema',

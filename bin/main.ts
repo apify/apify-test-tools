@@ -95,7 +95,7 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
         const branchOnlyFiles = await getBranchOnlyChangedFiles(config.sourceBranch, config.targetBranch);
         // Omit baseCommit to get full branch history. Validated functional commits can still interact with merged ones
         const allBranchCommits = await getCommits({ ...config, baseCommit: undefined });
-        const branchOnlyActorsChanged = getChangedActors({
+        const branchOnlyActorsChanged = await getChangedActors({
             filepathsChanged: branchOnlyFiles,
             actorConfigs,
             commits: allBranchCommits,
@@ -222,7 +222,7 @@ await yargs()
 
             const isLatest = true;
             const actorConfigs = await readConfigFile(args);
-            const actorsChanged = getChangedActors({
+            const actorsChanged = await getChangedActors({
                 filepathsChanged: changedFiles,
                 actorConfigs,
                 isLatest,

@@ -111,7 +111,7 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
 
     // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply baseCommit and check merge commits (they might be functional or just cosmetic)
     const commits = getCommits(config);
-    const changedFiles = getChangedFiles(commits);
+    const changedFiles = await getChangedFiles(commits);
     return getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest, commits });
 };
 
@@ -143,9 +143,9 @@ await yargs()
         'get-changed-files',
         '',
         (y) => y.options(gitRangeOptions),
-        (args) => {
+        async (args) => {
             const commits = getCommits(args);
-            const changedFiles = getChangedFiles(commits);
+            const changedFiles = await getChangedFiles(commits);
             writeJson(changedFiles);
         },
     )

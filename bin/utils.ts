@@ -31,21 +31,20 @@ export const listRepoFilePaths = async (repoRoot: string, subDir: string): Promi
  * anything `git` itself respects). Delegating to `git check-ignore` avoids re-implementing gitignore
  * pattern matching.
  */
-export const getGitignoredPaths = (relativePaths: string[]): Set<string> => {
+export const getGitignoredPaths = async (relativePaths: string[], cwd?: string): Promise<Set<string>> => {
     if (relativePaths.length === 0) return new Set();
-
-    const result = spawnSync('git', ['check-ignore', '--stdin'], {
-        input: relativePaths.join('\n'),
-        maxBuffer: 100 * 1024 * 1024,
-    });
 
     // Exit code 1 means none of the given paths are ignored - not an error. Anything else
     // (e.g. 128 for "not a git repository") is a real failure.
-    if (result.status !== 0 && result.status !== 1) {
-        throw new Error(`[Command failed]: git check-ignore\n${result.stderr.toString()}`);
-    }
-
-    return new Set(result.stdout.toString().split('\n').filter(Boolean));
+    return runGitCommand(['check-ignore', '--', ...relativePaths], cwd)
+        .then((output) => new Set(output.split('\n').filter(Boolean)))
+        .catch((error: unknown) => {
+            // no files are ignored
+            if (typeof error === 'object' && error !== null && 'code' in error && error.code === 1) {
+                return new Set<string>();
+            }
+            throw error;
+        });
 };
 
 export type SourceFile = { name: string; content: Buffer };

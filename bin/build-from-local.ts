@@ -67,7 +67,7 @@ export const collectSourceFiles = async (actorName: string, actorDir: string): P
 // .actor/ included, since those should never ship regardless of what the ignore files say.
 export const collectNonIgnoredFiles = async (dockerContextDir: string, repoRoot: string): Promise<string[]> => {
     const relativePaths = await listRepoFilePaths(repoRoot, dockerContextDir);
-    const ignoredPaths = getGitignoredPaths(relativePaths);
+    const ignoredPaths = await getGitignoredPaths(relativePaths, repoRoot);
     const rootRelativePaths = new Map(
         relativePaths.map((relPath) => [
             relPath,

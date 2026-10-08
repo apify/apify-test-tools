@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { getGitignoredPaths, listRepoFilePaths, runGitCommand } from '../../../bin/utils.js';
+import { getGitignoredPaths, GitCommandError, listRepoFilePaths, runGitCommand } from '../../../bin/utils.js';
 
 describe('runGitCommand', () => {
     it('returns trimmed Git output', async () => {
@@ -11,12 +11,25 @@ describe('runGitCommand', () => {
     });
 
     it('rejects on git exit code, not stderr', async () => {
-        await expect(runGitCommand(['rev-parse', '--verify', '--quiet'], process.cwd())).rejects.toThrow();
+        const error: unknown = await runGitCommand(['rev-parse', '--verify', '--quiet'], process.cwd()).catch(
+            (failure: unknown) => failure,
+        );
+        expect(error).toBeInstanceOf(GitCommandError);
+        if (error instanceof GitCommandError) {
+            expect(error.exitCode).toBe(1);
+            expect(error.gitError).toContain('Command failed: git rev-parse --verify --quiet');
+            const originalStack = error.stack;
+            const originalCause = error.cause;
+            error.addOperationContext('verify a commit');
+            expect(error.message).toContain('Failed to verify a commit.\nCommand:');
+            expect(error.stack).toBe(originalStack);
+            expect(error.cause).toBe(originalCause);
+        }
     });
 
     it('passes arguments literally and rejects Git failures', async () => {
         await expect(runGitCommand(['rev-parse', '--verify', 'HEAD; echo injected'])).rejects.toThrow(
-            'Command failed: git rev-parse --verify HEAD; echo injected',
+            'Command: git "rev-parse" "--verify" "HEAD; echo injected"\nGit error:',
         );
     });
 });
@@ -45,7 +58,9 @@ describe('getGitignoredPaths', () => {
 
     it('rejects unexpected Git errors', async () => {
         await expect(getGitignoredPaths(['bin/utils.ts'], os.tmpdir())).rejects.toThrow(
-            'git check-ignore -- bin/utils.ts',
+            'Failed to check which repository paths are ignored.\n' +
+                'Command: git "check-ignore" "--" "bin/utils.ts"\n' +
+                'Git error: fatal: not a git repository',
         );
     });
 });

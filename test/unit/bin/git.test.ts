@@ -226,7 +226,7 @@ describe('hasMergeFromTarget', () => {
             if (args.includes('--merges')) return mergeSha;
             if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
             if (args[0] === 'merge-base' && args[1] === branchParentSha) {
-                throw Object.assign(new Error('no common ancestor'), { code: 1 });
+                throw new Utils.GitCommandError(args, Object.assign(new Error('no common ancestor'), { code: 1 }));
             }
             if (args[0] === 'merge-base' && args[1] === targetParentSha) return targetParentSha;
             return '';
@@ -239,10 +239,13 @@ describe('hasMergeFromTarget', () => {
         gitCommandSpy.mockImplementation(async (args: string[]) => {
             if (args.includes('--merges')) return mergeSha;
             if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
-            throw Object.assign(new Error('Git failed'), { code: 128 });
+            throw new Utils.GitCommandError(args, Object.assign(new Error('Git failed'), { code: 128 }));
         });
 
-        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).rejects.toThrow('Git failed');
+        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).rejects.toThrow(
+            'Failed to check whether a merge parent is reachable from the target branch.\n' +
+                'Command: git "merge-base"',
+        );
     });
 });
 
@@ -394,7 +397,12 @@ describe('resolveReleaseBaseCommit', () => {
     it('should throw when the base commit is missing from the local history', async () => {
         const spy = vi
             .spyOn(Utils, 'runGitCommand')
-            .mockRejectedValue(Object.assign(new Error('missing'), { code: 1 }));
+            .mockRejectedValue(
+                new Utils.GitCommandError(
+                    ['rev-parse', '--verify', '--quiet', `${baseSha}^{commit}`],
+                    Object.assign(new Error('missing'), { code: 1 }),
+                ),
+            );
         await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow('is not in the local git history');
         expect(spy).toHaveBeenCalledTimes(1);
     });
@@ -417,14 +425,33 @@ describe('resolveReleaseBaseCommit', () => {
     it('should throw when merge-base reports no common ancestor', async () => {
         vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
             if (args[0] === 'rev-parse') return baseSha;
-            throw Object.assign(new Error('no common ancestor'), { code: 1 });
+            throw new Utils.GitCommandError(args, Object.assign(new Error('no common ancestor'), { code: 1 }));
         });
         await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow('is not an ancestor of HEAD');
     });
 
+    it('explains an unexpected merge-base failure', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
+            if (args[0] === 'rev-parse') return baseSha;
+            throw new Utils.GitCommandError(args, Object.assign(new Error('Git failed'), { code: 128 }));
+        });
+        await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow(
+            'Failed to check whether the release base commit is an ancestor of HEAD.\n' +
+                `Command: git "merge-base" "${baseSha}" "HEAD"\nGit error: Git failed`,
+        );
+    });
+
     it('should propagate unexpected Git failures', async () => {
-        vi.spyOn(Utils, 'runGitCommand').mockRejectedValue(Object.assign(new Error('Git failed'), { code: 128 }));
-        await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow('Git failed');
+        vi.spyOn(Utils, 'runGitCommand').mockRejectedValue(
+            new Utils.GitCommandError(
+                ['rev-parse', '--verify', '--quiet', `${baseSha}^{commit}`],
+                Object.assign(new Error('Git failed'), { code: 128 }),
+            ),
+        );
+        await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow(
+            'Failed to verify the release base commit in local Git history.\n' +
+                `Command: git "rev-parse" "--verify" "--quiet" "${baseSha}^{commit}"\nGit error: Git failed`,
+        );
     });
 
     it('should throw on an invalid SHA', async () => {

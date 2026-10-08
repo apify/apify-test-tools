@@ -1,6 +1,6 @@
 import { logger } from './logger.js';
 import type { Commit, Config } from './types.js';
-import { runGitCommand } from './utils.js';
+import { GitCommandError, runGitCommand } from './utils.js';
 
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
@@ -19,7 +19,10 @@ export const getChangedFiles = async (commits: Commit[]) => {
         'diff',
         '--name-only',
         `${commits[0].sha}~..${commits[commits.length - 1].sha}`,
-    ]);
+    ]).catch((err) => {
+        if (err instanceof GitCommandError) err.addOperationContext('get the list of changed files between commits');
+        throw err;
+    });
 
     const changedFiles = changedFilesString.split('\n').filter(Boolean);
     logger.info(`Changed files (up to 50): ${changedFiles.slice(0, 50).join(', ')}`);
@@ -32,14 +35,21 @@ export const getChangedFiles = async (commits: Commit[]) => {
  * Uses the full targetBranch..sourceBranch range, ignoring baseCommit.
  */
 export const hasMergeFromTarget = async (sourceBranch: string, targetBranch: string): Promise<boolean> => {
-    const mergeShas = (
-        await runGitCommand(['log', '--merges', '--pretty=format:%H', `${targetBranch}..${sourceBranch}`])
-    )
-        .split('\n')
-        .filter(Boolean);
+    const mergeShas = await runGitCommand(['log', '--merges', '--pretty=format:%H', `${targetBranch}..${sourceBranch}`])
+        .then((output) => output.split('\n').filter(Boolean))
+        .catch((err) => {
+            if (err instanceof GitCommandError)
+                err.addOperationContext('check whether a merge commit is reachable from the target branch');
+            throw err;
+        });
 
     for (const sha of mergeShas) {
-        const parents = (await runGitCommand(['log', '-1', '--pretty=format:%P', sha])).split(' ');
+        const parents = await runGitCommand(['log', '-1', '--pretty=format:%P', sha])
+            .then((output) => output.split(' '))
+            .catch((err) => {
+                if (err instanceof GitCommandError) err.addOperationContext('get parents of a merge commit');
+                throw err;
+            });
         for (const parent of parents) {
             // git merge-base A B outputs the common ancestor.
             // If that equals A, then A is an ancestor of B (i.e. parent is reachable from targetBranch).
@@ -47,10 +57,12 @@ export const hasMergeFromTarget = async (sourceBranch: string, targetBranch: str
             try {
                 mergeBase = await runGitCommand(['merge-base', parent, targetBranch]);
             } catch (error) {
-                // Exit code 1 means the histories have no common ancestor.
-                if (typeof error === 'object' && error !== null && 'code' in error && error.code === 1) {
+                // Exit code 1 on merge-base means the histories have no common ancestor.
+                if (error instanceof GitCommandError && error.exitCode === 1) {
                     continue;
                 }
+                if (error instanceof GitCommandError)
+                    error.addOperationContext('check whether a merge parent is reachable from the target branch');
                 throw error;
             }
             if (mergeBase === parent) {
@@ -240,13 +252,12 @@ export const resolveReleaseBaseCommit = async (baseCommit: string): Promise<stri
                 `Rerun with --base-commit set to the last commit before the changes you want to release.`,
         );
     }
-    const isMissingGitResult = (error: unknown): boolean =>
-        typeof error === 'object' && error !== null && 'code' in error && error.code === 1;
-
     // --quiet suppresses Git's error text for a missing commit, but Git still exits with code 1.
     const verifiedSha = await runGitCommand(['rev-parse', '--verify', '--quiet', `${sha}^{commit}`]).catch(
         (error: unknown) => {
-            if (isMissingGitResult(error)) return '';
+            if (error instanceof GitCommandError && error.exitCode === 1) return '';
+            if (error instanceof GitCommandError)
+                error.addOperationContext('verify the release base commit in local Git history');
             throw error;
         },
     );
@@ -258,7 +269,9 @@ export const resolveReleaseBaseCommit = async (baseCommit: string): Promise<stri
     }
     // git merge-base A B outputs the common ancestor. If that equals A, then A is an ancestor of B.
     const mergeBase = await runGitCommand(['merge-base', verifiedSha, 'HEAD']).catch((error: unknown) => {
-        if (isMissingGitResult(error)) return '';
+        if (error instanceof GitCommandError && error.exitCode === 1) return '';
+        if (error instanceof GitCommandError)
+            error.addOperationContext('check whether the release base commit is an ancestor of HEAD');
         throw error;
     });
     if (mergeBase !== sha) {

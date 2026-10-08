@@ -39,10 +39,11 @@ export const getGitignoredPaths = async (relativePaths: string[], cwd?: string):
     return runGitCommand(['check-ignore', '--', ...relativePaths], cwd)
         .then((output) => new Set(output.split('\n').filter(Boolean)))
         .catch((error: unknown) => {
-            // no files are ignored
-            if (typeof error === 'object' && error !== null && 'code' in error && error.code === 1) {
+            // exit code 1 means none of the given paths are ignored - not an error
+            if (error instanceof GitCommandError && error.exitCode === 1) {
                 return new Set<string>();
             }
+            if (error instanceof GitCommandError) error.addOperationContext('check which repository paths are ignored');
             throw error;
         });
 };
@@ -54,10 +55,46 @@ export const readSourceFile = async (absPath: string, rootDir: string): Promise<
     content: await fs.readFile(absPath),
 });
 
+export class GitCommandError extends Error {
+    readonly args: readonly string[];
+    readonly gitError: string;
+    readonly exitCode?: number;
+    readonly cause: unknown;
+
+    constructor(args: readonly string[], error: unknown) {
+        const stderr =
+            typeof error === 'object' && error !== null && 'stderr' in error && typeof error.stderr === 'string'
+                ? error.stderr.trim()
+                : '';
+        const gitError = stderr || (error instanceof Error ? error.message : String(error));
+        const exitCode =
+            typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'number'
+                ? error.code
+                : undefined;
+        const command = `git ${args.map((arg) => JSON.stringify(arg)).join(' ')}`;
+        super(`Command: ${command}\nGit error: ${gitError}`);
+        this.name = 'GitCommandError';
+        this.args = [...args];
+        this.gitError = gitError;
+        this.exitCode = exitCode;
+        this.cause = error;
+    }
+
+    addOperationContext(operation: string): void {
+        this.message = `Failed to ${operation}.\n${this.message}`;
+    }
+}
+
 /** Runs Git asynchronously, passing each argument directly to Git without a shell. */
 export const runGitCommand = async (args: string[], cwd?: string): Promise<string> => {
     logger.debug('git', args);
-    const { stdout } = await execFileAsync('git', args, { cwd, encoding: 'utf8', maxBuffer: 100 * 1024 * 1024 });
+    const { stdout } = await execFileAsync('git', args, { cwd, encoding: 'utf8', maxBuffer: 100 * 1024 * 1024 }).catch(
+        (error: unknown) => {
+            const err = new GitCommandError(args, error);
+            logger.debug('git command failed:\n', err);
+            throw err;
+        },
+    );
     return stdout.trim();
 };
 

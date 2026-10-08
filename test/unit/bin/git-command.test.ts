@@ -7,23 +7,23 @@ import { getGitignoredPaths, GitCommandError, listRepoFilePaths, runGitCommand }
 
 describe('runGitCommand', () => {
     it('returns trimmed Git output', async () => {
-        await expect(runGitCommand(['rev-parse', '--is-inside-work-tree'], process.cwd())).resolves.toBe('true');
+        await expect(runGitCommand(['rev-parse', '--is-inside-work-tree'], { cwd: process.cwd() })).resolves.toBe(
+            'true',
+        );
     });
 
     it('rejects on git exit code, not stderr', async () => {
-        const error: unknown = await runGitCommand(['rev-parse', '--verify', '--quiet'], process.cwd()).catch(
-            (failure: unknown) => failure,
-        );
+        const error: unknown = await runGitCommand(['rev-parse', '--verify', '--quiet'], {
+            cwd: process.cwd(),
+            operation: 'verify a commit',
+        }).catch((failure: unknown) => failure);
         expect(error).toBeInstanceOf(GitCommandError);
         if (error instanceof GitCommandError) {
             expect(error.exitCode).toBe(1);
             expect(error.gitError).toContain('Command failed: git rev-parse --verify --quiet');
-            const originalStack = error.stack;
-            const originalCause = error.cause;
-            error.addOperationContext('verify a commit');
             expect(error.message).toContain('Failed to verify a commit.\nCommand:');
-            expect(error.stack).toBe(originalStack);
-            expect(error.cause).toBe(originalCause);
+            expect(error.stack).toContain('Failed to verify a commit.');
+            expect(error.cause).toBeInstanceOf(Error);
         }
     });
 

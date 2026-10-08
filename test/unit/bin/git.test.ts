@@ -126,7 +126,9 @@ describe('getChangedFiles', () => {
         expect(changedFiles).toStrictEqual(['file1.txt', 'folder/file2.txt']);
 
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(['diff', '--name-only', `${firstSha}~..${lastSha}`]);
+        expect(gitCommandSpy).toHaveBeenCalledWith(['diff', '--name-only', `${firstSha}~..${lastSha}`], {
+            operation: 'get the list of changed files between commits',
+        });
     });
 
     it('should throw without running git when the commit list is empty', async () => {
@@ -147,7 +149,9 @@ describe('getChangedFiles', () => {
         expect(changedFiles).toStrictEqual(['file1.txt', 'folder/file2.txt']);
 
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(['diff', '--name-only', `${onlySha}~..${onlySha}`]);
+        expect(gitCommandSpy).toHaveBeenCalledWith(['diff', '--name-only', `${onlySha}~..${onlySha}`], {
+            operation: 'get the list of changed files between commits',
+        });
     });
 
     it('should return an empty list when the net diff is empty (e.g. a commit and its revert)', async () => {
@@ -187,12 +191,10 @@ describe('hasMergeFromTarget', () => {
         });
 
         await expect(hasMergeFromTarget(sourceBranch, targetBranch)).resolves.toBe(false);
-        expect(gitCommandSpy).toHaveBeenCalledWith([
-            'log',
-            '--merges',
-            '--pretty=format:%H',
-            `${targetBranch}..${sourceBranch}`,
-        ]);
+        expect(gitCommandSpy).toHaveBeenCalledWith(
+            ['log', '--merges', '--pretty=format:%H', `${targetBranch}..${sourceBranch}`],
+            { operation: 'find merge commits on the source branch that are absent from the target branch' },
+        );
     });
 
     it('should return true when a merge commit has a parent reachable from targetBranch', async () => {
@@ -205,7 +207,9 @@ describe('hasMergeFromTarget', () => {
         });
 
         await expect(hasMergeFromTarget(sourceBranch, targetBranch)).resolves.toBe(true);
-        expect(gitCommandSpy).toHaveBeenCalledWith(['merge-base', targetParentSha, targetBranch]);
+        expect(gitCommandSpy).toHaveBeenCalledWith(['merge-base', targetParentSha, targetBranch], {
+            operation: 'check whether a merge parent is reachable from the target branch',
+        });
     });
 
     it('should return false when the merge commit parent is not reachable from targetBranch (unrelated branch merge)', async () => {
@@ -236,11 +240,17 @@ describe('hasMergeFromTarget', () => {
     });
 
     it('propagates unexpected Git failures', async () => {
-        gitCommandSpy.mockImplementation(async (args: string[]) => {
-            if (args.includes('--merges')) return mergeSha;
-            if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
-            throw new Utils.GitCommandError(args, Object.assign(new Error('Git failed'), { code: 128 }));
-        });
+        gitCommandSpy.mockImplementation(
+            async (args: string[], options?: Parameters<typeof Utils.runGitCommand>[1]) => {
+                if (args.includes('--merges')) return mergeSha;
+                if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
+                throw new Utils.GitCommandError(
+                    args,
+                    Object.assign(new Error('Git failed'), { code: 128 }),
+                    options?.operation,
+                );
+            },
+        );
 
         await expect(hasMergeFromTarget(sourceBranch, targetBranch)).rejects.toThrow(
             'Failed to check whether a merge parent is reachable from the target branch.\n' +
@@ -384,8 +394,12 @@ describe('resolveReleaseBaseCommit', () => {
             return '';
         });
         await expect(resolveReleaseBaseCommit(baseSha)).resolves.toBe(baseSha);
-        expect(gitCommandSpy).toHaveBeenCalledWith(['rev-parse', '--verify', '--quiet', `${baseSha}^{commit}`]);
-        expect(gitCommandSpy).toHaveBeenCalledWith(['merge-base', baseSha, 'HEAD']);
+        expect(gitCommandSpy).toHaveBeenCalledWith(['rev-parse', '--verify', '--quiet', `${baseSha}^{commit}`], {
+            operation: 'verify the release base commit in local Git history',
+        });
+        expect(gitCommandSpy).toHaveBeenCalledWith(['merge-base', baseSha, 'HEAD'], {
+            operation: 'check whether the release base commit is an ancestor of HEAD',
+        });
     });
 
     it('should throw on the all-zeros SHA of a newly created branch', async () => {
@@ -431,9 +445,13 @@ describe('resolveReleaseBaseCommit', () => {
     });
 
     it('explains an unexpected merge-base failure', async () => {
-        vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
+        vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args, options) => {
             if (args[0] === 'rev-parse') return baseSha;
-            throw new Utils.GitCommandError(args, Object.assign(new Error('Git failed'), { code: 128 }));
+            throw new Utils.GitCommandError(
+                args,
+                Object.assign(new Error('Git failed'), { code: 128 }),
+                options?.operation,
+            );
         });
         await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow(
             'Failed to check whether the release base commit is an ancestor of HEAD.\n' +
@@ -446,6 +464,7 @@ describe('resolveReleaseBaseCommit', () => {
             new Utils.GitCommandError(
                 ['rev-parse', '--verify', '--quiet', `${baseSha}^{commit}`],
                 Object.assign(new Error('Git failed'), { code: 128 }),
+                'verify the release base commit in local Git history',
             ),
         );
         await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow(

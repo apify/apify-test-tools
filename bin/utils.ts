@@ -21,7 +21,7 @@ export const isOutsideDir = (childPath: string, parentPath: string): boolean =>
  */
 export const listRepoFilePaths = async (repoRoot: string, subDir: string): Promise<string[]> => {
     const relSubDir = path.relative(repoRoot, subDir).split(path.sep).join('/') || '.';
-    const output = await runGitCommand(['ls-files', '--cached', '--others', '-z', '--', relSubDir], repoRoot);
+    const output = await runGitCommand(['ls-files', '--cached', '--others', '-z', '--', relSubDir], { cwd: repoRoot });
     return output.split('\0').filter(Boolean);
 };
 
@@ -36,14 +36,16 @@ export const getGitignoredPaths = async (relativePaths: string[], cwd?: string):
 
     // Exit code 1 means none of the given paths are ignored - not an error. Anything else
     // (e.g. 128 for "not a git repository") is a real failure.
-    return runGitCommand(['check-ignore', '--', ...relativePaths], cwd)
+    return runGitCommand(['check-ignore', '--', ...relativePaths], {
+        cwd,
+        operation: 'check which repository paths are ignored',
+    })
         .then((output) => new Set(output.split('\n').filter(Boolean)))
         .catch((error: unknown) => {
             // exit code 1 means none of the given paths are ignored - not an error
             if (error instanceof GitCommandError && error.exitCode === 1) {
                 return new Set<string>();
             }
-            if (error instanceof GitCommandError) error.addOperationContext('check which repository paths are ignored');
             throw error;
         });
 };
@@ -61,7 +63,7 @@ export class GitCommandError extends Error {
     readonly exitCode?: number;
     readonly cause: unknown;
 
-    constructor(args: readonly string[], error: unknown) {
+    constructor(args: readonly string[], error: unknown, operation?: string) {
         const stderr =
             typeof error === 'object' && error !== null && 'stderr' in error && typeof error.stderr === 'string'
                 ? error.stderr.trim()
@@ -72,25 +74,24 @@ export class GitCommandError extends Error {
                 ? error.code
                 : undefined;
         const command = `git ${args.map((arg) => JSON.stringify(arg)).join(' ')}`;
-        super(`Command: ${command}\nGit error: ${gitError}`);
+        super(`${operation ? `Failed to ${operation}.\n` : ''}Command: ${command}\nGit error: ${gitError}`);
         this.name = 'GitCommandError';
         this.args = [...args];
         this.gitError = gitError;
         this.exitCode = exitCode;
         this.cause = error;
     }
-
-    addOperationContext(operation: string): void {
-        this.message = `Failed to ${operation}.\n${this.message}`;
-    }
 }
 
 /** Runs Git asynchronously, passing each argument directly to Git without a shell. */
-export const runGitCommand = async (args: string[], cwd?: string): Promise<string> => {
+export const runGitCommand = async (
+    args: string[],
+    { cwd, operation }: { cwd?: string; operation?: string } = {},
+): Promise<string> => {
     logger.debug('git', args);
     const { stdout } = await execFileAsync('git', args, { cwd, encoding: 'utf8', maxBuffer: 100 * 1024 * 1024 }).catch(
         (error: unknown) => {
-            const err = new GitCommandError(args, error);
+            const err = new GitCommandError(args, error, operation);
             logger.debug('git command failed:\n', err);
             throw err;
         },

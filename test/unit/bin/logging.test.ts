@@ -10,8 +10,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const compilerPath = fileURLToPath(new URL('../../../node_modules/typescript/bin/tsc', import.meta.url));
 let cliPath: string;
-let buildDir: string;
-let gitStubDir: string;
+let buildDir: string | undefined;
+let gitStubDir: string | undefined;
 const sha = '1'.repeat(40);
 
 describe('CLI logging', () => {
@@ -30,8 +30,8 @@ describe('CLI logging', () => {
     });
 
     afterAll(async () => {
-        await rm(buildDir, { recursive: true, force: true });
-        await rm(gitStubDir, { recursive: true, force: true });
+        if (buildDir) await rm(buildDir, { recursive: true, force: true });
+        if (gitStubDir) await rm(gitStubDir, { recursive: true, force: true });
     });
 
     it.each(['info', 'silent'])('keeps JSON results intact with --log-level %s', (level) => {

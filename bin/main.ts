@@ -88,14 +88,14 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
     // since the branch has no functional changes of its own, there is nothing new to validate.
     // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
     // individually validated changes can have novel interactions when combined.
-    if (hasMergeFromTarget(config.sourceBranch, config.targetBranch)) {
+    if (await hasMergeFromTarget(config.sourceBranch, config.targetBranch)) {
         logger.info(
             '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
         );
-        const branchOnlyFiles = getBranchOnlyChangedFiles(config.sourceBranch, config.targetBranch);
+        const branchOnlyFiles = await getBranchOnlyChangedFiles(config.sourceBranch, config.targetBranch);
         // Omit baseCommit to get full branch history. Validated functional commits can still interact with merged ones
-        const allBranchCommits = getCommits({ ...config, baseCommit: undefined });
-        const branchOnlyActorsChanged = getChangedActors({
+        const allBranchCommits = await getCommits({ ...config, baseCommit: undefined });
+        const branchOnlyActorsChanged = await getChangedActors({
             filepathsChanged: branchOnlyFiles,
             actorConfigs,
             commits: allBranchCommits,
@@ -110,8 +110,8 @@ const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: bo
     }
 
     // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply baseCommit and check merge commits (they might be functional or just cosmetic)
-    const commits = getCommits(config);
-    const changedFiles = getChangedFiles(commits);
+    const commits = await getCommits(config);
+    const changedFiles = await getChangedFiles(commits);
     return getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest, commits });
 };
 
@@ -123,8 +123,8 @@ await yargs()
         'get-commits',
         '',
         (y) => y.options(gitRangeOptions),
-        (args) => {
-            const commits = getCommits(args);
+        async (args) => {
+            const commits = await getCommits(args);
             writeJson(commits);
         },
     )
@@ -132,8 +132,8 @@ await yargs()
         'get-latest-commit',
         '',
         (y) => y.options(gitRangeOptions),
-        (args) => {
-            const commits = getCommits(args);
+        async (args) => {
+            const commits = await getCommits(args);
             if (commits.length > 0) {
                 writeJson(commits[commits.length - 1]);
             }
@@ -143,9 +143,9 @@ await yargs()
         'get-changed-files',
         '',
         (y) => y.options(gitRangeOptions),
-        (args) => {
-            const commits = getCommits(args);
-            const changedFiles = getChangedFiles(commits);
+        async (args) => {
+            const commits = await getCommits(args);
+            const changedFiles = await getChangedFiles(commits);
             writeJson(changedFiles);
         },
     )
@@ -187,7 +187,7 @@ await yargs()
         async (config) => {
             const actorsChanged = await resolveChangedActors(config, { isLatest: false });
             const builds = await runBuilds({
-                ...resolveRepoUrl(config.repoUrl),
+                ...(await resolveRepoUrl(config.repoUrl)),
                 actorConfigs: actorsChanged,
                 branch: config.sourceBranch.replace('origin/', ''),
                 dryRun: config.dryRun,
@@ -210,19 +210,19 @@ await yargs()
                 .option('report-slack-channel', { type: 'string' })
                 .option('release-slack-channel', { type: 'string' }),
         async (args) => {
-            const baseSha = resolveReleaseBaseCommit(args.baseCommit);
-            const branch = getCurrentBranch();
-            const changes = getReleaseChanges(baseSha);
+            const baseSha = await resolveReleaseBaseCommit(args.baseCommit);
+            const branch = await getCurrentBranch();
+            const changes = await getReleaseChanges(baseSha);
             if (!changes) {
                 logger.info(`HEAD is the base commit ${baseSha}, there is nothing new to release`);
                 return;
             }
             const { commits, changedFiles, changelog } = changes;
-            const { repoUrl, shouldVerifyRepoUrl } = resolveRepoUrl(args.repoUrl);
+            const { repoUrl, shouldVerifyRepoUrl } = await resolveRepoUrl(args.repoUrl);
 
             const isLatest = true;
             const actorConfigs = await readConfigFile(args);
-            const actorsChanged = getChangedActors({
+            const actorsChanged = await getChangedActors({
                 filepathsChanged: changedFiles,
                 actorConfigs,
                 isLatest,

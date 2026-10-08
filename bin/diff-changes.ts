@@ -45,12 +45,12 @@ type FileChangeForActor =
  * 6. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
  * 7. Everything else → functional
  */
-const classifyFileChange = (
+const classifyFileChange = async (
     originalFilePath: string,
     actorConfig: ActorConfig,
     commits: Commit[],
     dockerIgnoreMatcher: DockerIgnoreMatcher,
-): FileChangeForActor => {
+): Promise<FileChangeForActor> => {
     const lowercaseFilePath = originalFilePath.toLowerCase();
 
     // TODO: hardcodes that there's a single repo-wide changelog belonging to every actor. Should instead
@@ -90,7 +90,7 @@ const classifyFileChange = (
     }
 
     if (lowercaseFilePath.endsWith('.json') && isUnderActorDotDir) {
-        const isCosmetic = isCosmeticOnlyJsonSchemaChange(commits, originalFilePath);
+        const isCosmetic = await isCosmeticOnlyJsonSchemaChange(commits, originalFilePath);
         if (isCosmetic) {
             return { impact: 'cosmetic', semanticallyVerified: true };
         }
@@ -167,12 +167,12 @@ const logChangeGroups = (groups: ChangeGroup[]): void => {
     }
 };
 
-export const getChangedActors = ({
+export const getChangedActors = async ({
     filepathsChanged,
     actorConfigs,
     isLatest = false,
     commits,
-}: ShouldBuildAndTestOptions): ActorConfig[] => {
+}: ShouldBuildAndTestOptions): Promise<ActorConfig[]> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
 
     for (const actorConfig of actorConfigs) {
@@ -185,7 +185,7 @@ export const getChangedActors = ({
                 continue;
             }
 
-            const change = classifyFileChange(originalFilePath, actorConfig, commits, dockerIgnoreMatcher);
+            const change = await classifyFileChange(originalFilePath, actorConfig, commits, dockerIgnoreMatcher);
 
             if (change.impact === 'ignored' || change.impact === 'outside-context') continue;
             if (change.impact === 'cosmetic' && !isLatest) continue;

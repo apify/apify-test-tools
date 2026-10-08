@@ -73,13 +73,10 @@ export const hasMergeFromTarget = async (sourceBranch: string, targetBranch: str
  * Used to check whether the branch itself has any functional changes, independent of what master merged in.
  */
 export const getBranchOnlyChangedFiles = async (sourceBranch: string, targetBranch: string): Promise<string[]> => {
-    const output = await runGitCommand([
-        'log',
-        '--no-merges',
-        '--name-only',
-        '--pretty=format:',
-        `${targetBranch}..${sourceBranch}`,
-    ]);
+    const output = await runGitCommand(
+        ['log', '--no-merges', '--name-only', '--pretty=format:', `${targetBranch}..${sourceBranch}`],
+        { operation: 'list files changed by non-merge commits on the source branch' },
+    );
     return output.split('\n').filter(Boolean);
 };
 
@@ -107,11 +104,10 @@ export const parseBaseCommit = (shaOrCommit: string | undefined): string | undef
 };
 
 const fetchAllBranchCommits = async (sourceBranch: string, targetBranch: string): Promise<Commit[]> => {
-    const output = await runGitCommand([
-        'log',
-        `--pretty=format:${GIT_LOG_FORMAT}`,
-        `${targetBranch}..${sourceBranch}`,
-    ]);
+    const output = await runGitCommand(
+        ['log', `--pretty=format:${GIT_LOG_FORMAT}`, `${targetBranch}..${sourceBranch}`],
+        { operation: 'list commits reachable from the source ref but absent from the target ref' },
+    );
     const commitsStrings = output.split('\n');
     const commits = commitsStrings.map((commitString) => parseCommit(commitString));
     commits.reverse();
@@ -177,7 +173,9 @@ export const parseCommit = (commitString: string): Commit => {
  * so a detached HEAD (no branch to point at) is an error rather than a guess.
  */
 export const getCurrentBranch = async (): Promise<string> => {
-    const branch = await runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD']);
+    const branch = await runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD'], {
+        operation: 'determine the current branch for release',
+    });
     if (branch === 'HEAD') {
         throw new Error(
             'Cannot determine the branch to release: HEAD is detached. Check out the branch you want to release.',
@@ -191,7 +189,9 @@ export const getCurrentBranch = async (): Promise<string> => {
  * uses for Git repo sources, e.g. git@github.com:apify-store/google-maps
  */
 const getOriginRepoUrl = async (): Promise<string> => {
-    const rawUrl = await runGitCommand(['remote', 'get-url', 'origin']);
+    const rawUrl = await runGitCommand(['remote', 'get-url', 'origin'], {
+        operation: 'read the origin repository URL',
+    });
     return rawUrl.replace(/^https:\/\/github\.com\//, 'git@github.com:');
 };
 
@@ -284,7 +284,9 @@ const getChangelogAdditions = async (baseSha: string, changedFiles: string[]): P
     if (!changedFiles.includes(CHANGELOG_PATH)) {
         return null;
     }
-    const diff = await runGitCommand(['diff', baseSha, 'HEAD', '--', CHANGELOG_PATH]);
+    const diff = await runGitCommand(['diff', baseSha, 'HEAD', '--', CHANGELOG_PATH], {
+        operation: 'read changelog changes since the last release',
+    });
 
     const added: string[] = [];
     let startedChangelog = false;
@@ -313,11 +315,15 @@ const getChangelogAdditions = async (baseSha: string, changedFiles: string[]): P
  * diffing from its parent would pull in already-released changes.
  */
 export const getReleaseChanges = async (baseSha: string) => {
-    if ((await runGitCommand(['rev-parse', 'HEAD'])) === baseSha) {
+    if (
+        (await runGitCommand(['rev-parse', 'HEAD'], { operation: 'identify the current release commit' })) === baseSha
+    ) {
         return null;
     }
     const commits = await fetchAllBranchCommits('HEAD', baseSha);
-    const changedFiles = (await runGitCommand(['diff', '--name-only', baseSha, 'HEAD'])).split('\n').filter(Boolean);
+    const changedFiles = await runGitCommand(['diff', '--name-only', baseSha, 'HEAD'], {
+        operation: 'list files changed since the last release',
+    }).then((output) => output.split('\n').filter(Boolean));
     const changelog = await getChangelogAdditions(baseSha, changedFiles);
     return { commits, changedFiles, changelog };
 };

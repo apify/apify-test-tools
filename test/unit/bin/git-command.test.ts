@@ -7,9 +7,12 @@ import { getGitignoredPaths, GitCommandError, listRepoFilePaths, runGitCommand }
 
 describe('runGitCommand', () => {
     it('returns trimmed Git output', async () => {
-        await expect(runGitCommand(['rev-parse', '--is-inside-work-tree'], { cwd: process.cwd() })).resolves.toBe(
-            'true',
-        );
+        await expect(
+            runGitCommand(['rev-parse', '--is-inside-work-tree'], {
+                cwd: process.cwd(),
+                operation: 'check whether the current directory is in a Git repository',
+            }),
+        ).resolves.toBe('true');
     });
 
     it('rejects on git exit code, not stderr', async () => {
@@ -28,9 +31,11 @@ describe('runGitCommand', () => {
     });
 
     it('passes arguments literally and rejects Git failures', async () => {
-        await expect(runGitCommand(['rev-parse', '--verify', 'HEAD; echo injected'])).rejects.toThrow(
-            'Command: git "rev-parse" "--verify" "HEAD; echo injected"\nGit error:',
-        );
+        await expect(
+            runGitCommand(['rev-parse', '--verify', 'HEAD; echo injected'], {
+                operation: 'verify a commit reference',
+            }),
+        ).rejects.toThrow('Command: git "rev-parse" "--verify" "HEAD; echo injected"\nGit error:');
     });
 });
 

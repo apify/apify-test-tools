@@ -46,11 +46,10 @@ describe('getCommits', () => {
         ]);
 
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith([
-            'log',
-            '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s',
-            'main..feature-branch',
-        ]);
+        expect(gitCommandSpy).toHaveBeenCalledWith(
+            ['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', 'main..feature-branch'],
+            { operation: 'list commits reachable from the source ref but absent from the target ref' },
+        );
     });
 
     it('should return commits after the base commit if provided', async () => {
@@ -64,11 +63,10 @@ describe('getCommits', () => {
         ]);
 
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith([
-            'log',
-            '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s',
-            'main..feature-branch',
-        ]);
+        expect(gitCommandSpy).toHaveBeenCalledWith(
+            ['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', 'main..feature-branch'],
+            { operation: 'list commits reachable from the source ref but absent from the target ref' },
+        );
     });
 
     it('should ignore the base commit and return all commits when it is the branch HEAD (rerun or force push)', async () => {
@@ -95,11 +93,10 @@ describe('getCommits', () => {
         ]);
 
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith([
-            'log',
-            '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s',
-            'main..feature-branch',
-        ]);
+        expect(gitCommandSpy).toHaveBeenCalledWith(
+            ['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', 'main..feature-branch'],
+            { operation: 'list commits reachable from the source ref but absent from the target ref' },
+        );
     });
 });
 
@@ -275,13 +272,10 @@ describe('getBranchOnlyChangedFiles', () => {
         const result = await getBranchOnlyChangedFiles(sourceBranch, targetBranch);
 
         expect(result).toStrictEqual(['README.md', 'actors/foo_bar/src/main.ts']);
-        expect(gitCommandSpy).toHaveBeenCalledWith([
-            'log',
-            '--no-merges',
-            '--name-only',
-            '--pretty=format:',
-            `${targetBranch}..${sourceBranch}`,
-        ]);
+        expect(gitCommandSpy).toHaveBeenCalledWith(
+            ['log', '--no-merges', '--name-only', '--pretty=format:', `${targetBranch}..${sourceBranch}`],
+            { operation: 'list files changed by non-merge commits on the source branch' },
+        );
     });
 
     it('should return empty array when there are no non-merge commits', async () => {
@@ -325,7 +319,9 @@ describe('getCurrentBranch', () => {
     it('should return the checked-out branch', async () => {
         const gitCommandSpy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('master');
         await expect(getCurrentBranch()).resolves.toBe('master');
-        expect(gitCommandSpy).toHaveBeenCalledWith(['rev-parse', '--abbrev-ref', 'HEAD']);
+        expect(gitCommandSpy).toHaveBeenCalledWith(['rev-parse', '--abbrev-ref', 'HEAD'], {
+            operation: 'determine the current branch for release',
+        });
     });
 
     it('should throw on a detached HEAD', async () => {
@@ -344,7 +340,9 @@ describe('resolveRepoUrl', () => {
             repoUrl: 'git@github.com:apify/example.git',
             shouldVerifyRepoUrl: true,
         });
-        expect(gitCommandSpy).toHaveBeenCalledWith(['remote', 'get-url', 'origin']);
+        expect(gitCommandSpy).toHaveBeenCalledWith(['remote', 'get-url', 'origin'], {
+            operation: 'read the origin repository URL',
+        });
     });
 
     it('uses an explicit URL without reading Git', async () => {
@@ -509,16 +507,27 @@ describe('getReleaseChanges', () => {
             changelog: '- Added foo',
         });
         // Not from the parent of the oldest commit, which may predate the base commit for merge commits
-        expect(gitRunSpy).toHaveBeenCalledWith(['rev-parse', 'HEAD']);
-        expect(gitRunSpy).toHaveBeenCalledWith(['diff', '--name-only', baseSha, 'HEAD']);
-        expect(gitRunSpy).toHaveBeenCalledWith(['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', `${baseSha}..HEAD`]);
-        expect(gitRunSpy).toHaveBeenCalledWith(['diff', baseSha, 'HEAD', '--', 'CHANGELOG.md']);
+        expect(gitRunSpy).toHaveBeenCalledWith(['rev-parse', 'HEAD'], {
+            operation: 'identify the current release commit',
+        });
+        expect(gitRunSpy).toHaveBeenCalledWith(['diff', '--name-only', baseSha, 'HEAD'], {
+            operation: 'list files changed since the last release',
+        });
+        expect(gitRunSpy).toHaveBeenCalledWith(
+            ['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', `${baseSha}..HEAD`],
+            { operation: 'list commits reachable from the source ref but absent from the target ref' },
+        );
+        expect(gitRunSpy).toHaveBeenCalledWith(['diff', baseSha, 'HEAD', '--', 'CHANGELOG.md'], {
+            operation: 'read changelog changes since the last release',
+        });
     });
 
     it('should return null when HEAD is the base commit', async () => {
         await expect(getReleaseChanges(headSha)).resolves.toBeNull();
         expect(gitRunSpy).toHaveBeenCalledOnce();
-        expect(gitRunSpy).toHaveBeenCalledWith(['rev-parse', 'HEAD']);
+        expect(gitRunSpy).toHaveBeenCalledWith(['rev-parse', 'HEAD'], {
+            operation: 'identify the current release commit',
+        });
     });
 
     it('skips the changelog diff when CHANGELOG.md did not change', async () => {

@@ -21,7 +21,10 @@ export const isOutsideDir = (childPath: string, parentPath: string): boolean =>
  */
 export const listRepoFilePaths = async (repoRoot: string, subDir: string): Promise<string[]> => {
     const relSubDir = path.relative(repoRoot, subDir).split(path.sep).join('/') || '.';
-    const output = await runGitCommand(['ls-files', '--cached', '--others', '-z', '--', relSubDir], { cwd: repoRoot });
+    const output = await runGitCommand(['ls-files', '--cached', '--others', '-z', '--', relSubDir], {
+        cwd: repoRoot,
+        operation: 'list repository files for the local build',
+    });
     return output.split('\0').filter(Boolean);
 };
 
@@ -74,7 +77,8 @@ export class GitCommandError extends Error {
                 ? error.code
                 : undefined;
         const command = `git ${args.map((arg) => JSON.stringify(arg)).join(' ')}`;
-        super(`${operation ? `Failed to ${operation}.\n` : ''}Command: ${command}\nGit error: ${gitError}`);
+        const operationContext = operation ? `Failed to ${operation}.\n` : '';
+        super(`${operationContext}Command: ${command}\nGit error: ${gitError}`);
         this.name = 'GitCommandError';
         this.args = [...args];
         this.gitError = gitError;

@@ -39,11 +39,11 @@ on:
                 type: string
                 default: sonnet
                 description: Claude model to use for investigation and fix
-            flakiness_runs:
+            max_flakiness_runs:
                 required: false
                 type: number
-                default: 50
-                description: How many times Claude re-runs the failing Actor run to measure how often the failure happens, when that isn't obvious.
+                default: 200
+                description: The most times Claude may re-run the failing Actor run to measure how often the failure happens, when that isn't obvious. Claude decides how many of them it needs.
             investigate_prompt:
                 required: false
                 type: string
@@ -97,7 +97,7 @@ jobs:
               uses: anthropics/claude-code-action@8251c103ac8c1d761882c86aba1412c7f583c844 # v1.0.213
               env:
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-                  FLAKINESS_RUNS: ${{ inputs.flakiness_runs }}
+                  MAX_FLAKINESS_RUNS: ${{ inputs.max_flakiness_runs }}
               with:
                   prompt: |
                       The failing E2E platform test ran in workflow run ${{ github.run_id }} of this repo.

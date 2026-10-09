@@ -2,6 +2,7 @@ import z from 'zod';
 
 import { ExistingDirSchema, RelativeDirSchema } from '../path/schema.js';
 import {
+    ActorEnvVarsSchema,
     CONFIG_FILE_STRATEGY,
     type ResolvedActorConfig,
     type StrategyParser,
@@ -44,6 +45,7 @@ const ValidatedConfigSchema = z.array(
         folder: ExistingDirSchema,
         tokenEnvVar: z.string(),
         overrideActorContext: z.array(RelativeDirSchema).optional(),
+        envVars: ActorEnvVarsSchema,
     }),
 );
 

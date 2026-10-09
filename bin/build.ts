@@ -1,6 +1,12 @@
 import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType, ApifyClient } from 'apify-client';
 
+import {
+    logSelectedActorEnvVars,
+    resolveActorEnvVars,
+    type ResolvedActorEnvVar,
+    syncActorEnvVars,
+} from './actor-env-vars.js';
 import { normalizeRepoUrl } from './git.js';
 import { logger } from './logger.js';
 import type { ActorConfig, BuildData } from './types.js';
@@ -123,6 +129,7 @@ export class ApifyBuilder {
         actorVersion: ApifyClientTypes.ActorVersion,
         useCache: boolean,
         actorInfo?: ApifyClientTypes.Actor,
+        envVars: ResolvedActorEnvVar[] = [],
     ): Promise<BuildData> => {
         const actorClient = this.apifyClient.actor(this.actorFullName);
         const { versions } = actorInfo ?? (await this.getActorInfo());
@@ -135,6 +142,10 @@ export class ApifyBuilder {
         } else {
             const version = actorClient.version(versionNumber);
             await version.update(actorVersion);
+        }
+
+        if (envVars.length > 0) {
+            await syncActorEnvVars(actorClient.version(versionNumber), envVars, this.actorFullName);
         }
 
         // We also get back actId so the testing actor can both match by actor ID and name
@@ -370,11 +381,19 @@ export const runBuilds = async ({
         logger.info('[DRY RUN] Would build:');
         for (const { actorConfig, versionNumber } of buildConfigs) {
             logger.info(`  ${actorConfig.actorFullName} (${versionNumber})`);
+            logSelectedActorEnvVars(actorConfig, isLatest);
         }
         return buildConfigs.map(({ actorConfig, versionNumber }) =>
             dryRunBuildData(actorConfig.actorFullName, versionNumber),
         );
     }
+
+    const envVarsByActorFullName = new Map(
+        actorConfigs.map((actorConfig) => [
+            actorConfig.actorFullName,
+            resolveActorEnvVars(actorConfig, isLatest, process.env),
+        ]),
+    );
 
     const buildConfigsByActorFullName = new Map(
         buildConfigs.map((buildConfig) => [buildConfig.actorConfig.actorFullName, buildConfig]),
@@ -394,7 +413,13 @@ export const runBuilds = async ({
             gitRepoUrl,
             sourceType: ActorSourceType.GitRepo,
         };
-        return builder.createVersionAndBuild(versionNumber, actorVersion, useCache, actorInfo);
+        return builder.createVersionAndBuild(
+            versionNumber,
+            actorVersion,
+            useCache,
+            actorInfo,
+            envVarsByActorFullName.get(actorConfig.actorFullName),
+        );
     });
 };
 

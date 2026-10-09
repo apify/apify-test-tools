@@ -6,6 +6,7 @@ import AdmZip from 'adm-zip';
 import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType } from 'apify-client';
 
+import { logSelectedActorEnvVars, resolveActorEnvVars } from './actor-env-vars.js';
 import { dryRunBuildData, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
 import { buildDockerIgnoreMatcher } from './dockerignore.js';
 import { logger } from './logger.js';
@@ -196,11 +197,20 @@ export const runBuildsFromLocal = async ({
 }): Promise<BuildData[]> => {
     if (dryRun) {
         logger.info('[DRY RUN] Would build from local source:');
-        for (const { actorFullName, folder } of actorConfigs) {
+        for (const actorConfig of actorConfigs) {
+            const { actorFullName, folder } = actorConfig;
             logger.info(`  ${actorFullName} (${folder})`);
+            logSelectedActorEnvVars(actorConfig, false);
         }
         return actorConfigs.map(({ actorFullName }) => dryRunBuildData(actorFullName, LOCAL_SOURCE_VERSION_NUMBER));
     }
+
+    const envVarsByActorFullName = new Map(
+        actorConfigs.map((actorConfig) => [
+            actorConfig.actorFullName,
+            resolveActorEnvVars(actorConfig, false, process.env),
+        ]),
+    );
 
     return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {
         // Zipped and uploaded like `apify push` does, since inline SOURCE_FILES are capped at ~9 MB.
@@ -213,6 +223,12 @@ export const runBuildsFromLocal = async ({
             tarballUrl: await builder.uploadSourceZip(LOCAL_SOURCE_VERSION_NUMBER, zip.toBuffer()),
             sourceType: ActorSourceType.Tarball,
         };
-        return builder.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false);
+        return builder.createVersionAndBuild(
+            LOCAL_SOURCE_VERSION_NUMBER,
+            actorVersion,
+            false,
+            undefined,
+            envVarsByActorFullName.get(actorConfig.actorFullName),
+        );
     });
 };

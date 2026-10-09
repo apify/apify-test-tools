@@ -1,7 +1,8 @@
-import { prettifyError, type ZodType } from 'zod';
+import { prettifyError, z, type ZodType } from 'zod';
 
 import { ACTOR_NAME, USERNAME } from '@apify/consts';
 
+import type { ActorEnvVarConfig } from '../../../types.js';
 import type { ExistingDir, RelativeDir } from '../../path/repo-relative.js';
 
 function stripRegexAnchor(regex: string): string {
@@ -13,14 +14,26 @@ export const ACTOR_FULL_NAME_REGEX = new RegExp(
     USERNAME.REGEX.flags + ACTOR_NAME.REGEX.flags,
 );
 
-// All fields must exist, even if their value can be undefined.
-// This makes typescript enforce all configs to have resolution for EVERY field.
-// So adding an extra field here creates TS errors in every config file that doesn't have it.
+/** Validates declared source names and flags without reading environment values. */
+export const ActorEnvVarsSchema = z
+    .record(
+        z.string().regex(/\S/, 'Environment variable name must not be blank.'),
+        z.object({
+            fromEnv: z.string().regex(/\S/, 'fromEnv must not be blank.'),
+            isSecret: z.boolean(),
+            isShared: z.boolean().optional(),
+        }),
+    )
+    .optional();
+
+// Fields with group defaults must exist, even if their value can be undefined,
+// so TypeScript enforces their resolution in every configuration strategy.
 export interface ResolvedActorConfig {
     actorFullName: string;
     folder: string;
     tokenEnvVar: string;
     overrideActorContext: string[] | undefined;
+    envVars?: Record<string, ActorEnvVarConfig>;
 }
 
 export interface ValidatedActorConfig extends Omit<ResolvedActorConfig, 'folder' | 'overrideActorContext'> {

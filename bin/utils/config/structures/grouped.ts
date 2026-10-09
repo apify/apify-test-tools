@@ -1,6 +1,6 @@
 import z from 'zod';
 
-import { ACTOR_FULL_NAME_REGEX, CONFIG_FILE_STRATEGY, defineStrategy } from './base.js';
+import { ACTOR_FULL_NAME_REGEX, ActorEnvVarsSchema, CONFIG_FILE_STRATEGY, defineStrategy } from './base.js';
 
 const schema = z.object({
     groups: z
@@ -15,6 +15,7 @@ const schema = z.object({
                             // these allow overrides from stuff set at the group level
                             tokenEnvVar: z.string().optional(),
                             overrideActorContext: z.array(z.string()).optional(),
+                            envVars: ActorEnvVarsSchema,
                         }),
                     )
                     .min(1),

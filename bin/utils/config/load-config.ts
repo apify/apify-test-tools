@@ -1,5 +1,5 @@
 import { selectActors } from '../../actor-filtering.js';
-import type { ActorConfig } from '../../types.js';
+import type { ActorConfig, ActorEnvVarConfig } from '../../types.js';
 import { safeReadJsonObjectFile } from '../json-file.js';
 import { type ExistingDir, ExistingFile, type RelativeDir } from '../path/repo-relative.js';
 import { type ActorJsonPaths, readActorJson } from './actor-json.js';
@@ -38,6 +38,7 @@ export interface LoadedActorConfig {
     actorJson: ActorJsonPaths;
     dockerContextDir: RelativeDir;
     contextPaths: RelativeDir[];
+    envVars?: Record<string, ActorEnvVarConfig>;
 }
 
 // #endregion
@@ -106,6 +107,7 @@ export const loadActorConfig = (entry: ValidatedActorConfig): LoadedActorConfig 
         actorJson,
         dockerContextDir,
         contextPaths,
+        envVars: entry.envVars,
     };
 };
 
@@ -115,6 +117,7 @@ const toLegacyActorConfig = (entry: LoadedActorConfig): ActorConfig => ({
     tokenEnvVar: entry.tokenEnvVar,
     dockerContextDir: legacyPath(entry.dockerContextDir),
     contextPaths: entry.contextPaths.map(legacyPath),
+    envVars: entry.envVars,
 });
 
 // #endregion

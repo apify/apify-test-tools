@@ -1,6 +1,6 @@
 import z from 'zod';
 
-import { ACTOR_FULL_NAME_REGEX, CONFIG_FILE_STRATEGY, defineStrategy } from './base.js';
+import { ACTOR_FULL_NAME_REGEX, ActorEnvVarsSchema, CONFIG_FILE_STRATEGY, defineStrategy } from './base.js';
 
 const schema = z.object({
     actors: z
@@ -10,6 +10,7 @@ const schema = z.object({
                 actorFullName: z.string().regex(ACTOR_FULL_NAME_REGEX),
                 tokenEnvVar: z.string(),
                 overrideActorContext: z.array(z.string()).optional(),
+                envVars: ActorEnvVarsSchema,
             }),
         )
         .min(1),

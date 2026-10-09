@@ -26,4 +26,11 @@ export interface ActorConfig {
     tokenEnvVar: string;
     dockerContextDir: string;
     contextPaths: string[];
+    envVars?: Record<string, ActorEnvVarConfig>;
+}
+
+export interface ActorEnvVarConfig {
+    fromEnv: string;
+    isShared?: boolean;
+    isSecret: boolean;
 }

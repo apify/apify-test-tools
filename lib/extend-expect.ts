@@ -250,22 +250,13 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
     // here we are switching logic of expect and expect.soft
     // expect => expect.soft
     // expect.hard => expect
-    const { soft } = expect;
-    const oldExpect = { ...expect };
-    const softExpect = <T>(actual: T, message?: string): Assertion => {
-        return soft(actual, message);
-    };
+    const softExpect = Object.assign(
+        <T>(actual: T, message?: string): Assertion<void, T> => expect.soft(actual, message),
+        expect,
+        { hard: <T>(actual: T, message?: string): Assertion<void, T> => expect(actual, message) },
+    );
 
-    for (const [key, value] of Object.entries(oldExpect)) {
-        // @ts-expect-error: No idea how to type this properly
-        softExpect[key] = value;
-    }
-
-    softExpect.hard = <T>(actual: T, message?: string): Assertion<T> => {
-        return expect(actual, message);
-    };
-
-    return softExpect as unknown as ExpectStatic;
+    return softExpect;
 };
 
 type Diffs = {

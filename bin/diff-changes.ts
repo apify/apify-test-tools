@@ -64,6 +64,9 @@ const classifyFileChange = async (
 
     const isUnderActorDotDir = actorConfig.actorJson.file.parent.contains(changedFile);
 
+    // .actor/ can legitimately be listed in .dockerignore (the Apify platform evaluates it before
+    // the Docker build, so excluding it from the build context is a valid caching optimization) —
+    // that shouldn't cause changes to .actor/ itself to be ignored here.
     if (!isUnderActorDotDir && dockerIgnoreMatcher(changedFile.path)) {
         return { impact: 'ignored' };
     }

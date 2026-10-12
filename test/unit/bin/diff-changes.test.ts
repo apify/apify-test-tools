@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getChangedActors } from '../../../bin/diff-changes.js';
+import * as DiffJsonSchema from '../../../bin/diff-json-schema.js';
 import * as Dockerignore from '../../../bin/dockerignore.js';
 import { logger } from '../../../bin/logger.js';
 import type { ActorConfig } from '../../../bin/types.js';
@@ -61,6 +62,10 @@ const amazonActor = actorConfig('junglee/amazon-crawler', 'actors/junglee_Amazon
 const commits = [{ sha: 'Commit1', author: '', date: '', message: '' }];
 
 describe('getChangedActors', () => {
+    beforeEach(() => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(false);
+    });
+
     it('returns empty array when no files changed', async () => {
         expect(await getChangedActors({ filepathsChanged: [], actorConfigs, commits })).toEqual([]);
     });
@@ -112,7 +117,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('returns actor when isLatest and actor JSON changes', async () => {
+    it('returns actor when isLatest and JSON file has only cosmetic changes', async () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(true);
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
@@ -122,14 +128,15 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('unrelated changelogs are considered functional', async () => {
+    it('does not return actor when not isLatest and JSON file has only cosmetic changes', async () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(true);
         const result = await getChangedActors({
-            filepathsChanged: ['some/other/CHANGELOG.md'],
+            filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
             commits,
             isLatest: false,
         });
-        expect(result).toEqual([miniActor]);
+        expect(result).toEqual([]);
     });
 
     it('returns actor when JSON file has functional changes', async () => {
@@ -142,6 +149,7 @@ describe('getChangedActors', () => {
     });
 
     it('JSON file in actor folder but outside .actor/ is functional, not checked for cosmetic', async () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(true);
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/package.json'],
             actorConfigs,
@@ -149,16 +157,22 @@ describe('getChangedActors', () => {
             isLatest: false,
         });
         expect(result).toEqual([miniActor]);
+        expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).not.toHaveBeenCalled();
     });
 
-    it('JSON file under .actor/ inside actor folder is functional', async () => {
+    it('JSON file under .actor/ inside actor folder is checked for cosmetic changes', async () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(true);
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/.actor/input_schema.json'],
             actorConfigs,
             commits,
-            isLatest: true,
+            isLatest: false,
         });
-        expect(result).toEqual([miniActor]);
+        expect(result).toEqual([]);
+        expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).toHaveBeenCalledWith(
+            commits,
+            'actors/foo_bar/.actor/input_schema.json',
+        );
     });
 
     it('does not trigger narrow-context actor when shared file changes', async () => {
@@ -188,6 +202,30 @@ describe('getChangedActors', () => {
             actorConfigs,
             commits,
             isLatest: false,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('treats any changelog filename as cosmetic regardless of configured paths', async () => {
+        const result = await getChangedActors({
+            filepathsChanged: ['docs/CHANGELOG.md'],
+            actorConfigs: [miniActor, standaloneActor],
+            commits,
+            isLatest: true,
+        });
+        expect(result).toEqual([miniActor, standaloneActor]);
+    });
+
+    it('does not special-case a configured readme outside the actor context', async () => {
+        const configuredActor: ActorConfig = {
+            ...standaloneActor,
+            actorJson: { ...standaloneActor.actorJson, readme: new RelativeFile('docs/guide.md') },
+        };
+        const result = await getChangedActors({
+            filepathsChanged: ['docs/guide.md'],
+            actorConfigs: [configuredActor],
+            commits,
+            isLatest: true,
         });
         expect(result).toEqual([]);
     });
@@ -433,6 +471,7 @@ describe('getChangedActors', () => {
 
 describe('getChangedActors logging', () => {
     beforeEach(() => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(false);
         vi.spyOn(logger, 'info').mockImplementation(() => undefined);
     });
 

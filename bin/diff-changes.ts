@@ -1,3 +1,4 @@
+import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
 import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
 import { logger } from './logger.js';
 import type { ActorConfig, Commit } from './types.js';
@@ -21,7 +22,7 @@ const IGNORED_TOP_LEVEL_FILES = [
 ];
 
 const isIgnoredTopLevelFile = (filePath: RelativeFile, contextPath: RelativeDir): boolean => {
-    const pathWithinContext = contextPath.relativePathTo(filePath.path);
+    const pathWithinContext = contextPath.relativePathTo(filePath.path).toLowerCase();
     return IGNORED_TOP_LEVEL_FILES.some((pattern) => pathWithinContext.startsWith(pattern));
 };
 
@@ -34,21 +35,21 @@ type FileChangeForActor =
 /**
  * Classify a single file change for a single actor.
  *
- * Configured changelog and readme paths are cosmetic even outside the actor's context.
- * Other files must be inside a context path. Ignore known development files at the top
- * of that context, then treat files in the actor's `.actor/` directory as functional.
- * A remaining README.md is cosmetic inside the actor folder and ignored elsewhere.
- * For other files, apply the Docker context's `.dockerignore`; anything left is functional.
+ * A changelog is cosmetic for every actor. Other files must be inside a context path.
+ * Ignore known development files at the top of that context and files matched by
+ * `.dockerignore`, except for files in the actor's `.actor/` directory. A README is
+ * cosmetic inside the actor folder and ignored elsewhere. JSON files in `.actor/`
+ * are cosmetic only when their schema changes are semantically cosmetic.
  */
 const classifyFileChange = async (
     changedFile: RelativeFile,
     actorConfig: ActorConfig,
+    commits: Commit[],
     dockerIgnoreMatcher: DockerIgnoreMatcher,
 ): Promise<FileChangeForActor> => {
-    // Actor metadata can reference documentation outside the configured context.
-    const isChangelog = actorConfig.actorJson.changelog?.isEqualTo(changedFile);
-    const isReadme = actorConfig.actorJson.readme?.isEqualTo(changedFile);
-    if (isChangelog || isReadme) {
+    const lowercaseFilePath = changedFile.path.toLowerCase();
+
+    if (lowercaseFilePath.endsWith('changelog.md')) {
         return { impact: 'cosmetic', semanticallyVerified: false };
     }
 
@@ -63,20 +64,19 @@ const classifyFileChange = async (
 
     const isUnderActorDotDir = actorConfig.actorJson.file.parent.contains(changedFile);
 
-    // Other actor metadata can affect behavior, even when excluded from the Docker context.
-    if (isUnderActorDotDir) {
-        return { impact: 'functional' };
+    if (!isUnderActorDotDir && dockerIgnoreMatcher(changedFile.path)) {
+        return { impact: 'ignored' };
     }
 
     const isInActorFolder = changedFile.isWithin(actorConfig.folder);
 
-    if (changedFile.path.endsWith('README.md')) {
+    if (lowercaseFilePath.endsWith('readme.md')) {
         return isInActorFolder ? { impact: 'cosmetic', semanticallyVerified: false } : { impact: 'ignored' };
     }
 
-    // Match remaining files against patterns relative to the Docker context directory.
-    if (dockerIgnoreMatcher(changedFile.path)) {
-        return { impact: 'ignored' };
+    if (lowercaseFilePath.endsWith('.json') && isUnderActorDotDir) {
+        const isCosmetic = await isCosmeticOnlyJsonSchemaChange(commits, changedFile.path);
+        if (isCosmetic) return { impact: 'cosmetic', semanticallyVerified: true };
     }
 
     return { impact: 'functional' };
@@ -86,10 +86,10 @@ const classifyFileChange = async (
  * Exclude files inside another actor's non-root folder, including for an actor at the repo root.
  */
 const isExcludedBySibling = (filePath: RelativeFile, actor: ActorConfig, allActors: ActorConfig[]): boolean => {
-    return allActors.some(
-        (other) =>
-            !other.folder.isEqualTo(actor.folder) && other.folder.path !== '.' && filePath.isWithin(other.folder),
-    );
+    const isSibling = (other: ActorConfig) => !other.folder.isEqualTo(actor.folder);
+    const isNonRoot = (other: ActorConfig) => !other.folder.isRoot();
+    const nonRootSiblings = allActors.filter(isSibling).filter(isNonRoot);
+    return nonRootSiblings.some((other) => filePath.isWithin(other.folder));
 };
 
 type ActorChangeEntry = {
@@ -151,6 +151,7 @@ export const getChangedActors = async ({
     filepathsChanged,
     actorConfigs,
     isLatest = false,
+    commits,
 }: ShouldBuildAndTestOptions): Promise<ActorConfig[]> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
 
@@ -164,7 +165,7 @@ export const getChangedActors = async ({
                 continue;
             }
 
-            const change = await classifyFileChange(filePath, actorConfig, dockerIgnoreMatcher);
+            const change = await classifyFileChange(filePath, actorConfig, commits, dockerIgnoreMatcher);
 
             if (change.impact === 'ignored' || change.impact === 'outside-context') continue;
             if (change.impact === 'cosmetic' && !isLatest) continue;

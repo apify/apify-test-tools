@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 
 - **relative-path:** Path safety and manipulation lib ([#154](https://github.com/apify/apify-test-tools/pull/154)) ([c151a1c](https://github.com/apify/apify-test-tools/commit/c151a1c2755fef98b335d48a3461f5042b90def9)) by [@JuanGalilea](https://github.com/JuanGalilea)
 - **logger:** Add logger and ban console statements ([#170](https://github.com/apify/apify-test-tools/pull/170)) ([b295d36](https://github.com/apify/apify-test-tools/commit/b295d363276c92fc6c30dd34d7a90acef5d380bf)) by [@JuanGalilea](https://github.com/JuanGalilea), closes [#156](https://github.com/apify/apify-test-tools/issues/156)
+- Give claude investigator a skill to test flakiness ([#184](https://github.com/apify/apify-test-tools/pull/184)) ([b490298](https://github.com/apify/apify-test-tools/commit/b4902987dc2ae55882463ff8223e1e9f25b8b497)) by [@foxt451](https://github.com/foxt451), closes [#162](https://github.com/apify/apify-test-tools/issues/162)
 
 ### 🐛 Bug Fixes
 

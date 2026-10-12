@@ -581,6 +581,15 @@ describe('standby tests', () => {
 
 The package includes a CLI binary used by CI workflows to build Actors, detect changes, and report test results. You can also run it locally.
 
+### Dry runs (`--dry-run`)
+
+Every command that changes something (`build`, `build-from-local`, `release`, `delete-old-builds`, `report-tests`) takes `--dry-run`. A dry run:
+
+- **Changes nothing.** No versions or builds are created, nothing is uploaded or deleted, and no Slack message is posted.
+- **Does every read and check the real run does**, so it fails wherever the real run would: change detection, the Apify token and Actor lookup, the [repository check](#repository-check), collecting and zipping local sources, and the Slack token (verified with Slack's read-only `auth.test`).
+- **Needs the same tokens as the real run.** Read-only tokens are enough, since nothing is written. A dry run can't tell whether a token is also allowed to write, because the Apify API has no dry-run mode of its own.
+- **Prints a plan, not results.** Logs start with `[DRY RUN] Would …`. `build` and `build-from-local` write `{ "dryRun": true, "builds": [...] }` to stdout instead of the build array, so the plan can't be passed to tests as `ACTOR_BUILDS` by mistake.
+
 ### Running locally
 
 Running the testing library locally is useful when you only want to update the testing code in /test because you can iterate on it without pushing new code to the remote.
@@ -611,7 +620,7 @@ APIFY_TOKEN_JOHN_DOE=<token> \
     --dry-run
 ```
 
-Remove `--dry-run` to actually trigger builds and update the branch names/ The command outputs a JSON array of build objects to stdout:
+With `--dry-run`, it prints the plan (the version and Git URL each Actor would be built from). Remove `--dry-run` to actually trigger builds and update the branch names. The command outputs a JSON array of build objects to stdout:
 
 ```json
 [{ "buildId": "...", "actorRawId": "...", "buildNumber": "...", "actorFullName": "john.doe/my-actor" }]
@@ -626,7 +635,7 @@ APIFY_TOKEN_JOHN_DOE=<token> \
   npx apify-test-tools build-from-local --actors john.doe/my-actor
 ```
 
-Pass a hardcoded actor name via `--actors` to build only that Actor (comma-separate multiple names). Omit `--actors` to build all Actors in the repo, or add `--dry-run` to preview without building. It outputs the same JSON build array as `build`, so you run tests against it the same way as in step 5 below:
+Pass a hardcoded actor name via `--actors` to build only that Actor (comma-separate multiple names). Omit `--actors` to build all Actors in the repo, or add `--dry-run` to check the token, the Actor and the zipped sources without uploading or building. It outputs the same JSON build array as `build`, so you run tests against it the same way as in step 5 below:
 
 ```bash
 # Build from local source and capture output

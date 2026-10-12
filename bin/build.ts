@@ -3,7 +3,7 @@ import { ActorSourceType, ApifyClient } from 'apify-client';
 
 import { normalizeRepoUrl } from './git.js';
 import { logger } from './logger.js';
-import type { ActorConfig, BuildData } from './types.js';
+import type { ActorConfig, BuildData, DryRunPlan } from './types.js';
 
 type BuildPrActorOptions = {
     buildTag?: string;
@@ -179,7 +179,7 @@ export class ApifyBuilder {
      * Deletes build of all versions. Apify API doesn't allow to delete default build and we explicitly skip it
      * We delete devel builds faster because we used the for every PR until recently so just to get rid of them faster
      */
-    async deleteOldBuilds(): Promise<void> {
+    async deleteOldBuilds({ dryRun }: { dryRun: boolean }): Promise<void> {
         // Even though we don't version our current Actors, if we ever such Actors to GitHub CI, we would accidentally delete old supported versions
         // This hardcoded solution is not ideal, but it should prevent most imaginable cases
         // All currently popular versioned Actors use `version-${number}` format
@@ -258,9 +258,15 @@ export class ApifyBuilder {
         });
 
         logger.info(
-            `[DELETE OLD BUILDS][${this.actorFullName}]: Deleting ${buildsToDelete.length} old builds that are non-default and ` +
-                `older than 30 days from total ${items.length}`,
+            `[DELETE OLD BUILDS][${this.actorFullName}]: ${dryRun ? '[DRY RUN] Would delete' : 'Deleting'} ${buildsToDelete.length} ` +
+                `old builds that are non-default and older than 30 days from total ${items.length}`,
         );
+        if (dryRun) {
+            for (const build of buildsToDelete) {
+                logger.info(`  ${build.buildNumber} (${build.id}, started ${build.startedAt.toISOString()})`);
+            }
+            return;
+        }
         for (const build of buildsToDelete) {
             await this.apifyClient.build(build.id).delete();
         }
@@ -310,13 +316,13 @@ export const runAndSummarizeBuilds = async (
     return waitAndSummarizeBuilds(startedBuilds, buildersByActorFullName, label);
 };
 
-// Placeholder BuildData for dry runs, since no real build was triggered.
-export const dryRunBuildData = (actorFullName: string, versionNumber: string): BuildData => ({
-    buildId: 'dry-run',
-    actorRawId: 'dry-run',
-    buildNumber: versionNumber,
-    actorFullName,
-});
+type GitBuildPlan = {
+    actorFullName: string;
+    versionNumber: string;
+    buildTag?: string;
+    gitRepoUrl: string;
+    useDockerCache: boolean;
+};
 
 type RunBuildsOptions = {
     actorConfigs: ActorConfig[];
@@ -337,7 +343,7 @@ export const runBuilds = async ({
     isLatest = false,
     dryRun,
     useDockerCache,
-}: RunBuildsOptions): Promise<BuildData[]> => {
+}: RunBuildsOptions): Promise<BuildData[] | DryRunPlan<GitBuildPlan>> => {
     // Fetched once per Actor and reused for the checks, the version numbers and the build itself
     const buildConfigs: BuildPrActorOptions[] = await Promise.all(
         actorConfigs.map(async (actorConfig) => {
@@ -366,14 +372,24 @@ export const runBuilds = async ({
         }),
     );
 
+    // Everything above only reads, so a dry run has checked what the real run would, short of writing
     if (dryRun) {
         logger.info('[DRY RUN] Would build:');
-        for (const { actorConfig, versionNumber } of buildConfigs) {
-            logger.info(`  ${actorConfig.actorFullName} (${versionNumber})`);
+        for (const { actorConfig, versionNumber, gitRepoUrl } of buildConfigs) {
+            logger.info(`  ${actorConfig.actorFullName} (${versionNumber}) from ${gitRepoUrl}`);
         }
-        return buildConfigs.map(({ actorConfig, versionNumber }) =>
-            dryRunBuildData(actorConfig.actorFullName, versionNumber),
-        );
+        return {
+            dryRun: true,
+            builds: buildConfigs.map(
+                ({ actorConfig, versionNumber, buildTag, gitRepoUrl, useDockerCache: useCache }) => ({
+                    actorFullName: actorConfig.actorFullName,
+                    versionNumber,
+                    buildTag,
+                    gitRepoUrl,
+                    useDockerCache: useCache,
+                }),
+            ),
+        };
     }
 
     const buildConfigsByActorFullName = new Map(
@@ -398,8 +414,8 @@ export const runBuilds = async ({
     });
 };
 
-export const deleteOldBuilds = async (actorConfigs: ActorConfig[]) => {
+export const deleteOldBuilds = async (actorConfigs: ActorConfig[], { dryRun }: { dryRun: boolean }) => {
     for (const actorConfig of actorConfigs) {
-        await ApifyBuilder.fromActorConfig(actorConfig).deleteOldBuilds();
+        await ApifyBuilder.fromActorConfig(actorConfig).deleteOldBuilds({ dryRun });
     }
 };

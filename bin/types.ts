@@ -20,6 +20,15 @@ export interface BuildData {
     buildNumber: string;
 }
 
+/**
+ * What a dry run writes to stdout instead of the command's real result. It's an object, not an array, so
+ * it can't be mistaken for real builds: `ACTOR_BUILDS` rejects it before any test runs.
+ */
+export interface DryRunPlan<T> {
+    dryRun: true;
+    builds: T[];
+}
+
 export interface ActorConfig {
     actorFullName: string;
     folder: string;

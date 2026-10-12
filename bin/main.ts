@@ -6,17 +6,14 @@ import yargs, { type Options } from 'yargs';
 // eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
+import { getAffectedActors, toAffectedActorsDocument } from './affected-actors.js';
 import { deleteOldBuilds, runBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
-import { getChangedActors } from './diff-changes.js';
 import {
-    getBranchOnlyChangedFiles,
     getChangedFiles,
     getCommits,
     getCurrentBranch,
-    getReleaseChanges,
     getRepoName,
-    hasMergeFromTarget,
     resolveReleaseBaseCommit,
     resolveRepoUrl,
 } from './git.js';
@@ -24,7 +21,6 @@ import { logger, logLevels } from './logger.js';
 import { writeJson } from './output.js';
 import { notifyToSlack } from './slack.js';
 import { reportTestResults } from './test-report.js';
-import type { Config } from './types.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
 /**
@@ -64,6 +60,24 @@ const actorSelectionOptions = {
     ignore: { type: 'string', array: true, default: [] as string[] },
 } as const satisfies Record<string, Options>;
 
+/**
+ * Commit range for get-affected-actors. `base` and `since` combine: `base` alone is a branch's own commits
+ * (a PR), `since` alone is everything after a commit (a release), both is a branch after its last validated commit.
+ */
+const affectedRangeOptions = {
+    head: { type: 'string', default: 'HEAD', describe: 'End of the range' },
+    base: { type: 'string', describe: 'Only count commits on head that are not on this branch' },
+    since: {
+        type: 'string',
+        describe: 'Only count commits after this one. Ignored with --base if it is not on the branch',
+    },
+    'include-cosmetic': {
+        type: 'boolean',
+        default: false,
+        describe: 'Also report Actors with only cosmetic changes (README, CHANGELOG, cosmetic .actor JSON)',
+    },
+} as const satisfies Record<string, Options>;
+
 /** Flags for commands that trigger Apify builds. */
 const buildOptions = {
     'use-docker-cache': { type: 'boolean', default: false },
@@ -79,41 +93,6 @@ const globalOptions = {
     },
     'dry-run': { type: 'boolean', default: false },
 } as const satisfies Record<string, Options>;
-
-const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: boolean }) => {
-    const actorConfigs = await readConfigFile(config);
-
-    // This is an optimization for the common case where a branch only has cosmetic changes but had to smerge in
-    // functional changes from master (being up-to-date is a CI requirement). Master is already validated, and
-    // since the branch has no functional changes of its own, there is nothing new to validate.
-    // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
-    // individually validated changes can have novel interactions when combined.
-    if (await hasMergeFromTarget(config.sourceBranch, config.targetBranch)) {
-        logger.info(
-            '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
-        );
-        const branchOnlyFiles = await getBranchOnlyChangedFiles(config.sourceBranch, config.targetBranch);
-        // Omit baseCommit to get full branch history. Validated functional commits can still interact with merged ones
-        const allBranchCommits = await getCommits({ ...config, baseCommit: undefined });
-        const branchOnlyActorsChanged = await getChangedActors({
-            filepathsChanged: branchOnlyFiles,
-            actorConfigs,
-            commits: allBranchCommits,
-        });
-        if (branchOnlyActorsChanged.length === 0) {
-            logger.info('[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests');
-            return [];
-        }
-        logger.info(
-            `[MERGE-FROM-TARGET-OPTIMIZATION]: Branch has ${branchOnlyActorsChanged.length} functional changes, cannot optimize, we continue with full check`,
-        );
-    }
-
-    // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply baseCommit and check merge commits (they might be functional or just cosmetic)
-    const commits = await getCommits(config);
-    const changedFiles = await getChangedFiles(commits);
-    return getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest, commits });
-};
 
 await yargs()
     .scriptName('public-actors-utils')
@@ -160,11 +139,10 @@ await yargs()
     )
     .command(
         'get-affected-actors',
-        '',
-        (y) => y.options(gitRangeOptions).options(actorSelectionOptions),
-        async (config) => {
-            const actorsChanged = await resolveChangedActors(config, { isLatest: false });
-            writeJson(actorsChanged);
+        'Find the Actors whose context changed in a commit range',
+        (y) => y.options(affectedRangeOptions).options(actorSelectionOptions),
+        async (args) => {
+            writeJson(toAffectedActorsDocument(await getAffectedActors(args)));
         },
     )
     .command(
@@ -185,7 +163,14 @@ await yargs()
         '',
         (y) => y.options(gitRangeOptions).options(actorSelectionOptions).options(buildOptions).options(repoUrlOptions),
         async (config) => {
-            const actorsChanged = await resolveChangedActors(config, { isLatest: false });
+            const { actorConfigs: actorsChanged } = await getAffectedActors({
+                head: config.sourceBranch,
+                base: config.targetBranch,
+                since: config.baseCommit,
+                includeCosmetic: false,
+                actors: config.actors,
+                ignore: config.ignore,
+            });
             const builds = await runBuilds({
                 ...(await resolveRepoUrl(config.repoUrl)),
                 actorConfigs: actorsChanged,
@@ -210,24 +195,28 @@ await yargs()
                 .option('report-slack-channel', { type: 'string' })
                 .option('release-slack-channel', { type: 'string' }),
         async (args) => {
+            // Validated here too so the errors name --base-commit, the flag this command takes
             const baseSha = await resolveReleaseBaseCommit(args.baseCommit);
             const branch = await getCurrentBranch();
-            const changes = await getReleaseChanges(baseSha);
-            if (!changes) {
+            const {
+                commits,
+                changedFiles,
+                changelog,
+                actorConfigs: actorsChanged,
+            } = await getAffectedActors({
+                head: 'HEAD',
+                since: baseSha,
+                includeCosmetic: true,
+                actors: args.actors,
+                ignore: args.ignore,
+            });
+            if (commits.length === 0) {
                 logger.info(`HEAD is the base commit ${baseSha}, there is nothing new to release`);
                 return;
             }
-            const { commits, changedFiles, changelog } = changes;
             const { repoUrl, shouldVerifyRepoUrl } = await resolveRepoUrl(args.repoUrl);
 
             const isLatest = true;
-            const actorConfigs = await readConfigFile(args);
-            const actorsChanged = await getChangedActors({
-                filepathsChanged: changedFiles,
-                actorConfigs,
-                isLatest,
-                commits,
-            });
             const { dryRun, reportSlackChannel, releaseSlackChannel } = args;
             const builds = await runBuilds({
                 isLatest,

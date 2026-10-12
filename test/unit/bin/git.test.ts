@@ -11,6 +11,8 @@ import {
     hasMergeFromTarget,
     normalizeRepoUrl,
     parseBaseCommit,
+    resolveBranchName,
+    resolveCommitSha,
     resolveReleaseBaseCommit,
     resolveRepoUrl,
 } from '../../../bin/git.js';
@@ -474,6 +476,23 @@ describe('resolveReleaseBaseCommit', () => {
     it('should throw on an invalid SHA', async () => {
         await expect(resolveReleaseBaseCommit('not-a-sha')).rejects.toThrow('Invalid base commit SHA');
     });
+
+    it('checks ancestry against a custom head and names the option that was passed', async () => {
+        const gitCommandSpy = vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
+            if (args[0] === 'rev-parse') return baseSha;
+            if (args[0] === 'merge-base') return 'c'.repeat(40);
+            return '';
+        });
+        await expect(
+            resolveReleaseBaseCommit(baseSha, { head: 'origin/release', optionName: '--since' }),
+        ).rejects.toThrow(
+            'is not an ancestor of origin/release, most likely because the branch was force-pushed. ' +
+                'The changed files cannot be determined reliably. Rerun with --since set to an ancestor of origin/release',
+        );
+        expect(gitCommandSpy).toHaveBeenCalledWith(['merge-base', baseSha, 'origin/release'], {
+            operation: 'check whether the release base commit is an ancestor of origin/release',
+        });
+    });
 });
 
 describe('getReleaseChanges', () => {
@@ -522,6 +541,24 @@ describe('getReleaseChanges', () => {
         });
     });
 
+    it('should diff up to a custom head', async () => {
+        await getReleaseChanges(baseSha, 'origin/release');
+
+        expect(gitRunSpy).toHaveBeenCalledWith(['rev-parse', 'origin/release'], {
+            operation: 'identify the current release commit',
+        });
+        expect(gitRunSpy).toHaveBeenCalledWith(['diff', '--name-only', baseSha, 'origin/release'], {
+            operation: 'list files changed since the last release',
+        });
+        expect(gitRunSpy).toHaveBeenCalledWith(
+            ['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', `${baseSha}..origin/release`],
+            { operation: 'list commits reachable from the source ref but absent from the target ref' },
+        );
+        expect(gitRunSpy).toHaveBeenCalledWith(['diff', baseSha, 'origin/release', '--', 'CHANGELOG.md'], {
+            operation: 'read changelog changes since the last release',
+        });
+    });
+
     it('should return null when HEAD is the base commit', async () => {
         await expect(getReleaseChanges(headSha)).resolves.toBeNull();
         expect(gitRunSpy).toHaveBeenCalledOnce();
@@ -540,5 +577,29 @@ describe('getReleaseChanges', () => {
 
         await expect(getReleaseChanges(baseSha)).resolves.toMatchObject({ changelog: null });
         expect(gitRunSpy).not.toHaveBeenCalledWith(['diff', baseSha, 'HEAD', '--', 'CHANGELOG.md']);
+    });
+});
+
+describe('resolveCommitSha', () => {
+    it('resolves a ref to the commit it points to', async () => {
+        const sha = 'a'.repeat(40);
+        const spy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(sha);
+        await expect(resolveCommitSha('origin/feature')).resolves.toBe(sha);
+        expect(spy).toHaveBeenCalledWith(['rev-parse', '--verify', 'origin/feature^{commit}'], {
+            operation: 'resolve origin/feature to a commit',
+        });
+    });
+});
+
+describe('resolveBranchName', () => {
+    it.each([
+        ['a local branch', 'refs/heads/feature/foo', 'feature/foo'],
+        ['a remote branch, dropping the remote', 'refs/remotes/origin/feature/foo', 'feature/foo'],
+        ['a tag', 'refs/tags/v1.0.0', null],
+        ['a detached HEAD', 'HEAD', null],
+        ['a SHA', '', null],
+    ])('handles %s', async (_, fullName, expected) => {
+        vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(fullName);
+        await expect(resolveBranchName('some-ref')).resolves.toBe(expected);
     });
 });

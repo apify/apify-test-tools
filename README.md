@@ -662,6 +662,55 @@ TESTER_APIFY_TOKEN=apify_api_yyy \
   npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
 ```
 
+### Finding affected Actors (`get-affected-actors`)
+
+`get-affected-actors` lists the Actors whose context changed in a commit range, using the rules in
+[Change detection](#change-detection). It only reads git and the config file, so it needs no tokens.
+
+```bash
+# A PR: the branch's own commits, after its last validated commit
+npx apify-test-tools get-affected-actors --head origin/my-branch --base origin/master --since <sha>
+
+# A release: everything after the last released commit, cosmetic changes included
+npx apify-test-tools get-affected-actors --since <sha> --include-cosmetic
+```
+
+| Flag                 | Default | Meaning                                                                                   |
+| -------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `--head`             | `HEAD`  | End of the range                                                                          |
+| `--base`             |         | Only commits on `--head` that are not on this branch count                                |
+| `--since`            |         | Only commits after this one count (see below)                                             |
+| `--include-cosmetic` | `false` | Also report Actors with only cosmetic changes (README, CHANGELOG, cosmetic `.actor` JSON) |
+| `--actors`           | all     | Only report these Actors                                                                  |
+| `--ignore`           | none    | Never report these Actors                                                                 |
+
+Pass `--base`, `--since`, or both:
+
+- **`--base` only** inspects the whole branch. If the branch merged `--base` in and has no functional changes
+  of its own, nothing is reported, since `--base` is already validated.
+- **`--base` and `--since`** inspects the branch after its last validated commit. If `--since` is not on the
+  branch (force-push), or it is the head (a rerun), the whole branch is inspected instead.
+- **`--since` only** inspects everything after it up to `--head`. It must be an ancestor of `--head` and fails
+  otherwise, exactly like [`--base-commit` of `release`](#--base-commit). If `--head` is `--since`, nothing is
+  reported.
+
+The output is a JSON document:
+
+```json
+{
+    "version": 1,
+    "ref": "my-branch",
+    "head": "<sha of --head>",
+    "commits": [{ "sha": "…", "author": "…", "date": "…", "message": "…" }],
+    "changedFiles": ["src/main.ts", "CHANGELOG.md"],
+    "changelog": "Lines added to CHANGELOG.md, or null",
+    "actors": [{ "actorFullName": "john.doe/my-actor" }]
+}
+```
+
+`ref` is the branch `--head` points to without the remote (`origin/my-branch` gives `my-branch`), or `null`
+for a SHA or a detached HEAD. `build` and `release` use the same detection internally.
+
 ### Releasing Actors (`release`)
 
 `release` builds the `latest` (default) version of every Actor changed since the last release and

@@ -78,9 +78,11 @@ jobs:
               run: |
                   changed=$(git diff --name-only --diff-filter=d "origin/$BASE_REF...HEAD" -- test/platform/ \
                     | sed "s|^|./|" | tr '\n' ' ')
-                  branch_actors=$(npx apify-test-tools get-affected-actors \
-                    --source-branch "origin/$HEAD_REF" \
-                    --target-branch "origin/$BASE_REF")
+                  # Captured before jq, not piped: without pipefail a failing command would reach jq as empty input
+                  affected=$(npx apify-test-tools get-affected-actors \
+                    --head "origin/$HEAD_REF" \
+                    --base "origin/$BASE_REF")
+                  branch_actors=$(jq -c '.actors' <<< "$affected")
                   if [ -n "$changed" ] && [ "$branch_actors" = "[]" ]; then
                     echo "target=$changed" | tee -a "$GITHUB_OUTPUT"
                   elif [ -n "$changed" ]; then

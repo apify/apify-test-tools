@@ -35,7 +35,7 @@ export const collectSourceFiles = async (actorName: string, actorDir: string): P
     const isMonorepoActor = !!contextAbsDir && isOutsideDir(contextAbsDir, absActorDir);
 
     const dockerContextDirAbs = isMonorepoActor ? contextAbsDir! : absActorDir;
-    const keptFilePaths = collectNonIgnoredFiles(dockerContextDirAbs, repoRoot);
+    const keptFilePaths = await collectNonIgnoredFiles(dockerContextDirAbs, repoRoot);
 
     if (!isMonorepoActor) {
         return Promise.all(keptFilePaths.map(async (filePath) => readSourceFile(filePath, dockerContextDirAbs)));
@@ -65,9 +65,9 @@ export const collectSourceFiles = async (actorName: string, actorDir: string): P
 // regardless of .gitignore/.dockerignore, matching Apify CLI's own behavior. Files matching the
 // hardcoded secret-pattern backstop (keys, certs, .env variants) are dropped unconditionally,
 // .actor/ included, since those should never ship regardless of what the ignore files say.
-export const collectNonIgnoredFiles = (dockerContextDir: string, repoRoot: string): string[] => {
-    const relativePaths = listRepoFilePaths(repoRoot, dockerContextDir);
-    const ignoredPaths = getGitignoredPaths(relativePaths);
+export const collectNonIgnoredFiles = async (dockerContextDir: string, repoRoot: string): Promise<string[]> => {
+    const relativePaths = await listRepoFilePaths(repoRoot, dockerContextDir);
+    const ignoredPaths = await getGitignoredPaths(relativePaths, repoRoot);
     const rootRelativePaths = new Map(
         relativePaths.map((relPath) => [
             relPath,

@@ -1,6 +1,6 @@
 import { logger } from './logger.js';
 import type { Commit } from './types.js';
-import { spawnCommand } from './utils.js';
+import { runGitCommand } from './utils.js';
 
 const COSMETIC_JSON_FIELD_NAMES = new Set([
     'title',
@@ -29,21 +29,22 @@ const isCosmeticObjectChange = (oldVal: unknown, newVal: unknown, currentKey?: s
  * Returns true if the two JSON strings differ only in cosmetic fields
  * (title, description, example, enumTitles, sectionCaption, sectionDescription).
  */
-export const isCosmeticOnlyJsonSchemaChange = (commits: Commit[], changedFilepath: string): boolean => {
+export const isCosmeticOnlyJsonSchemaChange = async (commits: Commit[], changedFilepath: string): Promise<boolean> => {
     // TODO: validate this is the right commit range
     const oldRef = `${commits[0].sha}~`;
     const newRef = commits[commits.length - 1].sha;
-    let oldJson: unknown;
-    let newJson: unknown;
-    try {
-        const oldContent = spawnCommand(`git show ${oldRef}:${changedFilepath}`);
-        const newContent = spawnCommand(`git show ${newRef}:${changedFilepath}`);
 
-        oldJson = JSON.parse(oldContent);
-        newJson = JSON.parse(newContent);
-    } catch {
+    const [oldJson, newJson] = await Promise.all([
+        runGitCommand(['show', `${oldRef}:${changedFilepath}`])
+            .then(JSON.parse)
+            .catch(() => undefined),
+        runGitCommand(['show', `${newRef}:${changedFilepath}`])
+            .then(JSON.parse)
+            .catch(() => undefined),
+    ]);
+    if (!oldJson || !newJson) {
         logger.info(
-            `Failed to get or parse JSON content for ${changedFilepath} at refs ${oldRef} and ${newRef}, maybe it is new file or deleted? Treating it as a non-cosmetic change.`,
+            `Failed to get JSON content for ${changedFilepath} at refs ${oldRef} and ${newRef}, maybe it is new file or deleted? Treating it as a non-cosmetic change.`,
         );
         return false;
     }

@@ -1,6 +1,6 @@
 import { logger } from './logger.js';
 import type { Commit, Config } from './types.js';
-import { spawnCommand } from './utils.js';
+import { GitCommandError, runGitCommand } from './utils.js';
 
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
@@ -8,15 +8,16 @@ const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR
 /**
  * Gets the list of changed files between the given commits (inclusive).
  */
-export const getChangedFiles = (commits: Commit[]) => {
+export const getChangedFiles = async (commits: Commit[]) => {
     // getCommits never returns an empty list (the rerun check returns all commits when the base commit
     // is the branch HEAD, and an empty git range throws when parsing), so this signals a programmer error
     if (commits.length === 0) {
         throw new Error('Cannot get changed files: the commit list is empty. This should never happen.');
     }
 
-    const changedFilesString = spawnCommand(
-        `git diff --name-only ${commits[0].sha}~..${commits[commits.length - 1].sha}`,
+    const changedFilesString = await runGitCommand(
+        ['diff', '--name-only', `${commits[0].sha}~..${commits[commits.length - 1].sha}`],
+        { operation: 'get the list of changed files between commits' },
     );
 
     const changedFiles = changedFilesString.split('\n').filter(Boolean);
@@ -29,17 +30,36 @@ export const getChangedFiles = (commits: Commit[]) => {
  * (i.e. a genuine "merge from target" commit, not a merge of some unrelated branch).
  * Uses the full targetBranch..sourceBranch range, ignoring baseCommit.
  */
-export const hasMergeFromTarget = (sourceBranch: string, targetBranch: string): boolean => {
-    const mergeShas = spawnCommand(`git log --merges --pretty=format:%H ${targetBranch}..${sourceBranch}`)
+export const hasMergeFromTarget = async (sourceBranch: string, targetBranch: string): Promise<boolean> => {
+    const mergeShas = (
+        await runGitCommand(['log', '--merges', '--pretty=format:%H', `${targetBranch}..${sourceBranch}`], {
+            operation: 'find merge commits on the source branch that are absent from the target branch',
+        })
+    )
         .split('\n')
         .filter(Boolean);
 
     for (const sha of mergeShas) {
-        const parents = spawnCommand(`git log -1 --pretty=format:%P ${sha}`).trim().split(' ');
+        const parents = (
+            await runGitCommand(['log', '-1', '--pretty=format:%P', sha], {
+                operation: 'get parents of a merge commit',
+            })
+        ).split(' ');
         for (const parent of parents) {
             // git merge-base A B outputs the common ancestor.
             // If that equals A, then A is an ancestor of B (i.e. parent is reachable from targetBranch).
-            const mergeBase = spawnCommand(`git merge-base ${parent} ${targetBranch}`);
+            let mergeBase: string;
+            try {
+                mergeBase = await runGitCommand(['merge-base', parent, targetBranch], {
+                    operation: 'check whether a merge parent is reachable from the target branch',
+                });
+            } catch (error) {
+                // Exit code 1 on merge-base means the histories have no common ancestor.
+                if (error instanceof GitCommandError && error.exitCode === 1) {
+                    continue;
+                }
+                throw error;
+            }
             if (mergeBase === parent) {
                 return true;
             }
@@ -52,8 +72,11 @@ export const hasMergeFromTarget = (sourceBranch: string, targetBranch: string): 
  * Returns all files touched by non-merge commits on the branch (full history, ignoring baseCommit).
  * Used to check whether the branch itself has any functional changes, independent of what master merged in.
  */
-export const getBranchOnlyChangedFiles = (sourceBranch: string, targetBranch: string): string[] => {
-    const output = spawnCommand(`git log --no-merges --name-only --pretty=format: ${targetBranch}..${sourceBranch}`);
+export const getBranchOnlyChangedFiles = async (sourceBranch: string, targetBranch: string): Promise<string[]> => {
+    const output = await runGitCommand(
+        ['log', '--no-merges', '--name-only', '--pretty=format:', `${targetBranch}..${sourceBranch}`],
+        { operation: 'list files changed by non-merge commits on the source branch' },
+    );
     return output.split('\n').filter(Boolean);
 };
 
@@ -80,10 +103,12 @@ export const parseBaseCommit = (shaOrCommit: string | undefined): string | undef
     return sha;
 };
 
-const fetchAllBranchCommits = (sourceBranch: string, targetBranch: string): Commit[] => {
-    const commitsStrings = spawnCommand(
-        `git log --pretty=format:'${GIT_LOG_FORMAT}' ${targetBranch}..${sourceBranch}`,
-    ).split('\n');
+const fetchAllBranchCommits = async (sourceBranch: string, targetBranch: string): Promise<Commit[]> => {
+    const output = await runGitCommand(
+        ['log', `--pretty=format:${GIT_LOG_FORMAT}`, `${targetBranch}..${sourceBranch}`],
+        { operation: 'list commits reachable from the source ref but absent from the target ref' },
+    );
+    const commitsStrings = output.split('\n');
     const commits = commitsStrings.map((commitString) => parseCommit(commitString));
     commits.reverse();
     return commits;
@@ -93,13 +118,13 @@ const fetchAllBranchCommits = (sourceBranch: string, targetBranch: string): Comm
  * Gets the commits between sourceBranch and targetBranch (exclusive).
  * - If baseCommit is provided, only returns commits after the baseCommit.
  */
-export const getCommits = ({
+export const getCommits = async ({
     sourceBranch,
     targetBranch,
     baseCommit,
-}: Pick<Config, 'sourceBranch' | 'targetBranch' | 'baseCommit'>): Commit[] => {
+}: Pick<Config, 'sourceBranch' | 'targetBranch' | 'baseCommit'>): Promise<Commit[]> => {
     const baseCommitSha = parseBaseCommit(baseCommit);
-    const commits = fetchAllBranchCommits(sourceBranch, targetBranch);
+    const commits = await fetchAllBranchCommits(sourceBranch, targetBranch);
 
     // The last validated (base) commit being the branch HEAD means nothing new was pushed since the last
     // validation — the dev reran the workflow (or force-pushed to the same state) to trigger a clean test
@@ -147,8 +172,10 @@ export const parseCommit = (commitString: string): Commit => {
  * Returns the currently checked-out branch. Release builds point the Actor version at this branch,
  * so a detached HEAD (no branch to point at) is an error rather than a guess.
  */
-export const getCurrentBranch = (): string => {
-    const branch = spawnCommand('git rev-parse --abbrev-ref HEAD');
+export const getCurrentBranch = async (): Promise<string> => {
+    const branch = await runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD'], {
+        operation: 'determine the current branch for release',
+    });
     if (branch === 'HEAD') {
         throw new Error(
             'Cannot determine the branch to release: HEAD is detached. Check out the branch you want to release.',
@@ -161,8 +188,11 @@ export const getCurrentBranch = (): string => {
  * Reads the repository URL from the `origin` remote, rewritten to the SSH form the Apify platform
  * uses for Git repo sources, e.g. git@github.com:apify-store/google-maps
  */
-const getOriginRepoUrl = (): string => {
-    return spawnCommand('git remote get-url origin').replace(/^https:\/\/github\.com\//, 'git@github.com:');
+const getOriginRepoUrl = async (): Promise<string> => {
+    const rawUrl = await runGitCommand(['remote', 'get-url', 'origin'], {
+        operation: 'read the origin repository URL',
+    });
+    return rawUrl.replace(/^https:\/\/github\.com\//, 'git@github.com:');
 };
 
 /**
@@ -170,8 +200,8 @@ const getOriginRepoUrl = (): string => {
  * each Actor's default version, so a fork or mirror remote can't repoint a published Actor. An explicit
  * --repo-url skips that check: passing it is how you move an Actor to another repository on purpose.
  */
-export const resolveRepoUrl = (explicitRepoUrl: string | undefined) => ({
-    repoUrl: explicitRepoUrl ?? getOriginRepoUrl(),
+export const resolveRepoUrl = async (explicitRepoUrl: string | undefined) => ({
+    repoUrl: explicitRepoUrl ?? (await getOriginRepoUrl()),
     shouldVerifyRepoUrl: explicitRepoUrl === undefined,
 });
 
@@ -206,7 +236,7 @@ const ZERO_SHA_REGEX = /^0{40}$/;
  * Unlike the PR path (getCommits), there is no lenient fallback. Falling back to "everything"
  * would rebuild the latest build of every Actor and post it to Slack, so every problem is an error.
  */
-export const resolveReleaseBaseCommit = (baseCommit: string): string => {
+export const resolveReleaseBaseCommit = async (baseCommit: string): Promise<string> => {
     const sha = parseBaseCommit(baseCommit);
     if (!sha) {
         throw new Error('--base-commit is required for release. See the README section "Releasing Actors".');
@@ -217,15 +247,27 @@ export const resolveReleaseBaseCommit = (baseCommit: string): string => {
                 `Rerun with --base-commit set to the last commit before the changes you want to release.`,
         );
     }
-    // --quiet makes rev-parse print nothing (instead of an error) when the commit is missing
-    if (!spawnCommand(`git rev-parse --verify --quiet "${sha}^{commit}"`)) {
+    // --quiet suppresses Git's error text for a missing commit, but Git still exits with code 1.
+    const verifiedSha = await runGitCommand(['rev-parse', '--verify', '--quiet', `${sha}^{commit}`], {
+        operation: 'verify the release base commit in local Git history',
+    }).catch((error: unknown) => {
+        if (error instanceof GitCommandError && error.exitCode === 1) return '';
+        throw error;
+    });
+    if (!verifiedSha) {
         throw new Error(
             `Base commit ${sha} is not in the local git history. Either the checkout is shallow ` +
                 `(fetch the full history, e.g. fetch-depth: 0 in actions/checkout) or the branch was force-pushed.`,
         );
     }
     // git merge-base A B outputs the common ancestor. If that equals A, then A is an ancestor of B.
-    if (spawnCommand(`git merge-base ${sha} HEAD`) !== sha) {
+    const mergeBase = await runGitCommand(['merge-base', verifiedSha, 'HEAD'], {
+        operation: 'check whether the release base commit is an ancestor of HEAD',
+    }).catch((error: unknown) => {
+        if (error instanceof GitCommandError && error.exitCode === 1) return '';
+        throw error;
+    });
+    if (mergeBase !== sha) {
         throw new Error(
             `Base commit ${sha} is not an ancestor of HEAD, most likely because the branch was force-pushed. ` +
                 `The changed files cannot be determined reliably. Rerun with --base-commit set to an ancestor of HEAD ` +
@@ -238,11 +280,13 @@ export const resolveReleaseBaseCommit = (baseCommit: string): string => {
 const CHANGELOG_PATH = 'CHANGELOG.md';
 
 /** Returns the lines added to the root CHANGELOG.md between baseSha and HEAD, or null if it didn't change. */
-const getChangelogAdditions = (baseSha: string, changedFiles: string[]): string | null => {
+const getChangelogAdditions = async (baseSha: string, changedFiles: string[]): Promise<string | null> => {
     if (!changedFiles.includes(CHANGELOG_PATH)) {
         return null;
     }
-    const diff = spawnCommand('git', ['diff', baseSha, 'HEAD', '--', CHANGELOG_PATH]);
+    const diff = await runGitCommand(['diff', baseSha, 'HEAD', '--', CHANGELOG_PATH], {
+        operation: 'read changelog changes since the last release',
+    });
 
     const added: string[] = [];
     let startedChangelog = false;
@@ -270,12 +314,16 @@ const getChangelogAdditions = (baseSha: string, changedFiles: string[]): string 
  * list: with a merge commit, the oldest commit of the merged branch can be older than baseSha, and
  * diffing from its parent would pull in already-released changes.
  */
-export const getReleaseChanges = (baseSha: string) => {
-    if (spawnCommand('git rev-parse HEAD') === baseSha) {
+export const getReleaseChanges = async (baseSha: string) => {
+    if (
+        (await runGitCommand(['rev-parse', 'HEAD'], { operation: 'identify the current release commit' })) === baseSha
+    ) {
         return null;
     }
-    const commits = fetchAllBranchCommits('HEAD', baseSha);
-    const changedFiles = spawnCommand(`git diff --name-only ${baseSha} HEAD`).split('\n').filter(Boolean);
-    const changelog = getChangelogAdditions(baseSha, changedFiles);
+    const commits = await fetchAllBranchCommits('HEAD', baseSha);
+    const changedFiles = await runGitCommand(['diff', '--name-only', baseSha, 'HEAD'], {
+        operation: 'list files changed since the last release',
+    }).then((output) => output.split('\n').filter(Boolean));
+    const changelog = await getChangelogAdditions(baseSha, changedFiles);
     return { commits, changedFiles, changelog };
 };

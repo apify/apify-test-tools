@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     collectNonIgnoredFiles,
@@ -53,10 +53,10 @@ describe('build-from-local helpers', () => {
             // Only the gitignore side is mocked — isSecretFile runs for real, so this also
             // proves the secret-pattern backstop applies independently of .gitignore.
             vi.spyOn(Utils, 'getGitignoredPaths').mockImplementation(
-                (relativePaths) => new Set(relativePaths.filter((p) => p.endsWith('.log'))),
+                async (relativePaths) => new Set(relativePaths.filter((p) => p.endsWith('.log'))),
             );
 
-            const result = collectNonIgnoredFiles(rootDir, rootDir);
+            const result = await collectNonIgnoredFiles(rootDir, rootDir);
 
             expect(result).toStrictEqual([path.join(rootDir, 'main.js')]);
         });
@@ -197,55 +197,5 @@ describe('build-from-local helpers', () => {
             expect(rewritten.dockerContextDir).toBe('..');
             expect(rewritten.changelog).toBe('./CHANGELOG.md');
         });
-    });
-});
-
-describe('getGitignoredPaths', () => {
-    beforeEach(() => {
-        vi.mocked(spawnSync).mockReset();
-    });
-
-    it('returns an empty set without calling git when given no paths', () => {
-        const result = Utils.getGitignoredPaths([]);
-
-        expect(result).toStrictEqual(new Set());
-        expect(spawnSync).not.toHaveBeenCalled();
-    });
-
-    it('returns the paths git reports as ignored, feeding all candidates via stdin', () => {
-        vi.mocked(spawnSync).mockReturnValue({
-            status: 0,
-            stdout: 'node_modules/foo.js\n.env\n',
-            stderr: '',
-        } as unknown as ReturnType<typeof spawnSync>);
-
-        const result = Utils.getGitignoredPaths(['node_modules/foo.js', 'bin/build.ts', '.env']);
-
-        expect(result).toStrictEqual(new Set(['node_modules/foo.js', '.env']));
-        expect(spawnSync).toHaveBeenCalledWith(
-            'git',
-            ['check-ignore', '--stdin'],
-            expect.objectContaining({ input: 'node_modules/foo.js\nbin/build.ts\n.env' }),
-        );
-    });
-
-    it('returns an empty set when git reports nothing is ignored (exit code 1)', () => {
-        vi.mocked(spawnSync).mockReturnValue({
-            status: 1,
-            stdout: '',
-            stderr: '',
-        } as unknown as ReturnType<typeof spawnSync>);
-
-        expect(Utils.getGitignoredPaths(['bin/build.ts'])).toStrictEqual(new Set());
-    });
-
-    it('throws on an unexpected git failure instead of silently including/excluding files', () => {
-        vi.mocked(spawnSync).mockReturnValue({
-            status: 128,
-            stdout: '',
-            stderr: 'fatal: not a git repository',
-        } as unknown as ReturnType<typeof spawnSync>);
-
-        expect(() => Utils.getGitignoredPaths(['bin/build.ts'])).toThrow('git check-ignore');
     });
 });

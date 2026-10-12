@@ -34,15 +34,15 @@ const commits = [{ sha: 'Commit1', author: '', date: '', message: '' }];
 describe('getChangedActors', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
-        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(false);
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(false);
     });
 
-    it('returns empty array when no files changed', () => {
-        expect(getChangedActors({ filepathsChanged: [], actorConfigs, commits })).toEqual([]);
+    it('returns empty array when no files changed', async () => {
+        expect(await getChangedActors({ filepathsChanged: [], actorConfigs, commits })).toEqual([]);
     });
 
-    it('returns empty array when only ignored top-level files changed', () => {
-        const result = getChangedActors({
+    it('returns empty array when only ignored top-level files changed', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['.gitignore', 'README.md', '.husky/pre-commit', '.vscode/settings.json'],
             actorConfigs,
             commits,
@@ -50,8 +50,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('returns the actor when a functional file in its folder changes', () => {
-        const result = getChangedActors({
+    it('returns the actor when a functional file in its folder changes', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/main.ts'],
             actorConfigs,
             commits,
@@ -59,8 +59,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('returns actor when isLatest and README in actor folder changed (cosmetic)', () => {
-        const result = getChangedActors({
+    it('returns actor when isLatest and README in actor folder changed (cosmetic)', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/README.md'],
             actorConfigs,
             commits,
@@ -69,8 +69,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('does not return actor when not isLatest and only README changed (cosmetic)', () => {
-        const result = getChangedActors({
+    it('does not return actor when not isLatest and only README changed (cosmetic)', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/README.md'],
             actorConfigs,
             commits,
@@ -79,9 +79,9 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('returns actor when isLatest and JSON file has only cosmetic changes', () => {
-        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
-        const result = getChangedActors({
+    it('returns actor when isLatest and JSON file has only cosmetic changes', async () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(true);
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
             commits,
@@ -90,9 +90,9 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('does not return actor when not isLatest and JSON file has only cosmetic changes', () => {
-        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
-        const result = getChangedActors({
+    it('does not return actor when not isLatest and JSON file has only cosmetic changes', async () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(true);
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
             commits,
@@ -101,9 +101,9 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('returns actor when JSON file has functional changes', () => {
-        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(false);
-        const result = getChangedActors({
+    it('returns actor when JSON file has functional changes', async () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(false);
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
             commits,
@@ -111,9 +111,9 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('JSON file in actor folder but outside .actor/ is functional, not checked for cosmetic', () => {
-        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
-        const result = getChangedActors({
+    it('JSON file in actor folder but outside .actor/ is functional, not checked for cosmetic', async () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(true);
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/package.json'],
             actorConfigs,
             commits,
@@ -123,9 +123,9 @@ describe('getChangedActors', () => {
         expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).not.toHaveBeenCalled();
     });
 
-    it('JSON file under .actor/ inside actor folder is checked for cosmetic changes', () => {
-        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
-        const result = getChangedActors({
+    it('JSON file under .actor/ inside actor folder is checked for cosmetic changes', async () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(true);
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/.actor/input_schema.json'],
             actorConfigs,
             commits,
@@ -134,8 +134,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('does not trigger narrow-context actor when shared file changes', () => {
-        const result = getChangedActors({
+    it('does not trigger narrow-context actor when shared file changes', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['shared/utils.ts'],
             actorConfigs,
             commits,
@@ -144,8 +144,8 @@ describe('getChangedActors', () => {
         expect(result).not.toContainEqual(standaloneActor);
     });
 
-    it('root-level changelog outside any actor folder is cosmetic for every actor when isLatest', () => {
-        const result = getChangedActors({
+    it('root-level changelog outside any actor folder is cosmetic for every actor when isLatest', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['CHANGELOG.md'],
             actorConfigs,
             commits,
@@ -155,8 +155,8 @@ describe('getChangedActors', () => {
         expect(result).toHaveLength(2);
     });
 
-    it('root-level changelog is not cosmetic-triggered when not isLatest', () => {
-        const result = getChangedActors({
+    it('root-level changelog is not cosmetic-triggered when not isLatest', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['CHANGELOG.md'],
             actorConfigs,
             commits,
@@ -165,8 +165,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('triggers narrow-context actor when its own folder changes', () => {
-        const result = getChangedActors({
+    it('triggers narrow-context actor when its own folder changes', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['standalone-actors/standalone/src/main.ts'],
             actorConfigs,
             commits,
@@ -174,8 +174,8 @@ describe('getChangedActors', () => {
         expect(result).toContainEqual(standaloneActor);
     });
 
-    it('deduplicates actors when multiple files in same actor folder change', () => {
-        const result = getChangedActors({
+    it('deduplicates actors when multiple files in same actor folder change', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/main.ts', 'actors/foo_bar/package.json'],
             actorConfigs,
             commits,
@@ -184,8 +184,8 @@ describe('getChangedActors', () => {
         expect(result).toContainEqual(miniActor);
     });
 
-    it('handles mixed changes: returns both broad and narrow-context actors', () => {
-        const result = getChangedActors({
+    it('handles mixed changes: returns both broad and narrow-context actors', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/main.ts', 'standalone-actors/standalone/Dockerfile'],
             actorConfigs,
             commits,
@@ -194,7 +194,7 @@ describe('getChangedActors', () => {
         expect(result).toContainEqual(standaloneActor);
     });
 
-    it('matches folder where folder name differs from actor name', () => {
+    it('matches folder where folder name differs from actor name', async () => {
         const ownerlessActor: ActorConfig = {
             actorFullName: 'myteam/shopify-scraper',
             folder: 'actors/shopify',
@@ -202,7 +202,7 @@ describe('getChangedActors', () => {
             dockerContextDir: '',
             contextPaths: [''],
         };
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['actors/shopify/src/main.ts'],
             actorConfigs: [ownerlessActor],
             commits,
@@ -210,7 +210,7 @@ describe('getChangedActors', () => {
         expect(result).toEqual([ownerlessActor]);
     });
 
-    it('in single-actor repo, .actor/ changes trigger builds', () => {
+    it('in single-actor repo, .actor/ changes trigger builds', async () => {
         const rootActor: ActorConfig = {
             actorFullName: 'myteam/my-actor',
             folder: '',
@@ -218,7 +218,7 @@ describe('getChangedActors', () => {
             dockerContextDir: '',
             contextPaths: [''],
         };
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['.actor/actor.json'],
             actorConfigs: [rootActor],
             commits,
@@ -226,8 +226,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([rootActor]);
     });
 
-    it('in multi-actor repo, .actor/ changes only trigger broad-context actors', () => {
-        const result = getChangedActors({
+    it('in multi-actor repo, .actor/ changes only trigger broad-context actors', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['.actor/actor.json'],
             actorConfigs,
             commits,
@@ -235,8 +235,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('file paths are matched case-insensitively', () => {
-        const result = getChangedActors({
+    it('file paths are matched case-insensitively', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['Actors/FOO_BAR/Main.ts'],
             actorConfigs,
             commits,
@@ -244,7 +244,7 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('triggers actor with contextPaths override when file matches an override path', () => {
+    it('triggers actor with contextPaths override when file matches an override path', async () => {
         const overrideActor: ActorConfig = {
             actorFullName: 'team/override-actor',
             folder: 'actors/override',
@@ -252,7 +252,7 @@ describe('getChangedActors', () => {
             dockerContextDir: 'actors/override',
             contextPaths: ['actors/override', 'packages'],
         };
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['packages/shared/utils.ts'],
             actorConfigs: [overrideActor],
             commits,
@@ -260,7 +260,7 @@ describe('getChangedActors', () => {
         expect(result).toEqual([overrideActor]);
     });
 
-    it('does not trigger actor with contextPaths override when file is outside all override paths', () => {
+    it('does not trigger actor with contextPaths override when file is outside all override paths', async () => {
         const overrideActor: ActorConfig = {
             actorFullName: 'team/override-actor',
             folder: 'actors/override',
@@ -268,7 +268,7 @@ describe('getChangedActors', () => {
             dockerContextDir: 'actors/override',
             contextPaths: ['actors/override', 'packages'],
         };
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['other-dir/file.ts'],
             actorConfigs: [overrideActor],
             commits,
@@ -276,7 +276,7 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('broad-context actor skips files in sibling actor folders', () => {
+    it('broad-context actor skips files in sibling actor folders', async () => {
         const actorA: ActorConfig = {
             actorFullName: 'team/actor-a',
             folder: 'actors/a',
@@ -291,7 +291,7 @@ describe('getChangedActors', () => {
             dockerContextDir: '',
             contextPaths: [''],
         };
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['actors/b/src/main.ts'],
             actorConfigs: [actorA, actorB],
             commits,
@@ -299,7 +299,7 @@ describe('getChangedActors', () => {
         expect(result).toEqual([actorB]);
     });
 
-    it('root actor (folder="") is excluded from sibling actor folder files', () => {
+    it('root actor (folder="") is excluded from sibling actor folder files', async () => {
         const rootActor: ActorConfig = {
             actorFullName: 'team/root',
             folder: '',
@@ -314,7 +314,7 @@ describe('getChangedActors', () => {
             dockerContextDir: 'actors/child',
             contextPaths: ['actors/child'],
         };
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['actors/child/src/main.ts'],
             actorConfigs: [rootActor, childActor],
             commits,
@@ -323,7 +323,7 @@ describe('getChangedActors', () => {
         expect(result).toContainEqual(childActor);
     });
 
-    it('root actor (folder="") sees files outside any actor folder', () => {
+    it('root actor (folder="") sees files outside any actor folder', async () => {
         const rootActor: ActorConfig = {
             actorFullName: 'team/root',
             folder: '',
@@ -338,7 +338,7 @@ describe('getChangedActors', () => {
             dockerContextDir: 'actors/child',
             contextPaths: ['actors/child'],
         };
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['lib/shared-utils.ts'],
             actorConfigs: [rootActor, childActor],
             commits,
@@ -347,11 +347,11 @@ describe('getChangedActors', () => {
         expect(result).not.toContainEqual(childActor);
     });
 
-    it('file matched by .dockerignore is treated as ignored', () => {
+    it('file matched by .dockerignore is treated as ignored', async () => {
         vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(
             (filePath) => filePath === 'actors/foo_bar/node_modules/foo.js',
         );
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/node_modules/foo.js'],
             actorConfigs: [miniActor],
             commits,
@@ -359,9 +359,9 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('file not matched by .dockerignore is classified normally', () => {
+    it('file not matched by .dockerignore is classified normally', async () => {
         vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue((filePath) => filePath.includes('node_modules'));
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/main.ts'],
             actorConfigs: [miniActor],
             commits,
@@ -369,9 +369,9 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('test file listed in .dockerignore triggers a build when it matches the test files glob', () => {
+    it('test file listed in .dockerignore triggers a build when it matches the test files glob', async () => {
         vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue((filePath) => filePath.startsWith('test/'));
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['test/platform/daily/foo.test.ts'],
             actorConfigs: [miniActor],
             commits,
@@ -380,9 +380,9 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('test file listed in .dockerignore stays ignored without a test files glob', () => {
+    it('test file listed in .dockerignore stays ignored without a test files glob', async () => {
         vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue((filePath) => filePath.startsWith('test/'));
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['test/platform/daily/foo.test.ts'],
             actorConfigs: [miniActor],
             commits,
@@ -390,9 +390,9 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('test files glob matches case-insensitively and does not bypass .dockerignore for other files', () => {
+    it('test files glob matches case-insensitively and does not bypass .dockerignore for other files', async () => {
         vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['Test/Platform/Foo.test.ts'],
             actorConfigs: [miniActor],
             commits,
@@ -400,7 +400,7 @@ describe('getChangedActors', () => {
         });
         expect(result).toEqual([miniActor]);
         expect(
-            getChangedActors({
+            await getChangedActors({
                 filepathsChanged: ['actors/foo_bar/node_modules/foo.js'],
                 actorConfigs: [miniActor],
                 commits,
@@ -409,9 +409,9 @@ describe('getChangedActors', () => {
         ).toEqual([]);
     });
 
-    it('test file outside an actor context still does not trigger it', () => {
+    it('test file outside an actor context still does not trigger it', async () => {
         vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['test/platform/daily/foo.test.ts'],
             actorConfigs: [standaloneActor],
             commits,
@@ -420,10 +420,10 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('test file listed in .dockerignore triggers an actor whose overrideActorContext includes it', () => {
+    it('test file listed in .dockerignore triggers an actor whose overrideActorContext includes it', async () => {
         vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
         const actorWithTests = { ...standaloneActor, contextPaths: [...standaloneActor.contextPaths, 'test'] };
-        const result = getChangedActors({
+        const result = await getChangedActors({
             filepathsChanged: ['test/platform/standalone.test.ts'],
             actorConfigs: [actorWithTests],
             commits,
@@ -432,9 +432,9 @@ describe('getChangedActors', () => {
         expect(result).toEqual([actorWithTests]);
     });
 
-    it('JSON file in context but outside actor folder is functional (not checked for cosmetic)', () => {
-        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(true);
-        const result = getChangedActors({
+    it('JSON file in context but outside actor folder is functional (not checked for cosmetic)', async () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(true);
+        const result = await getChangedActors({
             filepathsChanged: ['lib/config.json'],
             actorConfigs: [miniActor],
             commits,
@@ -442,8 +442,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('README outside actor folder but inside context is ignored (not cosmetic)', () => {
-        const result = getChangedActors({
+    it('README outside actor folder but inside context is ignored (not cosmetic)', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['docs/README.md'],
             actorConfigs: [miniActor],
             commits,
@@ -452,8 +452,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('README inside actor folder is cosmetic', () => {
-        const result = getChangedActors({
+    it('README inside actor folder is cosmetic', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/README.md'],
             actorConfigs: [miniActor],
             commits,
@@ -462,8 +462,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('hoists a standalone actor own top-level dev file relative to its context before checking the ignore list', () => {
-        const result = getChangedActors({
+    it('hoists a standalone actor own top-level dev file relative to its context before checking the ignore list', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['standalone-actors/standalone/.eslintrc'],
             actorConfigs,
             commits,
@@ -471,8 +471,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('does not special-case code/ and shared/ prefixes anymore — must be declared via overrideActorContext', () => {
-        const result = getChangedActors({
+    it('does not special-case code/ and shared/ prefixes anymore — must be declared via overrideActorContext', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['code/.eslintrc'],
             actorConfigs: [miniActor],
             commits,
@@ -480,8 +480,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('ignores code/.eslintrc when "code" is declared via overrideActorContext', () => {
-        const result = getChangedActors({
+    it('ignores code/.eslintrc when "code" is declared via overrideActorContext', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['code/.eslintrc'],
             actorConfigs: [amazonActor],
             commits,
@@ -489,8 +489,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('shared/Dockerfile declared via overrideActorContext is functional', () => {
-        const result = getChangedActors({
+    it('shared/Dockerfile declared via overrideActorContext is functional', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['shared/Dockerfile'],
             actorConfigs: [amazonActor],
             commits,
@@ -498,8 +498,8 @@ describe('getChangedActors', () => {
         expect(result).toEqual([amazonActor]);
     });
 
-    it('code/README.md declared via overrideActorContext is ignored (outside actor folder)', () => {
-        const result = getChangedActors({
+    it('code/README.md declared via overrideActorContext is ignored (outside actor folder)', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['code/README.md'],
             actorConfigs: [amazonActor],
             commits,
@@ -511,12 +511,13 @@ describe('getChangedActors', () => {
 
 describe('getChangedActors logging', () => {
     beforeEach(() => {
-        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(false);
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(false);
         vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+        vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     });
 
-    it('logs a single "specific" group for a single actor with one functional file', () => {
-        getChangedActors({
+    it('logs a single "specific" group for a single actor with one functional file', async () => {
+        await getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/main.ts'],
             actorConfigs: [miniActor],
             commits,
@@ -528,7 +529,7 @@ describe('getChangedActors logging', () => {
         expect(logger.info).toHaveBeenCalledWith('[DIFF]: Actors to be built and tested: foo/bar');
     });
 
-    it('logs a single "shared" group when two actors are triggered by the exact same file', () => {
+    it('logs a single "shared" group when two actors are triggered by the exact same file', async () => {
         const actorA: ActorConfig = {
             actorFullName: 'team/actor-a',
             folder: 'actors/a',
@@ -544,7 +545,7 @@ describe('getChangedActors logging', () => {
             contextPaths: ['', 'shared'],
         };
 
-        getChangedActors({
+        await getChangedActors({
             filepathsChanged: ['shared/shared.ts'],
             actorConfigs: [actorA, actorB],
             commits,
@@ -557,7 +558,7 @@ describe('getChangedActors logging', () => {
         expect(logger.info).toHaveBeenCalledWith('[DIFF]: Actors to be built and tested: team/actor-a, team/actor-b');
     });
 
-    it('logs shared and specific groups in descending-size order for partial overlap across actors', () => {
+    it('logs shared and specific groups in descending-size order for partial overlap across actors', async () => {
         const actorA: ActorConfig = {
             actorFullName: 'team/actor-a',
             folder: 'actors/a',
@@ -573,7 +574,7 @@ describe('getChangedActors logging', () => {
             contextPaths: [''],
         };
 
-        getChangedActors({
+        await getChangedActors({
             filepathsChanged: ['shared.ts', 'actors/a/a-only.ts', 'actors/b/b-only.ts'],
             actorConfigs: [actorA, actorB],
             commits,
@@ -590,22 +591,22 @@ describe('getChangedActors logging', () => {
     });
 
     const outsideContextWarning = (testFile: string) =>
-        `[DIFF]: WARNING: Test file ${testFile} is outside every Actor's context, so changing only it builds and tests nothing. ` +
+        `[DIFF]: Test file ${testFile} is outside every Actor's context, so changing only it builds and tests nothing. ` +
         'Add its folder to "overrideActorContext" of the Actors it tests.';
 
-    it('warns about a changed test file outside every Actor context', () => {
-        getChangedActors({
+    it('warns about a changed test file outside every Actor context', async () => {
+        await getChangedActors({
             filepathsChanged: ['test/platform/standalone.test.ts'],
             actorConfigs: [standaloneActor],
             commits,
             testFilesGlob: 'test/platform/**',
         });
 
-        expect(console.error).toHaveBeenCalledWith(outsideContextWarning('test/platform/standalone.test.ts'));
+        expect(logger.warn).toHaveBeenCalledWith(outsideContextWarning('test/platform/standalone.test.ts'));
     });
 
-    it('still warns when the same push also rebuilds an Actor', () => {
-        const result = getChangedActors({
+    it('still warns when the same push also rebuilds an Actor', async () => {
+        const result = await getChangedActors({
             filepathsChanged: ['test/platform/standalone.test.ts', 'standalone-actors/standalone/src/main.ts'],
             actorConfigs: [standaloneActor],
             commits,
@@ -613,22 +614,22 @@ describe('getChangedActors logging', () => {
         });
 
         expect(result).toEqual([standaloneActor]);
-        expect(console.error).toHaveBeenCalledWith(outsideContextWarning('test/platform/standalone.test.ts'));
+        expect(logger.warn).toHaveBeenCalledWith(outsideContextWarning('test/platform/standalone.test.ts'));
     });
 
-    it('does not warn about test files inside an Actor context, even cosmetic ones', () => {
-        getChangedActors({
+    it('does not warn about test files inside an Actor context, even cosmetic ones', async () => {
+        await getChangedActors({
             filepathsChanged: ['test/platform/foo.test.ts', 'test/platform/README.md', 'test/platform/CHANGELOG.md'],
             actorConfigs: [miniActor],
             commits,
             testFilesGlob: 'test/platform/**',
         });
 
-        expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('WARNING'));
+        expect(logger.warn).not.toHaveBeenCalled();
     });
 
-    it('logs no group lines when zero actors changed', () => {
-        getChangedActors({
+    it('logs no group lines when zero actors changed', async () => {
+        await getChangedActors({
             filepathsChanged: ['.gitignore', 'README.md'],
             actorConfigs,
             commits,

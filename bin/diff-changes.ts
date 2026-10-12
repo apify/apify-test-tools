@@ -49,13 +49,13 @@ type FileChangeForActor =
  * 6. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
  * 7. Everything else → functional
  */
-const classifyFileChange = (
+const classifyFileChange = async (
     originalFilePath: string,
     actorConfig: ActorConfig,
     commits: Commit[],
     dockerIgnoreMatcher: DockerIgnoreMatcher,
     isTestFile: (filePath: string) => boolean,
-): FileChangeForActor => {
+): Promise<FileChangeForActor> => {
     const lowercaseFilePath = originalFilePath.toLowerCase();
 
     // TODO: hardcodes that there's a single repo-wide changelog belonging to every actor. Should instead
@@ -84,6 +84,7 @@ const classifyFileChange = (
     // .actor/ can legitimately be listed in .dockerignore (the Apify platform evaluates it before
     // the Docker build, so excluding it from the build context is a valid caching optimization) —
     // that shouldn't cause changes to .actor/ itself to be ignored here.
+    // Test files are often in .dockerignore too, but a change to them must still build and test.
     if (!isUnderActorDotDir && !isTestFile(originalFilePath) && dockerIgnoreMatcher(originalFilePath)) {
         return { impact: 'ignored' };
     }
@@ -95,7 +96,7 @@ const classifyFileChange = (
     }
 
     if (lowercaseFilePath.endsWith('.json') && isUnderActorDotDir) {
-        const isCosmetic = isCosmeticOnlyJsonSchemaChange(commits, originalFilePath);
+        const isCosmetic = await isCosmeticOnlyJsonSchemaChange(commits, originalFilePath);
         if (isCosmetic) {
             return { impact: 'cosmetic', semanticallyVerified: true };
         }
@@ -172,13 +173,13 @@ const logChangeGroups = (groups: ChangeGroup[]): void => {
     }
 };
 
-export const getChangedActors = ({
+export const getChangedActors = async ({
     filepathsChanged,
     actorConfigs,
     isLatest = false,
     commits,
     testFilesGlob,
-}: ShouldBuildAndTestOptions): ActorConfig[] => {
+}: ShouldBuildAndTestOptions): Promise<ActorConfig[]> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
     const testFilesInContext = new Set<string>();
     const isTestFile = testFilesGlob ? picomatch(testFilesGlob, { nocase: true, dot: true }) : () => false;
@@ -193,7 +194,13 @@ export const getChangedActors = ({
                 continue;
             }
 
-            const change = classifyFileChange(originalFilePath, actorConfig, commits, dockerIgnoreMatcher, isTestFile);
+            const change = await classifyFileChange(
+                originalFilePath,
+                actorConfig,
+                commits,
+                dockerIgnoreMatcher,
+                isTestFile,
+            );
             if (change.impact !== 'outside-context' && isTestFile(originalFilePath)) {
                 testFilesInContext.add(originalFilePath);
             }
@@ -218,8 +225,8 @@ export const getChangedActors = ({
     for (const testFile of filepathsChanged.filter(
         (filePath) => isTestFile(filePath) && !testFilesInContext.has(filePath),
     )) {
-        console.error(
-            `[DIFF]: WARNING: Test file ${testFile} is outside every Actor's context, so changing only it builds and tests nothing. ` +
+        logger.warn(
+            `[DIFF]: Test file ${testFile} is outside every Actor's context, so changing only it builds and tests nothing. ` +
                 `Add its folder to "overrideActorContext" of the Actors it tests.`,
         );
     }

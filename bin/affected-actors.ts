@@ -1,4 +1,4 @@
-import { getChangedActors } from './diff-changes.js';
+import { getChangedActorsByImpact } from './diff-changes.js';
 import {
     getBranchOnlyChangedFiles,
     getChangedFiles,
@@ -24,8 +24,6 @@ export interface AffectedActorsOptions {
      * ignored when it isn't on the branch. Without `base` it must be an ancestor of head (e.g. the last release).
      */
     since?: string;
-    /** Also report Actors whose changes are only cosmetic (README, CHANGELOG, cosmetic .actor JSON). */
-    includeCosmetic: boolean;
     actors: string[];
     ignore: string[];
 }
@@ -37,13 +35,16 @@ export interface AffectedActors {
     commits: Commit[];
     changedFiles: string[];
     changelog: string | null;
-    actorConfigs: ActorConfig[];
+    /** Actors with at least one functional change. They need a new build and tests. */
+    functionalActors: ActorConfig[];
+    /** Actors whose changes are all cosmetic (README, CHANGELOG, cosmetic .actor JSON). They only need a release build. */
+    cosmeticActors: ActorConfig[];
 }
 
 type BranchRangeOptions = AffectedActorsOptions & { base: string };
 type SinceRangeOptions = AffectedActorsOptions & { since: string };
 
-const getBranchChanges = async ({ head, base, since, includeCosmetic, actors, ignore }: BranchRangeOptions) => {
+const getBranchChanges = async ({ head, base, since, actors, ignore }: BranchRangeOptions) => {
     const actorConfigs = await readConfigFile({ actors, ignore });
 
     // This is an optimization for the common case where a branch only has cosmetic changes but had to merge in
@@ -51,7 +52,8 @@ const getBranchChanges = async ({ head, base, since, includeCosmetic, actors, ig
     // since the branch has no functional changes of its own, there is nothing new to validate.
     // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
     // individually validated changes can have novel interactions when combined.
-    let onlyMergedFromBase = false;
+    // The same applies to cosmetic changes: with no changes of its own, the branch has nothing new to release either.
+    let ownChanges = { hasFunctional: true, hasAny: true };
     if (await hasMergeFromTarget(head, base)) {
         logger.info(
             '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
@@ -59,17 +61,19 @@ const getBranchChanges = async ({ head, base, since, includeCosmetic, actors, ig
         const branchOnlyFiles = await getBranchOnlyChangedFiles(head, base);
         // Omit since to get full branch history. Validated functional commits can still interact with merged ones
         const allBranchCommits = await getCommits({ sourceBranch: head, targetBranch: base });
-        const branchOnlyActorsChanged = await getChangedActors({
+        const own = await getChangedActorsByImpact({
             filepathsChanged: branchOnlyFiles,
             actorConfigs,
-            isLatest: includeCosmetic,
             commits: allBranchCommits,
         });
-        onlyMergedFromBase = branchOnlyActorsChanged.length === 0;
+        ownChanges = {
+            hasFunctional: own.functional.length > 0,
+            hasAny: own.functional.length + own.cosmetic.length > 0,
+        };
         logger.info(
-            onlyMergedFromBase
-                ? '[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests'
-                : `[MERGE-FROM-TARGET-OPTIMIZATION]: Branch has ${branchOnlyActorsChanged.length} functional changes, cannot optimize, we continue with full check`,
+            ownChanges.hasFunctional
+                ? `[MERGE-FROM-TARGET-OPTIMIZATION]: Branch has ${own.functional.length} functional changes, cannot optimize, we continue with full check`
+                : '[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests',
         );
     }
 
@@ -77,28 +81,33 @@ const getBranchChanges = async ({ head, base, since, includeCosmetic, actors, ig
     const commits = await getCommits({ sourceBranch: head, targetBranch: base, baseCommit: since });
     const changedFiles = await getChangedFiles(commits);
     const changelog = await getChangelogAdditions(`${commits[0].sha}~`, commits[commits.length - 1].sha, changedFiles);
-    const changedActors = onlyMergedFromBase
-        ? []
-        : await getChangedActors({ filepathsChanged: changedFiles, actorConfigs, isLatest: includeCosmetic, commits });
-    return { commits, changedFiles, changelog, actorConfigs: changedActors };
+    const changed = ownChanges.hasAny
+        ? await getChangedActorsByImpact({ filepathsChanged: changedFiles, actorConfigs, commits })
+        : { functional: [], cosmetic: [] };
+    return {
+        commits,
+        changedFiles,
+        changelog,
+        functionalActors: ownChanges.hasFunctional ? changed.functional : [],
+        cosmeticActors: changed.cosmetic,
+    };
 };
 
-const getChangesSince = async ({ head, since, includeCosmetic, actors, ignore }: SinceRangeOptions) => {
+const getChangesSince = async ({ head, since, actors, ignore }: SinceRangeOptions) => {
     const sinceSha = await resolveReleaseBaseCommit(since, { head, optionName: '--since' });
     const changes = await getReleaseChanges(sinceSha, head);
     if (!changes) {
         logger.info(`${head} is the --since commit ${sinceSha}, nothing changed`);
-        return { commits: [], changedFiles: [], changelog: null, actorConfigs: [] };
+        return { commits: [], changedFiles: [], changelog: null, functionalActors: [], cosmeticActors: [] };
     }
 
     const actorConfigs = await readConfigFile({ actors, ignore });
-    const changedActors = await getChangedActors({
+    const changed = await getChangedActorsByImpact({
         filepathsChanged: changes.changedFiles,
         actorConfigs,
-        isLatest: includeCosmetic,
         commits: changes.commits,
     });
-    return { ...changes, actorConfigs: changedActors };
+    return { ...changes, functionalActors: changed.functional, cosmeticActors: changed.cosmetic };
 };
 
 /**
@@ -129,13 +138,18 @@ export const toAffectedActorsDocument = ({
     commits,
     changedFiles,
     changelog,
-    actorConfigs,
-}: AffectedActors) => ({
-    version: 1,
-    ref,
-    head: headSha,
-    commits,
-    changedFiles,
-    changelog,
-    actors: actorConfigs.map(({ actorFullName }) => ({ actorFullName })),
-});
+    functionalActors,
+    cosmeticActors,
+}: AffectedActors) => {
+    const names = (configs: ActorConfig[]) => configs.map(({ actorFullName }) => ({ actorFullName }));
+    return {
+        version: 1,
+        ref,
+        head: headSha,
+        commits,
+        changedFiles,
+        changelog,
+        functionalActors: names(functionalActors),
+        cosmeticActors: names(cosmeticActors),
+    };
+};

@@ -115,6 +115,7 @@ const isExcludedBySibling = (lowercaseFilePath: string, actor: ActorConfig, allA
 type ActorChangeEntry = {
     actorConfig: ActorConfig;
     files: string[];
+    hasFunctionalChange: boolean;
 };
 
 type ChangeGroup = { actors: string[]; files: string[] };
@@ -167,12 +168,14 @@ const logChangeGroups = (groups: ChangeGroup[]): void => {
     }
 };
 
-export const getChangedActors = async ({
-    filepathsChanged,
-    actorConfigs,
-    isLatest = false,
-    commits,
-}: ShouldBuildAndTestOptions): Promise<ActorConfig[]> => {
+/**
+ * Collects the changed files of every Actor whose context they fall in, in the order of actorConfigs.
+ * Cosmetic changes are only collected with includeCosmetic.
+ */
+const collectActorChanges = async (
+    { filepathsChanged, actorConfigs, commits }: Omit<ShouldBuildAndTestOptions, 'isLatest'>,
+    { includeCosmetic }: { includeCosmetic: boolean },
+): Promise<Map<string, ActorChangeEntry>> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
 
     for (const actorConfig of actorConfigs) {
@@ -188,21 +191,37 @@ export const getChangedActors = async ({
             const change = await classifyFileChange(originalFilePath, actorConfig, commits, dockerIgnoreMatcher);
 
             if (change.impact === 'ignored' || change.impact === 'outside-context') continue;
-            if (change.impact === 'cosmetic' && !isLatest) continue;
+            if (change.impact === 'cosmetic' && !includeCosmetic) continue;
 
-            const entry = actorsChangedMap.get(actorConfig.folder) ?? { actorConfig, files: [] };
+            const entry = actorsChangedMap.get(actorConfig.folder) ?? {
+                actorConfig,
+                files: [],
+                hasFunctionalChange: false,
+            };
             entry.files.push(originalFilePath);
+            entry.hasFunctionalChange ||= change.impact === 'functional';
             actorsChangedMap.set(actorConfig.folder, entry);
         }
     }
 
-    const actorsChanged = Array.from(actorsChangedMap.values()).map((entry) => entry.actorConfig);
-
     // Log changes grouped by actor set, so changes shared across actors are logged once
     // instead of being repeated per actor.
-    const fileToActors = buildFileToActorsMap(actorsChangedMap);
-    const groups = groupFilesByActorSet(fileToActors);
-    logChangeGroups(groups);
+    logChangeGroups(groupFilesByActorSet(buildFileToActorsMap(actorsChangedMap)));
+
+    return actorsChangedMap;
+};
+
+export const getChangedActors = async ({
+    filepathsChanged,
+    actorConfigs,
+    isLatest = false,
+    commits,
+}: ShouldBuildAndTestOptions): Promise<ActorConfig[]> => {
+    const actorsChangedMap = await collectActorChanges(
+        { filepathsChanged, actorConfigs, commits },
+        { includeCosmetic: isLatest },
+    );
+    const actorsChanged = Array.from(actorsChangedMap.values()).map((entry) => entry.actorConfig);
 
     if (actorsChanged.length > 0) {
         const actors = actorsChanged.map((config) => config.actorFullName);
@@ -212,4 +231,26 @@ export const getChangedActors = async ({
     }
 
     return actorsChanged;
+};
+
+export interface ChangedActorsByImpact {
+    /** Actors with at least one functional change. They need a new build and tests. */
+    functional: ActorConfig[];
+    /** Actors whose changes are all cosmetic. They only need a new build when released. */
+    cosmetic: ActorConfig[];
+}
+
+/** Like getChangedActors, but splits the changed Actors by the most impactful change each one has. */
+export const getChangedActorsByImpact = async (
+    options: Omit<ShouldBuildAndTestOptions, 'isLatest'>,
+): Promise<ChangedActorsByImpact> => {
+    const entries = Array.from((await collectActorChanges(options, { includeCosmetic: true })).values());
+    const functional = entries.filter((entry) => entry.hasFunctionalChange).map((entry) => entry.actorConfig);
+    const cosmetic = entries.filter((entry) => !entry.hasFunctionalChange).map((entry) => entry.actorConfig);
+
+    const names = (configs: ActorConfig[]) => configs.map((config) => config.actorFullName).join(', ') || 'none';
+    logger.info(`[DIFF]: Actors with functional changes: ${names(functional)}`);
+    logger.info(`[DIFF]: Actors with only cosmetic changes: ${names(cosmetic)}`);
+
+    return { functional, cosmetic };
 };

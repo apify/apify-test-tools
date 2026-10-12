@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getChangedActors } from '../../../bin/diff-changes.js';
+import { getChangedActors, getChangedActorsByImpact } from '../../../bin/diff-changes.js';
 import * as DiffJsonSchema from '../../../bin/diff-json-schema.js';
 import * as Dockerignore from '../../../bin/dockerignore.js';
 import { logger } from '../../../bin/logger.js';
@@ -535,5 +535,40 @@ describe('getChangedActors logging', () => {
         expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('Shared changes'));
         expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('Changes specific to'));
         expect(logger.info).toHaveBeenCalledWith('[DIFF]: No relevant files changed, skipping builds and tests');
+    });
+});
+
+describe('getChangedActorsByImpact', () => {
+    beforeEach(() => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(false);
+    });
+
+    it('lists an Actor as functional when it has any functional change, and as cosmetic only otherwise', async () => {
+        const result = await getChangedActorsByImpact({
+            filepathsChanged: [
+                'actors/foo_bar/README.md',
+                'standalone-actors/standalone/README.md',
+                'actors/foo_bar/src/main.ts',
+            ],
+            actorConfigs,
+            commits,
+        });
+        expect(result).toStrictEqual({ functional: [miniActor], cosmetic: [standaloneActor] });
+    });
+
+    it('matches getChangedActors: functional is the PR result, both together are the release result', async () => {
+        const filepathsChanged = ['CHANGELOG.md', 'standalone-actors/standalone/src/main.ts'];
+        const { functional, cosmetic } = await getChangedActorsByImpact({ filepathsChanged, actorConfigs, commits });
+
+        expect(functional).toStrictEqual(await getChangedActors({ filepathsChanged, actorConfigs, commits }));
+        expect(new Set([...functional, ...cosmetic])).toStrictEqual(
+            new Set(await getChangedActors({ filepathsChanged, actorConfigs, commits, isLatest: true })),
+        );
+    });
+
+    it('returns empty lists when nothing relevant changed', async () => {
+        expect(
+            await getChangedActorsByImpact({ filepathsChanged: ['.vscode/settings.json'], actorConfigs, commits }),
+        ).toStrictEqual({ functional: [], cosmetic: [] });
     });
 });

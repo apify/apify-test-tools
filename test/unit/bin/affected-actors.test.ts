@@ -22,20 +22,23 @@ const commit = (sha: string): Commit => ({ sha, author: 'Dev<dev@example.com>', 
 const commits = [commit('1'.repeat(40)), commit('2'.repeat(40))];
 
 const selection = { actors: [], ignore: [] };
+const noChanges = { functional: [], cosmetic: [] };
 
 describe('getAffectedActors', () => {
     let readConfigSpy: MockInstance;
-    let getChangedActorsSpy: MockInstance;
+    let byImpactSpy: MockInstance;
 
     beforeEach(() => {
         readConfigSpy = vi.spyOn(LoadConfig, 'readConfigFile').mockResolvedValue([actorA, actorB]);
-        getChangedActorsSpy = vi.spyOn(DiffChanges, 'getChangedActors').mockResolvedValue([actorA]);
+        byImpactSpy = vi
+            .spyOn(DiffChanges, 'getChangedActorsByImpact')
+            .mockResolvedValue({ functional: [actorA], cosmetic: [actorB] });
         vi.spyOn(Git, 'resolveCommitSha').mockResolvedValue(headSha);
         vi.spyOn(Git, 'resolveBranchName').mockResolvedValue('feature');
     });
 
     it('requires --base or --since', async () => {
-        const options = { head: 'HEAD', includeCosmetic: false, ...selection };
+        const options = { head: 'HEAD', ...selection };
         await expect(getAffectedActors(options)).rejects.toThrow('Pass --base, --since, or both');
         // An empty --since (e.g. from an empty cache file) counts as not passed
         await expect(getAffectedActors({ ...options, since: '' })).rejects.toThrow('Pass --base, --since, or both');
@@ -56,7 +59,6 @@ describe('getAffectedActors', () => {
                 head: 'origin/feature',
                 base: 'origin/master',
                 since: sinceSha,
-                includeCosmetic: false,
                 ...selection,
             });
 
@@ -66,7 +68,8 @@ describe('getAffectedActors', () => {
                 commits,
                 changedFiles: ['src/main.ts', 'CHANGELOG.md'],
                 changelog: '- Added foo',
-                actorConfigs: [actorA],
+                functionalActors: [actorA],
+                cosmeticActors: [actorB],
             });
             expect(getCommitsSpy).toHaveBeenCalledWith({
                 sourceBranch: 'origin/feature',
@@ -78,39 +81,27 @@ describe('getAffectedActors', () => {
                 'src/main.ts',
                 'CHANGELOG.md',
             ]);
-            expect(getChangedActorsSpy).toHaveBeenCalledWith({
+            expect(byImpactSpy).toHaveBeenCalledWith({
                 filepathsChanged: ['src/main.ts', 'CHANGELOG.md'],
                 actorConfigs: [actorA, actorB],
-                isLatest: false,
                 commits,
             });
         });
 
-        it('passes --include-cosmetic to the classification', async () => {
-            await getAffectedActors({ head: 'HEAD', base: 'master', includeCosmetic: true, ...selection });
-            expect(getChangedActorsSpy).toHaveBeenCalledWith(expect.objectContaining({ isLatest: true }));
-        });
-
-        it('skips when the branch only merged changes in from --base', async () => {
+        it('reports nothing when the branch has no changes of its own besides merging --base in', async () => {
             vi.spyOn(Git, 'hasMergeFromTarget').mockResolvedValue(true);
-            vi.spyOn(Git, 'getBranchOnlyChangedFiles').mockResolvedValue(['README.md']);
-            getChangedActorsSpy.mockResolvedValueOnce([]);
+            vi.spyOn(Git, 'getBranchOnlyChangedFiles').mockResolvedValue(['test/foo.test.ts']);
+            byImpactSpy.mockResolvedValueOnce(noChanges);
 
-            const result = await getAffectedActors({
-                head: 'feature',
-                base: 'master',
-                since: sinceSha,
-                includeCosmetic: false,
-                ...selection,
-            });
+            const result = await getAffectedActors({ head: 'feature', base: 'master', since: sinceSha, ...selection });
 
-            expect(result.actorConfigs).toStrictEqual([]);
+            expect(result.functionalActors).toStrictEqual([]);
+            expect(result.cosmeticActors).toStrictEqual([]);
             // The branch's own files are classified against the whole branch, ignoring --since
-            expect(getChangedActorsSpy).toHaveBeenCalledOnce();
-            expect(getChangedActorsSpy).toHaveBeenCalledWith({
-                filepathsChanged: ['README.md'],
+            expect(byImpactSpy).toHaveBeenCalledOnce();
+            expect(byImpactSpy).toHaveBeenCalledWith({
+                filepathsChanged: ['test/foo.test.ts'],
                 actorConfigs: [actorA, actorB],
-                isLatest: false,
                 commits,
             });
             expect(getCommitsSpy).toHaveBeenCalledWith({ sourceBranch: 'feature', targetBranch: 'master' });
@@ -118,20 +109,29 @@ describe('getAffectedActors', () => {
             expect(result.commits).toStrictEqual(commits);
         });
 
-        it('runs the full check when the branch has its own changes besides the merge', async () => {
+        it('reports only cosmetic Actors when the branch has only cosmetic changes besides merging --base in', async () => {
+            vi.spyOn(Git, 'hasMergeFromTarget').mockResolvedValue(true);
+            vi.spyOn(Git, 'getBranchOnlyChangedFiles').mockResolvedValue(['actors/b/README.md']);
+            byImpactSpy.mockResolvedValueOnce({ functional: [], cosmetic: [actorB] });
+
+            const result = await getAffectedActors({ head: 'feature', base: 'master', ...selection });
+
+            // actorA's functional changes came from --base, which is already validated
+            expect(result.functionalActors).toStrictEqual([]);
+            expect(result.cosmeticActors).toStrictEqual([actorB]);
+        });
+
+        it('runs the full check when the branch has functional changes besides the merge', async () => {
             vi.spyOn(Git, 'hasMergeFromTarget').mockResolvedValue(true);
             vi.spyOn(Git, 'getBranchOnlyChangedFiles').mockResolvedValue(['src/main.ts']);
+            byImpactSpy.mockResolvedValueOnce({ functional: [actorA], cosmetic: [] });
 
-            const result = await getAffectedActors({
-                head: 'feature',
-                base: 'master',
-                includeCosmetic: false,
-                ...selection,
-            });
+            const result = await getAffectedActors({ head: 'feature', base: 'master', ...selection });
 
-            expect(result.actorConfigs).toStrictEqual([actorA]);
-            expect(getChangedActorsSpy).toHaveBeenCalledTimes(2);
-            expect(getChangedActorsSpy).toHaveBeenLastCalledWith(
+            expect(result.functionalActors).toStrictEqual([actorA]);
+            expect(result.cosmeticActors).toStrictEqual([actorB]);
+            expect(byImpactSpy).toHaveBeenCalledTimes(2);
+            expect(byImpactSpy).toHaveBeenLastCalledWith(
                 expect.objectContaining({ filepathsChanged: ['src/main.ts', 'CHANGELOG.md'] }),
             );
         });
@@ -145,33 +145,28 @@ describe('getAffectedActors', () => {
             resolveBaseSpy = vi.spyOn(Git, 'resolveReleaseBaseCommit').mockResolvedValue(sinceSha);
             releaseChangesSpy = vi.spyOn(Git, 'getReleaseChanges').mockResolvedValue({
                 commits,
-                changedFiles: ['actors/a/README.md'],
+                changedFiles: ['actors/b/README.md', 'src/main.ts'],
                 changelog: null,
             });
         });
 
         it('inspects everything after --since up to --head', async () => {
-            const result = await getAffectedActors({
-                head: 'release',
-                since: 'HEAD~2',
-                includeCosmetic: true,
-                ...selection,
-            });
+            const result = await getAffectedActors({ head: 'release', since: 'HEAD~2', ...selection });
 
             expect(result).toStrictEqual({
                 headSha,
                 ref: 'feature',
                 commits,
-                changedFiles: ['actors/a/README.md'],
+                changedFiles: ['actors/b/README.md', 'src/main.ts'],
                 changelog: null,
-                actorConfigs: [actorA],
+                functionalActors: [actorA],
+                cosmeticActors: [actorB],
             });
             expect(resolveBaseSpy).toHaveBeenCalledWith('HEAD~2', { head: 'release', optionName: '--since' });
             expect(releaseChangesSpy).toHaveBeenCalledWith(sinceSha, 'release');
-            expect(getChangedActorsSpy).toHaveBeenCalledWith({
-                filepathsChanged: ['actors/a/README.md'],
+            expect(byImpactSpy).toHaveBeenCalledWith({
+                filepathsChanged: ['actors/b/README.md', 'src/main.ts'],
                 actorConfigs: [actorA, actorB],
-                isLatest: true,
                 commits,
             });
         });
@@ -179,12 +174,7 @@ describe('getAffectedActors', () => {
         it('returns nothing without reading the config when head is the --since commit', async () => {
             releaseChangesSpy.mockResolvedValue(null);
 
-            const result = await getAffectedActors({
-                head: 'HEAD',
-                since: sinceSha,
-                includeCosmetic: true,
-                ...selection,
-            });
+            const result = await getAffectedActors({ head: 'HEAD', since: sinceSha, ...selection });
 
             expect(result).toStrictEqual({
                 headSha,
@@ -192,10 +182,11 @@ describe('getAffectedActors', () => {
                 commits: [],
                 changedFiles: [],
                 changelog: null,
-                actorConfigs: [],
+                functionalActors: [],
+                cosmeticActors: [],
             });
             expect(readConfigSpy).not.toHaveBeenCalled();
-            expect(getChangedActorsSpy).not.toHaveBeenCalled();
+            expect(byImpactSpy).not.toHaveBeenCalled();
         });
     });
 });
@@ -209,7 +200,8 @@ describe('toAffectedActorsDocument', () => {
                 commits,
                 changedFiles: ['src/main.ts'],
                 changelog: null,
-                actorConfigs: [actorA, actorB],
+                functionalActors: [actorA],
+                cosmeticActors: [actorB],
             }),
         ).toStrictEqual({
             version: 1,
@@ -218,7 +210,8 @@ describe('toAffectedActorsDocument', () => {
             commits,
             changedFiles: ['src/main.ts'],
             changelog: null,
-            actors: [{ actorFullName: 'owner/a' }, { actorFullName: 'owner/b' }],
+            functionalActors: [{ actorFullName: 'owner/a' }],
+            cosmeticActors: [{ actorFullName: 'owner/b' }],
         });
     });
 });

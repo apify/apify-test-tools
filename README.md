@@ -671,23 +671,23 @@ TESTER_APIFY_TOKEN=apify_api_yyy \
 # A PR: the branch's own commits, after its last validated commit
 npx apify-test-tools get-affected-actors --head origin/my-branch --base origin/master --since <sha>
 
-# A release: everything after the last released commit, cosmetic changes included
-npx apify-test-tools get-affected-actors --since <sha> --include-cosmetic
+# A release: everything after the last released commit
+npx apify-test-tools get-affected-actors --since <sha>
 ```
 
-| Flag                 | Default | Meaning                                                                                   |
-| -------------------- | ------- | ----------------------------------------------------------------------------------------- |
-| `--head`             | `HEAD`  | End of the range                                                                          |
-| `--base`             |         | Only commits on `--head` that are not on this branch count                                |
-| `--since`            |         | Only commits after this one count (see below)                                             |
-| `--include-cosmetic` | `false` | Also report Actors with only cosmetic changes (README, CHANGELOG, cosmetic `.actor` JSON) |
-| `--actors`           | all     | Only report these Actors                                                                  |
-| `--ignore`           | none    | Never report these Actors                                                                 |
+| Flag       | Default | Meaning                                                    |
+| ---------- | ------- | ---------------------------------------------------------- |
+| `--head`   | `HEAD`  | End of the range                                           |
+| `--base`   |         | Only commits on `--head` that are not on this branch count |
+| `--since`  |         | Only commits after this one count (see below)              |
+| `--actors` | all     | Only report these Actors                                   |
+| `--ignore` | none    | Never report these Actors                                  |
 
 Pass `--base`, `--since`, or both:
 
 - **`--base` only** inspects the whole branch. If the branch merged `--base` in and has no functional changes
-  of its own, nothing is reported, since `--base` is already validated.
+  of its own, no Actor is reported as functional, since `--base` is already validated (and none as cosmetic
+  either, if the branch has no changes of its own at all).
 - **`--base` and `--since`** inspects the branch after its last validated commit. If `--since` is not on the
   branch (force-push), or it is the head (a rerun), the whole branch is inspected instead.
 - **`--since` only** inspects everything after it up to `--head`. It must be an ancestor of `--head` and fails
@@ -704,9 +704,15 @@ The output is a JSON document:
     "commits": [{ "sha": "…", "author": "…", "date": "…", "message": "…" }],
     "changedFiles": ["src/main.ts", "CHANGELOG.md"],
     "changelog": "Lines added to CHANGELOG.md, or null",
-    "actors": [{ "actorFullName": "john.doe/my-actor" }]
+    "functionalActors": [{ "actorFullName": "john.doe/my-actor" }],
+    "cosmeticActors": [{ "actorFullName": "john.doe/other-actor" }]
 }
 ```
+
+Each changed Actor is in exactly one of the lists. `functionalActors` have at least one functional change, so
+they need a new build and tests. `cosmeticActors` only have cosmetic changes (see
+[Change detection](#change-detection)), so they need a new build only when released: `build` builds
+`functionalActors`, `release` builds both.
 
 `ref` is the branch `--head` points to without the remote (`origin/my-branch` gives `my-branch`), or `null`
 for a SHA or a detached HEAD. `build` and `release` use the same detection internally.

@@ -71,11 +71,6 @@ const affectedRangeOptions = {
         type: 'string',
         describe: 'Only count commits after this one. Ignored with --base if it is not on the branch',
     },
-    'include-cosmetic': {
-        type: 'boolean',
-        default: false,
-        describe: 'Also report Actors with only cosmetic changes (README, CHANGELOG, cosmetic .actor JSON)',
-    },
 } as const satisfies Record<string, Options>;
 
 /** Flags for commands that trigger Apify builds. */
@@ -163,11 +158,11 @@ await yargs()
         '',
         (y) => y.options(gitRangeOptions).options(actorSelectionOptions).options(buildOptions).options(repoUrlOptions),
         async (config) => {
-            const { actorConfigs: actorsChanged } = await getAffectedActors({
+            // Cosmetic-only changes don't need testing, so they don't need a build either
+            const { functionalActors: actorsChanged } = await getAffectedActors({
                 head: config.sourceBranch,
                 base: config.targetBranch,
                 since: config.baseCommit,
-                includeCosmetic: false,
                 actors: config.actors,
                 ignore: config.ignore,
             });
@@ -198,18 +193,14 @@ await yargs()
             // Validated here too so the errors name --base-commit, the flag this command takes
             const baseSha = await resolveReleaseBaseCommit(args.baseCommit);
             const branch = await getCurrentBranch();
-            const {
-                commits,
-                changedFiles,
-                changelog,
-                actorConfigs: actorsChanged,
-            } = await getAffectedActors({
+            const { commits, changedFiles, changelog, functionalActors, cosmeticActors } = await getAffectedActors({
                 head: 'HEAD',
                 since: baseSha,
-                includeCosmetic: true,
                 actors: args.actors,
                 ignore: args.ignore,
             });
+            // A release ships cosmetic changes (README, input schema descriptions, ...) too
+            const actorsChanged = [...functionalActors, ...cosmeticActors];
             if (commits.length === 0) {
                 logger.info(`HEAD is the base commit ${baseSha}, there is nothing new to release`);
                 return;

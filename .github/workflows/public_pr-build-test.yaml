@@ -59,6 +59,7 @@ jobs:
                   args=(
                     --source-branch "origin/$HEAD_REF"
                     --target-branch "origin/$BASE_REF"
+                    # TODO: Temporary hotfix until build glob matching aligns with Vitest's test selection glob.
                     --test-files-glob 'test/platform/**'
                     --use-docker-cache
                   )

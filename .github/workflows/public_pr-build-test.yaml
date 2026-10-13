@@ -61,11 +61,10 @@ jobs:
                     --target-branch "origin/$BASE_REF"
                     # TODO: Temporary hotfix until build glob matching aligns with Vitest's test selection glob.
                     --test-files-glob 'test/platform/**'
-                    --use-docker-cache
                   )
                   [ -n "$base_commit" ] && args+=(--base-commit "$base_commit")
                   actor_builds=$(node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" \
-                    npx apify-test-tools build "${args[@]}")
+                    npx apify-test-tools build-for-test "${args[@]}")
                   echo "actor_builds=$actor_builds" | tee -a "$GITHUB_OUTPUT"
 
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.

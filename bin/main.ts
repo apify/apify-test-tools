@@ -7,8 +7,9 @@ import yargs, { type Options } from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
 import { getAffectedActors, toAffectedActorsDocument } from './affected-actors.js';
-import { deleteOldBuilds, runBuilds } from './build.js';
+import { buildActors, DEFAULT_KEYWORD, DEFAULT_TEST_VERSION_NUMBER, deleteOldBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
+import { parseBuildInput, readStdin } from './build-input.js';
 import { getChangedFiles, getCommits, getCurrentBranch, getRepoName, resolveRepoUrl } from './git.js';
 import { logger, logLevels } from './logger.js';
 import { writeJson } from './output.js';
@@ -70,9 +71,27 @@ const affectedRangeOptions = {
     },
 } as const satisfies Record<string, Options>;
 
-/** Flags for commands that trigger Apify builds. */
+/** Flags of `build`, which builds exactly the Actors it is given. */
 const buildOptions = {
-    'use-docker-cache': { type: 'boolean', default: false },
+    'version-number': {
+        type: 'string',
+        default: DEFAULT_TEST_VERSION_NUMBER,
+        describe: `Version to build, like 0.99, or "${DEFAULT_KEYWORD}" for each Actor's default version`,
+        coerce: (value: string) => {
+            if (value !== DEFAULT_KEYWORD && !/^\d+\.\d+$/.test(value)) {
+                throw new Error(`--version-number must look like 0.99 or be "${DEFAULT_KEYWORD}", got "${value}"`);
+            }
+            return value;
+        },
+    },
+    'build-tag': {
+        type: 'string',
+        describe: `Tag to give the builds, or "${DEFAULT_KEYWORD}" for each Actor's default build tag. None by default`,
+    },
+    ref: {
+        type: 'string',
+        describe: 'Branch to build from. Defaults to "ref" from the input, then the checked-out one',
+    },
 } as const satisfies Record<string, Options>;
 
 /** Global flags, available to every command. */
@@ -152,17 +171,40 @@ await yargs()
     )
     .command(
         'build',
-        '',
+        'Build the Actors listed on stdin, as {"ref"?: branch, "actors": [{"actorFullName": ...}]}',
+        (y) => y.options(buildOptions).options(repoUrlOptions),
+        async (args) => {
+            const input = parseBuildInput(await readStdin());
+            const names = input.actors.map(({ actorFullName }) => actorFullName);
+            // An empty --actors selects every Actor, but an empty list here means there is nothing to build
+            const actorConfigs = names.length > 0 ? await readConfigFile({ actors: names, ignore: [] }) : [];
+            const builds = await buildActors({
+                actorConfigs,
+                ref: args.ref ?? input.ref ?? undefined,
+                versionNumber: args.versionNumber,
+                buildTag: args.buildTag,
+                repoUrl: args.repoUrl,
+                dryRun: args.dryRun,
+            });
+            writeJson(builds);
+        },
+    )
+    .command(
+        'build-for-test',
+        'Build the Actors a branch changed functionally, for testing',
         (y) =>
             y
                 .options(gitRangeOptions)
                 .options(actorSelectionOptions)
-                .options(buildOptions)
                 .options(repoUrlOptions)
                 .option('test-files-glob', { type: 'string' }),
         async (config) => {
+            logger.info(
+                '[BUILD-FOR-TEST]: Same as get-affected-actors --base <target-branch> [--since <base-commit>] ' +
+                    "| jq '{ ref, actors: .functionallyChangedActors }' | build, from the source branch",
+            );
             // Cosmetic-only changes don't need testing, so they don't need a build either
-            const { functionallyChangedActors: actorsChanged } = await getAffectedActors({
+            const { functionallyChangedActors, ref } = await getAffectedActors({
                 head: config.sourceBranch,
                 base: config.targetBranch,
                 since: config.baseCommit,
@@ -170,23 +212,22 @@ await yargs()
                 actors: config.actors,
                 ignore: config.ignore,
             });
-            const builds = await runBuilds({
-                ...(await resolveRepoUrl(config.repoUrl)),
-                actorConfigs: actorsChanged,
-                branch: config.sourceBranch.replace('origin/', ''),
+            const builds = await buildActors({
+                actorConfigs: functionallyChangedActors,
+                ref: ref ?? config.sourceBranch,
+                versionNumber: DEFAULT_TEST_VERSION_NUMBER,
+                repoUrl: config.repoUrl,
                 dryRun: config.dryRun,
-                useDockerCache: config.useDockerCache,
             });
             writeJson(builds);
         },
     )
     .command(
         'release',
-        '',
+        'Build the default version of the Actors changed since the last release and announce it on Slack',
         (y) =>
             y
                 .options(actorSelectionOptions)
-                .options(buildOptions)
                 .options(repoUrlOptions)
                 // The last commit that is already released, everything after it up to HEAD gets released.
                 // Required, see the README section "Releasing Actors" for how to set it for each merge strategy.
@@ -194,32 +235,33 @@ await yargs()
                 .option('report-slack-channel', { type: 'string' })
                 .option('release-slack-channel', { type: 'string' }),
         async (args) => {
-            const branch = await getCurrentBranch();
-            const { commits, changedFiles, changelog, functionallyChangedActors, cosmeticallyChangedActors } =
+            logger.info(
+                '[RELEASE]: Same as get-affected-actors --since <base-commit> ' +
+                    "| jq '{ ref, actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' " +
+                    '| build --version-number default --build-tag default, then a Slack announcement',
+            );
+            const { commits, changedFiles, changelog, ref, functionallyChangedActors, cosmeticallyChangedActors } =
                 await getAffectedActors({
                     head: 'HEAD',
                     since: args.baseCommit,
                     actors: args.actors,
                     ignore: args.ignore,
                 });
-            // A release ships cosmetic changes (README, input schema descriptions, ...) too
-            const actorsChanged = [...functionallyChangedActors, ...cosmeticallyChangedActors];
             if (commits.length === 0) {
                 logger.info(`HEAD is the base commit ${args.baseCommit}, there is nothing new to release`);
                 return;
             }
-            const { repoUrl, shouldVerifyRepoUrl } = await resolveRepoUrl(args.repoUrl);
 
-            const isLatest = true;
             const { dryRun, reportSlackChannel, releaseSlackChannel } = args;
-            const builds = await runBuilds({
-                isLatest,
-                repoUrl,
-                shouldVerifyRepoUrl,
-                actorConfigs: actorsChanged,
-                branch,
+            const builds = await buildActors({
+                // A release ships cosmetic changes (README, input schema descriptions, ...) too
+                actorConfigs: [...functionallyChangedActors, ...cosmeticallyChangedActors],
+                // Fails on a detached HEAD, there is no branch to release
+                ref: ref ?? (await getCurrentBranch()),
+                versionNumber: DEFAULT_KEYWORD,
+                buildTag: DEFAULT_KEYWORD,
+                repoUrl: args.repoUrl,
                 dryRun,
-                useDockerCache: args.useDockerCache,
             });
             logger.info(JSON.stringify(builds));
 
@@ -227,7 +269,7 @@ await yargs()
                 changedFiles,
                 commits,
                 changelog,
-                repository: getRepoName(repoUrl),
+                repository: getRepoName((await resolveRepoUrl(args.repoUrl)).repoUrl),
                 dryRun,
                 // The newest commit, same as the pushed head commit
                 author: commits[commits.length - 1].author,

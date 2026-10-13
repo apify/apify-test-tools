@@ -669,10 +669,11 @@ TESTER_APIFY_TOKEN=apify_api_yyy \
 
 `get-affected-actors` lists the Actors whose context changed in a commit range, using the rules in
 [Change detection](#change-detection). It only reads git and the config file, so it needs no tokens.
+The range always ends at the checked-out `HEAD`, so check out the branch you want to inspect first.
 
 ```bash
 # A PR: the branch's own commits, after its last validated commit
-npx apify-test-tools get-affected-actors --head origin/my-branch --base origin/master --since <sha>
+npx apify-test-tools get-affected-actors --base origin/master --since <sha>
 
 # A release: everything after the last released commit
 npx apify-test-tools get-affected-actors --since <sha>
@@ -680,8 +681,7 @@ npx apify-test-tools get-affected-actors --since <sha>
 
 | Flag                | Default | Meaning                                                                                                                                    |
 | ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--head`            | `HEAD`  | End of the range                                                                                                                           |
-| `--base`            |         | Only commits on `--head` that are not on this branch count                                                                                 |
+| `--base`            |         | Only commits on `HEAD` that are not on this branch count                                                                                   |
 | `--since`           |         | Only commits after this one count (see below)                                                                                              |
 | `--test-files-glob` |         | Test files (glob from the repo root) that count as changes even when `.dockerignore` lists them, see [Change detection](#change-detection) |
 | `--actors`          | all     | Only report these Actors                                                                                                                   |
@@ -694,8 +694,8 @@ Pass `--base`, `--since`, or both:
   either, if the branch has no changes of its own at all).
 - **`--base` and `--since`** inspects the branch after its last validated commit. If `--since` is not on the
   branch (force-push), or it is the head (a rerun), the whole branch is inspected instead.
-- **`--since` only** inspects everything after it up to `--head`. It must be an ancestor of `--head` and fails
-  otherwise, exactly like [`--base-commit` of `release`](#--base-commit). If `--head` is `--since`, nothing is
+- **`--since` only** inspects everything after it up to `HEAD`. It must be an ancestor of `HEAD` and fails
+  otherwise, exactly like [`--base-commit` of `release`](#--base-commit). If `HEAD` is `--since`, nothing is
   reported.
 
 The output is a JSON document:
@@ -704,7 +704,7 @@ The output is a JSON document:
 {
     "version": 1,
     "ref": "my-branch",
-    "head": "<sha of --head>",
+    "head": "<sha of HEAD>",
     "commits": [{ "sha": "…", "author": "…", "date": "…", "message": "…" }],
     "changedFiles": ["src/main.ts", "CHANGELOG.md"],
     "changelog": "Lines added to CHANGELOG.md, or null",
@@ -718,8 +718,7 @@ they need a new build and tests. `cosmeticallyChangedActors` only have cosmetic 
 [Change detection](#change-detection)), so they need a new build only when released: `build` builds
 `functionallyChangedActors`, `release` builds both.
 
-`ref` is the branch `--head` points to without the remote (`origin/my-branch` gives `my-branch`), or `null`
-for a SHA or a detached HEAD. `build` and `release` use the same detection internally.
+`ref` is the checked-out branch, or `null` for a detached HEAD. `build` and `release` use the same detection internally.
 
 ### Releasing Actors (`release`)
 

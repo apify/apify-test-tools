@@ -54,12 +54,12 @@ const actorSelectionOptions = {
 } as const satisfies Record<string, Options>;
 
 /**
- * Commit range for get-affected-actors. `base` and `since` combine: `base` alone is a branch's own commits
- * (a PR), `since` alone is everything after a commit (a release), both is a branch after its last validated commit.
+ * Commit range for get-affected-actors, which always ends at the checked-out HEAD. `base` and `since` combine:
+ * `base` alone is a branch's own commits (a PR), `since` alone is everything after a commit (a release), both is
+ * a branch after its last validated commit.
  */
 const affectedRangeOptions = {
-    head: { type: 'string', default: 'HEAD', describe: 'End of the range' },
-    base: { type: 'string', describe: 'Only count commits on head that are not on this branch' },
+    base: { type: 'string', describe: 'Only count commits on HEAD that are not on this branch' },
     since: {
         type: 'string',
         describe: 'Only count commits after this one. Ignored with --base if it is not on the branch',
@@ -131,10 +131,10 @@ await yargs()
     )
     .command(
         'get-affected-actors',
-        'Find the Actors whose context changed in a commit range',
+        'Find the Actors whose context changed in a commit range ending at the checked-out HEAD',
         (y) => y.options(affectedRangeOptions).options(actorSelectionOptions),
         async (args) => {
-            writeJson(toAffectedActorsDocument(await getAffectedActors(args)));
+            writeJson(toAffectedActorsDocument(await getAffectedActors({ ...args, head: 'HEAD' })));
         },
     )
     .command(

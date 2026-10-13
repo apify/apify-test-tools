@@ -53,7 +53,7 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
             };
         },
         toBeNonEmptyObject: (actual) => {
-            const isObject = typeof actual === 'object' && !Array.isArray(actual);
+            const isObject = typeof actual === 'object' && !Array.isArray(actual) && actual !== null;
             const isNonEmpty = Object.entries(actual).length > 0;
             const pass = isObject && isNonEmpty;
             return {
@@ -62,7 +62,7 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
             };
         },
         toBeObject: (actual) => {
-            const pass = typeof actual === 'object' && !Array.isArray(actual);
+            const pass = typeof actual === 'object' && !Array.isArray(actual) && actual !== null;
             return {
                 pass,
                 message: () => `Expected "${actual}" to be an object`,

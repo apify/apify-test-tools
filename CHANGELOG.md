@@ -3,7 +3,15 @@
 All notable changes to this project will be documented in this file.
 
 <!-- git-cliff-unreleased-start -->
-## 0.10.1 - **not yet released**
+## 0.10.2 - **not yet released**
+
+### 🐛 Bug Fixes
+
+- **toBeObject:** Reject null ([#191](https://github.com/apify/apify-test-tools/pull/191)) ([6bdae49](https://github.com/apify/apify-test-tools/commit/6bdae4905756e0ae8dd6146942e6fc04dbead48e)) by [@JuanGalilea](https://github.com/JuanGalilea), closes [#88](https://github.com/apify/apify-test-tools/issues/88)
+
+
+<!-- git-cliff-unreleased-end -->
+## [0.10.1](https://github.com/apify/apify-test-tools/releases/tag/v0.10.1) (2026-10-13)
 
 ### 🚀 Features
 
@@ -19,7 +27,6 @@ All notable changes to this project will be documented in this file.
 - **worktree:** Support worktree usage in tests ([#188](https://github.com/apify/apify-test-tools/pull/188)) ([ffc7e7b](https://github.com/apify/apify-test-tools/commit/ffc7e7bf1466af00eed671137feff0cbda712003)) by [@JuanGalilea](https://github.com/JuanGalilea)
 
 
-<!-- git-cliff-unreleased-end -->
 ## [0.10.0](https://github.com/apify/apify-test-tools/releases/tag/v0.10.0) (2026-09-30)
 
 ### 🚀 Features

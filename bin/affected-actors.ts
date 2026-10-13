@@ -69,6 +69,11 @@ const getRangeSince = async (head: string, headSha: string, since: string): Prom
  * Exception: if the branch has any functional changes alongside the merge, we must re-test — even
  * individually validated changes can have novel interactions when combined.
  * Returns the Actors the branch's own commits changed, or undefined when it didn't merge base in.
+ *
+ * TODO: Apply this per Actor instead of to the whole branch. Changes merged in from base only interact with the
+ * branch's own changes in Actors whose context both touch, so an Actor that only base changed is already validated
+ * and can be skipped even when the branch changes other Actors functionally. Today any functional change of the
+ * branch's own keeps every Actor, and the log messages below describe the whole branch.
  */
 const getOwnChangesIfMergedFromBase = async (
     head: string,

@@ -68,8 +68,8 @@ describe('getAffectedActors', () => {
                 commits,
                 changedFiles: ['src/main.ts', 'CHANGELOG.md'],
                 changelog: '- Added foo',
-                functionalActors: [actorA],
-                cosmeticActors: [actorB],
+                functionallyChangedActors: [actorA],
+                cosmeticallyChangedActors: [actorB],
             });
             expect(getCommitsSpy).toHaveBeenCalledWith({
                 sourceBranch: 'origin/feature',
@@ -95,8 +95,8 @@ describe('getAffectedActors', () => {
 
             const result = await getAffectedActors({ head: 'feature', base: 'master', since: sinceSha, ...selection });
 
-            expect(result.functionalActors).toStrictEqual([]);
-            expect(result.cosmeticActors).toStrictEqual([]);
+            expect(result.functionallyChangedActors).toStrictEqual([]);
+            expect(result.cosmeticallyChangedActors).toStrictEqual([]);
             // The branch's own files are classified against the whole branch, ignoring --since
             expect(byImpactSpy).toHaveBeenCalledOnce();
             expect(byImpactSpy).toHaveBeenCalledWith({
@@ -117,8 +117,8 @@ describe('getAffectedActors', () => {
             const result = await getAffectedActors({ head: 'feature', base: 'master', ...selection });
 
             // actorA's functional changes came from --base, which is already validated
-            expect(result.functionalActors).toStrictEqual([]);
-            expect(result.cosmeticActors).toStrictEqual([actorB]);
+            expect(result.functionallyChangedActors).toStrictEqual([]);
+            expect(result.cosmeticallyChangedActors).toStrictEqual([actorB]);
         });
 
         it('runs the full check when the branch has functional changes besides the merge', async () => {
@@ -128,8 +128,8 @@ describe('getAffectedActors', () => {
 
             const result = await getAffectedActors({ head: 'feature', base: 'master', ...selection });
 
-            expect(result.functionalActors).toStrictEqual([actorA]);
-            expect(result.cosmeticActors).toStrictEqual([actorB]);
+            expect(result.functionallyChangedActors).toStrictEqual([actorA]);
+            expect(result.cosmeticallyChangedActors).toStrictEqual([actorB]);
             expect(byImpactSpy).toHaveBeenCalledTimes(2);
             expect(byImpactSpy).toHaveBeenLastCalledWith(
                 expect.objectContaining({ filepathsChanged: ['src/main.ts', 'CHANGELOG.md'] }),
@@ -159,8 +159,8 @@ describe('getAffectedActors', () => {
                 commits,
                 changedFiles: ['actors/b/README.md', 'src/main.ts'],
                 changelog: null,
-                functionalActors: [actorA],
-                cosmeticActors: [actorB],
+                functionallyChangedActors: [actorA],
+                cosmeticallyChangedActors: [actorB],
             });
             expect(resolveBaseSpy).toHaveBeenCalledWith('HEAD~2', { head: 'release', optionName: '--since' });
             expect(releaseChangesSpy).toHaveBeenCalledWith(sinceSha, 'release');
@@ -182,8 +182,8 @@ describe('getAffectedActors', () => {
                 commits: [],
                 changedFiles: [],
                 changelog: null,
-                functionalActors: [],
-                cosmeticActors: [],
+                functionallyChangedActors: [],
+                cosmeticallyChangedActors: [],
             });
             expect(readConfigSpy).not.toHaveBeenCalled();
             expect(byImpactSpy).not.toHaveBeenCalled();
@@ -200,8 +200,8 @@ describe('toAffectedActorsDocument', () => {
                 commits,
                 changedFiles: ['src/main.ts'],
                 changelog: null,
-                functionalActors: [actorA],
-                cosmeticActors: [actorB],
+                functionallyChangedActors: [actorA],
+                cosmeticallyChangedActors: [actorB],
             }),
         ).toStrictEqual({
             version: 1,
@@ -210,8 +210,8 @@ describe('toAffectedActorsDocument', () => {
             commits,
             changedFiles: ['src/main.ts'],
             changelog: null,
-            functionalActors: [{ actorFullName: 'owner/a' }],
-            cosmeticActors: [{ actorFullName: 'owner/b' }],
+            functionallyChangedActors: [{ actorFullName: 'owner/a' }],
+            cosmeticallyChangedActors: [{ actorFullName: 'owner/b' }],
         });
     });
 });

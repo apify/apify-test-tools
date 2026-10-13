@@ -159,7 +159,7 @@ await yargs()
         (y) => y.options(gitRangeOptions).options(actorSelectionOptions).options(buildOptions).options(repoUrlOptions),
         async (config) => {
             // Cosmetic-only changes don't need testing, so they don't need a build either
-            const { functionalActors: actorsChanged } = await getAffectedActors({
+            const { functionallyChangedActors: actorsChanged } = await getAffectedActors({
                 head: config.sourceBranch,
                 base: config.targetBranch,
                 since: config.baseCommit,
@@ -193,14 +193,15 @@ await yargs()
             // Validated here too so the errors name --base-commit, the flag this command takes
             const baseSha = await resolveReleaseBaseCommit(args.baseCommit);
             const branch = await getCurrentBranch();
-            const { commits, changedFiles, changelog, functionalActors, cosmeticActors } = await getAffectedActors({
-                head: 'HEAD',
-                since: baseSha,
-                actors: args.actors,
-                ignore: args.ignore,
-            });
+            const { commits, changedFiles, changelog, functionallyChangedActors, cosmeticallyChangedActors } =
+                await getAffectedActors({
+                    head: 'HEAD',
+                    since: baseSha,
+                    actors: args.actors,
+                    ignore: args.ignore,
+                });
             // A release ships cosmetic changes (README, input schema descriptions, ...) too
-            const actorsChanged = [...functionalActors, ...cosmeticActors];
+            const actorsChanged = [...functionallyChangedActors, ...cosmeticallyChangedActors];
             if (commits.length === 0) {
                 logger.info(`HEAD is the base commit ${baseSha}, there is nothing new to release`);
                 return;

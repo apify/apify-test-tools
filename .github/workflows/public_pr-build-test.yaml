@@ -82,7 +82,7 @@ jobs:
                   affected=$(npx apify-test-tools get-affected-actors \
                     --head "origin/$HEAD_REF" \
                     --base "origin/$BASE_REF")
-                  branch_actors=$(jq -c '.functionalActors' <<< "$affected")
+                  branch_actors=$(jq -c '.functionallyChangedActors' <<< "$affected")
                   if [ -n "$changed" ] && [ "$branch_actors" = "[]" ]; then
                     echo "target=$changed" | tee -a "$GITHUB_OUTPUT"
                   elif [ -n "$changed" ]; then

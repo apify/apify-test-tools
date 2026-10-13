@@ -36,9 +36,9 @@ export interface AffectedActors {
     changedFiles: string[];
     changelog: string | null;
     /** Actors with at least one functional change. They need a new build and tests. */
-    functionalActors: ActorConfig[];
+    functionallyChangedActors: ActorConfig[];
     /** Actors whose changes are all cosmetic (README, CHANGELOG, cosmetic .actor JSON). They only need a release build. */
-    cosmeticActors: ActorConfig[];
+    cosmeticallyChangedActors: ActorConfig[];
 }
 
 type BranchRangeOptions = AffectedActorsOptions & { base: string };
@@ -88,8 +88,8 @@ const getBranchChanges = async ({ head, base, since, actors, ignore }: BranchRan
         commits,
         changedFiles,
         changelog,
-        functionalActors: ownChanges.hasFunctional ? changed.functional : [],
-        cosmeticActors: changed.cosmetic,
+        functionallyChangedActors: ownChanges.hasFunctional ? changed.functional : [],
+        cosmeticallyChangedActors: changed.cosmetic,
     };
 };
 
@@ -98,7 +98,13 @@ const getChangesSince = async ({ head, since, actors, ignore }: SinceRangeOption
     const changes = await getReleaseChanges(sinceSha, head);
     if (!changes) {
         logger.info(`${head} is the --since commit ${sinceSha}, nothing changed`);
-        return { commits: [], changedFiles: [], changelog: null, functionalActors: [], cosmeticActors: [] };
+        return {
+            commits: [],
+            changedFiles: [],
+            changelog: null,
+            functionallyChangedActors: [],
+            cosmeticallyChangedActors: [],
+        };
     }
 
     const actorConfigs = await readConfigFile({ actors, ignore });
@@ -107,7 +113,7 @@ const getChangesSince = async ({ head, since, actors, ignore }: SinceRangeOption
         actorConfigs,
         commits: changes.commits,
     });
-    return { ...changes, functionalActors: changed.functional, cosmeticActors: changed.cosmetic };
+    return { ...changes, functionallyChangedActors: changed.functional, cosmeticallyChangedActors: changed.cosmetic };
 };
 
 /**
@@ -138,8 +144,8 @@ export const toAffectedActorsDocument = ({
     commits,
     changedFiles,
     changelog,
-    functionalActors,
-    cosmeticActors,
+    functionallyChangedActors,
+    cosmeticallyChangedActors,
 }: AffectedActors) => {
     const names = (configs: ActorConfig[]) => configs.map(({ actorFullName }) => ({ actorFullName }));
     return {
@@ -149,7 +155,7 @@ export const toAffectedActorsDocument = ({
         commits,
         changedFiles,
         changelog,
-        functionalActors: names(functionalActors),
-        cosmeticActors: names(cosmeticActors),
+        functionallyChangedActors: names(functionallyChangedActors),
+        cosmeticallyChangedActors: names(cosmeticallyChangedActors),
     };
 };

@@ -704,15 +704,15 @@ The output is a JSON document:
     "commits": [{ "sha": "…", "author": "…", "date": "…", "message": "…" }],
     "changedFiles": ["src/main.ts", "CHANGELOG.md"],
     "changelog": "Lines added to CHANGELOG.md, or null",
-    "functionalActors": [{ "actorFullName": "john.doe/my-actor" }],
-    "cosmeticActors": [{ "actorFullName": "john.doe/other-actor" }]
+    "functionallyChangedActors": [{ "actorFullName": "john.doe/my-actor" }],
+    "cosmeticallyChangedActors": [{ "actorFullName": "john.doe/other-actor" }]
 }
 ```
 
-Each changed Actor is in exactly one of the lists. `functionalActors` have at least one functional change, so
-they need a new build and tests. `cosmeticActors` only have cosmetic changes (see
+Each changed Actor is in exactly one of the lists. `functionallyChangedActors` have at least one functional change, so
+they need a new build and tests. `cosmeticallyChangedActors` only have cosmetic changes (see
 [Change detection](#change-detection)), so they need a new build only when released: `build` builds
-`functionalActors`, `release` builds both.
+`functionallyChangedActors`, `release` builds both.
 
 `ref` is the branch `--head` points to without the remote (`origin/my-branch` gives `my-branch`), or `null`
 for a SHA or a detached HEAD. `build` and `release` use the same detection internally.

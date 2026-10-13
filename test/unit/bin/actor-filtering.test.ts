@@ -2,12 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import { selectActors } from '../../../bin/actor-filtering.js';
 import type { ActorConfig } from '../../../bin/types.js';
+import { ExistingDir, ExistingFile, RelativeDir } from '../../../bin/utils/path/repo-relative.js';
 
 const actor = (actorFullName: string): ActorConfig => ({
     actorFullName,
-    folder: actorFullName.split('/')[1],
+    folder: new ExistingDir('.'),
     tokenEnvVar: 'TOKEN',
-    dockerContextDir: '.',
+    actorJson: {
+        // kind of a hack, but its not supposed to be read here
+        file: new ExistingFile('package.json'),
+        dockerContextDir: RelativeDir.ROOT,
+    },
+    dockerContextDir: new RelativeDir('.'),
     contextPaths: [],
 });
 

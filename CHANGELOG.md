@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - **internal-workflows:** Wait out npm&#x27;s async publish before holding the major tag ([#160](https://github.com/apify/apify-test-tools/pull/160)) ([78434f0](https://github.com/apify/apify-test-tools/commit/78434f03d288ecbd383d55d56a1610f06ded298f)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - Skip builds and tests when the net diff is empty ([#171](https://github.com/apify/apify-test-tools/pull/171)) ([874d70c](https://github.com/apify/apify-test-tools/commit/874d70ca5506f7ec742a1808c9bf6c670f08552c)) by [@artogahr](https://github.com/artogahr)
 - **workflows:** Add npm install step to Claude fix workflow ([#161](https://github.com/apify/apify-test-tools/pull/161)) ([d8884e0](https://github.com/apify/apify-test-tools/commit/d8884e07f778de14c8d9d7f0ec9e0a1672c224ad)) by [@foxt451](https://github.com/foxt451), closes [#39](https://github.com/apify/apify-test-tools/issues/39)
+- **worktree:** Support worktree usage in tests ([#188](https://github.com/apify/apify-test-tools/pull/188)) ([ffc7e7b](https://github.com/apify/apify-test-tools/commit/ffc7e7bf1466af00eed671137feff0cbda712003)) by [@JuanGalilea](https://github.com/JuanGalilea)
 
 
 <!-- git-cliff-unreleased-end -->

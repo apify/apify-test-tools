@@ -7,14 +7,9 @@ import * as Git from '../../../bin/git.js';
 import type { ActorConfig, Commit } from '../../../bin/types.js';
 import * as LoadConfig from '../../../bin/utils/config/load-config.js';
 
-const actorA: ActorConfig = {
-    actorFullName: 'owner/a',
-    folder: 'actors/a',
-    tokenEnvVar: 'APIFY_TOKEN_OWNER',
-    dockerContextDir: '',
-    contextPaths: [''],
-};
-const actorB: ActorConfig = { ...actorA, actorFullName: 'owner/b', folder: 'actors/b' };
+// Everything that reads the configs is mocked, so only the identity and name of an Actor matter here
+const actorA = { actorFullName: 'owner/a' } as ActorConfig;
+const actorB = { actorFullName: 'owner/b' } as ActorConfig;
 
 const headSha = 'f'.repeat(40);
 const sinceSha = '5'.repeat(40);

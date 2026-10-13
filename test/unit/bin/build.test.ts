@@ -1,6 +1,10 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType, ApifyClient } from 'apify-client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     assertRepoUrlMatchesDefaultVersion,
@@ -9,6 +13,7 @@ import {
     runBuilds,
 } from '../../../bin/build.js';
 import type { ActorConfig } from '../../../bin/types.js';
+import { ExistingDir, ExistingFile, RelativeDir } from '../../../bin/utils/path/repo-relative.js';
 
 // Only the client is faked, so the tests exercise the real builder code against a stubbed API
 vi.mock('apify-client', async (importOriginal) => {
@@ -81,13 +86,33 @@ describe('assertRepoUrlMatchesDefaultVersion', () => {
 
 describe('dry run', () => {
     const TOKEN_ENV_VAR = 'APIFY_TOKEN_OWNER';
-    const actorConfig: ActorConfig = {
-        actorFullName: ACTOR,
-        folder: 'actors/a',
-        tokenEnvVar: TOKEN_ENV_VAR,
-        dockerContextDir: 'actors/a',
-        contextPaths: [],
-    };
+    const originalCwd = process.cwd();
+    let fixtureRoot: string;
+    let actorConfig: ActorConfig;
+
+    // ExistingDir checks the folder exists, so the config is built inside a throwaway repo root
+    beforeAll(() => {
+        fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'apify-build-dry-run-'));
+        process.chdir(fixtureRoot);
+        fs.mkdirSync('actors/a/.actor', { recursive: true });
+        fs.writeFileSync('actors/a/.actor/actor.json', '{}');
+        actorConfig = {
+            actorFullName: ACTOR,
+            folder: new ExistingDir('actors/a'),
+            tokenEnvVar: TOKEN_ENV_VAR,
+            actorJson: {
+                file: new ExistingFile('actors/a/.actor/actor.json'),
+                dockerContextDir: new RelativeDir('actors/a'),
+            },
+            dockerContextDir: new RelativeDir('actors/a'),
+            contextPaths: [new RelativeDir('actors/a')],
+        };
+    });
+
+    afterAll(() => {
+        process.chdir(originalCwd);
+        fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    });
     const deleteBuild = vi.fn();
     const startBuild = vi.fn();
     const createVersion = vi.fn();

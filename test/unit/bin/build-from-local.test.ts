@@ -1,5 +1,3 @@
-import type * as ChildProcessModule from 'node:child_process';
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,19 +15,7 @@ import {
 } from '../../../bin/build-from-local.js';
 import * as Utils from '../../../bin/utils.js';
 
-// Defaults to the real spawnSync so `git init`/`git ls-files` calls made by the code under test
-// (and by test setup below) actually run — individual tests override this via mockReturnValue
-// where they need to fake git's output, and vi.restoreAllMocks() reverts back to this passthrough.
-vi.mock('node:child_process', async (importOriginal) => {
-    const actual = await importOriginal<typeof ChildProcessModule>();
-    return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
-});
-
 const mkTempDir = async (prefix: string) => fs.mkdtemp(path.join(os.tmpdir(), prefix));
-
-const initGitRepo = (dir: string) => {
-    spawnSync('git', ['init', '-q'], { cwd: dir });
-};
 
 describe('build-from-local helpers', () => {
     const tempDirs: string[] = [];
@@ -43,15 +29,13 @@ describe('build-from-local helpers', () => {
         it('drops secret-pattern files and gitignored files, keeps everything else', async () => {
             const rootDir = await mkTempDir('apify-test-tools-collect-');
             tempDirs.push(rootDir);
-            initGitRepo(rootDir);
 
             await fs.writeFile(path.join(rootDir, 'main.js'), 'console.log(1)');
             await fs.writeFile(path.join(rootDir, '.env'), 'SECRET=1');
             await fs.mkdir(path.join(rootDir, 'sub'));
             await fs.writeFile(path.join(rootDir, 'sub', 'ignored.log'), 'log');
 
-            // Only the gitignore side is mocked — isSecretFile runs for real, so this also
-            // proves the secret-pattern backstop applies independently of .gitignore.
+            vi.spyOn(Utils, 'listRepoFilePaths').mockResolvedValue(['main.js', '.env', 'sub/ignored.log']);
             vi.spyOn(Utils, 'getGitignoredPaths').mockImplementation(
                 async (relativePaths) => new Set(relativePaths.filter((p) => p.endsWith('.log'))),
             );
@@ -146,7 +130,6 @@ describe('build-from-local helpers', () => {
         it("always collects the actor's own .actor/actor.json for a monorepo actor, since flattenMonorepoContext depends on it", async () => {
             const repoRoot = await mkTempDir('apify-test-tools-collect-source-');
             tempDirs.push(repoRoot);
-            initGitRepo(repoRoot);
 
             const originalCwd = process.cwd();
             // We simulate the working directory being the repo root, since collectSourceFiles uses relative paths to the repo root.
@@ -160,6 +143,14 @@ describe('build-from-local helpers', () => {
                     JSON.stringify({ actorSpecification: 1, name: 'actor', dockerContextDir: '../../..' }),
                 );
                 await fs.writeFile(path.join(cwd, 'package.json'), '{}');
+
+                vi.spyOn(Utils, 'listRepoFilePaths').mockResolvedValue([
+                    'actors/owner_actor/.actor/actor.json',
+                    'package.json',
+                ]);
+                vi.spyOn(Utils, 'getGitignoredPaths').mockResolvedValue(
+                    new Set(['actors/owner_actor/.actor/actor.json']),
+                );
 
                 const sourceFiles = await collectSourceFiles('owner/actor', actorDir);
                 expect(sourceFiles.map((file) => file.name)).toContain('.actor/actor.json');

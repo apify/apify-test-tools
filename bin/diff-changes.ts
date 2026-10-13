@@ -35,11 +35,16 @@ type FileChangeForActor =
 /**
  * Classify a single file change for a single actor.
  *
- * A changelog is cosmetic for every actor. Other files must be inside a context path.
- * Ignore known development files at the top of that context and files matched by
- * `.dockerignore`, except for files in the actor's `.actor/` directory. A README is
- * cosmetic inside the actor folder and ignored elsewhere. JSON files in `.actor/`
- * are cosmetic only when their schema changes are semantically cosmetic.
+ * Steps (in order):
+ * 1. CHANGELOG.md, by filename, anywhere → cosmetic. There is a single repo-wide shared changelog,
+ *    not one per actor, so it applies to every actor regardless of context/folder.
+ * 2. Context matching (actorConfig.contextPaths) → outside-context if no match
+ * 3. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
+ * 4. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
+ *    dir → ignored if matched
+ * 5. README.md by filename → cosmetic if inside the actor's own folder, otherwise ignored
+ * 6. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
+ * 7. Everything else → functional
  */
 const classifyFileChange = async (
     changedFile: RelativeFile,
@@ -49,6 +54,9 @@ const classifyFileChange = async (
 ): Promise<FileChangeForActor> => {
     const lowercaseFilePath = changedFile.path.toLowerCase();
 
+    // TODO: hardcodes that there's a single repo-wide changelog belonging to every actor. Should instead
+    // be derived from parsing actor.json (readme, changelog, schema paths), see
+    // https://github.com/apify/apify-test-tools/issues/106
     if (lowercaseFilePath.endsWith('changelog.md')) {
         return { impact: 'cosmetic', semanticallyVerified: false };
     }

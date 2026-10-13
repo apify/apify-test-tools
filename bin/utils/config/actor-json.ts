@@ -42,15 +42,17 @@ const resolveFile = (actorJsonFile: ExistingFile, field: string, value: unknown)
 };
 
 /**
+ * Looks for fallback locations of config files in the provided order, matches insensitively.
+ *
  * Pretty inefficient way to do it, but it was either this bs or adding a matching library just for the insensitive matching of fallback files.
  * So if this ever becomes a performance problem for anyone, they can explicitly state their files in the config and live happily ever after.
  */
 const resolveDefaultFileLocations = (
     actorJsonFile: ExistingFile,
-    defaults: readonly string[],
+    fallbackPaths: readonly string[],
 ): RelativeFile | undefined => {
-    for (const candidate of defaults) {
-        const file = actorJsonFile.joinFile(candidate);
+    for (const fallbackCandidate of fallbackPaths) {
+        const file = actorJsonFile.joinFile(fallbackCandidate);
         const expectedName = path.posix.basename(file.path);
         const entries = readdirSync(file.parent.path);
         const actualName =
@@ -92,6 +94,10 @@ export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
     return {
         file: actorJsonFile,
         dockerContextDir,
+        // all these with `resolveDefaultFileLocations` is because the platform has lookup locations as fallback
+        // if not present in actor.json, this is behavior from before .actor folder was a thing
+        // with this we replicate exactly what the platform does for resolution of these files
+        // so we resolve the same way the platform does during builds.
         dockerfile:
             resolveFile(actorJsonFile, 'dockerfile', fields.dockerfile) ??
             resolveDefaultFileLocations(actorJsonFile, ['./Dockerfile', '../Dockerfile']),
@@ -107,6 +113,8 @@ export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
                 fields.input != null ? 'input' : 'inputSchema',
                 fields.input ?? fields.inputSchema,
             ) ?? resolveDefaultFileLocations(actorJsonFile, ['./INPUT_SCHEMA.json', '../INPUT_SCHEMA.json']),
+
+        // these other schemas came after .actor was invented, so they have no fallbacks in platform
         outputSchema: resolveFile(
             actorJsonFile,
             fields.output != null ? 'output' : 'outputSchema',

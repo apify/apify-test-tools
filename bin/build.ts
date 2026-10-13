@@ -352,7 +352,7 @@ export const runBuilds = async ({
 
             // Depending on if these are miniactors or standaloneActors
             let gitRepoUrl = `${repoUrl}#${branch}`;
-            if (actorConfig.folder) {
+            if (!actorConfig.folder.isRoot()) {
                 gitRepoUrl = `${gitRepoUrl}:${actorConfig.folder}`;
             }
             return {

@@ -1,3 +1,6 @@
+import type { ActorJsonPaths } from './utils/config/actor-json.js';
+import type { ExistingDir, RelativeDir } from './utils/path/repo-relative.js';
+
 export interface Config {
     targetBranch: string;
     sourceBranch: string;
@@ -23,8 +26,9 @@ export interface BuildData {
 
 export interface ActorConfig {
     actorFullName: string;
-    folder: string;
+    folder: ExistingDir;
     tokenEnvVar: string;
-    dockerContextDir: string;
-    contextPaths: string[];
+    actorJson: ActorJsonPaths;
+    dockerContextDir: RelativeDir;
+    contextPaths: RelativeDir[];
 }

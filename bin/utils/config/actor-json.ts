@@ -1,3 +1,6 @@
+import { readdirSync } from 'node:fs';
+import path from 'node:path';
+
 import z from 'zod';
 
 import { safeReadJsonObjectFile } from '../json-file.js';
@@ -38,6 +41,31 @@ const resolveFile = (actorJsonFile: ExistingFile, field: string, value: unknown)
     }
 };
 
+/**
+ * Looks for fallback locations of config files in the provided order, matches insensitively.
+ *
+ * Pretty inefficient way to do it, but it was either this bs or adding a matching library just for the insensitive matching of fallback files.
+ * So if this ever becomes a performance problem for anyone, they can explicitly state their files in the config and live happily ever after.
+ */
+const resolveDefaultFileLocations = (
+    actorJsonFile: ExistingFile,
+    fallbackPaths: readonly string[],
+): RelativeFile | undefined => {
+    for (const fallbackCandidate of fallbackPaths) {
+        const file = actorJsonFile.joinFile(fallbackCandidate);
+        const expectedName = path.posix.basename(file.path);
+        const entries = readdirSync(file.parent.path);
+        const actualName =
+            entries.find((entry) => entry === expectedName) ??
+            entries.find((entry) => entry.toLowerCase() === expectedName.toLowerCase());
+        if (actualName) {
+            const actualFile = file.parent.joinFile(actualName);
+            if (actualFile.exists()) return actualFile;
+        }
+    }
+    return undefined;
+};
+
 export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
     const actorJsonPath = config.folder.joinFile('.actor/actor.json');
     let actorJsonFile: ExistingFile;
@@ -66,14 +94,27 @@ export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
     return {
         file: actorJsonFile,
         dockerContextDir,
-        dockerfile: resolveFile(actorJsonFile, 'dockerfile', fields.dockerfile),
-        readme: resolveFile(actorJsonFile, 'readme', fields.readme),
-        changelog: resolveFile(actorJsonFile, 'changelog', fields.changelog),
-        inputSchema: resolveFile(
-            actorJsonFile,
-            fields.input != null ? 'input' : 'inputSchema',
-            fields.input ?? fields.inputSchema,
-        ),
+        // all these with `resolveDefaultFileLocations` is because the platform has lookup locations as fallback
+        // if not present in actor.json, this is behavior from before .actor folder was a thing
+        // with this we replicate exactly what the platform does for resolution of these files
+        // so we resolve the same way the platform does during builds.
+        dockerfile:
+            resolveFile(actorJsonFile, 'dockerfile', fields.dockerfile) ??
+            resolveDefaultFileLocations(actorJsonFile, ['./Dockerfile', '../Dockerfile']),
+        readme:
+            resolveFile(actorJsonFile, 'readme', fields.readme) ??
+            resolveDefaultFileLocations(actorJsonFile, ['./README.md', '../README.md']),
+        changelog:
+            resolveFile(actorJsonFile, 'changelog', fields.changelog) ??
+            resolveDefaultFileLocations(actorJsonFile, ['./CHANGELOG.md', '../CHANGELOG.md']),
+        inputSchema:
+            resolveFile(
+                actorJsonFile,
+                fields.input != null ? 'input' : 'inputSchema',
+                fields.input ?? fields.inputSchema,
+            ) ?? resolveDefaultFileLocations(actorJsonFile, ['./INPUT_SCHEMA.json', '../INPUT_SCHEMA.json']),
+
+        // these other schemas came after .actor was invented, so they have no fallbacks in platform
         outputSchema: resolveFile(
             actorJsonFile,
             fields.output != null ? 'output' : 'outputSchema',

@@ -7,7 +7,6 @@ import type { ActorConfig, Commit } from './types.js';
 interface ShouldBuildAndTestOptions {
     filepathsChanged: string[];
     actorConfigs: ActorConfig[];
-    isLatest?: boolean;
     commits: Commit[];
 }
 
@@ -168,14 +167,19 @@ const logChangeGroups = (groups: ChangeGroup[]): void => {
     }
 };
 
-/**
- * Collects the changed files of every Actor whose context they fall in, in the order of actorConfigs.
- * Cosmetic changes are only collected with includeCosmetic.
- */
-const collectActorChanges = async (
-    { filepathsChanged, actorConfigs, commits }: Omit<ShouldBuildAndTestOptions, 'isLatest'>,
-    { includeCosmetic }: { includeCosmetic: boolean },
-): Promise<Map<string, ActorChangeEntry>> => {
+export interface ChangedActors {
+    /** Actors with at least one functional change. They need a new build and tests. */
+    functional: ActorConfig[];
+    /** Actors whose changes are all cosmetic. They only need a new build when released. */
+    cosmetic: ActorConfig[];
+}
+
+/** Finds the Actors the changed files belong to, split by the most impactful change each Actor has. */
+export const getChangedActors = async ({
+    filepathsChanged,
+    actorConfigs,
+    commits,
+}: ShouldBuildAndTestOptions): Promise<ChangedActors> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
 
     for (const actorConfig of actorConfigs) {
@@ -191,7 +195,6 @@ const collectActorChanges = async (
             const change = await classifyFileChange(originalFilePath, actorConfig, commits, dockerIgnoreMatcher);
 
             if (change.impact === 'ignored' || change.impact === 'outside-context') continue;
-            if (change.impact === 'cosmetic' && !includeCosmetic) continue;
 
             const entry = actorsChangedMap.get(actorConfig.folder) ?? {
                 actorConfig,
@@ -208,43 +211,7 @@ const collectActorChanges = async (
     // instead of being repeated per actor.
     logChangeGroups(groupFilesByActorSet(buildFileToActorsMap(actorsChangedMap)));
 
-    return actorsChangedMap;
-};
-
-export const getChangedActors = async ({
-    filepathsChanged,
-    actorConfigs,
-    isLatest = false,
-    commits,
-}: ShouldBuildAndTestOptions): Promise<ActorConfig[]> => {
-    const actorsChangedMap = await collectActorChanges(
-        { filepathsChanged, actorConfigs, commits },
-        { includeCosmetic: isLatest },
-    );
-    const actorsChanged = Array.from(actorsChangedMap.values()).map((entry) => entry.actorConfig);
-
-    if (actorsChanged.length > 0) {
-        const actors = actorsChanged.map((config) => config.actorFullName);
-        logger.info(`[DIFF]: Actors to be built and tested: ${actors.join(', ')}`);
-    } else {
-        logger.info(`[DIFF]: No relevant files changed, skipping builds and tests`);
-    }
-
-    return actorsChanged;
-};
-
-export interface ChangedActorsByImpact {
-    /** Actors with at least one functional change. They need a new build and tests. */
-    functional: ActorConfig[];
-    /** Actors whose changes are all cosmetic. They only need a new build when released. */
-    cosmetic: ActorConfig[];
-}
-
-/** Like getChangedActors, but splits the changed Actors by the most impactful change each one has. */
-export const getChangedActorsByImpact = async (
-    options: Omit<ShouldBuildAndTestOptions, 'isLatest'>,
-): Promise<ChangedActorsByImpact> => {
-    const entries = Array.from((await collectActorChanges(options, { includeCosmetic: true })).values());
+    const entries = Array.from(actorsChangedMap.values());
     const functional = entries.filter((entry) => entry.hasFunctionalChange).map((entry) => entry.actorConfig);
     const cosmetic = entries.filter((entry) => !entry.hasFunctionalChange).map((entry) => entry.actorConfig);
 

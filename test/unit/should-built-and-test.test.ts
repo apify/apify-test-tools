@@ -5,6 +5,16 @@ import { getChangedActors } from '../../bin/diff-changes.js';
 import * as DiffJsonSchema from '../../bin/diff-json-schema.js';
 import type { ActorConfig, Commit } from '../../bin/types.js';
 
+// What a PR (functional changes only) or a release (isLatest, all changes) builds, in config order
+const changedActorsFor = async ({
+    isLatest = false,
+    ...options
+}: Parameters<typeof getChangedActors>[0] & { isLatest?: boolean }): Promise<ActorConfig[]> => {
+    const { functional, cosmetic } = await getChangedActors(options);
+    const changed = isLatest ? [...functional, ...cosmetic] : functional;
+    return options.actorConfigs.filter((config) => changed.includes(config));
+};
+
 describe('Should build and test parser', () => {
     // From https://github.com/apify-store/testing-repo-for-github-actions
     const ACTOR_CONFIGS: ActorConfig[] = [
@@ -48,7 +58,7 @@ describe('Should build and test parser', () => {
     test('Ignores dev-only readme', async () => {
         const FILES = ['README.md', 'code/README.md', 'shared/README.md'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -61,7 +71,7 @@ describe('Should build and test parser', () => {
     test('Ignores other ignored files and folders', async () => {
         const FILES = ['.vscode/', '.gitignore', '.husky/', '.eslintrc', '.editorconfig'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -74,7 +84,7 @@ describe('Should build and test parser', () => {
     test('.actor/ changes trigger builds for broad-context actors', async () => {
         const FILES = ['.actor/actor.json'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -87,7 +97,7 @@ describe('Should build and test parser', () => {
     test('Root-level changelog is cosmetic for every actor, only on latest', async () => {
         const FILES = ['shared/CHANGELOG.md', 'CHANGELOG.md'];
 
-        const actorsChangedNotLatest = await getChangedActors({
+        const actorsChangedNotLatest = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -95,7 +105,7 @@ describe('Should build and test parser', () => {
         });
         expect(actorsChangedNotLatest).toEqual([]);
 
-        const actorsChangedLatest = await getChangedActors({
+        const actorsChangedLatest = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
@@ -107,7 +117,7 @@ describe('Should build and test parser', () => {
     test('A changelog nested inside one actor own folder is excluded for sibling actors, only triggers that actor', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/CHANGELOG.md'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
@@ -120,7 +130,7 @@ describe('Should build and test parser', () => {
     test('Code updated, tests broad-context actors', async () => {
         const FILES = ['code/src/main.ts', 'package.json'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -137,7 +147,7 @@ describe('Should build and test parser', () => {
         ];
         // Default mock returns false = functional change
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -150,7 +160,7 @@ describe('Should build and test parser', () => {
     test('src/main.ts updated', async () => {
         const FILES = ['src/main.ts'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
@@ -168,7 +178,7 @@ describe('Should build and test parser', () => {
         ];
         // Default mock returns false = functional change for the JSON file
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -184,7 +194,7 @@ describe('Should build and test parser', () => {
             'standalone-actors/lukaskrivka_test-standalone/CHANGELOG.md',
         ];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -198,7 +208,7 @@ describe('Should build and test parser', () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
         isCosmeticOnlyJsonSchemaSpy.mockResolvedValue(true);
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -212,7 +222,7 @@ describe('Should build and test parser', () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
         isCosmeticOnlyJsonSchemaSpy.mockResolvedValue(true);
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
@@ -226,7 +236,7 @@ describe('Should build and test parser', () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
         // Default mock returns false = functional change
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -246,7 +256,7 @@ describe('Should build and test parser', () => {
             async (_commits, filepath: string) => !filepath.includes('input_schema.json'),
         );
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -261,7 +271,7 @@ describe('Should build and test parser', () => {
         const FILES = ['standalone-actors/lukaskrivka_test-standalone/.actor/actor.json'];
         isCosmeticOnlyJsonSchemaSpy.mockResolvedValue(true);
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -354,7 +364,7 @@ describe('Should build and test parser', () => {
             },
         ];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS_GOOGLE_MAPS,
             isLatest: false,
             filepathsChanged: FILES,

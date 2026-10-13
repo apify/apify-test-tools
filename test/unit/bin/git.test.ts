@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     getBranchOnlyChangedFiles,
     getChangedFiles,
+    getChangedFilesBetween,
     getCommits,
+    getCommitsBetween,
     getCurrentBranch,
-    getReleaseChanges,
     getRepoName,
     hasMergeFromTarget,
     normalizeRepoUrl,
@@ -477,17 +478,14 @@ describe('resolveReleaseBaseCommit', () => {
         await expect(resolveReleaseBaseCommit('not-a-sha')).rejects.toThrow('Invalid base commit SHA');
     });
 
-    it('checks ancestry against a custom head and names the option that was passed', async () => {
+    it('checks ancestry against a custom head', async () => {
         const gitCommandSpy = vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
             if (args[0] === 'rev-parse') return baseSha;
             if (args[0] === 'merge-base') return 'c'.repeat(40);
             return '';
         });
-        await expect(
-            resolveReleaseBaseCommit(baseSha, { head: 'origin/release', optionName: '--since' }),
-        ).rejects.toThrow(
-            'is not an ancestor of origin/release, most likely because the branch was force-pushed. ' +
-                'The changed files cannot be determined reliably. Rerun with --since set to an ancestor of origin/release',
+        await expect(resolveReleaseBaseCommit(baseSha, 'origin/release')).rejects.toThrow(
+            'is not an ancestor of origin/release',
         );
         expect(gitCommandSpy).toHaveBeenCalledWith(['merge-base', baseSha, 'origin/release'], {
             operation: 'check whether the release base commit is an ancestor of origin/release',
@@ -495,88 +493,32 @@ describe('resolveReleaseBaseCommit', () => {
     });
 });
 
-describe('getReleaseChanges', () => {
-    const baseSha = 'b'.repeat(40);
-    const headSha = 'd'.repeat(40);
-    const mergedBranchCommit = `${'1'.repeat(40)}»¦«Dev<dev@example.com>»¦«Date1»¦«feat: branch change`;
-    const mergeCommit = `${headSha}»¦«Dev<dev@example.com>»¦«Date2»¦«Merge pull request #1`;
+describe('getCommitsBetween', () => {
+    it('lists the commits after fromRef up to toRef, oldest first', async () => {
+        const older = `${'1'.repeat(40)}»¦«Dev<dev@example.com>»¦«Date1»¦«first`;
+        const newer = `${'2'.repeat(40)}»¦«Dev<dev@example.com>»¦«Date2»¦«second`;
+        const spy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(`${newer}\n${older}`);
 
-    let gitRunSpy: MockInstance;
+        const commits = await getCommitsBetween('base-sha', 'head-sha');
 
-    beforeEach(() => {
-        gitRunSpy = vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
-            if (args[0] === 'rev-parse') return headSha;
-            if (args[0] === 'log') return `${mergeCommit}\n${mergedBranchCommit}`;
-            if (args.includes('--name-only')) return 'actors/foo/src/main.ts\nCHANGELOG.md';
-            if (args[0] === 'diff')
-                return 'diff --git a/CHANGELOG.md b/CHANGELOG.md\n--- a/CHANGELOG.md\n+++ b/CHANGELOG.md\n@@ -1 +1,2 @@\n+- Added foo\n # Changelog';
-            return '';
+        expect(commits.map((c) => c.message)).toStrictEqual(['first', 'second']);
+        expect(spy).toHaveBeenCalledWith(['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', 'base-sha..head-sha'], {
+            operation: 'list commits reachable from the source ref but absent from the target ref',
         });
     });
+});
 
-    it('should diff the range directly and return the commits oldest first', async () => {
-        const changes = await getReleaseChanges(baseSha);
+describe('getChangedFilesBetween', () => {
+    it('diffs the two endpoints directly', async () => {
+        const spy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('src/main.ts\nCHANGELOG.md');
 
-        expect(changes).toStrictEqual({
-            commits: [
-                { sha: '1'.repeat(40), author: 'Dev<dev@example.com>', date: 'Date1', message: 'feat: branch change' },
-                { sha: headSha, author: 'Dev<dev@example.com>', date: 'Date2', message: 'Merge pull request #1' },
-            ],
-            changedFiles: ['actors/foo/src/main.ts', 'CHANGELOG.md'],
-            changelog: '- Added foo',
+        await expect(getChangedFilesBetween('base-sha', 'head-sha')).resolves.toStrictEqual([
+            'src/main.ts',
+            'CHANGELOG.md',
+        ]);
+        expect(spy).toHaveBeenCalledWith(['diff', '--name-only', 'base-sha..head-sha'], {
+            operation: 'get the list of changed files between commits',
         });
-        // Not from the parent of the oldest commit, which may predate the base commit for merge commits
-        expect(gitRunSpy).toHaveBeenCalledWith(['rev-parse', 'HEAD'], {
-            operation: 'identify the current release commit',
-        });
-        expect(gitRunSpy).toHaveBeenCalledWith(['diff', '--name-only', baseSha, 'HEAD'], {
-            operation: 'list files changed since the last release',
-        });
-        expect(gitRunSpy).toHaveBeenCalledWith(
-            ['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', `${baseSha}..HEAD`],
-            { operation: 'list commits reachable from the source ref but absent from the target ref' },
-        );
-        expect(gitRunSpy).toHaveBeenCalledWith(['diff', baseSha, 'HEAD', '--', 'CHANGELOG.md'], {
-            operation: 'read changelog changes since the last release',
-        });
-    });
-
-    it('should diff up to a custom head', async () => {
-        await getReleaseChanges(baseSha, 'origin/release');
-
-        expect(gitRunSpy).toHaveBeenCalledWith(['rev-parse', 'origin/release'], {
-            operation: 'identify the current release commit',
-        });
-        expect(gitRunSpy).toHaveBeenCalledWith(['diff', '--name-only', baseSha, 'origin/release'], {
-            operation: 'list files changed since the last release',
-        });
-        expect(gitRunSpy).toHaveBeenCalledWith(
-            ['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', `${baseSha}..origin/release`],
-            { operation: 'list commits reachable from the source ref but absent from the target ref' },
-        );
-        expect(gitRunSpy).toHaveBeenCalledWith(['diff', baseSha, 'origin/release', '--', 'CHANGELOG.md'], {
-            operation: 'read changelog changes since the last release',
-        });
-    });
-
-    it('should return null when HEAD is the base commit', async () => {
-        await expect(getReleaseChanges(headSha)).resolves.toBeNull();
-        expect(gitRunSpy).toHaveBeenCalledOnce();
-        expect(gitRunSpy).toHaveBeenCalledWith(['rev-parse', 'HEAD'], {
-            operation: 'identify the current release commit',
-        });
-    });
-
-    it('skips the changelog diff when CHANGELOG.md did not change', async () => {
-        gitRunSpy.mockImplementation(async (args: string[]) => {
-            if (args[0] === 'rev-parse') return headSha;
-            if (args[0] === 'log') return `${mergeCommit}\n${mergedBranchCommit}`;
-            if (args.includes('--name-only')) return 'actors/foo/src/main.ts';
-            return '';
-        });
-
-        await expect(getReleaseChanges(baseSha)).resolves.toMatchObject({ changelog: null });
-        expect(gitRunSpy).not.toHaveBeenCalledWith(['diff', baseSha, 'HEAD', '--', 'CHANGELOG.md']);
     });
 });
 

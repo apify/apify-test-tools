@@ -1,10 +1,10 @@
-import { getChangedActorsByImpact } from './diff-changes.js';
+import { type ChangedActors, getChangedActors } from './diff-changes.js';
 import {
     getBranchOnlyChangedFiles,
-    getChangedFiles,
+    getChangedFilesBetween,
     getChangelogAdditions,
     getCommits,
-    getReleaseChanges,
+    getCommitsBetween,
     hasMergeFromTarget,
     resolveBranchName,
     resolveCommitSha,
@@ -14,7 +14,7 @@ import { logger } from './logger.js';
 import type { ActorConfig, Commit } from './types.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
-export interface AffectedActorsOptions {
+interface AffectedActorsOptions {
     /** End of the range. */
     head: string;
     /** Only the commits on head that are not on base count, i.e. the branch's own changes. */
@@ -28,7 +28,7 @@ export interface AffectedActorsOptions {
     ignore: string[];
 }
 
-export interface AffectedActors {
+interface AffectedActors {
     headSha: string;
     /** Branch head points to, which is what git builds are made from. Null for a SHA or a detached HEAD. */
     ref: string | null;
@@ -41,100 +41,95 @@ export interface AffectedActors {
     cosmeticallyChangedActors: ActorConfig[];
 }
 
-type BranchRangeOptions = AffectedActorsOptions & { base: string };
-type SinceRangeOptions = AffectedActorsOptions & { since: string };
+interface CommitRange {
+    commits: Commit[];
+    fromRef: string;
+    toRef: string;
+}
 
-const getBranchChanges = async ({ head, base, since, actors, ignore }: BranchRangeOptions) => {
-    const actorConfigs = await readConfigFile({ actors, ignore });
-
-    // This is an optimization for the common case where a branch only has cosmetic changes but had to merge in
-    // functional changes from base (being up-to-date is a CI requirement). Base is already validated, and
-    // since the branch has no functional changes of its own, there is nothing new to validate.
-    // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
-    // individually validated changes can have novel interactions when combined.
-    // The same applies to cosmetic changes: with no changes of its own, the branch has nothing new to release either.
-    let ownChanges = { hasFunctional: true, hasAny: true };
-    if (await hasMergeFromTarget(head, base)) {
-        logger.info(
-            '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
-        );
-        const branchOnlyFiles = await getBranchOnlyChangedFiles(head, base);
-        // Omit since to get full branch history. Validated functional commits can still interact with merged ones
-        const allBranchCommits = await getCommits({ sourceBranch: head, targetBranch: base });
-        const own = await getChangedActorsByImpact({
-            filepathsChanged: branchOnlyFiles,
-            actorConfigs,
-            commits: allBranchCommits,
-        });
-        ownChanges = {
-            hasFunctional: own.functional.length > 0,
-            hasAny: own.functional.length + own.cosmetic.length > 0,
-        };
-        logger.info(
-            ownChanges.hasFunctional
-                ? `[MERGE-FROM-TARGET-OPTIMIZATION]: Branch has ${own.functional.length} functional changes, cannot optimize, we continue with full check`
-                : '[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests',
-        );
-    }
-
-    // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply since and check merge commits (they might be functional or just cosmetic)
+/** The branch's own commits, after `since` when it is on the branch (see getCommits). */
+const getBranchRange = async (head: string, base: string, since: string | undefined): Promise<CommitRange> => {
     const commits = await getCommits({ sourceBranch: head, targetBranch: base, baseCommit: since });
-    const changedFiles = await getChangedFiles(commits);
-    const changelog = await getChangelogAdditions(`${commits[0].sha}~`, commits[commits.length - 1].sha, changedFiles);
-    const changed = ownChanges.hasAny
-        ? await getChangedActorsByImpact({ filepathsChanged: changedFiles, actorConfigs, commits })
-        : { functional: [], cosmetic: [] };
-    return {
-        commits,
-        changedFiles,
-        changelog,
-        functionallyChangedActors: ownChanges.hasFunctional ? changed.functional : [],
-        cosmeticallyChangedActors: changed.cosmetic,
-    };
+    return { commits, fromRef: `${commits[0].sha}~`, toRef: commits[commits.length - 1].sha };
 };
 
-const getChangesSince = async ({ head, since, actors, ignore }: SinceRangeOptions) => {
-    const sinceSha = await resolveReleaseBaseCommit(since, { head, optionName: '--since' });
-    const changes = await getReleaseChanges(sinceSha, head);
-    if (!changes) {
-        logger.info(`${head} is the --since commit ${sinceSha}, nothing changed`);
-        return {
-            commits: [],
-            changedFiles: [],
-            changelog: null,
-            functionallyChangedActors: [],
-            cosmeticallyChangedActors: [],
-        };
-    }
+/** Everything after `since` up to head. Unlike on a branch, `since` must be an ancestor of head. */
+const getRangeSince = async (head: string, headSha: string, since: string): Promise<CommitRange> => {
+    const sinceSha = await resolveReleaseBaseCommit(since, head);
+    const commits = sinceSha === headSha ? [] : await getCommitsBetween(sinceSha, headSha);
+    return { commits, fromRef: sinceSha, toRef: headSha };
+};
 
-    const actorConfigs = await readConfigFile({ actors, ignore });
-    const changed = await getChangedActorsByImpact({
-        filepathsChanged: changes.changedFiles,
+/**
+ * This is an optimization for the common case where a branch only has cosmetic changes but had to merge in
+ * functional changes from base (being up-to-date is a CI requirement). Base is already validated, and
+ * since the branch has no functional changes of its own, there is nothing new to validate.
+ * Exception: if the branch has any functional changes alongside the merge, we must re-test — even
+ * individually validated changes can have novel interactions when combined.
+ * Returns the Actors the branch's own commits changed, or undefined when it didn't merge base in.
+ */
+const getOwnChangesIfMergedFromBase = async (
+    head: string,
+    base: string,
+    actorConfigs: ActorConfig[],
+): Promise<ChangedActors | undefined> => {
+    if (!(await hasMergeFromTarget(head, base))) return undefined;
+
+    logger.info(
+        '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
+    );
+    const own = await getChangedActors({
+        filepathsChanged: await getBranchOnlyChangedFiles(head, base),
         actorConfigs,
-        commits: changes.commits,
+        // Omit since to get full branch history. Validated functional commits can still interact with merged ones
+        commits: await getCommits({ sourceBranch: head, targetBranch: base }),
     });
-    return { ...changes, functionallyChangedActors: changed.functional, cosmeticallyChangedActors: changed.cosmetic };
+    logger.info(
+        own.functional.length > 0
+            ? `[MERGE-FROM-TARGET-OPTIMIZATION]: Branch has ${own.functional.length} functional changes, cannot optimize, we continue with full check`
+            : '[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests',
+    );
+    return own;
 };
 
 /**
  * Finds the Actors whose context changed in the given range. `base` selects the branch's own commits
  * (a PR), `since` the commits after a known one (a release, or the last validated commit of a PR).
  */
-export const getAffectedActors = async (options: AffectedActorsOptions): Promise<AffectedActors> => {
-    const { head, base } = options;
+export const getAffectedActors = async ({
+    head,
+    base,
+    since: sinceOption,
+    actors,
+    ignore,
+}: AffectedActorsOptions): Promise<AffectedActors> => {
     // An empty --since (e.g. an empty cache file) means the same as not passing it
-    const since = options.since || undefined;
-
-    let changes: Omit<AffectedActors, 'headSha' | 'ref'>;
-    if (base) {
-        changes = await getBranchChanges({ ...options, base, since });
-    } else if (since) {
-        changes = await getChangesSince({ ...options, since });
-    } else {
+    const since = sinceOption || undefined;
+    if (!base && !since) {
         throw new Error('Pass --base, --since, or both to select the commits to inspect.');
     }
 
-    return { headSha: await resolveCommitSha(head), ref: await resolveBranchName(head), ...changes };
+    const headSha = await resolveCommitSha(head);
+    const { commits, fromRef, toRef } = base
+        ? await getBranchRange(head, base, since)
+        : await getRangeSince(head, headSha, since!);
+    const actorConfigs = await readConfigFile({ actors, ignore });
+
+    // What the branch only merged in from base is already validated. Without functional changes of its own
+    // the branch has nothing to test, and without any changes of its own nothing to release either.
+    const own = base ? await getOwnChangesIfMergedFromBase(head, base, actorConfigs) : undefined;
+    const changedFiles = await getChangedFilesBetween(fromRef, toRef);
+    const changed = await getChangedActors({ filepathsChanged: changedFiles, actorConfigs, commits });
+
+    return {
+        headSha,
+        ref: await resolveBranchName(head),
+        commits,
+        changedFiles,
+        changelog: await getChangelogAdditions(fromRef, toRef, changedFiles),
+        functionallyChangedActors: own && own.functional.length === 0 ? [] : changed.functional,
+        cosmeticallyChangedActors: own && own.functional.length + own.cosmetic.length === 0 ? [] : changed.cosmetic,
+    };
 };
 
 /** The JSON document `get-affected-actors` prints. Versioned, since other commands and workflows consume it. */

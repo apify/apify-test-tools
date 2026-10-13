@@ -9,14 +9,7 @@ import { hideBin } from 'yargs/helpers';
 import { getAffectedActors, toAffectedActorsDocument } from './affected-actors.js';
 import { deleteOldBuilds, runBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
-import {
-    getChangedFiles,
-    getCommits,
-    getCurrentBranch,
-    getRepoName,
-    resolveReleaseBaseCommit,
-    resolveRepoUrl,
-} from './git.js';
+import { getChangedFiles, getCommits, getCurrentBranch, getRepoName, resolveRepoUrl } from './git.js';
 import { logger, logLevels } from './logger.js';
 import { writeJson } from './output.js';
 import { notifyToSlack } from './slack.js';
@@ -190,20 +183,18 @@ await yargs()
                 .option('report-slack-channel', { type: 'string' })
                 .option('release-slack-channel', { type: 'string' }),
         async (args) => {
-            // Validated here too so the errors name --base-commit, the flag this command takes
-            const baseSha = await resolveReleaseBaseCommit(args.baseCommit);
             const branch = await getCurrentBranch();
             const { commits, changedFiles, changelog, functionallyChangedActors, cosmeticallyChangedActors } =
                 await getAffectedActors({
                     head: 'HEAD',
-                    since: baseSha,
+                    since: args.baseCommit,
                     actors: args.actors,
                     ignore: args.ignore,
                 });
             // A release ships cosmetic changes (README, input schema descriptions, ...) too
             const actorsChanged = [...functionallyChangedActors, ...cosmeticallyChangedActors];
             if (commits.length === 0) {
-                logger.info(`HEAD is the base commit ${baseSha}, there is nothing new to release`);
+                logger.info(`HEAD is the base commit ${args.baseCommit}, there is nothing new to release`);
                 return;
             }
             const { repoUrl, shouldVerifyRepoUrl } = await resolveRepoUrl(args.repoUrl);

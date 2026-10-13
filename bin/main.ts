@@ -64,6 +64,10 @@ const affectedRangeOptions = {
         type: 'string',
         describe: 'Only count commits after this one. Ignored with --base if it is not on the branch',
     },
+    'test-files-glob': {
+        type: 'string',
+        describe: 'Glob (from the repo root) of test files that count as changes even when .dockerignore lists them',
+    },
 } as const satisfies Record<string, Options>;
 
 /** Flags for commands that trigger Apify builds. */
@@ -149,13 +153,20 @@ await yargs()
     .command(
         'build',
         '',
-        (y) => y.options(gitRangeOptions).options(actorSelectionOptions).options(buildOptions).options(repoUrlOptions),
+        (y) =>
+            y
+                .options(gitRangeOptions)
+                .options(actorSelectionOptions)
+                .options(buildOptions)
+                .options(repoUrlOptions)
+                .option('test-files-glob', { type: 'string' }),
         async (config) => {
             // Cosmetic-only changes don't need testing, so they don't need a build either
             const { functionallyChangedActors: actorsChanged } = await getAffectedActors({
                 head: config.sourceBranch,
                 base: config.targetBranch,
                 since: config.baseCommit,
+                testFilesGlob: config.testFilesGlob,
                 actors: config.actors,
                 ignore: config.ignore,
             });

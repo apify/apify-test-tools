@@ -24,6 +24,8 @@ interface AffectedActorsOptions {
      * ignored when it isn't on the branch. Without `base` it must be an ancestor of head (e.g. the last release).
      */
     since?: string;
+    /** Glob relative to the repo root. Matching files count as changes even when .dockerignore lists them. */
+    testFilesGlob?: string;
     actors: string[];
     ignore: string[];
 }
@@ -72,6 +74,7 @@ const getOwnChangesIfMergedFromBase = async (
     head: string,
     base: string,
     actorConfigs: ActorConfig[],
+    testFilesGlob: string | undefined,
 ): Promise<ChangedActors | undefined> => {
     if (!(await hasMergeFromTarget(head, base))) return undefined;
 
@@ -83,6 +86,7 @@ const getOwnChangesIfMergedFromBase = async (
         actorConfigs,
         // Omit since to get full branch history. Validated functional commits can still interact with merged ones
         commits: await getCommits({ sourceBranch: head, targetBranch: base }),
+        testFilesGlob,
     });
     logger.info(
         own.functional.length > 0
@@ -100,6 +104,7 @@ export const getAffectedActors = async ({
     head,
     base,
     since: sinceOption,
+    testFilesGlob,
     actors,
     ignore,
 }: AffectedActorsOptions): Promise<AffectedActors> => {
@@ -117,9 +122,9 @@ export const getAffectedActors = async ({
 
     // What the branch only merged in from base is already validated. Without functional changes of its own
     // the branch has nothing to test, and without any changes of its own nothing to release either.
-    const own = base ? await getOwnChangesIfMergedFromBase(head, base, actorConfigs) : undefined;
+    const own = base ? await getOwnChangesIfMergedFromBase(head, base, actorConfigs, testFilesGlob) : undefined;
     const changedFiles = await getChangedFilesBetween(fromRef, toRef);
-    const changed = await getChangedActors({ filepathsChanged: changedFiles, actorConfigs, commits });
+    const changed = await getChangedActors({ filepathsChanged: changedFiles, actorConfigs, commits, testFilesGlob });
 
     return {
         headSha,

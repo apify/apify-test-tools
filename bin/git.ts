@@ -6,7 +6,7 @@ export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
 
 /**
- * Gets the list of changed files between the given commits (inclusive).
+ * Gets the list of changed files between the given commits (inclusive), so it diffs from the parent of the oldest.
  */
 export const getChangedFiles = async (commits: Commit[]) => {
     // getCommits never returns an empty list (the rerun check returns all commits when the base commit
@@ -19,8 +19,10 @@ export const getChangedFiles = async (commits: Commit[]) => {
 };
 
 /**
- * Files that differ between two commits. Diffing the endpoints, rather than walking a commit list, is what keeps
- * merges right: the oldest commit of a merged branch can predate fromRef, and its changes are already in fromRef.
+ * Files that differ between two commits, i.e. changed by the commits in the range (fromRef, toRef]. fromRef's own
+ * changes are not included: to include them, pass its parent, `${sha}~` (as getChangedFiles does).
+ * Diffing the endpoints, rather than walking a commit list, is what keeps merges right: the oldest commit of a
+ * merged branch can predate fromRef, and its changes are already in fromRef.
  */
 export const getChangedFilesBetween = async (fromRef: string, toRef: string) => {
     const changedFilesString = await runGitCommand(['diff', '--name-only', `${fromRef}..${toRef}`], {
@@ -110,7 +112,10 @@ export const parseBaseCommit = (shaOrCommit: string | undefined): string | undef
     return sha;
 };
 
-/** Commits reachable from toRef but not from fromRef, oldest first. */
+/**
+ * Commits reachable from toRef but not from fromRef, oldest first: the range (fromRef, toRef], so fromRef itself is
+ * not included. To include it, pass its parent, `${sha}~`.
+ */
 export const getCommitsBetween = async (fromRef: string, toRef: string): Promise<Commit[]> => {
     const output = await runGitCommand(['log', `--pretty=format:${GIT_LOG_FORMAT}`, `${fromRef}..${toRef}`], {
         operation: 'list commits reachable from the source ref but absent from the target ref',

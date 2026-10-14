@@ -1,0 +1,12 @@
+{
+    "name": "apify-test-tools",
+    "owner": {
+        "name": "Apify"
+    },
+    "plugins": [
+        {
+            "name": "platform-tests-investigate-and-fix",
+            "source": "./platform-tests-investigate-and-fix"
+        }
+    ]
+}

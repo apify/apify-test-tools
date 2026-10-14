@@ -1,34 +1,65 @@
-import type { MockInstance } from 'vitest';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+import { afterAll, describe, expect, test } from 'vitest';
 
 import { getChangedActors } from '../../bin/diff-changes.js';
-import * as DiffJsonSchema from '../../bin/diff-json-schema.js';
 import type { ActorConfig, Commit } from '../../bin/types.js';
+import { ExistingDir, ExistingFile, RelativeDir, RelativeFile } from '../../bin/utils/path/repo-relative.js';
+
+const originalCwd = process.cwd();
+const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'apify-should-build-'));
+process.chdir(fixtureRoot);
+
+afterAll(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+});
+
+const actorConfig = (
+    actorFullName: string,
+    folder: string,
+    tokenEnvVar: string,
+    dockerContextDir = '.',
+): ActorConfig => {
+    const actorJsonPath = path.posix.join(folder, '.actor/actor.json');
+    fs.mkdirSync(path.posix.dirname(actorJsonPath), { recursive: true });
+    fs.writeFileSync(actorJsonPath, '{}');
+    const contextPath = new RelativeDir(dockerContextDir);
+    return {
+        actorFullName,
+        folder: new ExistingDir(folder),
+        tokenEnvVar,
+        actorJson: {
+            file: new ExistingFile(actorJsonPath),
+            dockerContextDir: contextPath,
+            changelog: new RelativeFile('CHANGELOG.md'),
+        },
+        dockerContextDir: contextPath,
+        contextPaths: [contextPath],
+    };
+};
 
 describe('Should build and test parser', () => {
     // From https://github.com/apify-store/testing-repo-for-github-actions
     const ACTOR_CONFIGS: ActorConfig[] = [
-        {
-            actorFullName: 'lukaskrivka/testing-github-integration-1',
-            folder: 'actors/lukaskrivka_testing-github-integration-1',
-            tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
-            dockerContextDir: '',
-            contextPaths: [''],
-        },
-        {
-            actorFullName: 'lukaskrivka/testing-github-integration-2',
-            folder: 'actors/lukaskrivka_testing-github-integration-2',
-            tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
-            dockerContextDir: '',
-            contextPaths: [''],
-        },
-        {
-            actorFullName: 'lukaskrivka/test-standalone',
-            folder: 'standalone-actors/lukaskrivka_test-standalone',
-            tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
-            dockerContextDir: 'standalone-actors/lukaskrivka_test-standalone',
-            contextPaths: ['standalone-actors/lukaskrivka_test-standalone'],
-        },
+        actorConfig(
+            'lukaskrivka/testing-github-integration-1',
+            'actors/lukaskrivka_testing-github-integration-1',
+            'APIFY_TOKEN_LUKASKRIVKA',
+        ),
+        actorConfig(
+            'lukaskrivka/testing-github-integration-2',
+            'actors/lukaskrivka_testing-github-integration-2',
+            'APIFY_TOKEN_LUKASKRIVKA',
+        ),
+        actorConfig(
+            'lukaskrivka/test-standalone',
+            'standalone-actors/lukaskrivka_test-standalone',
+            'APIFY_TOKEN_LUKASKRIVKA',
+            'standalone-actors/lukaskrivka_test-standalone',
+        ),
     ];
 
     const commits: Commit[] = [
@@ -36,17 +67,10 @@ describe('Should build and test parser', () => {
         { sha: 'Commit3', author: '', date: '', message: '' },
     ];
 
-    let isCosmeticOnlyJsonSchemaSpy: MockInstance;
-
-    beforeEach(() => {
-        // Default: JSON changes are functional (triggers build/test)
-        isCosmeticOnlyJsonSchemaSpy = vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockReturnValue(false);
-    });
-
-    test('Ignores dev-only readme', () => {
+    test('Ignores dev-only readme', async () => {
         const FILES = ['README.md', 'code/README.md', 'shared/README.md'];
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -56,10 +80,10 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual([]);
     });
 
-    test('Ignores other ignored files and folders', () => {
-        const FILES = ['.vscode/', '.gitignore', '.husky/', '.eslintrc', '.editorconfig'];
+    test('Ignores other ignored files and folders', async () => {
+        const FILES = ['.vscode/settings.json', '.gitignore', '.husky/pre-commit', '.eslintrc', '.editorconfig'];
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -69,10 +93,10 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual([]);
     });
 
-    test('.actor/ changes trigger builds for broad-context actors', () => {
+    test('.actor/ changes trigger builds for broad-context actors', async () => {
         const FILES = ['.actor/actor.json'];
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -82,10 +106,10 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
     });
 
-    test('Root-level changelog is cosmetic for every actor, only on latest', () => {
-        const FILES = ['shared/CHANGELOG.md', 'CHANGELOG.md'];
+    test('Configured changelog is cosmetic for every actor, only on latest', async () => {
+        const FILES = ['CHANGELOG.md'];
 
-        const actorsChangedNotLatest = getChangedActors({
+        const actorsChangedNotLatest = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -93,7 +117,7 @@ describe('Should build and test parser', () => {
         });
         expect(actorsChangedNotLatest).toEqual([]);
 
-        const actorsChangedLatest = getChangedActors({
+        const actorsChangedLatest = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
@@ -102,10 +126,10 @@ describe('Should build and test parser', () => {
         expect(actorsChangedLatest).toEqual(ACTOR_CONFIGS);
     });
 
-    test('A changelog nested inside one actor own folder is excluded for sibling actors, only triggers that actor', () => {
+    test('A changelog nested inside one actor own folder is excluded for sibling actors', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/CHANGELOG.md'];
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
@@ -115,10 +139,10 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
     });
 
-    test('Code updated, tests broad-context actors', () => {
+    test('Code updated, tests broad-context actors', async () => {
         const FILES = ['code/src/main.ts', 'package.json'];
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -128,14 +152,13 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
     });
 
-    test('Specific Actor functionality configs updated', () => {
+    test('Specific Actor functionality configs updated', async () => {
         const FILES = [
             'actors/lukaskrivka_testing-github-integration-1/.actor/actor.json',
             'standalone-actors/lukaskrivka_test-standalone/Dockerfile',
         ];
-        // Default mock returns false = functional change
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -145,10 +168,10 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0], ACTOR_CONFIGS[2]]);
     });
 
-    test('src/main.ts updated', () => {
+    test('src/main.ts updated', async () => {
         const FILES = ['src/main.ts'];
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
@@ -158,15 +181,14 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
     });
 
-    test('Actor folder, shared code and narrow-context actor updated', () => {
+    test('Actor folder, shared code and narrow-context actor updated', async () => {
         const FILES = [
             'actors/lukaskrivka_testing-github-integration-1/.actor/actor.json',
             'code/src/main.ts',
             'standalone-actors/lukaskrivka_test-standalone/Dockerfile',
         ];
-        // Default mock returns false = functional change for the JSON file
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -176,13 +198,13 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual(ACTOR_CONFIGS);
     });
 
-    test('Specific Actor non-functional configs updated', () => {
+    test('Specific Actor non-functional configs updated', async () => {
         const FILES = [
-            'actors/lukaskrivka_testing-github-integration-2/.actor/README.md',
-            'standalone-actors/lukaskrivka_test-standalone/CHANGELOG.md',
+            'actors/lukaskrivka_testing-github-integration-2/README.md',
+            'standalone-actors/lukaskrivka_test-standalone/README.md',
         ];
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -192,25 +214,23 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual([]);
     });
 
-    test('JSON file with cosmetic-only changes in PR context (isLatest=false) skips tests', () => {
+    test('Actor JSON changes in PR context trigger tests', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
-        isCosmeticOnlyJsonSchemaSpy.mockReturnValue(true);
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
             commits,
         });
 
-        expect(actorsChanged).toEqual([]);
+        expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
     });
 
-    test('JSON file with cosmetic-only changes in latest context still triggers build', () => {
+    test('Actor JSON changes in latest context trigger builds', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
-        isCosmeticOnlyJsonSchemaSpy.mockReturnValue(true);
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
@@ -220,11 +240,10 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
     });
 
-    test('JSON file with functional changes triggers tests', () => {
+    test('JSON file with functional changes triggers tests', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
-        // Default mock returns false = functional change
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
@@ -234,42 +253,36 @@ describe('Should build and test parser', () => {
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
     });
 
-    test('Mix: one actor has cosmetic-only JSON change, another has functional JSON change', () => {
+    test('JSON changes in two actor folders trigger both actors', async () => {
         const FILES = [
             'actors/lukaskrivka_testing-github-integration-1/.actor/actor.json',
             'actors/lukaskrivka_testing-github-integration-2/.actor/input_schema.json',
         ];
-        // Actor 1 JSON is cosmetic-only, actor 2 JSON is functional
-        isCosmeticOnlyJsonSchemaSpy.mockImplementation(
-            (_commits, filepath: string) => !filepath.includes('input_schema.json'),
-        );
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
             commits,
         });
 
-        // Only the second actor (functional change) should be built and tested
-        expect(actorsChanged).toEqual([ACTOR_CONFIGS[1]]);
+        expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
     });
 
-    test('Narrow-context actor with cosmetic-only JSON change in PR context skips tests', () => {
+    test('Narrow-context actor JSON change in PR context triggers tests', async () => {
         const FILES = ['standalone-actors/lukaskrivka_test-standalone/.actor/actor.json'];
-        isCosmeticOnlyJsonSchemaSpy.mockReturnValue(true);
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
             commits,
         });
 
-        expect(actorsChanged).toEqual([]);
+        expect(actorsChanged).toEqual([ACTOR_CONFIGS[2]]);
     });
 
-    test('Google Maps real user-case that had undefined', () => {
+    test('Google Maps real user-case that had undefined', async () => {
         const FILES = [
             'actors/compass_Google-Maps-Reviews-Scraper/.actor/INPUT_SCHEMA.json',
             'actors/compass_crawler-google-places/.actor/INPUT_SCHEMA.json',
@@ -286,73 +299,39 @@ describe('Should build and test parser', () => {
         ];
 
         const ACTOR_CONFIGS_GOOGLE_MAPS: ActorConfig[] = [
-            {
-                // Edge case of capitals in actor name :)
-                actorFullName: 'compass/Google-Maps-Reviews-Scraper',
-                folder: 'actors/compass_Google-Maps-Reviews-Scraper',
-                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
-                dockerContextDir: '',
-                contextPaths: [''],
-            },
-            {
-                actorFullName: 'compass/crawler-google-places',
-                folder: 'actors/compass_crawler-google-places',
-                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
-                dockerContextDir: '',
-                contextPaths: [''],
-            },
-            {
-                actorFullName: 'compass/easy-google-maps',
-                folder: 'actors/compass_easy-google-maps',
-                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
-                dockerContextDir: '',
-                contextPaths: [''],
-            },
-            {
-                actorFullName: 'compass/google-maps-extractor',
-                folder: 'actors/compass_google-maps-extractor',
-                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
-                dockerContextDir: '',
-                contextPaths: [''],
-            },
-            {
-                actorFullName: 'compass/google-places-api',
-                folder: 'actors/compass_google-places-api',
-                tokenEnvVar: 'APIFY_TOKEN_COMPASS',
-                dockerContextDir: '',
-                contextPaths: [''],
-            },
-            {
-                actorFullName: 'lukaskrivka/google-maps-with-contact-details',
-                folder: 'actors/lukaskrivka_google-maps-with-contact-details',
-                tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
-                dockerContextDir: '',
-                contextPaths: [''],
-            },
-            {
-                actorFullName: 'natasha.lekh/gas-prices-scraper',
-                folder: 'actors/natasha.lekh_gas-prices-scraper',
-                tokenEnvVar: 'APIFY_TOKEN_NATASHA_LEKH',
-                dockerContextDir: '',
-                contextPaths: [''],
-            },
-            {
-                actorFullName: 'natasha.lekh/vegan-places-finder',
-                folder: 'actors/natasha.lekh_vegan-places-finder',
-                tokenEnvVar: 'APIFY_TOKEN_NATASHA_LEKH',
-                dockerContextDir: '',
-                contextPaths: [''],
-            },
-            {
-                actorFullName: 'lukaskrivka/google-maps-scraper-orchestrator',
-                folder: 'standalone-actors/lukaskrivka_google-maps-scraper-orchestrator',
-                tokenEnvVar: 'APIFY_TOKEN_LUKASKRIVKA',
-                dockerContextDir: 'standalone-actors/lukaskrivka_google-maps-scraper-orchestrator',
-                contextPaths: ['standalone-actors/lukaskrivka_google-maps-scraper-orchestrator'],
-            },
+            actorConfig(
+                'compass/Google-Maps-Reviews-Scraper',
+                'actors/compass_Google-Maps-Reviews-Scraper',
+                'APIFY_TOKEN_COMPASS',
+            ),
+            actorConfig('compass/crawler-google-places', 'actors/compass_crawler-google-places', 'APIFY_TOKEN_COMPASS'),
+            actorConfig('compass/easy-google-maps', 'actors/compass_easy-google-maps', 'APIFY_TOKEN_COMPASS'),
+            actorConfig('compass/google-maps-extractor', 'actors/compass_google-maps-extractor', 'APIFY_TOKEN_COMPASS'),
+            actorConfig('compass/google-places-api', 'actors/compass_google-places-api', 'APIFY_TOKEN_COMPASS'),
+            actorConfig(
+                'lukaskrivka/google-maps-with-contact-details',
+                'actors/lukaskrivka_google-maps-with-contact-details',
+                'APIFY_TOKEN_LUKASKRIVKA',
+            ),
+            actorConfig(
+                'natasha.lekh/gas-prices-scraper',
+                'actors/natasha.lekh_gas-prices-scraper',
+                'APIFY_TOKEN_NATASHA_LEKH',
+            ),
+            actorConfig(
+                'natasha.lekh/vegan-places-finder',
+                'actors/natasha.lekh_vegan-places-finder',
+                'APIFY_TOKEN_NATASHA_LEKH',
+            ),
+            actorConfig(
+                'lukaskrivka/google-maps-scraper-orchestrator',
+                'standalone-actors/lukaskrivka_google-maps-scraper-orchestrator',
+                'APIFY_TOKEN_LUKASKRIVKA',
+                'standalone-actors/lukaskrivka_google-maps-scraper-orchestrator',
+            ),
         ];
 
-        const actorsChanged = getChangedActors({
+        const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS_GOOGLE_MAPS,
             isLatest: false,
             filepathsChanged: FILES,

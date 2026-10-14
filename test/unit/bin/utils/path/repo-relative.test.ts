@@ -34,6 +34,12 @@ describe('ExistingDir', () => {
 });
 
 describe('ExistingFile', () => {
+    it('checks whether a relative file exists before asserting it', () => {
+        expect(file('package.json').exists()).toBe(true);
+        expect(file('missing.txt').exists()).toBe(false);
+        expect(file('bin').exists()).toBe(false);
+    });
+
     it('validates files through initialize', () => {
         expect(ExistingFile.initialize(file('package.json')).path).toBe('package.json');
         expect(() => ExistingFile.initialize(file('package.json/missing'))).toThrow();

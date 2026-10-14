@@ -55,6 +55,10 @@ export abstract class AbstractPath {
 export class RelativeDir extends AbstractPath {
     static readonly ROOT = new RelativeDir('.');
 
+    isRoot(): boolean {
+        return this.path === RelativeDir.ROOT.path;
+    }
+
     joinDir(relativePath: string): RelativeDir {
         return new RelativeDir(this.join(relativePath));
     }
@@ -65,10 +69,24 @@ export class RelativeDir extends AbstractPath {
         return new RelativeFile(this.join(relativePath));
     }
 
+    relativePathTo(filePath: string): string {
+        // mainly for matching against .dockerignore since paths consumed by it are relative to the docker context dir
+        return posix.relative(this.path, filePath);
+    }
+
+    containsPath(filePath: string): boolean {
+        try {
+            // should be OK even if not a directory (e.g. a file)
+            return this.contains(new RelativeDir(filePath));
+        } catch {
+            return false;
+        }
+    }
+
     // True when `other` is this directory itself or lies inside it.
     contains(other: AbstractPath): boolean {
         // the root contains every path
-        if (this.path === '.') return true;
+        if (this.isRoot()) return true;
         return this.isEqualTo(other) || other.path.startsWith(`${this.path}/`);
     }
 
@@ -133,14 +151,19 @@ export class RelativeFile extends AbstractPath {
         return scope.contains(this);
     }
 
+    exists(): boolean {
+        // `stat`, not `lstat`: a symlink must resolve to its target, matching what reading it does.
+        return statSync(this.path, { throwIfNoEntry: false })?.isFile() ?? false;
+    }
+
     // Throws unless this path exists and is a file. Paths resolve against the process working
     // directory, which is the repo root.
     assertIsFile(): this {
-        // `stat`, not `lstat`: a symlink must resolve to its target, matching what reading it does.
+        if (this.exists()) return this;
+
         const stats = statSync(this.path, { throwIfNoEntry: false });
         if (!stats) throw new Error(`Expected file "${this}" to exist.`);
-        if (!stats.isFile()) throw new Error(`Expected "${this}" to be a file.`);
-        return this;
+        throw new Error(`Expected "${this}" to be a file.`);
     }
 }
 

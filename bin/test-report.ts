@@ -1,8 +1,7 @@
 import fs from 'node:fs/promises';
 
 import { logger } from './logger.js';
-import { sendSlackMessage } from './slack.js';
-import { getEnvVar } from './utils.js';
+import { getSlackClient, sendingLabel, sendSlackMessage } from './slack.js';
 
 interface ReportTestResultsOptions {
     reportFile: string;
@@ -80,6 +79,9 @@ export const reportTestResults = async ({
         );
         return;
     }
+    // Checked before knowing if there's anything to send, so a broken token shows up on a green run
+    // (and in dry runs) rather than on the day tests fail
+    const slack = await getSlackClient('SLACK_TOKEN_TESTS_BOT', dryRun);
 
     if (failedAssertions.length === 0) {
         return;
@@ -95,16 +97,11 @@ export const reportTestResults = async ({
         .slice(1)
         .map(({ message, runLink, actorId }) => `• ${message} --- <${runLink}|${actorId}>`);
 
-    logger.info('SLACK:', slackMessage);
+    logger.info(`${sendingLabel(dryRun)} slack message to channel ${reportSlackChannel}:`, slackMessage);
     logger.info('\tblocks:', blocks.join('\n\t\t'));
 
-    if (!reportSlackChannel) {
-        return;
-    }
-
     if (!dryRun) {
-        const slackToken = getEnvVar('SLACK_TOKEN_TESTS_BOT');
-        await sendSlackMessage(reportSlackChannel, slackMessage, blocks, slackToken);
+        await sendSlackMessage(slack, reportSlackChannel, slackMessage, blocks);
     }
 };
 

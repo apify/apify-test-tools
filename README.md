@@ -57,7 +57,7 @@ When a PR is opened or code is pushed, the tool determines which actors need to 
 2. **CHANGELOG classification** — a `CHANGELOG.md` file is always `cosmetic` (only triggers a release build, not tests), for every actor, regardless of context or folder. (See [issue #106](https://github.com/apify/apify-test-tools/issues/106).)
 3. **Context matching** — the file must fall within one of the actor's context paths (`dockerContextDir` from `actor.json` by default, or `overrideActorContext` from config if set). Files outside every context path are skipped.
 4. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it matched (e.g. a standalone actor's own `.eslintrc` is checked as just `.eslintrc`, not the full repo-root-relative path), then checked against repo-level dev file patterns (`.vscode/`, `.gitignore`, `.husky/`, `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`). There's no hardcoded special-casing for legacy `code/`/`shared/` layouts — repos that need those directories treated as top-level must list them explicitly in `overrideActorContext`.
-5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior.
+5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior. Test files are the exception: `build --test-files-glob <glob>` (relative to the repo root) skips this check for matching files, so a changed test triggers a build, and with it its tests, even when `.dockerignore` lists it. The PR workflow passes `test/platform/**`. Context matching still applies, so tests outside an actor's `dockerContextDir` (e.g. a root `test/` with standalone actors) need to be listed in its `overrideActorContext`; `build` logs a warning for changed test files outside every actor's context.
 6. **README classification** — a `README.md` file is `cosmetic` (only triggers a release build, not tests) if it lives inside the actor's own `folder`; otherwise it's ignored entirely, since it isn't documentation for this actor.
 7. **Cosmetic JSON classification** — `.json` files inside the actor's own `.actor/` directory with only cosmetic schema changes (whitespace, key ordering) only trigger a release build.
 8. **Functional** — everything else triggers both build and tests.
@@ -258,13 +258,12 @@ it at a branch only to test a prompt change.
 Callers pass `secrets: inherit`. The workflows do not turn every inherited secret into job-wide
 environment variables, so a secret is only visible to the step that needs it:
 
-| Secret                                                                    | Reaches                                                                                                                                                                                                                |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NPM_TOKEN`                                                               | dependency install steps only, as both `NPM_TOKEN` and `NODE_AUTH_TOKEN`. Use a read-only token: npm granular tokens can be read-only, classic automation tokens can publish.                                          |
-| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the `build`, `release`, and `delete-old-builds` steps only                                                                                                                                                             |
-| `TESTER_APIFY_TOKEN`                                                      | the vitest step only                                                                                                                                                                                                   |
-| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and release steps only                                                                                                                                                                                   |
-| `TESTER_APIFY_TOKEN_READ_ONLY`                                            | the Claude investigation step only, as the Apify MCP server's bearer token. Required by `public_platform-tests-claude-investigate-and-fix`. Use a read-only token: it reads the failing run, its log and its storages. |
+| Secret                                                                    | Reaches                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NPM_TOKEN`                                                               | dependency install steps only, as both `NPM_TOKEN` and `NODE_AUTH_TOKEN`. Use a read-only token: npm granular tokens can be read-only, classic automation tokens can publish.                                                |
+| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the `build`, `release`, and `delete-old-builds` steps only                                                                                                                                                                   |
+| `TESTER_APIFY_TOKEN`                                                      | the vitest step, and the Claude investigation step: the Apify MCP server's bearer token for reading the failing run, its log and its storages, and Claude's token for re-running it to measure how often the failure happens |
+| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and release steps only                                                                                                                                                                                         |
 
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its
 own token via `tokenEnvVar` in `apify-test-tools.config.json`. Those steps pass
@@ -581,6 +580,15 @@ describe('standby tests', () => {
 
 The package includes a CLI binary used by CI workflows to build Actors, detect changes, and report test results. You can also run it locally.
 
+### Dry runs (`--dry-run`)
+
+Every command that changes something (`build`, `build-from-local`, `release`, `delete-old-builds`, `report-tests`) takes `--dry-run`. A dry run:
+
+- **Changes nothing.** No versions or builds are created, nothing is uploaded or deleted, and no Slack message is posted.
+- **Does every read and check the real run does**, so it fails wherever the real run would: change detection, the Apify token and Actor lookup, the [repository check](#repository-check), collecting and zipping local sources, and the Slack token (verified with Slack's read-only `auth.test`).
+- **Needs the same tokens as the real run.** Read-only tokens are enough, since nothing is written. A dry run can't tell whether a token is also allowed to write, because the Apify API has no dry-run mode of its own.
+- **Prints a plan, not results.** Logs start with `[DRY RUN] Would …`. `build` and `build-from-local` write `{ "dryRun": true, "builds": [...] }` to stdout instead of the build array, so the plan can't be passed to tests as `ACTOR_BUILDS` by mistake.
+
 ### Running locally
 
 Running the testing library locally is useful when you only want to update the testing code in /test because you can iterate on it without pushing new code to the remote.
@@ -611,7 +619,7 @@ APIFY_TOKEN_JOHN_DOE=<token> \
     --dry-run
 ```
 
-Remove `--dry-run` to actually trigger builds and update the branch names/ The command outputs a JSON array of build objects to stdout:
+With `--dry-run`, it prints the plan (the version and Git URL each Actor would be built from). Remove `--dry-run` to actually trigger builds and update the branch names. The command outputs a JSON array of build objects to stdout:
 
 ```json
 [{ "buildId": "...", "actorRawId": "...", "buildNumber": "...", "actorFullName": "john.doe/my-actor" }]
@@ -626,7 +634,7 @@ APIFY_TOKEN_JOHN_DOE=<token> \
   npx apify-test-tools build-from-local --actors john.doe/my-actor
 ```
 
-Pass a hardcoded actor name via `--actors` to build only that Actor (comma-separate multiple names). Omit `--actors` to build all Actors in the repo, or add `--dry-run` to preview without building. It outputs the same JSON build array as `build`, so you run tests against it the same way as in step 5 below:
+Pass a hardcoded actor name via `--actors` to build only that Actor (comma-separate multiple names). Omit `--actors` to build all Actors in the repo, or add `--dry-run` to check the token, the Actor and the zipped sources without uploading or building. It outputs the same JSON build array as `build`, so you run tests against it the same way as in step 5 below:
 
 ```bash
 # Build from local source and capture output
@@ -650,12 +658,15 @@ TESTER_APIFY_TOKEN=<token> \
 
 #### Full example
 
+Tests only run for Actors in `ACTOR_BUILDS`, so a custom workflow has to build (and pass) the Actors even when only tests changed. Pass `--test-files-glob` so test changes count even when `.dockerignore` lists them.
+
 ```bash
 # Build and capture output
 BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
     npx apify-test-tools build \
     --target-branch origin/master \
-    --source-branch origin/my-dummy-branch)
+    --source-branch origin/my-dummy-branch \
+    --test-files-glob 'test/platform/**')
 
 # Run tests with the builds
 ACTOR_BUILDS="$BUILDS" \

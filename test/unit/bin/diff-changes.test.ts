@@ -63,6 +63,7 @@ const commits = [{ sha: 'Commit1', author: '', date: '', message: '' }];
 
 describe('getChangedActors', () => {
     beforeEach(() => {
+        vi.restoreAllMocks();
         vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(false);
     });
 
@@ -393,6 +394,72 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
+    it('test file listed in .dockerignore triggers a build when it matches the test files glob', async () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue((filePath) => filePath.startsWith('test/'));
+        const result = await getChangedActors({
+            filepathsChanged: ['test/platform/daily/foo.test.ts'],
+            actorConfigs: [miniActor],
+            commits,
+            testFilesGlob: 'test/platform/**',
+        });
+        expect(result).toEqual([miniActor]);
+    });
+
+    it('test file listed in .dockerignore stays ignored without a test files glob', async () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue((filePath) => filePath.startsWith('test/'));
+        const result = await getChangedActors({
+            filepathsChanged: ['test/platform/daily/foo.test.ts'],
+            actorConfigs: [miniActor],
+            commits,
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('test files glob matches case-insensitively and does not bypass .dockerignore for other files', async () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
+        const result = await getChangedActors({
+            filepathsChanged: ['Test/Platform/Foo.test.ts'],
+            actorConfigs: [miniActor],
+            commits,
+            testFilesGlob: 'test/platform/**',
+        });
+        expect(result).toEqual([miniActor]);
+        expect(
+            await getChangedActors({
+                filepathsChanged: ['actors/foo_bar/node_modules/foo.js'],
+                actorConfigs: [miniActor],
+                commits,
+                testFilesGlob: 'test/platform/**',
+            }),
+        ).toEqual([]);
+    });
+
+    it('test file outside an actor context still does not trigger it', async () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
+        const result = await getChangedActors({
+            filepathsChanged: ['test/platform/daily/foo.test.ts'],
+            actorConfigs: [standaloneActor],
+            commits,
+            testFilesGlob: 'test/platform/**',
+        });
+        expect(result).toEqual([]);
+    });
+
+    it('test file listed in .dockerignore triggers an actor whose overrideActorContext includes it', async () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
+        const actorWithTests = {
+            ...standaloneActor,
+            contextPaths: [...standaloneActor.contextPaths, new RelativeDir('test')],
+        };
+        const result = await getChangedActors({
+            filepathsChanged: ['test/platform/standalone.test.ts'],
+            actorConfigs: [actorWithTests],
+            commits,
+            testFilesGlob: 'test/platform/**',
+        });
+        expect(result).toEqual([actorWithTests]);
+    });
+
     it('JSON file in context but outside actor folder is functional (not checked for cosmetic)', async () => {
         const result = await getChangedActors({
             filepathsChanged: ['lib/config.json'],
@@ -473,6 +540,7 @@ describe('getChangedActors logging', () => {
     beforeEach(() => {
         vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(false);
         vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+        vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     });
 
     it('logs a single "specific" group for a single actor with one functional file', async () => {
@@ -523,6 +591,44 @@ describe('getChangedActors logging', () => {
             '[DIFF]: Changes specific to actor team/actor-b: actors/b/b-only.ts',
             '[DIFF]: Actors to be built and tested: team/actor-a, team/actor-b',
         ]);
+    });
+
+    const outsideContextWarning = (testFile: string) =>
+        `[DIFF]: Test file ${testFile} is outside every Actor's context, so changing only it builds and tests nothing. ` +
+        'Add its folder to "overrideActorContext" of the Actors it tests.';
+
+    it('warns about a changed test file outside every Actor context', async () => {
+        await getChangedActors({
+            filepathsChanged: ['test/platform/standalone.test.ts'],
+            actorConfigs: [standaloneActor],
+            commits,
+            testFilesGlob: 'test/platform/**',
+        });
+
+        expect(logger.warn).toHaveBeenCalledWith(outsideContextWarning('test/platform/standalone.test.ts'));
+    });
+
+    it('still warns when the same push also rebuilds an Actor', async () => {
+        const result = await getChangedActors({
+            filepathsChanged: ['test/platform/standalone.test.ts', 'standalone-actors/standalone/src/main.ts'],
+            actorConfigs: [standaloneActor],
+            commits,
+            testFilesGlob: 'test/platform/**',
+        });
+
+        expect(result).toEqual([standaloneActor]);
+        expect(logger.warn).toHaveBeenCalledWith(outsideContextWarning('test/platform/standalone.test.ts'));
+    });
+
+    it('does not warn about test files inside an Actor context, even cosmetic ones', async () => {
+        await getChangedActors({
+            filepathsChanged: ['test/platform/foo.test.ts', 'test/platform/README.md', 'test/platform/CHANGELOG.md'],
+            actorConfigs: [miniActor],
+            commits,
+            testFilesGlob: 'test/platform/**',
+        });
+
+        expect(logger.warn).not.toHaveBeenCalled();
     });
 
     it('logs no group lines when zero actors changed', async () => {

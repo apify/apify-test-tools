@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 ### 🐛 Bug Fixes
 
 - **toBeObject:** Reject null ([#191](https://github.com/apify/apify-test-tools/pull/191)) ([6bdae49](https://github.com/apify/apify-test-tools/commit/6bdae4905756e0ae8dd6146942e6fc04dbead48e)) by [@JuanGalilea](https://github.com/JuanGalilea), closes [#88](https://github.com/apify/apify-test-tools/issues/88)
+- Build and test on test-only changes even when .dockerignore lists the tests ([#177](https://github.com/apify/apify-test-tools/pull/177)) ([5cb1b5a](https://github.com/apify/apify-test-tools/commit/5cb1b5ab5f6f43ec279f9624b402e73d55a5974a)) by [@artogahr](https://github.com/artogahr), closes [#145](https://github.com/apify/apify-test-tools/issues/145)
 
 
 <!-- git-cliff-unreleased-end -->

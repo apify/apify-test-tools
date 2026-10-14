@@ -1,3 +1,5 @@
+import picomatch from 'picomatch';
+
 import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
 import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
 import { logger } from './logger.js';
@@ -9,6 +11,8 @@ interface ShouldBuildAndTestOptions {
     actorConfigs: ActorConfig[];
     isLatest?: boolean;
     commits: Commit[];
+    // Glob relative to the repo root. Matching files count as changes even when .dockerignore lists them.
+    testFilesGlob?: string;
 }
 
 const IGNORED_TOP_LEVEL_FILES = [
@@ -41,7 +45,7 @@ type FileChangeForActor =
  * 2. Context matching (actorConfig.contextPaths) → outside-context if no match
  * 3. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
  * 4. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
- *    dir → ignored if matched
+ *    dir and for test files → ignored if matched
  * 5. README.md by filename → cosmetic if inside the actor's own folder, otherwise ignored
  * 6. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
  * 7. Everything else → functional
@@ -51,6 +55,7 @@ const classifyFileChange = async (
     actorConfig: ActorConfig,
     commits: Commit[],
     dockerIgnoreMatcher: DockerIgnoreMatcher,
+    isTestFile: (filePath: string) => boolean,
 ): Promise<FileChangeForActor> => {
     const lowercaseFilePath = changedFile.path.toLowerCase();
 
@@ -75,7 +80,8 @@ const classifyFileChange = async (
     // .actor/ can legitimately be listed in .dockerignore (the Apify platform evaluates it before
     // the Docker build, so excluding it from the build context is a valid caching optimization) —
     // that shouldn't cause changes to .actor/ itself to be ignored here.
-    if (!isUnderActorDotDir && dockerIgnoreMatcher(changedFile.path)) {
+    // Test files are often in .dockerignore too, but a change to them must still build and test.
+    if (!isUnderActorDotDir && !isTestFile(changedFile.path) && dockerIgnoreMatcher(changedFile.path)) {
         return { impact: 'ignored' };
     }
 
@@ -163,8 +169,11 @@ export const getChangedActors = async ({
     actorConfigs,
     isLatest = false,
     commits,
+    testFilesGlob,
 }: ShouldBuildAndTestOptions): Promise<ActorConfig[]> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
+    const testFilesInContext = new Set<string>();
+    const isTestFile = testFilesGlob ? picomatch(testFilesGlob, { nocase: true, dot: true }) : () => false;
 
     for (const actorConfig of actorConfigs) {
         const dockerIgnoreMatcher = loadDockerIgnore(actorConfig.dockerContextDir);
@@ -176,7 +185,10 @@ export const getChangedActors = async ({
                 continue;
             }
 
-            const change = await classifyFileChange(filePath, actorConfig, commits, dockerIgnoreMatcher);
+            const change = await classifyFileChange(filePath, actorConfig, commits, dockerIgnoreMatcher, isTestFile);
+            if (change.impact !== 'outside-context' && isTestFile(originalFilePath)) {
+                testFilesInContext.add(originalFilePath);
+            }
 
             if (change.impact === 'ignored' || change.impact === 'outside-context') continue;
             if (change.impact === 'cosmetic' && !isLatest) continue;
@@ -194,6 +206,15 @@ export const getChangedActors = async ({
     const fileToActors = buildFileToActorsMap(actorsChangedMap);
     const groups = groupFilesByActorSet(fileToActors);
     logChangeGroups(groups);
+
+    for (const testFile of filepathsChanged.filter(
+        (filePath) => isTestFile(filePath) && !testFilesInContext.has(filePath),
+    )) {
+        logger.warn(
+            `[DIFF]: Test file ${testFile} is outside every Actor's context, so changing only it builds and tests nothing. ` +
+                `Add its folder to "overrideActorContext" of the Actors it tests.`,
+        );
+    }
 
     if (actorsChanged.length > 0) {
         const actors = actorsChanged.map((config) => config.actorFullName);

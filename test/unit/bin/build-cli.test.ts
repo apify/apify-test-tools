@@ -58,24 +58,4 @@ describe('build and notify-release CLI', () => {
         expect(result.status, result.stderr).toBe(0);
         expect(result.stderr).toContain('No new commits, so there is no release to announce');
     });
-
-    it('notify-release in a dry run logs the announcement without posting it', () => {
-        const commit = { sha: '1'.repeat(40), author: 'Dev<dev@example.com>', date: 'Date', message: 'feat: foo' };
-        const document = { commits: [commit], changedFiles: ['src/main.ts'], changelog: '- Added foo' };
-        const result = run(
-            [
-                'notify-release',
-                '--dry-run',
-                '--repo-url',
-                'git@github.com:owner/my-repo',
-                '--report-slack-channel',
-                '#r',
-            ],
-            JSON.stringify(document),
-            { ...process.env, SLACK_TOKEN_RELEASES_BOT: 'not-used-in-a-dry-run' },
-        );
-        expect(result.status, result.stderr).toBe(0);
-        expect(result.stderr).toContain('*my-repo* – New release (by Dev)');
-        expect(result.stderr).toContain('1. Commit message: feat: foo');
-    });
 });

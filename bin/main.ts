@@ -71,6 +71,19 @@ const affectedRangeOptions = {
     },
 } as const satisfies Record<string, Options>;
 
+/**
+ * For commands that change something (builds, deletes, Slack posts). A dry run still does every read and check
+ * the real run does, credentials included, and only skips the writes. So it needs the same tokens, though
+ * read-only ones are enough. Read-only commands don't take it since they have nothing to skip.
+ */
+const dryRunOptions = {
+    'dry-run': {
+        type: 'boolean',
+        default: false,
+        describe: 'Do every read and check (tokens included) but change nothing; print what would be done',
+    },
+} as const satisfies Record<string, Options>;
+
 /** Flags of `build`, which builds exactly the Actors it is given. */
 const buildOptions = {
     'version-number': {
@@ -109,7 +122,6 @@ const globalOptions = {
         default: 'info',
         describe: 'Minimum diagnostic level written to stderr; silent disables logging',
     },
-    'dry-run': { type: 'boolean', default: false },
 } as const satisfies Record<string, Options>;
 
 await yargs()
@@ -168,6 +180,7 @@ await yargs()
         '',
         (y) =>
             y
+                .options(dryRunOptions)
                 .option('report-file', { type: 'string', demandOption: true })
                 .option('report-slack-channel', { type: 'string' })
                 .option('job-url', { type: 'string' })
@@ -179,7 +192,7 @@ await yargs()
     .command(
         'build',
         'Build the Actors listed on stdin, as {"actors": [{"actorFullName": ...}]}, from the checked-out branch',
-        (y) => y.options(buildOptions).options(repoUrlOptions),
+        (y) => y.options(buildOptions).options(repoUrlOptions).options(dryRunOptions),
         async (args) => {
             const input = parseBuildInput(await readStdin());
             const names = input.actors.map(({ actorFullName }) => actorFullName);
@@ -197,7 +210,12 @@ await yargs()
     .command(
         'build-for-test',
         'Build the Actors the checked-out branch changed functionally, for testing',
-        (y) => y.options(buildForTestOptions).options(actorSelectionOptions).options(repoUrlOptions),
+        (y) =>
+            y
+                .options(buildForTestOptions)
+                .options(actorSelectionOptions)
+                .options(repoUrlOptions)
+                .options(dryRunOptions),
         async (config) => {
             logger.info(
                 '[BUILD-FOR-TEST]: Same as get-affected-actors --base <target-branch> [--since <base-commit>] ' +
@@ -227,6 +245,7 @@ await yargs()
             y
                 .options(actorSelectionOptions)
                 .options(repoUrlOptions)
+                .options(dryRunOptions)
                 // The last commit that is already released, everything after it up to HEAD gets released.
                 // Required, see the README section "Releasing Actors" for how to set it for each merge strategy.
                 .option('base-commit', { type: 'string', demandOption: true })
@@ -274,7 +293,7 @@ await yargs()
     .command(
         'notify-release',
         'Announce a release on Slack, from the get-affected-actors output on stdin',
-        (y) => y.options(releaseSlackOptions).options(repoUrlOptions),
+        (y) => y.options(releaseSlackOptions).options(repoUrlOptions).options(dryRunOptions),
         async (args) => {
             const { commits, changedFiles, changelog } = parseReleaseChanges(await readStdin());
             await announceRelease({
@@ -291,7 +310,7 @@ await yargs()
     .command(
         'build-from-local',
         '',
-        (y) => y.options(actorSelectionOptions),
+        (y) => y.options(actorSelectionOptions).options(dryRunOptions),
         async ({ actors, ignore, dryRun }) => {
             const actorConfigs = await readConfigFile({ actors, ignore });
             const builds = await runBuildsFromLocal({ actorConfigs, dryRun });
@@ -301,10 +320,10 @@ await yargs()
     .command(
         'delete-old-builds',
         '',
-        (y) => y.options(actorSelectionOptions),
-        async ({ actors, ignore }) => {
+        (y) => y.options(actorSelectionOptions).options(dryRunOptions),
+        async ({ actors, ignore, dryRun }) => {
             const actorConfigs = await readConfigFile({ actors, ignore });
-            await deleteOldBuilds(actorConfigs);
+            await deleteOldBuilds(actorConfigs, { dryRun });
         },
     )
     .strictCommands()

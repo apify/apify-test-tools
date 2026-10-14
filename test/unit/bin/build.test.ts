@@ -1,17 +1,29 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import type * as ApifyClientTypes from 'apify-client';
-import { ActorSourceType } from 'apify-client';
-import { describe, expect, it, vi } from 'vitest';
+import { ActorSourceType, ApifyClient } from 'apify-client';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     ApifyBuilder,
     assertRepoUrlMatchesDefaultVersion,
     buildActors,
+    deleteOldBuilds,
     resolveDefaultVersion,
     runBuilds,
 } from '../../../bin/build.js';
 import * as Git from '../../../bin/git.js';
 import { logger } from '../../../bin/logger.js';
 import type { ActorConfig } from '../../../bin/types.js';
+import { ExistingDir, ExistingFile, RelativeDir } from '../../../bin/utils/path/repo-relative.js';
+
+// Only the client is faked, so the tests exercise the real builder code against a stubbed API
+vi.mock('apify-client', async (importOriginal) => {
+    const actual = await importOriginal<typeof ApifyClientTypes>();
+    return { ...actual, ApifyClient: vi.fn() };
+});
 
 const ACTOR = 'owner/actor';
 const REPO_URL = 'git@github.com:owner/repo';
@@ -79,11 +91,16 @@ describe('assertRepoUrlMatchesDefaultVersion', () => {
 describe('runBuilds version number', () => {
     // Only the name and folder of the Actor matter here, the builder is stubbed
     const actorConfig = { actorFullName: ACTOR, folder: { isRoot: () => true } } as unknown as ActorConfig;
+    // Restored after each test, so the stub never reaches the tests that run the real builder
+    afterEach(() => {
+        vi.mocked(ApifyBuilder.fromActorConfig).mockRestore();
+    });
+
     const dryRunBuild = async (versionNumber: string, actorInfo = makeActorInfo()) => {
         vi.spyOn(ApifyBuilder, 'fromActorConfig').mockReturnValue({
             getActorInfo: async () => actorInfo,
         } as unknown as ApifyBuilder);
-        const [build] = await runBuilds({
+        const result = await runBuilds({
             actorConfigs: [actorConfig],
             versionNumber,
             repoUrl: REPO_URL,
@@ -91,8 +108,8 @@ describe('runBuilds version number', () => {
             branch: 'master',
             dryRun: true,
         });
-        // A dry run reports the version it would build as the build number
-        return build.buildNumber;
+        if (Array.isArray(result)) throw new Error('A dry run must return a plan, not builds');
+        return result.builds[0].versionNumber;
     };
 
     it('builds the version it is given', async () => {
@@ -126,7 +143,126 @@ describe('buildActors', () => {
         await expect(buildActors({ actorConfigs: [], versionNumber: '0.99', dryRun: false })).resolves.toStrictEqual(
             [],
         );
+        // A dry run keeps the dry-run shape even with nothing to build
+        await expect(buildActors({ actorConfigs: [], versionNumber: '0.99', dryRun: true })).resolves.toStrictEqual({
+            dryRun: true,
+            builds: [],
+        });
         expect(branchSpy).not.toHaveBeenCalled();
         expect(repoSpy).not.toHaveBeenCalled();
+    });
+});
+
+describe('dry run', () => {
+    const TOKEN_ENV_VAR = 'APIFY_TOKEN_OWNER';
+    const originalCwd = process.cwd();
+    let fixtureRoot: string;
+    let actorConfig: ActorConfig;
+
+    // ExistingDir checks the folder exists, so the config is built inside a throwaway repo root
+    beforeAll(() => {
+        fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'apify-build-dry-run-'));
+        process.chdir(fixtureRoot);
+        fs.mkdirSync('actors/a/.actor', { recursive: true });
+        fs.writeFileSync('actors/a/.actor/actor.json', '{}');
+        actorConfig = {
+            actorFullName: ACTOR,
+            folder: new ExistingDir('actors/a'),
+            tokenEnvVar: TOKEN_ENV_VAR,
+            actorJson: {
+                file: new ExistingFile('actors/a/.actor/actor.json'),
+                dockerContextDir: new RelativeDir('actors/a'),
+            },
+            dockerContextDir: new RelativeDir('actors/a'),
+            contextPaths: [new RelativeDir('actors/a')],
+        };
+    });
+
+    afterAll(() => {
+        process.chdir(originalCwd);
+        fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    });
+    const deleteBuild = vi.fn();
+    const startBuild = vi.fn();
+    const createVersion = vi.fn();
+    const buildClient = vi.fn(() => ({ delete: deleteBuild }));
+
+    beforeEach(() => {
+        vi.stubEnv(TOKEN_ENV_VAR, 'token');
+        const fakeClient = {
+            actor: () => ({
+                get: async () => makeActorInfo(),
+                // Old enough to be deleted, and not the default build 0.1.5
+                builds: () => ({
+                    list: async () => ({ items: [{ id: 'old-build', buildNumber: '0.0.1', startedAt: new Date(0) }] }),
+                }),
+                versions: () => ({ create: createVersion }),
+                version: () => ({ update: createVersion }),
+                build: startBuild,
+            }),
+            build: buildClient,
+        };
+        vi.mocked(ApifyClient).mockImplementation(function () {
+            return fakeClient;
+        } as never);
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.clearAllMocks();
+    });
+
+    const runDryBuilds = async () =>
+        runBuilds({
+            actorConfigs: [actorConfig],
+            repoUrl: REPO_URL,
+            shouldVerifyRepoUrl: true,
+            branch: 'feature',
+            dryRun: true,
+            versionNumber: '0.99',
+        });
+
+    it('should return a build plan without creating versions or builds', async () => {
+        expect(await runDryBuilds()).toEqual({
+            dryRun: true,
+            builds: [
+                {
+                    actorFullName: ACTOR,
+                    versionNumber: '0.99',
+                    gitRepoUrl: `${REPO_URL}#feature:actors/a`,
+                },
+            ],
+        });
+        expect(createVersion).not.toHaveBeenCalled();
+        expect(startBuild).not.toHaveBeenCalled();
+    });
+
+    it('should still require the Apify token', async () => {
+        vi.stubEnv(TOKEN_ENV_VAR, '');
+        await expect(runDryBuilds()).rejects.toThrow(`Env var ${TOKEN_ENV_VAR} is not set`);
+    });
+
+    it('should still check the repository URL', async () => {
+        await expect(
+            runBuilds({
+                actorConfigs: [actorConfig],
+                repoUrl: 'git@github.com:fork/repo',
+                shouldVerifyRepoUrl: true,
+                branch: 'feature',
+                dryRun: true,
+                versionNumber: '0.99',
+            }),
+        ).rejects.toThrow('Repository mismatch');
+    });
+
+    it('should not delete old builds', async () => {
+        await deleteOldBuilds([actorConfig], { dryRun: true });
+        expect(deleteBuild).not.toHaveBeenCalled();
+    });
+
+    it('should delete old builds outside of a dry run', async () => {
+        await deleteOldBuilds([actorConfig], { dryRun: false });
+        expect(buildClient).toHaveBeenCalledWith('old-build');
+        expect(deleteBuild).toHaveBeenCalledTimes(1);
     });
 });

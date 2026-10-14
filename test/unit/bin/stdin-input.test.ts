@@ -3,19 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { parseBuildInput, parseReleaseChanges } from '../../../bin/stdin-input.js';
 
 describe('parseBuildInput', () => {
-    it('reads the Actors and the branch', () => {
-        expect(parseBuildInput('{"ref":"feature","actors":[{"actorFullName":"owner/a"}]}')).toStrictEqual({
-            ref: 'feature',
+    it('reads the Actors', () => {
+        expect(parseBuildInput('{"actors":[{"actorFullName":"owner/a"}]}')).toStrictEqual({
             actors: [{ actorFullName: 'owner/a' }],
         });
     });
 
-    it('takes a picked get-affected-actors document, ignoring the other fields', () => {
-        const picked = { ref: null, head: 'f'.repeat(40), actors: [{ actorFullName: 'owner/a', extra: 1 }] };
-        expect(parseBuildInput(JSON.stringify(picked))).toStrictEqual({
-            ref: null,
-            actors: [{ actorFullName: 'owner/a' }],
-        });
+    it('ignores the other fields, so whole get-affected-actors fields can be passed along', () => {
+        const input = { head: 'f'.repeat(40), ref: 'feature', actors: [{ actorFullName: 'owner/a', extra: 1 }] };
+        expect(parseBuildInput(JSON.stringify(input))).toStrictEqual({ actors: [{ actorFullName: 'owner/a' }] });
     });
 
     it('accepts an empty list, which builds nothing', () => {

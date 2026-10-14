@@ -12,7 +12,6 @@ import {
     hasMergeFromTarget,
     normalizeRepoUrl,
     parseBaseCommit,
-    resolveBranchName,
     resolveCommitSha,
     resolveReleaseBaseCommit,
     resolveRepoUrl,
@@ -323,7 +322,7 @@ describe('getCurrentBranch', () => {
         const gitCommandSpy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('master');
         await expect(getCurrentBranch()).resolves.toBe('master');
         expect(gitCommandSpy).toHaveBeenCalledWith(['rev-parse', '--abbrev-ref', 'HEAD'], {
-            operation: 'determine the current branch for release',
+            operation: 'determine the checked-out branch',
         });
     });
 
@@ -530,18 +529,5 @@ describe('resolveCommitSha', () => {
         expect(spy).toHaveBeenCalledWith(['rev-parse', '--verify', 'origin/feature^{commit}'], {
             operation: 'resolve origin/feature to a commit',
         });
-    });
-});
-
-describe('resolveBranchName', () => {
-    it.each([
-        ['a local branch', 'refs/heads/feature/foo', 'feature/foo'],
-        ['a remote branch, dropping the remote', 'refs/remotes/origin/feature/foo', 'feature/foo'],
-        ['a tag', 'refs/tags/v1.0.0', null],
-        ['a detached HEAD', 'HEAD', null],
-        ['a SHA', '', null],
-    ])('handles %s', async (_, fullName, expected) => {
-        vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(fullName);
-        await expect(resolveBranchName('some-ref')).resolves.toBe(expected);
     });
 });

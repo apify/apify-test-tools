@@ -37,12 +37,11 @@ const parseStdinJson = <T>(
 };
 
 /**
- * What `build` reads: the Actors to build and, optionally, the branch to build them from. Only the Actor names are
- * read, the config file stays the source of truth for everything else about them. Other fields are ignored, so a
- * get-affected-actors document only needs its Actor list picked, e.g. `jq '{ actors: .functionallyChangedActors }'`.
+ * What `build` reads: the Actors to build. Only their names are read, the config file stays the source of truth
+ * for everything else about them. Other fields are ignored, so a get-affected-actors document only needs its Actor
+ * list picked, e.g. `jq '{ actors: .functionallyChangedActors }'`.
  */
 const buildInputSchema = z.object({
-    ref: z.string().nullish(),
     actors: z.array(z.object({ actorFullName: z.string() })),
 });
 

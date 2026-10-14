@@ -86,10 +86,13 @@ const buildOptions = {
             return value;
         },
     },
-    ref: {
-        type: 'string',
-        describe: 'Branch to build from. Defaults to "ref" from the input, then the checked-out one',
-    },
+} as const satisfies Record<string, Options>;
+
+/** Range of build-for-test: the checked-out branch's own commits, after its last validated one. */
+const buildForTestOptions = {
+    'target-branch': { type: 'string', demandOption: true },
+    'base-commit': { type: 'string' },
+    'test-files-glob': { type: 'string' },
 } as const satisfies Record<string, Options>;
 
 /** Where `release` and `notify-release` post the release. */
@@ -157,7 +160,7 @@ await yargs()
         'Find the Actors whose context changed in a commit range ending at the checked-out HEAD',
         (y) => y.options(affectedRangeOptions).options(actorSelectionOptions),
         async (args) => {
-            writeJson(toAffectedActorsDocument(await getAffectedActors({ ...args, head: 'HEAD' })));
+            writeJson(toAffectedActorsDocument(await getAffectedActors(args)));
         },
     )
     .command(
@@ -175,7 +178,7 @@ await yargs()
     )
     .command(
         'build',
-        'Build the Actors listed on stdin, as {"ref"?: branch, "actors": [{"actorFullName": ...}]}',
+        'Build the Actors listed on stdin, as {"actors": [{"actorFullName": ...}]}, from the checked-out branch',
         (y) => y.options(buildOptions).options(repoUrlOptions),
         async (args) => {
             const input = parseBuildInput(await readStdin());
@@ -184,7 +187,6 @@ await yargs()
             const actorConfigs = names.length > 0 ? await readConfigFile({ actors: names, ignore: [] }) : [];
             const builds = await buildActors({
                 actorConfigs,
-                ref: args.ref ?? input.ref ?? undefined,
                 versionNumber: args.versionNumber,
                 repoUrl: args.repoUrl,
                 dryRun: args.dryRun,
@@ -194,22 +196,15 @@ await yargs()
     )
     .command(
         'build-for-test',
-        'Build the Actors a branch changed functionally, for testing',
-        (y) =>
-            y
-                .options(gitRangeOptions)
-                .options(actorSelectionOptions)
-                .options(repoUrlOptions)
-                .option('test-files-glob', { type: 'string' }),
+        'Build the Actors the checked-out branch changed functionally, for testing',
+        (y) => y.options(buildForTestOptions).options(actorSelectionOptions).options(repoUrlOptions),
         async (config) => {
             logger.info(
                 '[BUILD-FOR-TEST]: Same as get-affected-actors --base <target-branch> [--since <base-commit>] ' +
-                    `| jq '{ ref, actors: .functionallyChangedActors }' | build --version-number ${TEST_VERSION_NUMBER}, ` +
-                    'from the source branch',
+                    `| jq '{ actors: .functionallyChangedActors }' | build --version-number ${TEST_VERSION_NUMBER}`,
             );
             // Cosmetic-only changes don't need testing, so they don't need a build either
-            const { functionallyChangedActors, ref } = await getAffectedActors({
-                head: config.sourceBranch,
+            const { functionallyChangedActors } = await getAffectedActors({
                 base: config.targetBranch,
                 since: config.baseCommit,
                 testFilesGlob: config.testFilesGlob,
@@ -218,7 +213,6 @@ await yargs()
             });
             const builds = await buildActors({
                 actorConfigs: functionallyChangedActors,
-                ref: ref ?? config.sourceBranch,
                 versionNumber: TEST_VERSION_NUMBER,
                 repoUrl: config.repoUrl,
                 dryRun: config.dryRun,
@@ -243,9 +237,10 @@ await yargs()
                     "jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json " +
                     `| build --version-number ${DEFAULT_VERSION_KEYWORD}, then notify-release < affected.json`,
             );
-            const { commits, changedFiles, changelog, ref, functionallyChangedActors, cosmeticallyChangedActors } =
+            // Fail before anything else on a detached HEAD: there is no branch to release
+            await getCurrentBranch();
+            const { commits, changedFiles, changelog, functionallyChangedActors, cosmeticallyChangedActors } =
                 await getAffectedActors({
-                    head: 'HEAD',
                     since: args.baseCommit,
                     actors: args.actors,
                     ignore: args.ignore,
@@ -259,8 +254,6 @@ await yargs()
             const builds = await buildActors({
                 // A release ships cosmetic changes (README, input schema descriptions, ...) too
                 actorConfigs: [...functionallyChangedActors, ...cosmeticallyChangedActors],
-                // Fails on a detached HEAD, there is no branch to release
-                ref: ref ?? (await getCurrentBranch()),
                 versionNumber: DEFAULT_VERSION_KEYWORD,
                 repoUrl: args.repoUrl,
                 dryRun,

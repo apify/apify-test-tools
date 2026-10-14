@@ -401,14 +401,15 @@ export const runBuilds = async ({
 };
 
 type BuildActorsOptions = Omit<RunBuildsOptions, 'repoUrl' | 'shouldVerifyRepoUrl' | 'branch'> & {
-    // Branch to build from. Defaults to the checked-out one
-    ref?: string;
     // Defaults to the `origin` remote, see resolveRepoUrl
     repoUrl?: string;
 };
 
-/** Builds exactly the given Actors from a Git branch. Used by `build` and the commands built on top of it. */
-export const buildActors = async ({ actorConfigs, ref, repoUrl, ...options }: BuildActorsOptions) => {
+/**
+ * Builds exactly the given Actors from the checked-out Git branch, as it is on the remote. Fails on a detached HEAD,
+ * where there is no branch to build. Used by `build` and the commands built on top of it.
+ */
+export const buildActors = async ({ actorConfigs, repoUrl, ...options }: BuildActorsOptions) => {
     if (actorConfigs.length === 0) {
         logger.info('No Actors to build');
         return [];
@@ -417,7 +418,7 @@ export const buildActors = async ({ actorConfigs, ref, repoUrl, ...options }: Bu
         ...options,
         ...(await resolveRepoUrl(repoUrl)),
         actorConfigs,
-        branch: ref ?? (await getCurrentBranch()),
+        branch: await getCurrentBranch(),
     });
 };
 

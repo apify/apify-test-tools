@@ -176,16 +176,16 @@ export const parseCommit = (commitString: string): Commit => {
 };
 
 /**
- * Returns the currently checked-out branch. Release builds point the Actor version at this branch,
+ * Returns the currently checked-out branch. Builds point the Actor version at this branch,
  * so a detached HEAD (no branch to point at) is an error rather than a guess.
  */
 export const getCurrentBranch = async (): Promise<string> => {
     const branch = await runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD'], {
-        operation: 'determine the current branch for release',
+        operation: 'determine the checked-out branch',
     });
     if (branch === 'HEAD') {
         throw new Error(
-            'Cannot determine the branch to release: HEAD is detached. Check out the branch you want to release.',
+            'Cannot determine the branch to build from: HEAD is detached. Check out the branch you want to build.',
         );
     }
     return branch;
@@ -194,17 +194,6 @@ export const getCurrentBranch = async (): Promise<string> => {
 /** Resolves a ref (branch, remote branch, SHA, HEAD, ...) to the full SHA of the commit it points to. */
 export const resolveCommitSha = async (ref: string): Promise<string> =>
     runGitCommand(['rev-parse', '--verify', `${ref}^{commit}`], { operation: `resolve ${ref} to a commit` });
-
-/**
- * Branch name a ref points to, without the remote: `origin/foo` and `foo` both give `foo`, and `HEAD`
- * gives the checked-out branch. Null when there is no branch to point at (a SHA, a tag, a detached HEAD).
- */
-export const resolveBranchName = async (ref: string): Promise<string | null> => {
-    const fullName = await runGitCommand(['rev-parse', '--symbolic-full-name', ref], {
-        operation: `resolve the branch name of ${ref}`,
-    });
-    return fullName.match(/^refs\/(?:heads|remotes\/[^/]+)\/(.+)$/)?.[1] ?? null;
-};
 
 /**
  * Reads the repository URL from the `origin` remote, rewritten to the SSH form the Apify platform

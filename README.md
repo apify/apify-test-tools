@@ -607,11 +607,12 @@ Requires `APIFY_TOKEN_<USERNAME>` for all Apify users that own your Actors (e.g.
 APIFY_TOKEN_JOHN_DOE=<token> \
   npx apify-test-tools build-for-test \
     --target-branch origin/master \
-    --source-branch origin/my-dummy-branch \
     --dry-run
 ```
 
-Remove `--dry-run` to actually trigger builds and update the branch names/ The command outputs a JSON array of build objects to stdout:
+Run it with your dummy branch checked out: it builds the Actors that branch changed, from the branch as it is on
+the remote. Remove `--dry-run` to actually trigger builds and update the target branch name. The command outputs
+a JSON array of build objects to stdout:
 
 ```json
 [{ "buildId": "...", "actorRawId": "...", "buildNumber": "...", "actorFullName": "john.doe/my-actor" }]
@@ -657,7 +658,6 @@ Tests only run for Actors in `ACTOR_BUILDS`, so a custom workflow has to build (
 BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
     npx apify-test-tools build-for-test \
     --target-branch origin/master \
-    --source-branch origin/my-dummy-branch \
     --test-files-glob 'test/platform/**')
 
 # Run tests with the builds
@@ -704,7 +704,6 @@ The output is a JSON document:
 ```json
 {
     "version": 1,
-    "ref": "my-branch",
     "head": "<sha of HEAD>",
     "commits": [{ "sha": "…", "author": "…", "date": "…", "message": "…" }],
     "changedFiles": ["src/main.ts", "CHANGELOG.md"],
@@ -719,12 +718,13 @@ they need a new build and tests. `cosmeticallyChangedActors` only have cosmetic 
 [Change detection](#change-detection)), so they need a new build only when released: `build-for-test` builds
 `functionallyChangedActors`, `release` builds both.
 
-`ref` is the checked-out branch, or `null` for a detached HEAD. `build-for-test` and `release` use the same detection internally.
+`build-for-test` and `release` use the same detection internally.
 
 ### Building Actors (`build`)
 
-`build` builds exactly the Actors it is given on stdin, from a Git branch, and prints the builds as the same JSON
-array `build-for-test` and `build-from-local` print. It doesn't look at git history: which Actors to build is
+`build` builds exactly the Actors it is given on stdin, from the checked-out branch as it is on the remote, and
+prints the builds as the same JSON array `build-for-test` and `build-from-local` print. A detached HEAD is an
+error, since there is no branch to build from. It doesn't look at git history: which Actors to build is
 up to you, usually picked from the output of [`get-affected-actors`](#finding-affected-actors-get-affected-actors).
 
 ```bash
@@ -742,24 +742,22 @@ npx apify-test-tools get-affected-actors --since <sha> \
 echo '{ "actors": [{ "actorFullName": "john.doe/my-actor" }] }' | npx apify-test-tools build --version-number 0.99
 ```
 
-The input is `{ "ref": "<branch>", "actors": [{ "actorFullName": "<owner/name>" }] }`; `ref` is optional and other
-fields are ignored. An empty `actors` list builds nothing and prints `[]`. Empty or invalid input is an error,
+The input is `{ "actors": [{ "actorFullName": "<owner/name>" }] }`; other fields are ignored. An empty `actors` list builds nothing and prints `[]`. Empty or invalid input is an error,
 so a failed command earlier in the pipe can't turn into a successful run that built nothing. In GitHub
 Actions, give such a step `shell: bash` so the pipe also fails on its own (the default shell has no `pipefail`).
 
-| Flag               | Default                                       | Meaning                                                                                                                |
-| ------------------ | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `--version-number` | required                                      | Version to build, like `0.99`, or `default` for each Actor's default version (the one its default build tag points to) |
-| `--ref`            | `ref` from the input, then the current branch | Branch to build from                                                                                                   |
-| `--repo-url`       | the `origin` remote                           | Repository to build from, see [Repository check](#repository-check)                                                    |
+| Flag               | Default             | Meaning                                                                                                                |
+| ------------------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--version-number` | required            | Version to build, like `0.99`, or `default` for each Actor's default version (the one its default build tag points to) |
+| `--repo-url`       | the `origin` remote | Repository to build from, see [Repository check](#repository-check)                                                    |
 
 `build` never sets or changes build tags. A build gets the tag its version is configured with on the platform,
 so building the default version moves its tag (usually `latest`) to the new build, and building a version
 without a tag leaves every tag where it is. Builds always use the Docker cache.
 
 `build-for-test` and `release` are shortcuts for the two pipelines above, with the flags they always had.
-`build-for-test` takes `--source-branch`, `--target-branch`, `--base-commit` and `--test-files-glob`, and builds
-into version `0.99`. `release` takes `--base-commit`, and announces the release on Slack after building, the same
+`build-for-test` takes `--target-branch`, `--base-commit` and `--test-files-glob`, inspects and builds the
+checked-out branch, and builds into version `0.99`. `release` takes `--base-commit`, and announces the release on Slack after building, the same
 way `notify-release` does.
 
 ### Releasing Actors (`release`)

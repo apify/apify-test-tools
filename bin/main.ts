@@ -7,13 +7,13 @@ import yargs, { type Options } from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
 import { getAffectedActors, toAffectedActorsDocument } from './affected-actors.js';
-import { buildActors, DEFAULT_KEYWORD, DEFAULT_TEST_VERSION_NUMBER, deleteOldBuilds } from './build.js';
+import { buildActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds, TEST_VERSION_NUMBER } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
-import { parseBuildInput, readStdin } from './build-input.js';
-import { getChangedFiles, getCommits, getCurrentBranch, getRepoName, resolveRepoUrl } from './git.js';
+import { getChangedFiles, getCommits, getCurrentBranch } from './git.js';
 import { logger, logLevels } from './logger.js';
 import { writeJson } from './output.js';
-import { notifyToSlack } from './slack.js';
+import { announceRelease } from './slack.js';
+import { parseBuildInput, parseReleaseChanges, readStdin } from './stdin-input.js';
 import { reportTestResults } from './test-report.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
@@ -75,23 +75,27 @@ const affectedRangeOptions = {
 const buildOptions = {
     'version-number': {
         type: 'string',
-        default: DEFAULT_TEST_VERSION_NUMBER,
-        describe: `Version to build, like 0.99, or "${DEFAULT_KEYWORD}" for each Actor's default version`,
+        demandOption: true,
+        describe: `Version to build, like 0.1, or "${DEFAULT_VERSION_KEYWORD}" for each Actor's default version`,
         coerce: (value: string) => {
-            if (value !== DEFAULT_KEYWORD && !/^\d+\.\d+$/.test(value)) {
-                throw new Error(`--version-number must look like 0.99 or be "${DEFAULT_KEYWORD}", got "${value}"`);
+            if (value !== DEFAULT_VERSION_KEYWORD && !/^\d+\.\d+$/.test(value)) {
+                throw new Error(
+                    `--version-number must look like 0.1 or be "${DEFAULT_VERSION_KEYWORD}", got "${value}"`,
+                );
             }
             return value;
         },
-    },
-    'build-tag': {
-        type: 'string',
-        describe: `Tag to give the builds, or "${DEFAULT_KEYWORD}" for each Actor's default build tag. None by default`,
     },
     ref: {
         type: 'string',
         describe: 'Branch to build from. Defaults to "ref" from the input, then the checked-out one',
     },
+} as const satisfies Record<string, Options>;
+
+/** Where `release` and `notify-release` post the release. */
+const releaseSlackOptions = {
+    'report-slack-channel': { type: 'string', describe: 'Channel for the full report: commits and changed files' },
+    'release-slack-channel': { type: 'string', describe: 'Channel for the changelog additions only' },
 } as const satisfies Record<string, Options>;
 
 /** Global flags, available to every command. */
@@ -182,7 +186,6 @@ await yargs()
                 actorConfigs,
                 ref: args.ref ?? input.ref ?? undefined,
                 versionNumber: args.versionNumber,
-                buildTag: args.buildTag,
                 repoUrl: args.repoUrl,
                 dryRun: args.dryRun,
             });
@@ -201,7 +204,8 @@ await yargs()
         async (config) => {
             logger.info(
                 '[BUILD-FOR-TEST]: Same as get-affected-actors --base <target-branch> [--since <base-commit>] ' +
-                    "| jq '{ ref, actors: .functionallyChangedActors }' | build, from the source branch",
+                    `| jq '{ ref, actors: .functionallyChangedActors }' | build --version-number ${TEST_VERSION_NUMBER}, ` +
+                    'from the source branch',
             );
             // Cosmetic-only changes don't need testing, so they don't need a build either
             const { functionallyChangedActors, ref } = await getAffectedActors({
@@ -215,7 +219,7 @@ await yargs()
             const builds = await buildActors({
                 actorConfigs: functionallyChangedActors,
                 ref: ref ?? config.sourceBranch,
-                versionNumber: DEFAULT_TEST_VERSION_NUMBER,
+                versionNumber: TEST_VERSION_NUMBER,
                 repoUrl: config.repoUrl,
                 dryRun: config.dryRun,
             });
@@ -232,13 +236,12 @@ await yargs()
                 // The last commit that is already released, everything after it up to HEAD gets released.
                 // Required, see the README section "Releasing Actors" for how to set it for each merge strategy.
                 .option('base-commit', { type: 'string', demandOption: true })
-                .option('report-slack-channel', { type: 'string' })
-                .option('release-slack-channel', { type: 'string' }),
+                .options(releaseSlackOptions),
         async (args) => {
             logger.info(
-                '[RELEASE]: Same as get-affected-actors --since <base-commit> ' +
-                    "| jq '{ ref, actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' " +
-                    '| build --version-number default --build-tag default, then a Slack announcement',
+                '[RELEASE]: Same as get-affected-actors --since <base-commit> > affected.json, then ' +
+                    "jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json " +
+                    `| build --version-number ${DEFAULT_VERSION_KEYWORD}, then notify-release < affected.json`,
             );
             const { commits, changedFiles, changelog, ref, functionallyChangedActors, cosmeticallyChangedActors } =
                 await getAffectedActors({
@@ -258,23 +261,37 @@ await yargs()
                 actorConfigs: [...functionallyChangedActors, ...cosmeticallyChangedActors],
                 // Fails on a detached HEAD, there is no branch to release
                 ref: ref ?? (await getCurrentBranch()),
-                versionNumber: DEFAULT_KEYWORD,
-                buildTag: DEFAULT_KEYWORD,
+                versionNumber: DEFAULT_VERSION_KEYWORD,
                 repoUrl: args.repoUrl,
                 dryRun,
             });
             logger.info(JSON.stringify(builds));
 
-            await notifyToSlack({
-                changedFiles,
+            await announceRelease({
                 commits,
+                changedFiles,
                 changelog,
-                repository: getRepoName((await resolveRepoUrl(args.repoUrl)).repoUrl),
+                repoUrl: args.repoUrl,
                 dryRun,
-                // The newest commit, same as the pushed head commit
-                author: commits[commits.length - 1].author,
                 reportSlackChannel,
                 releaseSlackChannel,
+            });
+        },
+    )
+    .command(
+        'notify-release',
+        'Announce a release on Slack, from the get-affected-actors output on stdin',
+        (y) => y.options(releaseSlackOptions).options(repoUrlOptions),
+        async (args) => {
+            const { commits, changedFiles, changelog } = parseReleaseChanges(await readStdin());
+            await announceRelease({
+                commits,
+                changedFiles,
+                changelog,
+                repoUrl: args.repoUrl,
+                dryRun: args.dryRun,
+                reportSlackChannel: args.reportSlackChannel,
+                releaseSlackChannel: args.releaseSlackChannel,
             });
         },
     )

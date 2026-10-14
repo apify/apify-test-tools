@@ -226,9 +226,10 @@ jobs:
         secrets: inherit
 ```
 
-This workflow runs `apify-test-tools release --base-commit ${{ github.event.before }}`. See
-[Releasing Actors](#releasing-actors-release) for how the released range is determined and what to
-pass if you call the CLI from somewhere else.
+This workflow does what `apify-test-tools release --base-commit ${{ github.event.before }}` does, one
+step per command: `get-affected-actors --since ${{ github.event.before }}`, then `build --version-number default`
+on every changed Actor, then `notify-release`. See [Releasing Actors](#releasing-actors-release) for how the
+released range is determined and what to pass if you call the CLI from somewhere else.
 
 ### `claude-review.yaml`
 
@@ -261,9 +262,9 @@ environment variables, so a secret is only visible to the step that needs it:
 | Secret                                                                    | Reaches                                                                                                                                                                                                                      |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NPM_TOKEN`                                                               | dependency install steps only, as both `NPM_TOKEN` and `NODE_AUTH_TOKEN`. Use a read-only token: npm granular tokens can be read-only, classic automation tokens can publish.                                                |
-| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the `build`, `release`, and `delete-old-builds` steps only                                                                                                                                                                   |
+| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the build and `delete-old-builds` steps only                                                                                                                                                                                 |
 | `TESTER_APIFY_TOKEN`                                                      | the vitest step, and the Claude investigation step: the Apify MCP server's bearer token for reading the failing run, its log and its storages, and Claude's token for re-running it to measure how often the failure happens |
-| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and release steps only                                                                                                                                                                                         |
+| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and announcement steps only                                                                                                                                                                                    |
 
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its
 own token via `tokenEnvVar` in `apify-test-tools.config.json`. Those steps pass
@@ -727,18 +728,18 @@ array `build-for-test` and `build-from-local` print. It doesn't look at git hist
 up to you, usually picked from the output of [`get-affected-actors`](#finding-affected-actors-get-affected-actors).
 
 ```bash
-# What build-for-test does: the Actors a branch changed functionally, built for tests
+# What build-for-test does: the Actors a branch changed functionally, built into the test version
 npx apify-test-tools get-affected-actors --base origin/master \
-  | jq '{ ref, actors: .functionallyChangedActors }' \
-  | npx apify-test-tools build
+  | jq '{ actors: .functionallyChangedActors }' \
+  | npx apify-test-tools build --version-number 0.99
 
-# What release builds: every Actor changed since the last release, as the version and tag users run
+# What release builds: every Actor changed since the last release, into the version users run
 npx apify-test-tools get-affected-actors --since <sha> \
-  | jq '{ ref, actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' \
-  | npx apify-test-tools build --version-number default --build-tag default
+  | jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' \
+  | npx apify-test-tools build --version-number default
 
 # One Actor, whatever changed
-echo '{ "actors": [{ "actorFullName": "john.doe/my-actor" }] }' | npx apify-test-tools build
+echo '{ "actors": [{ "actorFullName": "john.doe/my-actor" }] }' | npx apify-test-tools build --version-number 0.99
 ```
 
 The input is `{ "ref": "<branch>", "actors": [{ "actorFullName": "<owner/name>" }] }`; `ref` is optional and other
@@ -746,18 +747,20 @@ fields are ignored. An empty `actors` list builds nothing and prints `[]`. Empty
 so a failed command earlier in the pipe can't turn into a successful run that built nothing. In GitHub
 Actions, give such a step `shell: bash` so the pipe also fails on its own (the default shell has no `pipefail`).
 
-| Flag               | Default                                       | Meaning                                                                                                             |
-| ------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `--version-number` | `0.99`                                        | Version to build, or `default` for each Actor's default version (the one its default build tag points to)           |
-| `--build-tag`      | none                                          | Tag to give the builds, or `default` for each Actor's default build tag. Tagging another version with it is refused |
-| `--ref`            | `ref` from the input, then the current branch | Branch to build from                                                                                                |
-| `--repo-url`       | the `origin` remote                           | Repository to build from, see [Repository check](#repository-check)                                                 |
+| Flag               | Default                                       | Meaning                                                                                                                |
+| ------------------ | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--version-number` | required                                      | Version to build, like `0.99`, or `default` for each Actor's default version (the one its default build tag points to) |
+| `--ref`            | `ref` from the input, then the current branch | Branch to build from                                                                                                   |
+| `--repo-url`       | the `origin` remote                           | Repository to build from, see [Repository check](#repository-check)                                                    |
 
-Builds always use the Docker cache.
+`build` never sets or changes build tags. A build gets the tag its version is configured with on the platform,
+so building the default version moves its tag (usually `latest`) to the new build, and building a version
+without a tag leaves every tag where it is. Builds always use the Docker cache.
 
-`build-for-test` and `release` are shortcuts for the two pipelines above, with the flags they always had:
-`build-for-test` takes `--source-branch`, `--target-branch`, `--base-commit` and `--test-files-glob`, and
-`release` takes `--base-commit` and posts the release to Slack after building.
+`build-for-test` and `release` are shortcuts for the two pipelines above, with the flags they always had.
+`build-for-test` takes `--source-branch`, `--target-branch`, `--base-commit` and `--test-files-glob`, and builds
+into version `0.99`. `release` takes `--base-commit`, and announces the release on Slack after building, the same
+way `notify-release` does.
 
 ### Releasing Actors (`release`)
 
@@ -768,6 +771,15 @@ the `origin` remote.
 
 ```bash
 npx apify-test-tools release --base-commit <sha> --release-slack-channel "#releases" --dry-run
+```
+
+The announcement is also its own command, `notify-release`, which reads the output of `get-affected-actors` on
+stdin. It posts the changelog additions to `--release-slack-channel` and the commits and changed files to
+`--report-slack-channel`, and posts nothing when there are no new commits. It needs `SLACK_TOKEN_RELEASES_BOT`.
+
+```bash
+npx apify-test-tools get-affected-actors --since <sha> \
+  | npx apify-test-tools notify-release --release-slack-channel "#releases" --dry-run
 ```
 
 #### `--base-commit`

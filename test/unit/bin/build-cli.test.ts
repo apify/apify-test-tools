@@ -11,10 +11,11 @@ const compilerPath = fileURLToPath(new URL('../../../node_modules/typescript/bin
 let cliPath: string;
 let buildDir: string | undefined;
 
-const runBuild = (input: string, args: string[] = []) =>
-    spawnSync(cliPath, ['build', ...args], { encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'] });
+const run = (command: string[], input: string, env: NodeJS.ProcessEnv = process.env) =>
+    spawnSync(cliPath, command, { encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'], env });
+const runBuild = (input: string, args: string[] = ['--version-number', '0.99']) => run(['build', ...args], input);
 
-describe('build CLI', () => {
+describe('build and notify-release CLI', () => {
     beforeAll(async () => {
         buildDir = await mkdtemp(path.join(projectRoot, '.cli-test-'));
         execFileSync(process.execPath, [compilerPath, '--outDir', buildDir], { cwd: projectRoot });
@@ -42,6 +43,39 @@ describe('build CLI', () => {
     it('rejects a malformed --version-number', () => {
         const result = runBuild('{"actors":[]}', ['--version-number', 'latest']);
         expect(result.status).toBe(1);
-        expect(result.stderr).toContain('--version-number must look like 0.99 or be "default"');
+        expect(result.stderr).toContain('--version-number must look like 0.1 or be "default"');
+    });
+
+    it('requires --version-number', () => {
+        const result = runBuild('{"actors":[]}', []);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('Missing required argument: version-number');
+    });
+
+    it('notify-release announces nothing when there are no new commits', () => {
+        const document = { commits: [], changedFiles: [], changelog: null, functionallyChangedActors: [] };
+        const result = run(['notify-release'], JSON.stringify(document));
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stderr).toContain('No new commits, so there is no release to announce');
+    });
+
+    it('notify-release in a dry run logs the announcement without posting it', () => {
+        const commit = { sha: '1'.repeat(40), author: 'Dev<dev@example.com>', date: 'Date', message: 'feat: foo' };
+        const document = { commits: [commit], changedFiles: ['src/main.ts'], changelog: '- Added foo' };
+        const result = run(
+            [
+                'notify-release',
+                '--dry-run',
+                '--repo-url',
+                'git@github.com:owner/my-repo',
+                '--report-slack-channel',
+                '#r',
+            ],
+            JSON.stringify(document),
+            { ...process.env, SLACK_TOKEN_RELEASES_BOT: 'not-used-in-a-dry-run' },
+        );
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stderr).toContain('*my-repo* – New release (by Dev)');
+        expect(result.stderr).toContain('1. Commit message: feat: foo');
     });
 });

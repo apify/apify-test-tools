@@ -6,7 +6,6 @@ import { logger } from './logger.js';
 import type { ActorConfig, BuildData } from './types.js';
 
 type BuildPrActorOptions = {
-    buildTag?: string;
     versionNumber: string;
     gitRepoUrl: string;
     actorConfig: ActorConfig;
@@ -15,32 +14,10 @@ type BuildPrActorOptions = {
 
 // Fixed version number used to build from local source files, since there is no real version to track.
 export const LOCAL_SOURCE_VERSION_NUMBER = '0.98';
-// Version that builds for tests go to, so they never touch the version users run
-export const DEFAULT_TEST_VERSION_NUMBER = '0.99';
-// Stands for the Actor's default version or build tag, the ones its default run options point to
-export const DEFAULT_KEYWORD = 'default';
-
-/**
- * Resolves the `default` keyword of a version number and build tag for one Actor. Refuses to give a non-default
- * version the default build tag: users run that tag, so it would ship a build that was never meant for them.
- */
-export const resolveVersionAndTag = (
-    actorFullName: string,
-    { versionNumber, buildTag }: { versionNumber: string; buildTag?: string },
-    { defaultVersionNumber, defaultBuildTag }: { defaultVersionNumber: string; defaultBuildTag: string },
-) => {
-    const resolved = {
-        versionNumber: versionNumber === DEFAULT_KEYWORD ? defaultVersionNumber : versionNumber,
-        buildTag: buildTag === DEFAULT_KEYWORD ? defaultBuildTag : buildTag,
-    };
-    if (resolved.buildTag === defaultBuildTag && resolved.versionNumber !== defaultVersionNumber) {
-        throw new Error(
-            `[${actorFullName}] Refusing to tag version ${resolved.versionNumber} with "${defaultBuildTag}", the build tag ` +
-                `users run, which points to version ${defaultVersionNumber}. Build the default version or use another tag.`,
-        );
-    }
-    return resolved;
-};
+// Version that build-for-test builds, so tests never touch the version users run
+export const TEST_VERSION_NUMBER = '0.99';
+// Stands for each Actor's default version: the one its default build tag points to
+export const DEFAULT_VERSION_KEYWORD = 'default';
 
 // Shown whenever an Actor isn't set up the way CI builds need it
 const ACTOR_SETUP_REQUIREMENT =
@@ -344,10 +321,8 @@ export const dryRunBuildData = (actorFullName: string, versionNumber: string): B
 
 type RunBuildsOptions = {
     actorConfigs: ActorConfig[];
-    // A version number like "0.99", or DEFAULT_KEYWORD for each Actor's default version
+    // A version number like "0.99", or DEFAULT_VERSION_KEYWORD for each Actor's default version
     versionNumber: string;
-    // A build tag, DEFAULT_KEYWORD for each Actor's default build tag, or undefined for none
-    buildTag?: string;
     repoUrl: string;
     // False when the repo URL was passed explicitly, see assertRepoUrlMatchesDefaultVersion
     shouldVerifyRepoUrl: boolean;
@@ -361,7 +336,6 @@ export const runBuilds = async ({
     branch,
     actorConfigs,
     versionNumber,
-    buildTag,
     dryRun,
 }: RunBuildsOptions): Promise<BuildData[]> => {
     // Fetched once per Actor and reused for the checks, the version numbers and the build itself
@@ -372,11 +346,15 @@ export const runBuilds = async ({
                 actorConfig.actorFullName,
                 actorInfo,
             );
-            const resolved = resolveVersionAndTag(
-                actorConfig.actorFullName,
-                { versionNumber, buildTag },
-                { defaultVersionNumber, defaultBuildTag },
-            );
+            // Builds keep the tags their version gives them, so a default version without the default build tag
+            // would build fine but leave users on the previous build
+            if (versionNumber === DEFAULT_VERSION_KEYWORD && defaultVersion?.buildTag !== defaultBuildTag) {
+                logger.warn(
+                    `[${actorConfig.actorFullName}] Default version ${defaultVersionNumber} has build tag ` +
+                        `"${defaultVersion?.buildTag ?? 'none'}", not "${defaultBuildTag}", so users keep running the previous build. ` +
+                        'Set the build tag of the version on the platform to change that.',
+                );
+            }
             if (shouldVerifyRepoUrl) {
                 assertRepoUrlMatchesDefaultVersion(actorConfig.actorFullName, defaultVersion, repoUrl);
             }
@@ -386,15 +364,19 @@ export const runBuilds = async ({
             if (!actorConfig.folder.isRoot()) {
                 gitRepoUrl = `${gitRepoUrl}:${actorConfig.folder}`;
             }
-            return { actorConfig, actorInfo, gitRepoUrl, ...resolved };
+            return {
+                actorConfig,
+                actorInfo,
+                gitRepoUrl,
+                versionNumber: versionNumber === DEFAULT_VERSION_KEYWORD ? defaultVersionNumber : versionNumber,
+            };
         }),
     );
 
     if (dryRun) {
         logger.info('[DRY RUN] Would build:');
         for (const buildConfig of buildConfigs) {
-            const tag = buildConfig.buildTag ? `, tag ${buildConfig.buildTag}` : '';
-            logger.info(`  ${buildConfig.actorConfig.actorFullName} (${buildConfig.versionNumber}${tag})`);
+            logger.info(`  ${buildConfig.actorConfig.actorFullName} (${buildConfig.versionNumber})`);
         }
         return buildConfigs.map((buildConfig) =>
             dryRunBuildData(buildConfig.actorConfig.actorFullName, buildConfig.versionNumber),
@@ -407,8 +389,8 @@ export const runBuilds = async ({
 
     return runAndSummarizeBuilds(actorConfigs, 'BUILDS', async (actorConfig, builder) => {
         const buildConfig = buildConfigsByActorFullName.get(actorConfig.actorFullName)!;
+        // No buildTag: the version keeps the one it has, so its build gets the tag the version already gives it
         const actorVersion: ApifyClientTypes.ActorVersion = {
-            buildTag: buildConfig.buildTag,
             versionNumber: buildConfig.versionNumber,
             gitRepoUrl: buildConfig.gitRepoUrl,
             sourceType: ActorSourceType.GitRepo,

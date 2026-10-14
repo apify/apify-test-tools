@@ -3,12 +3,15 @@ import { ActorSourceType } from 'apify-client';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+    ApifyBuilder,
     assertRepoUrlMatchesDefaultVersion,
     buildActors,
     resolveDefaultVersion,
-    resolveVersionAndTag,
+    runBuilds,
 } from '../../../bin/build.js';
 import * as Git from '../../../bin/git.js';
+import { logger } from '../../../bin/logger.js';
+import type { ActorConfig } from '../../../bin/types.js';
 
 const ACTOR = 'owner/actor';
 const REPO_URL = 'git@github.com:owner/repo';
@@ -73,36 +76,45 @@ describe('assertRepoUrlMatchesDefaultVersion', () => {
     });
 });
 
-describe('resolveVersionAndTag', () => {
-    const defaults = { defaultVersionNumber: '0.3', defaultBuildTag: 'latest' };
-
-    it('keeps an explicit version and no tag, as builds for tests do', () => {
-        expect(resolveVersionAndTag('owner/a', { versionNumber: '0.99' }, defaults)).toStrictEqual({
-            versionNumber: '0.99',
-            buildTag: undefined,
+describe('runBuilds version number', () => {
+    // Only the name and folder of the Actor matter here, the builder is stubbed
+    const actorConfig = { actorFullName: ACTOR, folder: { isRoot: () => true } } as unknown as ActorConfig;
+    const dryRunBuild = async (versionNumber: string, actorInfo = makeActorInfo()) => {
+        vi.spyOn(ApifyBuilder, 'fromActorConfig').mockReturnValue({
+            getActorInfo: async () => actorInfo,
+        } as unknown as ApifyBuilder);
+        const [build] = await runBuilds({
+            actorConfigs: [actorConfig],
+            versionNumber,
+            repoUrl: REPO_URL,
+            shouldVerifyRepoUrl: false,
+            branch: 'master',
+            dryRun: true,
         });
+        // A dry run reports the version it would build as the build number
+        return build.buildNumber;
+    };
+
+    it('builds the version it is given', async () => {
+        await expect(dryRunBuild('0.99')).resolves.toBe('0.99');
     });
 
-    it("resolves default to the Actor's own default version and build tag, as releases do", () => {
-        expect(
-            resolveVersionAndTag('owner/a', { versionNumber: 'default', buildTag: 'default' }, defaults),
-        ).toStrictEqual({ versionNumber: '0.3', buildTag: 'latest' });
+    it("resolves default to the version the Actor's default build tag points to", async () => {
+        await expect(dryRunBuild('default')).resolves.toBe('0.1');
     });
 
-    it('allows another tag on another version', () => {
-        expect(resolveVersionAndTag('owner/a', { versionNumber: '0.99', buildTag: 'beta' }, defaults)).toStrictEqual({
-            versionNumber: '0.99',
-            buildTag: 'beta',
-        });
+    it('warns when the default version does not give its builds the default build tag', async () => {
+        const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        await dryRunBuild('default');
+        // The fixture's version 0.1 has no build tag of its own
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('users keep running the previous build'));
     });
 
-    it('refuses to give the default build tag to a version that is not the default one', () => {
-        expect(() => resolveVersionAndTag('owner/a', { versionNumber: '0.99', buildTag: 'default' }, defaults)).toThrow(
-            'Refusing to tag version 0.99 with "latest"',
-        );
-        expect(() => resolveVersionAndTag('owner/a', { versionNumber: '0.99', buildTag: 'latest' }, defaults)).toThrow(
-            'Refusing to tag version 0.99 with "latest"',
-        );
+    it('does not warn when the default version gives its builds the default build tag', async () => {
+        const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        const versions = [{ versionNumber: '0.1', buildTag: 'latest', sourceType: ActorSourceType.GitRepo }];
+        await dryRunBuild('default', makeActorInfo({ versions } as Partial<ApifyClientTypes.Actor>));
+        expect(warnSpy).not.toHaveBeenCalled();
     });
 });
 

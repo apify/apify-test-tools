@@ -6,11 +6,11 @@ import AdmZip from 'adm-zip';
 import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType } from 'apify-client';
 
-import { dryRunBuildData, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
+import { ApifyBuilder, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
 import { loadDockerIgnore } from './dockerignore.js';
 import { logger } from './logger.js';
 import { isPathWithinScope } from './path-utils.js';
-import type { ActorConfig, BuildData } from './types.js';
+import type { ActorConfig, BuildData, DryRunPlan } from './types.js';
 import type { SourceFile } from './utils.js';
 import { getGitignoredPaths, isOutsideDir, listRepoFilePaths, readSourceFile } from './utils.js';
 import type { RelativeDir } from './utils/path/repo-relative.js';
@@ -179,32 +179,66 @@ export const rewriteActorJsonPaths = async (
     await fs.writeFile(path.join(newActorDir, 'actor.json'), JSON.stringify(rewritten, null, 4));
 };
 
+type LocalBuildPlan = {
+    actorFullName: string;
+    versionNumber: string;
+    folder: string;
+    fileCount: number;
+    zipSizeBytes: number;
+};
+
 export const runBuildsFromLocal = async ({
     actorConfigs,
     dryRun,
 }: {
     actorConfigs: ActorConfig[];
     dryRun: boolean;
-}): Promise<BuildData[]> => {
+}): Promise<BuildData[] | DryRunPlan<LocalBuildPlan>> => {
+    // Read-only preparation shared with the real build, so a dry run fails on a missing token, an unknown
+    // Actor or unreadable sources just like the build would
+    const preparedBuilds = await Promise.all(
+        actorConfigs.map(async (actorConfig) => {
+            const actorInfo = await ApifyBuilder.fromActorConfig(actorConfig).getActorInfo();
+            // Zipped and uploaded like `apify push` does, since inline SOURCE_FILES are capped at ~9 MB.
+            const zip = new AdmZip();
+            const sourceFiles = await collectSourceFiles(actorConfig);
+            for (const { name, content } of sourceFiles) {
+                zip.addFile(name, content);
+            }
+            return { actorConfig, actorInfo, fileCount: sourceFiles.length, zipBuffer: zip.toBuffer() };
+        }),
+    );
+
     if (dryRun) {
         logger.info('[DRY RUN] Would build from local source:');
-        for (const { actorFullName, folder } of actorConfigs) {
-            logger.info(`  ${actorFullName} (${folder})`);
+        for (const { actorConfig, fileCount, zipBuffer } of preparedBuilds) {
+            logger.info(
+                `  ${actorConfig.actorFullName} (${actorConfig.folder}): ${fileCount} files, ${zipBuffer.length} bytes zipped`,
+            );
         }
-        return actorConfigs.map(({ actorFullName }) => dryRunBuildData(actorFullName, LOCAL_SOURCE_VERSION_NUMBER));
+        return {
+            dryRun: true,
+            builds: preparedBuilds.map(({ actorConfig, fileCount, zipBuffer }) => ({
+                actorFullName: actorConfig.actorFullName,
+                versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
+                folder: actorConfig.folder.path,
+                fileCount,
+                zipSizeBytes: zipBuffer.length,
+            })),
+        };
     }
 
+    const preparedByActorFullName = new Map(
+        preparedBuilds.map((prepared) => [prepared.actorConfig.actorFullName, prepared]),
+    );
+
     return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {
-        // Zipped and uploaded like `apify push` does, since inline SOURCE_FILES are capped at ~9 MB.
-        const zip = new AdmZip();
-        for (const { name, content } of await collectSourceFiles(actorConfig)) {
-            zip.addFile(name, content);
-        }
+        const { actorInfo, zipBuffer } = preparedByActorFullName.get(actorConfig.actorFullName)!;
         const actorVersion: ApifyClientTypes.ActorVersion = {
             versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
-            tarballUrl: await builder.uploadSourceZip(LOCAL_SOURCE_VERSION_NUMBER, zip.toBuffer()),
+            tarballUrl: await builder.uploadSourceZip(LOCAL_SOURCE_VERSION_NUMBER, zipBuffer),
             sourceType: ActorSourceType.Tarball,
         };
-        return builder.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false);
+        return builder.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false, actorInfo);
     });
 };

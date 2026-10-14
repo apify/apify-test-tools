@@ -70,6 +70,19 @@ const affectedRangeOptions = {
     },
 } as const satisfies Record<string, Options>;
 
+/**
+ * For commands that change something (builds, deletes, Slack posts). A dry run still does every read and check
+ * the real run does, credentials included, and only skips the writes. So it needs the same tokens, though
+ * read-only ones are enough. Read-only commands don't take it since they have nothing to skip.
+ */
+const dryRunOptions = {
+    'dry-run': {
+        type: 'boolean',
+        default: false,
+        describe: 'Do every read and check (tokens included) but change nothing; print what would be done',
+    },
+} as const satisfies Record<string, Options>;
+
 /** Flags for commands that trigger Apify builds. */
 const buildOptions = {
     'use-docker-cache': { type: 'boolean', default: false },
@@ -83,7 +96,6 @@ const globalOptions = {
         default: 'info',
         describe: 'Minimum diagnostic level written to stderr; silent disables logging',
     },
-    'dry-run': { type: 'boolean', default: false },
 } as const satisfies Record<string, Options>;
 
 await yargs()
@@ -142,6 +154,7 @@ await yargs()
         '',
         (y) =>
             y
+                .options(dryRunOptions)
                 .option('report-file', { type: 'string', demandOption: true })
                 .option('report-slack-channel', { type: 'string' })
                 .option('job-url', { type: 'string' })
@@ -159,6 +172,7 @@ await yargs()
                 .options(actorSelectionOptions)
                 .options(buildOptions)
                 .options(repoUrlOptions)
+                .options(dryRunOptions)
                 .option('test-files-glob', { type: 'string' }),
         async (config) => {
             // Cosmetic-only changes don't need testing, so they don't need a build either
@@ -188,6 +202,7 @@ await yargs()
                 .options(actorSelectionOptions)
                 .options(buildOptions)
                 .options(repoUrlOptions)
+                .options(dryRunOptions)
                 // The last commit that is already released, everything after it up to HEAD gets released.
                 // Required, see the README section "Releasing Actors" for how to set it for each merge strategy.
                 .option('base-commit', { type: 'string', demandOption: true })
@@ -239,7 +254,7 @@ await yargs()
     .command(
         'build-from-local',
         '',
-        (y) => y.options(actorSelectionOptions),
+        (y) => y.options(actorSelectionOptions).options(dryRunOptions),
         async ({ actors, ignore, dryRun }) => {
             const actorConfigs = await readConfigFile({ actors, ignore });
             const builds = await runBuildsFromLocal({ actorConfigs, dryRun });
@@ -249,10 +264,10 @@ await yargs()
     .command(
         'delete-old-builds',
         '',
-        (y) => y.options(actorSelectionOptions),
-        async ({ actors, ignore }) => {
+        (y) => y.options(actorSelectionOptions).options(dryRunOptions),
+        async ({ actors, ignore, dryRun }) => {
             const actorConfigs = await readConfigFile({ actors, ignore });
-            await deleteOldBuilds(actorConfigs);
+            await deleteOldBuilds(actorConfigs, { dryRun });
         },
     )
     .strictCommands()

@@ -4,11 +4,13 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { ApifyBuilder } from '../../../bin/build.js';
 import {
     collectNonIgnoredFiles,
     collectSourceFiles,
     flattenMonorepoContext,
     rewriteActorJsonPaths,
+    runBuildsFromLocal,
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore: editor-only TS6059 — test/tsconfig.json's rootDir doesn't span bin/, but the root
     // tsconfig (used for the real build and for eslint's type-aware linting) has no such restriction.
@@ -233,6 +235,59 @@ describe('build-from-local helpers', () => {
             expect(rewritten.dockerfile).toBe('../Dockerfile');
             expect(rewritten.dockerContextDir).toBe('..');
             expect(rewritten.changelog).toBe('./CHANGELOG.md');
+        });
+    });
+
+    describe('runBuildsFromLocal dry run', () => {
+        it('looks the Actor up and zips its sources, but builds nothing', async () => {
+            const repoRoot = await mkTempDir('apify-test-tools-dry-run-');
+            tempDirs.push(repoRoot);
+            const actorDir = path.join(repoRoot, 'actors', 'owner_actor');
+            await fs.mkdir(path.join(actorDir, '.actor'), { recursive: true });
+            await fs.writeFile(path.join(actorDir, '.actor', 'actor.json'), JSON.stringify({ name: 'actor' }));
+            await fs.writeFile(path.join(actorDir, 'main.js'), '');
+            vi.spyOn(Utils, 'listRepoFilePaths').mockResolvedValue([
+                'actors/owner_actor/.actor/actor.json',
+                'actors/owner_actor/main.js',
+            ]);
+            vi.spyOn(Utils, 'getGitignoredPaths').mockResolvedValue(new Set());
+
+            const getActorInfo = vi.fn(async () => ({}));
+            const fromActorConfig = vi
+                .spyOn(ApifyBuilder, 'fromActorConfig')
+                .mockReturnValue({ getActorInfo } as unknown as ApifyBuilder);
+
+            const originalCwd = process.cwd();
+            process.chdir(repoRoot);
+            try {
+                const plan = await runBuildsFromLocal({
+                    actorConfigs: [
+                        {
+                            actorFullName: 'owner/actor',
+                            folder: new ExistingDir('actors/owner_actor'),
+                            tokenEnvVar: 'APIFY_TOKEN_OWNER',
+                            actorJson: {
+                                file: new ExistingFile('actors/owner_actor/.actor/actor.json'),
+                                dockerContextDir: new RelativeDir('actors/owner_actor'),
+                            },
+                            dockerContextDir: new RelativeDir('actors/owner_actor'),
+                            contextPaths: [new RelativeDir('actors/owner_actor')],
+                        },
+                    ],
+                    dryRun: true,
+                });
+                expect(plan).toEqual({
+                    dryRun: true,
+                    builds: [
+                        expect.objectContaining({ actorFullName: 'owner/actor', versionNumber: '0.98', fileCount: 2 }),
+                    ],
+                });
+            } finally {
+                process.chdir(originalCwd);
+            }
+            expect(getActorInfo).toHaveBeenCalledTimes(1);
+            // Only the read-only lookup ran: builders for uploads and builds are created after the dry-run cutoff
+            expect(fromActorConfig).toHaveBeenCalledTimes(1);
         });
     });
 });

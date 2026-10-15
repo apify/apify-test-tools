@@ -59,7 +59,7 @@
         "start": "npm run dist/bin/main.js",
         "start:dev": "cd local-clone && tsx ../bin/main.ts",
         "build": "tsc && chmod +x ./dist/bin/main.js",
-        "bundle": "esbuild bin/main.ts --bundle --minify --platform=node --format=esm --target=node22 --log-level=warning --banner:js=\"import{createRequire as __createRequire}from'node:module';const require=__createRequire(import.meta.url);\" --outfile=.github/cli/apify-test-tools.mjs",
+        "bundle": "esbuild bin/main.ts --bundle --minify --platform=node --format=esm --target=node24 --log-level=warning --banner:js=\"import{createRequire as __createRequire}from'node:module';const require=__createRequire(import.meta.url);\" --outfile=.github/cli/apify-test-tools.mjs",
         "lint": "eslint",
         "lint:fix": "eslint --fix",
         "format": "prettier --write .",

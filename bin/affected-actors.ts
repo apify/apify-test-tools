@@ -1,27 +1,30 @@
 import { type ChangedActors, getChangedActors } from './diff-changes.js';
 import {
-    getBranchOnlyChangedFiles,
+    findCommitSha,
     getChangedFilesBetween,
     getChangelogAdditions,
-    getCommits,
     getCommitsBetween,
-    hasMergeFromTarget,
+    getMergeBase,
     resolveCommitSha,
     resolveReleaseBaseCommit,
 } from './git.js';
 import { logger } from './logger.js';
-import type { ActorConfig, Commit } from './types.js';
+import type { ActorConfig, Commit, GitRange } from './types.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
 // The range always ends at the checked-out commit: check out what you want to inspect
 const HEAD = 'HEAD';
 
 interface AffectedActorsOptions {
-    /** Only the commits on HEAD that are not on base count, i.e. the branch's own changes. */
+    /**
+     * Only what HEAD changes compared to base counts, like `git diff base...HEAD` or GitHub's "Files changed" tab:
+     * the branch's own changes, not what it merged in from base.
+     */
     base?: string;
     /**
-     * Only changes after this commit count. With `base` it's the last validated commit of the branch and is
-     * ignored when it isn't on the branch. Without `base` it must be an ancestor of HEAD (e.g. the last release).
+     * With `base` it's the last validated commit of the branch: Actors that didn't change after it are left out.
+     * It's ignored when it is HEAD (a rerun) or isn't in the local history. Without `base` everything after it
+     * counts, and it must be an ancestor of HEAD (e.g. the last release).
      */
     since?: string;
     /** Glob relative to the repo root. Matching files count as changes even when .dockerignore lists them. */
@@ -34,6 +37,7 @@ interface AffectedActorsOptions {
 interface AffectedActors {
     version: 1;
     head: string;
+    /** The commits, changed files and changelog describe the whole range, `--since` with `--base` only narrows the Actors. */
     commits: Commit[];
     changedFiles: string[];
     changelog: string | null;
@@ -48,66 +52,43 @@ interface AffectedActors {
 
 const names = (configs: ActorConfig[]) => configs.map(({ actorFullName }) => ({ actorFullName }));
 
-interface CommitRange {
-    commits: Commit[];
-    fromRef: string;
-    toRef: string;
-}
-
-/** The branch's own commits, after `since` when it is on the branch (see getCommits). */
-const getBranchRange = async (base: string, since: string | undefined): Promise<CommitRange> => {
-    const commits = await getCommits({ sourceBranch: HEAD, targetBranch: base, baseCommit: since });
-    return { commits, fromRef: `${commits[0].sha}~`, toRef: commits[commits.length - 1].sha };
-};
-
-/** Everything after `since` up to HEAD. Unlike on a branch, `since` must be an ancestor of HEAD. */
-const getRangeSince = async (headSha: string, since: string): Promise<CommitRange> => {
-    const sinceSha = await resolveReleaseBaseCommit(since);
-    const commits = sinceSha === headSha ? [] : await getCommitsBetween(sinceSha, headSha);
-    return { commits, fromRef: sinceSha, toRef: headSha };
+/** The branch's last validated commit, unless it can't narrow anything down. */
+const findValidatedSha = async (since: string, headSha: string): Promise<string | undefined> => {
+    const sinceSha = await findCommitSha(since);
+    if (!sinceSha) {
+        logger.info(
+            `Last validated commit ${since} is not in the local history (force-push?), checking the whole branch`,
+        );
+        return undefined;
+    }
+    if (sinceSha === headSha) {
+        logger.info('Last validated commit is HEAD, so this is a rerun: checking the whole branch from scratch');
+        return undefined;
+    }
+    return sinceSha;
 };
 
 /**
- * This is an optimization for the common case where a branch only has cosmetic changes but had to merge in
- * functional changes from base (being up-to-date is a CI requirement). Base is already validated, and
- * since the branch has no functional changes of its own, there is nothing new to validate.
- * Exception: if the branch has any functional changes alongside the merge, we must re-test — even
- * individually validated changes can have novel interactions when combined.
- * Returns the Actors the branch's own commits changed, or undefined when it didn't merge base in.
+ * Keeps the Actors the branch changed that also changed since its last validated commit. The two diffs answer
+ * different questions: `base...HEAD` is what the branch changes, `since..HEAD` what changed since the last validation,
+ * including what came from base through a merge or a rebase. An Actor in only one of them is already validated, either
+ * by this branch or on base. Changes in both can interact, so only those are checked again.
  *
- * TODO: Apply this per Actor instead of to the whole branch. Changes merged in from base only interact with the
- * branch's own changes in Actors whose context both touch, so an Actor that only base changed is already validated
- * and can be skipped even when the branch changes other Actors functionally. Today any functional change of the
- * branch's own keeps every Actor, and the log messages below describe the whole branch.
+ * An Actor is functional only when both diffs say so. A validated functional change of the branch plus cosmetic
+ * changes since is cosmetic, and so is a functional change from base meeting only cosmetic changes of the branch.
  */
-const getOwnChangesIfMergedFromBase = async (
-    base: string,
-    actorConfigs: ActorConfig[],
-    testFilesGlob: string | undefined,
-): Promise<ChangedActors | undefined> => {
-    if (!(await hasMergeFromTarget(HEAD, base))) return undefined;
-
-    logger.info(
-        '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
+const narrowToChangedSince = (branch: ChangedActors, sinceValidated: ChangedActors): ChangedActors => {
+    const changedSince = [...sinceValidated.functional, ...sinceValidated.cosmetic];
+    const functional = branch.functional.filter((actor) => sinceValidated.functional.includes(actor));
+    const cosmetic = [...branch.functional, ...branch.cosmetic].filter(
+        (actor) => changedSince.includes(actor) && !functional.includes(actor),
     );
-    const own = await getChangedActors({
-        filepathsChanged: await getBranchOnlyChangedFiles(HEAD, base),
-        actorConfigs,
-        // Omit since to get full branch history. Validated functional commits can still interact with merged ones
-        commits: await getCommits({ sourceBranch: HEAD, targetBranch: base }),
-        testFilesGlob,
-    });
-    logger.info(
-        own.functional.length > 0
-            ? `[MERGE-FROM-TARGET-OPTIMIZATION]: Branch has ${own.functional.length} functional changes, cannot optimize, we continue with full check`
-            : '[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests',
-    );
-    return own;
+    return { functional, cosmetic };
 };
 
 /**
- * Finds the Actors whose context changed in the given range. `base` selects the branch's own commits
- * (a PR), `since` the commits after a known one (a release, or the last validated commit of a PR).
+ * Finds the Actors whose context changed in the given range. `base` selects the branch's own changes
+ * (a PR), `since` the changes after a known commit (a release, or the last validated commit of a PR).
  */
 export const getAffectedActors = async ({
     base,
@@ -123,23 +104,34 @@ export const getAffectedActors = async ({
     }
 
     const headSha = await resolveCommitSha(HEAD);
-    const { commits, fromRef, toRef } = base ? await getBranchRange(base, since) : await getRangeSince(headSha, since!);
     const actorConfigs = await readConfigFile({ actors, ignore });
+    const inspect = async (range: GitRange) => {
+        const changedFiles = await getChangedFilesBetween(range.fromRef, range.toRef);
+        return {
+            changedFiles,
+            changed: await getChangedActors({ filepathsChanged: changedFiles, actorConfigs, range, testFilesGlob }),
+        };
+    };
 
-    // What the branch only merged in from base is already validated. Without functional changes of its own
-    // the branch has nothing to test, and without any changes of its own nothing to release either.
-    const own = base ? await getOwnChangesIfMergedFromBase(base, actorConfigs, testFilesGlob) : undefined;
-    const changedFiles = await getChangedFilesBetween(fromRef, toRef);
-    const changed = await getChangedActors({ filepathsChanged: changedFiles, actorConfigs, commits, testFilesGlob });
+    const range: GitRange = {
+        fromRef: base ? await getMergeBase(base, HEAD) : await resolveReleaseBaseCommit(since!),
+        toRef: headSha,
+    };
+    const { changedFiles, changed: changedInRange } = await inspect(range);
+
+    const validatedSha = base && since ? await findValidatedSha(since, headSha) : undefined;
+    const changed = validatedSha
+        ? narrowToChangedSince(changedInRange, (await inspect({ fromRef: validatedSha, toRef: headSha })).changed)
+        : changedInRange;
 
     return {
         version: 1,
         head: headSha,
-        commits,
+        // Empty `git log x..x` output doesn't parse as a commit
+        commits: range.fromRef === headSha ? [] : await getCommitsBetween(range.fromRef, range.toRef),
         changedFiles,
-        changelog: await getChangelogAdditions(fromRef, toRef, changedFiles),
-        functionallyChangedActors: own && own.functional.length === 0 ? [] : names(changed.functional),
-        cosmeticallyChangedActors:
-            own && own.functional.length + own.cosmetic.length === 0 ? [] : names(changed.cosmetic),
+        changelog: await getChangelogAdditions(range.fromRef, range.toRef, changedFiles),
+        functionallyChangedActors: names(changed.functional),
+        cosmeticallyChangedActors: names(changed.cosmetic),
     };
 };

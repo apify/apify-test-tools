@@ -3,13 +3,14 @@ import picomatch from 'picomatch';
 import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
 import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
 import { logger } from './logger.js';
-import type { ActorConfig, Commit } from './types.js';
+import type { ActorConfig, GitRange } from './types.js';
 import { type RelativeDir, RelativeFile } from './utils/path/repo-relative.js';
 
 interface ShouldBuildAndTestOptions {
     filepathsChanged: string[];
     actorConfigs: ActorConfig[];
-    commits: Commit[];
+    /** The range the files changed in, to compare `.actor` JSON files across. */
+    range: GitRange;
     // Glob relative to the repo root. Matching files count as changes even when .dockerignore lists them.
     testFilesGlob?: string;
 }
@@ -52,7 +53,7 @@ type FileChangeForActor =
 const classifyFileChange = async (
     changedFile: RelativeFile,
     actorConfig: ActorConfig,
-    commits: Commit[],
+    range: GitRange,
     dockerIgnoreMatcher: DockerIgnoreMatcher,
     isTestFile: (filePath: string) => boolean,
 ): Promise<FileChangeForActor> => {
@@ -91,7 +92,7 @@ const classifyFileChange = async (
     }
 
     if (lowercaseFilePath.endsWith('.json') && isUnderActorDotDir) {
-        const isCosmetic = await isCosmeticOnlyJsonSchemaChange(commits, changedFile.path);
+        const isCosmetic = await isCosmeticOnlyJsonSchemaChange(range, changedFile.path);
         if (isCosmetic) return { impact: 'cosmetic', semanticallyVerified: true };
     }
 
@@ -175,7 +176,7 @@ export interface ChangedActors {
 export const getChangedActors = async ({
     filepathsChanged,
     actorConfigs,
-    commits,
+    range,
     testFilesGlob,
 }: ShouldBuildAndTestOptions): Promise<ChangedActors> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
@@ -192,7 +193,7 @@ export const getChangedActors = async ({
                 continue;
             }
 
-            const change = await classifyFileChange(filePath, actorConfig, commits, dockerIgnoreMatcher, isTestFile);
+            const change = await classifyFileChange(filePath, actorConfig, range, dockerIgnoreMatcher, isTestFile);
             if (change.impact !== 'outside-context' && isTestFile(originalFilePath)) {
                 testFilesInContext.add(originalFilePath);
             }

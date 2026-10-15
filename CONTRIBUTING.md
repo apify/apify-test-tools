@@ -1,23 +1,30 @@
 # Contributing
 
-The package consists of three parts:
+The repo is an npm workspace with three parts:
 
-- cli located in `bin/`
-- test library located in `lib`
+- the CLI, published as `@apify/test-tools-cli`, in `packages/cli/`
+- the test library, published as `apify-test-tools`, in `packages/lib/`
 - the reusable GitHub workflows consumer repos call, in `.github/workflows/` and `.github/actions/`
+
+Both packages are released together under one version number. Dev tooling (TypeScript, ESLint, Vitest,
+Prettier) lives in the root `package.json`; each package's `package.json` lists only what it needs at
+runtime, and ESLint fails if a package imports something it doesn't declare. The two packages never import
+from each other. The only thing they share is the `ACTOR_BUILDS` JSON the CLI prints and the library
+reads; `test/contract/` checks both sides still agree on it. Only ever add fields to it: consumer repos
+can run any library version against the CLI the workflows pin.
 
 ## CLI
 
-- `bin/build.ts` actor building
-- `bin/git.ts` git wrappers for getting relevant git commits and changed files
-- `bin/main.ts` entrypoing
-- `bin/slack.ts` sending notifications to slack
-- `bin/test-report.ts` processing vitest's test reports
+- `packages/cli/src/build.ts` actor building
+- `packages/cli/src/git.ts` git wrappers for getting relevant git commits and changed files
+- `packages/cli/src/main.ts` entrypoing
+- `packages/cli/src/slack.ts` sending notifications to slack
+- `packages/cli/src/test-report.ts` processing vitest's test reports
 
-CLI command results use `writeJson` from `bin/output.ts` to write newline-terminated JSON to stdout.
-Use the CLI `logger` from `bin/logger.ts` for diagnostics; every level writes to stderr.
-ESLint rejects `console.log` throughout the codebase and all direct `console` calls in `bin/`.
-The importable library in `lib/` keeps its own diagnostics; CLI log levels apply only to `bin/`.
+CLI command results use `writeJson` from `packages/cli/src/output.ts` to write newline-terminated JSON to stdout.
+Use the CLI `logger` from `packages/cli/src/logger.ts` for diagnostics; every level writes to stderr.
+ESLint rejects `console.log` throughout the codebase and all direct `console` calls in `packages/cli/`.
+The importable library in `packages/lib/` keeps its own diagnostics; CLI log levels apply only to the CLI.
 
 The CLI's global `--log-level` option accepts `debug`, `info` (default), `warn`, `error`, or `silent`.
 It filters diagnostics without affecting command results. Use `logger.debug` for detailed troubleshooting,
@@ -25,8 +32,8 @@ It filters diagnostics without affecting command results. Use `logger.debug` for
 
 ## Test library
 
-- `lib/extend-expect.ts` - custom matchers
-- `run-test-result.ts` - `RunTestResult` class that's the output of `run` function
+- `packages/lib/src/extend-expect.ts` - custom matchers
+- `packages/lib/src/run-test-result.ts` - `RunTestResult` class that's the output of `run` function
     - wrapper around run endpoints: `logLog`, `getStatistics`, `getDataset`, etc
 
 ### Development setup
@@ -52,16 +59,16 @@ To work on the library, run the cli from the root of your testing repo:
 
 ```sh
 cd /path/to/testing-repo-for-github-actions
-npx tsx /path/to/apify-test-tools/bin/main.ts --help
-npx tsx /path/to/apify-test-tools/bin/main.ts get-commits --target-branch master --source-branch feat/testing-feature-branch
+npx tsx /path/to/apify-test-tools/packages/cli/src/main.ts --help
+npx tsx /path/to/apify-test-tools/packages/cli/src/main.ts get-commits --target-branch master --source-branch feat/testing-feature-branch
 ```
 
 #### Working on the library
 
-You need to istall the local version of `apify-test-tools` in your cloned `testing-repo-for-github-actions`:
+You need to install the local version of `apify-test-tools` in your cloned `testing-repo-for-github-actions`:
 
 ```sh
-npm i -D ../path/to/apify-test-tools
+npm i -D ../path/to/apify-test-tools/packages/lib
 ```
 
 You need to run `npm run build` inside `apify-test-tools` repo everytime you want to test your changes in `testing-repo-for-github-actions`.
@@ -96,11 +103,12 @@ npm release relate — the short version:
   npm, so merging can't ship a workflow that calls a CLI that doesn't exist yet.
 
 `.github/workflows-package-version` holds one exact version, and the stable release writes it. The
-workflows install exactly it, which is what makes a frozen major tag stay frozen — it keeps the
-library it was tested with instead of following `latest` forever.
+workflows install exactly that CLI version, which is what makes a frozen major tag stay frozen — it
+keeps the CLI it was tested with instead of following `latest` forever.
 
 The `Package version bump needed` check enforces the point above: a PR touching both a `public_`
-workflow (or the composite action) and `bin/`, `lib/` or `index.ts` has to move the pin. When the
+workflow (or the composite action) and `packages/cli/` has to move the pin. Library changes don't count:
+the workflows don't install the library, consumer repos do. When the
 two changes are unrelated and the workflow doesn't need the new code, label the PR
 `no-version-bump-needed`.
 

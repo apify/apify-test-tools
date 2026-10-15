@@ -67,8 +67,11 @@ jobs:
               with:
                   node-version: 24
 
-            - name: Update package version
-              run: npm version --no-git-tag-version --allow-same-version ${{ needs.release_metadata.outputs.version_number }}
+            # The library and the CLI are released together under one version number, so a
+            # version always names the same commit in both packages, and a beta of the library
+            # always has a CLI beta to match (the setup action relies on that for branch testing).
+            - name: Update package versions
+              run: npm version --workspaces --no-git-tag-version --allow-same-version ${{ needs.release_metadata.outputs.version_number }}
 
             - name: Update changelog
               uses: DamianReeves/write-file-action@master
@@ -77,10 +80,9 @@ jobs:
                   write-mode: overwrite
                   contents: ${{ needs.release_metadata.outputs.changelog }}
 
-            # The reusable workflows install this exact version, so the commit that releases a
+            # The reusable workflows install this exact CLI version, so the commit that releases a
             # version is the commit that pins it. That is what lets a frozen major tag keep
-            # installing the library it was tested against instead of drifting to whatever is
-            # newest.
+            # installing the CLI it was tested against instead of drifting to whatever is newest.
             #
             # Skipped for prereleases: master pushes release a `-beta` that consumer repos must
             # never install. Their pin stays on the last stable, and the beta stays reachable

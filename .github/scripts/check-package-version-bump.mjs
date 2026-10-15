@@ -12,10 +12,11 @@
 // edit made while any package change is unreleased, which is far more noise than the case is worth.
 
 const PUBLIC_WORKFLOW = /^\.github\/workflows\/public_.*\.ya?ml$/;
-// The composite action is consumer-facing too, and it is what installs the package.
+// The composite action is consumer-facing too, and it is what installs the CLI.
 const PUBLIC_ACTION = /^\.github\/actions\//;
-// What `npx apify-test-tools ...` runs, and the library the platform tests import.
-const PACKAGE_CODE = /^(bin\/|lib\/|index\.ts$)/;
+// What the workflows' `apify-test-tools ...` commands run. The library is not here: consumer repos
+// pick its version in their own lockfile, so the workflows never depend on an unreleased library.
+const PACKAGE_CODE = /^packages\/cli\//;
 const PIN_FILE = '.github/workflows-package-version';
 const OVERRIDE_LABEL = 'no-version-bump-needed';
 

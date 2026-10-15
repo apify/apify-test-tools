@@ -2,6 +2,18 @@
 
 [Contributing link](CONTRIBUTING.md)
 
+This repo publishes two npm packages and the reusable GitHub workflows that use them:
+
+| Package                                 | What it is                                                                                                     | Who installs it                                                                                                                 |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| [`apify-test-tools`](packages/lib)      | The test library: `testActor`, `describe`, and the [custom matchers](#custom-matchers) your platform tests use | Your repo, as a dev dependency. Your lockfile decides the version.                                                              |
+| [`@apify/test-tools-cli`](packages/cli) | The `apify-test-tools` command: change detection, Actor builds, releases, test reports                         | The [reusable workflows](#github-worklows), at the version they pin. You only install it to [run it locally](#running-locally). |
+
+The two are released together under one version number, but nothing forces a repo to upgrade its
+library when the workflows move to a newer CLI. The CLI hands the library the builds to test through
+the `ACTOR_BUILDS` environment variable, and that format stays backward compatible, so any library
+version works with any CLI version.
+
 ## Getting Started
 
 ### 1. Install the package
@@ -9,6 +21,9 @@
 ```bash
 npm i -D apify-test-tools
 ```
+
+You don't need to install the CLI for CI: the reusable workflows install `@apify/test-tools-cli`
+themselves.
 
 - Requires `vitest` version `3.2.0` or later (uses [annotate](https://vitest.dev/guide/test-context.html#annotate))
 - Make sure `target` and `module` in your `tsconfig.json`'s `compilerOptions` are set to `ES2022`
@@ -277,11 +292,11 @@ secrets to pass on:
       ALL_SECRETS: ${{ toJSON(secrets) }}
   run: |
       node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
-        npx apify-test-tools build --target-branch ...
+        apify-test-tools build --target-branch ...
 ```
 
-The wrapper passes only the tokens the config declares and drops `ALL_SECRETS`, so neither `npx` nor
-anything under `node_modules` sees the blob. Nothing is written to `$GITHUB_ENV`, so the tokens stay
+The wrapper passes only the tokens the config declares and drops `ALL_SECRETS`, so neither the CLI nor
+anything it loads sees the blob. Nothing is written to `$GITHUB_ENV`, so the tokens stay
 inside that one command rather than leaking into later steps. Reading the same file
 `apify-test-tools` reads means the two can't drift, and a secret that merely looks like an Actor
 token is not passed just because of its name.
@@ -296,7 +311,7 @@ without checking this repo out again. The caller's workspace holds the caller's 
 
 Two tidier-looking alternatives don't work, so don't reach for them:
 
-- **Exporting to `$GITHUB_ENV`** would let the steps call `npx` directly with no wrapper, but
+- **Exporting to `$GITHUB_ENV`** would let the steps call the CLI directly with no wrapper, but
   `$GITHUB_ENV` applies to every later step in the job. In `pr-build-test` the vitest step runs after
   the build, so it would inherit Actor tokens it has no use for.
 - **Returning the tokens as a step output** would be scoped correctly, but the runner refuses to set
@@ -308,22 +323,31 @@ Slack credentials in scope, so a postinstall script in the dependency tree canno
 
 ## Versioning and releases
 
-The workflows and the npm package live in one repo but ship on their own schedules. Two pointers
+The workflows and the npm packages live in one repo but ship on their own schedules. Three pointers
 decide what a consumer repo actually runs:
 
-| Pointer                             | What it selects                                | Moves when                                               |
-| ----------------------------------- | ---------------------------------------------- | -------------------------------------------------------- |
-| the `@workflows-v0` tag in `uses:`  | which workflows run                            | a master push, once the version below is published       |
-| `.github/workflows-package-version` | which `apify-test-tools` the workflows install | a stable release writes it; you may set it ahead of time |
+| Pointer                                 | What it selects                                     | Moves when                                               |
+| --------------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| the `@workflows-v0` tag in `uses:`      | which workflows run                                 | a master push, once the version below is published       |
+| `.github/workflows-package-version`     | which `@apify/test-tools-cli` the workflows install | a stable release writes it; you may set it ahead of time |
+| the consumer repo's `package-lock.json` | which `apify-test-tools` library its tests import   | the consumer repo updates it                             |
 
-The setup action installs that **exact** version — not a range. A tag is therefore a complete
-statement: these workflows _and_ this library. The stable release writes the file into the same
-commit that bumps `package.json` and `CHANGELOG.md`, so a released commit always names the version
-it published, and rollout latency is unchanged: the release publishes and moves the tag in one run.
+The setup action installs that **exact** CLI version — not a range — in a folder of its own outside
+the consumer repo. A tag is therefore a complete statement: these workflows _and_ this CLI. The
+stable release writes the file into the same commit that bumps the package versions and
+`CHANGELOG.md`, so a released commit always names the version it published, and rollout latency is
+unchanged: the release publishes and moves the tag in one run.
 
-Prereleases are excluded. Master pushes publish a `-beta` that consumer repos must never install, so
-the pin only moves on a stable release; betas stay reachable through the lockfile path in the setup
-action, which is how branch testing works.
+The library is not pinned by the workflows. The setup action leaves the repo's `node_modules` as
+`npm ci` installed it, so a repo upgrades its test library when it chooses to, not when the workflows
+move. That works because the one thing the CLI hands the library, the `ACTOR_BUILDS` JSON, only ever
+gains fields; `test/contract/` fails type-check if either side changes it in a way the other can't
+read.
+
+Both packages are released together under one version number. Prereleases are excluded from the pin.
+Master pushes publish a `-beta` of both that consumer repos must never install, so the pin only moves
+on a stable release. Betas stay reachable for branch testing: when a repo's lockfile holds a beta of
+the library, the setup action installs the CLI beta with the same version instead of the pin.
 
 Nothing is coupled that doesn't need to be:
 
@@ -345,7 +369,7 @@ and a way to roll back by pointing the tag at an earlier commit. Bump `MAJOR_TAG
 and keeps working.
 
 Freezing is real, which is the whole reason the version is pinned rather than a floor. A frozen `workflows-v0`
-points at a commit whose pinned version never changes, so it keeps installing the library it was
+points at a commit whose pinned version never changes, so it keeps installing the CLI it was
 tested against no matter how far the package moves on. Had the workflows installed `>=<floor>`, a
 frozen `workflows-v0` would still resolve to whatever is newest — and since the release that enables
 `workflows-v1` is usually the same release that breaks `workflows-v0`, the migration window would
@@ -361,8 +385,9 @@ and those refs disagree, which is the mistake that would otherwise ship silently
 
 - Point [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions)
   at your branch (`uses: ...@your-branch`). It has real attached Actors and tests. Because the
-  package lives here too, a master push publishes a `beta`, and the lockfile-beta path in the setup
-  action installs that exact version — so one branch tests both halves of a change together.
+  packages live here too, a master push publishes a `beta` of both. Put the library beta in the testing
+  repo's lockfile and the setup action installs the CLI beta with the same version, so one branch
+  tests the workflows, the CLI and the library together.
 - To change the composite action itself, repoint the `uses:` refs inside the reusable workflows at
   your branch as well, and change them back before merging.
 - Make sure the shell code actually works on your laptop first.
@@ -576,9 +601,16 @@ describe('standby tests', () => {
 - `toBeObject()` / `toBeNonEmptyObject()`
 - `toFinishWith(options)` - validates run status, duration, dataset, logs, etc.
 
-## CLI (`apify-test-tools` bin)
+## CLI (`@apify/test-tools-cli`)
 
-The package includes a CLI binary used by CI workflows to build Actors, detect changes, and report test results. You can also run it locally.
+The `@apify/test-tools-cli` package provides the `apify-test-tools` command the CI workflows use to build Actors, detect changes, and report test results. The workflows install it on their own, so your repo only needs it to run commands locally:
+
+```bash
+npm i -D @apify/test-tools-cli
+npx apify-test-tools --help
+```
+
+Before the split, the CLI shipped inside `apify-test-tools`. From `0.11.0` the library no longer has a `bin`, so `npx apify-test-tools` only works once `@apify/test-tools-cli` is installed.
 
 ### Dry runs (`--dry-run`)
 
@@ -598,7 +630,7 @@ If you don't need to change any source files and only iterate on /test code, you
 The main local flow is:
 
 1. Switch to a dummy branch that you will push and can later delete
-2. `npm i apify-test-tools@latest -D`
+2. `npm i -D apify-test-tools@latest @apify/test-tools-cli@latest`
 3. Push your code (changes you want to test)
 4. Build Actors on Apify (with your new code)
 5. Run tests against those builds. You can change tests and run on the same builds.
@@ -736,5 +768,5 @@ skips the check.
 For development on `apify-test-tools` itself, use `tsx` directly:
 
 ```bash
-cd local-clone && tsx ../bin/main.ts get-actor-configs
+cd local-clone && tsx ../packages/cli/src/main.ts get-actor-configs
 ```

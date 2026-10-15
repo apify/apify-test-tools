@@ -76,6 +76,24 @@ const findValidatedSha = async (since: string, headSha: string): Promise<string 
  *
  * An Actor is functional only when both diffs say so. A validated functional change of the branch plus cosmetic
  * changes since is cosmetic, and so is a functional change from base meeting only cosmetic changes of the branch.
+ *
+ * In each example the branch's functional change to Actor A was validated at `since`, then one more push follows:
+ *
+ * - Our own branch only: a commit changes A's README and B's code.
+ *   `since..HEAD`: A cosmetic, B functional. `base...HEAD`: A and B functional.
+ *   → A cosmetic, B functional: only B is tested, A's code is still the validated one.
+ * - Cosmetic merge: the branch merges base, which only changed READMEs and the CHANGELOG.
+ *   `since..HEAD`: every Actor cosmetic (CHANGELOG counts for all). `base...HEAD`: A functional, since the merged
+ *   files now match base and drop out of it.
+ *   → A cosmetic, the other Actors left out: nothing is tested.
+ * - Functional merge: the branch merges base, which changed code of A and of C.
+ *   `since..HEAD`: A and C functional. `base...HEAD`: A functional.
+ *   → A functional, C left out: A is tested, since base's change can interact with the branch's, while C only has
+ *   base's change, which base already validated.
+ *
+ * This assumes the branch is up to date with base when it merges, which we require. Only then is HEAD what lands on
+ * base, and base's commits validated. Otherwise what lands is HEAD combined with base's newer commits, which nobody
+ * tested, however the Actors are picked.
  */
 const narrowToChangedSince = (branch: ChangedActors, sinceValidated: ChangedActors): ChangedActors => {
     const changedSince = [...sinceValidated.functional, ...sinceValidated.cosmetic];

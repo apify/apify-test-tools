@@ -19,8 +19,8 @@ outputs:
 
 # Sets common steps and ensure we use cached node_modules
 # To test a change here, repoint the `uses:` refs in the reusable workflows at your branch, and
-# change them back before merging. Merging to master no longer ships it: consumers track the `workflows-v0`
-# tag, which only moves once the package version in .github/workflows-package-version is on npm.
+# change them back before merging. Consumers track the `workflows-v0` tag, which moves on every
+# push to master.
 runs:
     using: 'composite'
     steps:
@@ -64,32 +64,16 @@ runs:
               NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
           run: npm ci
 
-        # Repos can still have older version locally but on cloud we enforce uniformity.
-        # --no-save swaps the package in node_modules only and leaves the repo's package.json and
-        # package-lock.json untouched, so node_modules is ahead of the lockfile but the checkout stays clean.
-        - name: Enforce test tools version required by these workflows
-          # We don't override beta so we can use it to test branch-specific versions of apify-test-tools
-          # Needs the npm token too: a repo whose .npmrc routes all traffic through a private
-          # registry has to authenticate even for public packages.
+        # The CLI the workflows call ships with this action as one bundled file (npm run bundle), so
+        # nothing is installed for it. The repo's node_modules stays exactly what package-lock.json
+        # says, and its tests import the lib from the version they locked.
+        # Steps call `apify-test-tools` without npx: npx would pick the repo's own copy in node_modules/.bin first.
+        - name: Put apify-test-tools CLI on PATH
           shell: bash
-          env:
-              NPM_TOKEN: ${{ inputs.npm-token }}
-              NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
           run: |
-              locked_version=$(jq -r '.packages["node_modules/apify-test-tools"].version' package-lock.json)
-              echo "Package-lock version of apify-test-tools: $locked_version"
-              if [[ "$locked_version" == *"-beta"* ]]; then
-                echo "Beta version detected, reinstalling $locked_version to ensure cache consistency"
-                npm install "apify-test-tools@$locked_version" --no-save --audit=false --no-fund;
-              else
-                # The workflows name the exact package version they ship with, so a tag is a complete
-                # statement: these workflows and this library. A frozen major tag then keeps
-                # installing what it was tested against however far the package moves on. A `>=`
-                # floor could not do that — being open-ended, it resolves to the newest release
-                # forever, so freezing the tag would freeze the workflow files but not their
-                # dependency. The stable release writes this file, so it always names a published
-                # version; the release that publishes X is the commit that pins X.
-                pinned_version=$(cat "${{ github.action_path }}/../../workflows-package-version")
-                echo "Installing apify-test-tools@$pinned_version (pinned by these workflows)"
-                npm install "apify-test-tools@$pinned_version" --no-save --audit=false --no-fund;
-              fi
+              bundle="$(cd "${{ github.action_path }}/../../cli" && pwd)/apify-test-tools.mjs"
+              bin_dir="$RUNNER_TEMP/apify-test-tools-bin"
+              mkdir -p "$bin_dir"
+              printf '#!/bin/sh\nexec node --no-warnings "%s" "$@"\n' "$bundle" > "$bin_dir/apify-test-tools"
+              chmod +x "$bin_dir/apify-test-tools"
+              echo "$bin_dir" >> "$GITHUB_PATH"

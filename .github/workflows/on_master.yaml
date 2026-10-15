@@ -25,13 +25,14 @@ jobs:
         name: Tests
         uses: ./.github/workflows/_tests.yaml
 
-    # Ships any workflow change in this push to consumer repos. Deliberately independent of the npm
-    # release below: a workflow-only change needs no release, and a package-only release leaves the
-    # workflows byte-identical. `code_checks` runs actionlint, which is what validates the workflows;
-    # `tests` covers the npm package and is skipped for docs commits, so it is not a dependency here.
+    # Ships this push to consumer repos: the workflows and the CLI bundled in .github/cli/ go live
+    # together. Independent of the npm release below, which only matters to people importing the lib.
+    # `code_checks` runs actionlint and checks the bundle is up to date. `tests` cover the CLI but are
+    # skipped for docs commits, so a skipped run does not hold the tag; a failed one does.
     move_major_tag:
         name: Move major version tag
-        needs: [code_checks]
+        needs: [code_checks, tests]
+        if: ${{ !failure() && !cancelled() }}
         permissions:
             contents: write
         uses: ./.github/workflows/_move_major_tag.yaml

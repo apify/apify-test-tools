@@ -65,7 +65,7 @@ jobs:
                   )
                   [ -n "$base_commit" ] && args+=(--base-commit "$base_commit")
                   actor_builds=$(node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" \
-                    npx apify-test-tools build "${args[@]}")
+                    apify-test-tools build "${args[@]}")
                   echo "actor_builds=$actor_builds" | tee -a "$GITHUB_OUTPUT"
 
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.
@@ -88,7 +88,7 @@ jobs:
                     --target-branch "origin/$BASE_REF"
                   )
                   [ -n "$base_commit" ] && args+=(--base-commit "$base_commit")
-                  npx apify-test-tools get-latest-commit "${args[@]}" > ./base_commit.txt
+                  apify-test-tools get-latest-commit "${args[@]}" > ./base_commit.txt
                   echo "New last validated (base) commit: $(cat base_commit.txt)"
 
     # Pure static checks against the repo. Needs no Apify or Slack credentials, only the npm

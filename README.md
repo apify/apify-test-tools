@@ -57,7 +57,7 @@ When a PR is opened or code is pushed, the tool determines which actors need to 
 2. **CHANGELOG classification** — a `CHANGELOG.md` file is always `cosmetic` (only triggers a release build, not tests), for every actor, regardless of context or folder. (See [issue #106](https://github.com/apify/apify-test-tools/issues/106).)
 3. **Context matching** — the file must fall within one of the actor's context paths (`dockerContextDir` from `actor.json` by default, or `overrideActorContext` from config if set). Files outside every context path are skipped.
 4. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it matched (e.g. a standalone actor's own `.eslintrc` is checked as just `.eslintrc`, not the full repo-root-relative path), then checked against repo-level dev file patterns (`.vscode/`, `.gitignore`, `.husky/`, `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`). There's no hardcoded special-casing for legacy `code/`/`shared/` layouts — repos that need those directories treated as top-level must list them explicitly in `overrideActorContext`.
-5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior. Test files are the exception: `build-for-test --test-files-glob <glob>` (relative to the repo root, also taken by `get-affected-actors`) skips this check for matching files, so a changed test triggers a build, and with it its tests, even when `.dockerignore` lists it. The PR workflow passes `test/platform/**`. Context matching still applies, so tests outside an actor's `dockerContextDir` (e.g. a root `test/` with standalone actors) need to be listed in its `overrideActorContext`; `build-for-test` logs a warning for changed test files outside every actor's context.
+5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior. Test files are the exception: `get-affected-actors --test-files-glob <glob>` (relative to the repo root) skips this check for matching files, so a changed test triggers a build, and with it its tests, even when `.dockerignore` lists it. The PR workflow passes `test/platform/**`. Context matching still applies, so tests outside an actor's `dockerContextDir` (e.g. a root `test/` with standalone actors) need to be listed in its `overrideActorContext`; `get-affected-actors` logs a warning for changed test files outside every actor's context.
 6. **README classification** — a `README.md` file is `cosmetic` (only triggers a release build, not tests) if it lives inside the actor's own `folder`; otherwise it's ignored entirely, since it isn't documentation for this actor.
 7. **Cosmetic JSON classification** — `.json` files inside the actor's own `.actor/` directory with only cosmetic schema changes (whitespace, key ordering) only trigger a release build.
 8. **Functional** — everything else triggers both build and tests.
@@ -226,9 +226,8 @@ jobs:
         secrets: inherit
 ```
 
-This workflow does what `apify-test-tools release --base-commit ${{ github.event.before }}` does, one
-step per command: `get-affected-actors --since ${{ github.event.before }}`, then `build --version-number default`
-on every changed Actor, then `notify-release`. See [Releasing Actors](#releasing-actors-release) for how the
+This workflow runs one step per command: `get-affected-actors --since ${{ github.event.before }}`, then
+`build --version-number default` on every changed Actor, then `notify-release`. See [Releasing Actors](#releasing-actors) for how the
 released range is determined and what to pass if you call the CLI from somewhere else.
 
 ### `claude-review.yaml`
@@ -274,11 +273,13 @@ secrets to pass on:
 
 ```yaml
 - name: Build
+  shell: bash
   env:
       ALL_SECRETS: ${{ toJSON(secrets) }}
   run: |
-      node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
-        npx apify-test-tools build-for-test --target-branch ...
+      jq '{ actors: .functionallyChangedActors }' affected.json \
+        | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
+          npx apify-test-tools build --version-number 0.99
 ```
 
 The wrapper passes only the tokens the config declares and drops `ALL_SECRETS`, so neither `npx` nor
@@ -583,12 +584,12 @@ The package includes a CLI binary used by CI workflows to build Actors, detect c
 
 ### Dry runs (`--dry-run`)
 
-Every command that changes something (`build`, `build-for-test`, `build-from-local`, `release`, `notify-release`, `delete-old-builds`, `report-tests`) takes `--dry-run`. A dry run:
+Every command that changes something (`build`, `build-from-local`, `notify-release`, `delete-old-builds`, `report-tests`) takes `--dry-run`. A dry run:
 
 - **Changes nothing.** No versions or builds are created, nothing is uploaded or deleted, and no Slack message is posted.
 - **Does every read and check the real run does**, so it fails wherever the real run would: change detection, the Apify token and Actor lookup, the [repository check](#repository-check), collecting and zipping local sources, and the Slack token (verified with Slack's read-only `auth.test`).
 - **Needs the same tokens as the real run.** Read-only tokens are enough, since nothing is written. A dry run can't tell whether a token is also allowed to write, because the Apify API has no dry-run mode of its own.
-- **Prints a plan, not results.** Logs start with `[DRY RUN] Would …`. `build`, `build-for-test` and `build-from-local` write `{ "dryRun": true, "builds": [...] }` to stdout instead of the build array, so the plan can't be passed to tests as `ACTOR_BUILDS` by mistake.
+- **Prints a plan, not results.** Logs start with `[DRY RUN] Would …`. `build` and `build-from-local` write `{ "dryRun": true, "builds": [...] }` to stdout instead of the build array, so the plan can't be passed to tests as `ACTOR_BUILDS` by mistake.
 
 ### Running locally
 
@@ -613,16 +614,15 @@ If you want to test vs existing src code, you can skip this and instead construc
 Requires `APIFY_TOKEN_<USERNAME>` for all Apify users that own your Actors (e.g. `apify`, `compass`, `lukaskrivka` users). The username is derived from the actor name — uppercased with non-word chars replaced by `_` (e.g. Actor `john.doe/my-actor` needs `APIFY_TOKEN_JOHN_DOE`).
 
 ```bash
-APIFY_TOKEN_JOHN_DOE=<token> \
-  npx apify-test-tools build-for-test \
-    --target-branch origin/master \
-    --dry-run
+npx apify-test-tools get-affected-actors --base origin/master \
+  | jq '{ actors: .functionallyChangedActors }' \
+  | APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build --version-number 0.99 --dry-run
 ```
 
-Run it with your dummy branch checked out: it builds the Actors that branch changed, from the branch as it is on
-the remote. With `--dry-run`, it prints the plan (the version and Git URL each Actor would be built from). Remove
-`--dry-run` to actually trigger builds and update the target branch name. The command outputs a JSON array of build
-objects to stdout:
+Run it with your dummy branch checked out: it builds the Actors that branch changed functionally, from the branch
+as it is on the remote, into the test version `0.99`. With `--dry-run`, it prints the plan (the version and Git URL
+each Actor would be built from). Remove `--dry-run` to actually trigger builds, and update `--base` to the branch
+you compare against. `build` outputs a JSON array of build objects to stdout:
 
 ```json
 [{ "buildId": "...", "actorRawId": "...", "buildNumber": "...", "actorFullName": "john.doe/my-actor" }]
@@ -661,14 +661,13 @@ TESTER_APIFY_TOKEN=<token> \
 
 #### Full example
 
-Tests only run for Actors in `ACTOR_BUILDS`, so a custom workflow has to build (and pass) the Actors even when only tests changed. Pass `--test-files-glob` so test changes count even when `.dockerignore` lists them.
+Tests only run for Actors in `ACTOR_BUILDS`, so a custom workflow has to build (and pass) the Actors even when only tests changed. Pass `--test-files-glob` to `get-affected-actors` so test changes count even when `.dockerignore` lists them.
 
 ```bash
 # Build and capture output
-BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
-    npx apify-test-tools build-for-test \
-    --target-branch origin/master \
-    --test-files-glob 'test/platform/**')
+BUILDS=$(npx apify-test-tools get-affected-actors --base origin/master --test-files-glob 'test/platform/**' \
+    | jq '{ actors: .functionallyChangedActors }' \
+    | APIFY_TOKEN_JOHN_DOE=apify_api_xxx npx apify-test-tools build --version-number 0.99)
 
 # Run tests with the builds
 ACTOR_BUILDS="$BUILDS" \
@@ -706,7 +705,7 @@ Pass `--base`, `--since`, or both:
 - **`--base` and `--since`** inspects the branch after its last validated commit. If `--since` is not on the
   branch (force-push), or it is the head (a rerun), the whole branch is inspected instead.
 - **`--since` only** inspects everything after it up to `HEAD`. It must be an ancestor of `HEAD` and fails
-  otherwise, exactly like [`--base-commit` of `release`](#--base-commit). If `HEAD` is `--since`, nothing is
+  otherwise, see [Releasing Actors](#releasing-actors). If `HEAD` is `--since`, nothing is
   reported.
 
 The output is a JSON document:
@@ -725,25 +724,23 @@ The output is a JSON document:
 
 Each changed Actor is in exactly one of the lists. `functionallyChangedActors` have at least one functional change, so
 they need a new build and tests. `cosmeticallyChangedActors` only have cosmetic changes (see
-[Change detection](#change-detection)), so they need a new build only when released: `build-for-test` builds
-`functionallyChangedActors`, `release` builds both.
-
-`build-for-test` and `release` use the same detection internally.
+[Change detection](#change-detection)), so they need a new build only when released: the PR workflow builds
+`functionallyChangedActors`, the release workflow builds both.
 
 ### Building Actors (`build`)
 
 `build` builds exactly the Actors it is given on stdin, from the checked-out branch as it is on the remote, and
-prints the builds as the same JSON array `build-for-test` and `build-from-local` print. A detached HEAD is an
+prints the builds as the same JSON array `build-from-local` prints. A detached HEAD is an
 error, since there is no branch to build from. It doesn't look at git history: which Actors to build is
 up to you, usually picked from the output of [`get-affected-actors`](#finding-affected-actors-get-affected-actors).
 
 ```bash
-# What build-for-test does: the Actors a branch changed functionally, built into the test version
+# A PR: the Actors a branch changed functionally, built into the test version
 npx apify-test-tools get-affected-actors --base origin/master \
   | jq '{ actors: .functionallyChangedActors }' \
   | npx apify-test-tools build --version-number 0.99
 
-# What release builds: every Actor changed since the last release, into the version users run
+# A release: every Actor changed since the last release, into the version users run
 npx apify-test-tools get-affected-actors --since <sha> \
   | jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' \
   | npx apify-test-tools build --version-number default
@@ -765,39 +762,33 @@ Actions, give such a step `shell: bash` so the pipe also fails on its own (the d
 so building the default version moves its tag (usually `latest`) to the new build, and building a version
 without a tag leaves every tag where it is. Builds always use the Docker cache.
 
-`build-for-test` and `release` are shortcuts for the two pipelines above, with the flags they always had.
-`build-for-test` takes `--target-branch`, `--base-commit` and `--test-files-glob`, inspects and builds the
-checked-out branch, and builds into version `0.99`. `release` takes `--base-commit`, and announces the release on Slack after building, the same
-way `notify-release` does.
+### Releasing Actors
 
-### Releasing Actors (`release`)
-
-`release` builds the `latest` (default) version of every Actor changed since the last release and
-posts release notes to Slack. It reads everything else from git: the branch from the checked-out
-`HEAD`, the commits and changed files from the range `<base-commit>..HEAD`, and the repository from
-the `origin` remote.
+A release is three commands: find what changed since the last released commit, build those Actors into
+their default version (the one users run), and announce it.
 
 ```bash
-npx apify-test-tools release --base-commit <sha> --release-slack-channel "#releases" --dry-run
+npx apify-test-tools get-affected-actors --since <sha> > affected.json
+
+jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json \
+  | npx apify-test-tools build --version-number default --dry-run
+
+npx apify-test-tools notify-release --release-slack-channel "#releases" --dry-run < affected.json
 ```
 
-The announcement is also its own command, `notify-release`, which reads the output of `get-affected-actors` on
-stdin. It posts the changelog additions to `--release-slack-channel` and the commits and changed files to
-`--report-slack-channel`, and posts nothing when there are no new commits. It needs `SLACK_TOKEN_RELEASES_BOT`.
+`notify-release` reads the output of `get-affected-actors` on stdin. It posts the changelog additions to
+`--release-slack-channel` and the commits and changed files to `--report-slack-channel`, and posts nothing when
+there are no new commits. It names the release after the `origin` remote (or `--repo-url`) and the author of the
+newest commit, and needs `SLACK_TOKEN_RELEASES_BOT`.
 
-```bash
-npx apify-test-tools get-affected-actors --since <sha> \
-  | npx apify-test-tools notify-release --release-slack-channel "#releases" --dry-run
-```
+#### The last released commit (`--since`)
 
-#### `--base-commit`
+The last commit that is **already released**. Everything after it, up to `HEAD`, is released. Git alone
+can't tell which commits a push brought, and guessing wrong silently leaves Actors on old code, so it has
+to be passed.
 
-The last commit that is **already released**. Everything after it, up to `HEAD`, is released. It is
-required: git alone can't tell which commits a push brought, and guessing wrong silently leaves Actors
-on old code.
-
-The changed files come from diffing `<base-commit>` and `HEAD` directly, so this works for every
-merge strategy as long as the base commit is the branch tip from **before** the push:
+The changed files come from diffing `--since` and `HEAD` directly, so this works for every merge strategy as
+long as `--since` is the branch tip from **before** the push:
 
 | Merge strategy                 | What lands on the branch          | What to pass                                                           |
 | ------------------------------ | --------------------------------- | ---------------------------------------------------------------------- |
@@ -807,26 +798,25 @@ merge strategy as long as the base commit is the branch tip from **before** the 
 
 On GitHub, the push's "before" commit is `${{ github.event.before }}`, which the reusable workflow
 passes for you. On other CIs use the equivalent, e.g. `$CI_COMMIT_BEFORE_SHA` on GitLab. The checkout
-needs the full history (`fetch-depth: 0` in `actions/checkout`) so the base commit is available locally.
+needs the full history (`fetch-depth: 0` in `actions/checkout`) so the commit is available locally.
 
-`release` fails instead of guessing when:
+`get-affected-actors --since` without `--base` fails instead of guessing when:
 
-- the base commit is all zeros (GitHub sends this for a push that created the branch)
-- the base commit isn't in the local history (shallow checkout) or isn't an ancestor of `HEAD`
+- the commit is all zeros (GitHub sends this for a push that created the branch)
+- the commit isn't in the local history (shallow checkout) or isn't an ancestor of `HEAD`
   (the branch was force-pushed)
 
-In those cases, rerun `release` with a `--base-commit` you pick yourself: an ancestor of `HEAD` from
-before the changes you want to release (for a shallow checkout, fetch the full history instead).
-`--actors` only narrows which of the changed Actors get released; it never forces a build, so on its
-own it doesn't get past these errors.
-If `HEAD` is the base commit, there is nothing to release and the command exits successfully.
+In those cases, rerun it with a `--since` you pick yourself: an ancestor of `HEAD` from before the changes
+you want to release (for a shallow checkout, fetch the full history instead). `--actors` only narrows which
+of the changed Actors are reported; it never forces a build, so on its own it doesn't get past these errors.
+If `HEAD` is `--since`, nothing is reported, so nothing is built or announced.
 
 A failed release isn't retried by the next push: that push's base commit is the failed one's head, so
 its changes are skipped. Re-run the failed workflow run, or release the Actors manually.
 
 #### Repository check
 
-`release` and `build` point each Actor's version at the `origin` remote. Because a build overwrites the
+`build` points each Actor's version at the `origin` remote. Because a build overwrites the
 version's Git URL, building from a fork or a mirror would repoint the Actor. So, before building, the
 remote is compared with the Git URL of the Actor's default version (the one its default build tag
 points to), and the command fails if they differ or if the default version isn't built from a Git

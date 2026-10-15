@@ -1,7 +1,7 @@
 import { WebClient } from '@slack/web-api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { announceRelease, notifyToSlack } from '../../../bin/slack.js';
+import { notifyToSlack } from '../../../bin/slack.js';
 
 vi.mock('@slack/web-api', () => ({ WebClient: vi.fn() }));
 
@@ -11,11 +11,10 @@ const authTest = vi.fn();
 
 const notify = async (overrides: Partial<Parameters<typeof notifyToSlack>[0]> = {}) =>
     notifyToSlack({
-        repository: 'owner/repo',
+        repoUrl: 'git@github.com:owner/repo',
         changedFiles: ['src/main.ts'],
         changelog: '- Fixed a bug',
         commits: [{ sha: '1', author: 'Test<test@example.com>', date: '', message: 'fix: bug' }],
-        author: 'Test<test@example.com>',
         dryRun: true,
         releaseSlackChannel: '#releases',
         reportSlackChannel: '#notif',
@@ -62,43 +61,20 @@ describe('notifyToSlack', () => {
         expect(authTest).not.toHaveBeenCalled();
         expect(postMessage).toHaveBeenCalledTimes(2);
     });
-});
-
-describe('announceRelease', () => {
-    const commit = (author: string, message: string) => ({ sha: '1', author, date: '', message });
-
-    beforeEach(() => {
-        vi.stubEnv(TOKEN_ENV_VAR, 'token');
-        vi.mocked(WebClient).mockImplementation(function () {
-            return { chat: { postMessage }, auth: { test: authTest } };
-        } as never);
-    });
-
-    afterEach(() => {
-        vi.unstubAllEnvs();
-        vi.clearAllMocks();
-    });
 
     it('should announce nothing, and need no token, when there are no new commits', async () => {
         vi.stubEnv(TOKEN_ENV_VAR, '');
-        await announceRelease({
-            commits: [],
-            changedFiles: [],
-            changelog: null,
-            dryRun: false,
-            reportSlackChannel: '#notif',
-        });
+        await notify({ commits: [], dryRun: false });
         expect(WebClient).not.toHaveBeenCalled();
     });
 
     it('should announce the release by the author of the newest commit, named after the repository', async () => {
-        await announceRelease({
+        const commit = (author: string, message: string) => ({ sha: '1', author, date: '', message });
+        await notify({
             commits: [commit('Old<old@example.com>', 'fix: older'), commit('New<new@example.com>', 'feat: newer')],
-            changedFiles: ['src/main.ts'],
-            changelog: '- Added foo',
             repoUrl: 'git@github.com:owner/my-repo',
             dryRun: false,
-            reportSlackChannel: '#notif',
+            releaseSlackChannel: undefined,
         });
         expect(postMessage).toHaveBeenCalledWith({
             channel: '#notif',

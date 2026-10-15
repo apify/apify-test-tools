@@ -1,6 +1,13 @@
 echo "pre-commit: typechecking, linting, testing, checking code formatting, checking for unused exports & validating schemas"
 
 
+# The workflows install the CLI from .github/cli/, a cut-down copy of package-lock.json. Keep it in
+# step with dependency changes in the same commit, or the CLI lockfile check fails in CI.
+if git diff --cached --name-only | grep -qxE 'package(-lock)?\.json'; then
+    node .github/scripts/sync-cli-lockfile.mjs
+    git add .github/cli
+fi
+
 npm test
 npm run format:check
 # We typecheck & lint last when we know our code works

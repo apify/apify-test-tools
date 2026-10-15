@@ -47,7 +47,7 @@ jobs:
                     --fileParallelism=true \
                     --maxWorkers 100
                   return_code=$?
-                  npx apify-test-tools report-tests \
+                  apify-test-tools report-tests \
                     --report-file ./test-output.json \
                     --workflow-name "${{ github.workflow }}" \
                     --job-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \

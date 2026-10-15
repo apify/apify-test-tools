@@ -14,7 +14,7 @@
 const PUBLIC_WORKFLOW = /^\.github\/workflows\/public_.*\.ya?ml$/;
 // The composite action is consumer-facing too, and it is what installs the package.
 const PUBLIC_ACTION = /^\.github\/actions\//;
-// What `npx apify-test-tools ...` runs, and the library the platform tests import.
+// What `apify-test-tools ...` runs in the workflows, and the library the platform tests import.
 const PACKAGE_CODE = /^(bin\/|lib\/|index\.ts$)/;
 const PIN_FILE = '.github/workflows-package-version';
 const OVERRIDE_LABEL = 'no-version-bump-needed';

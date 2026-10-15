@@ -92,3 +92,29 @@ jobs:
               run: npm ci
             - name: Build
               run: npm run build
+
+    # The composite action installs the CLI from .github/cli/package-lock.json. It must follow
+    # package-lock.json, and fit the version the workflows pin, or every consumer's setup fails.
+    cli_lockfile:
+        name: CLI lockfile
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+            - name: Use Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+            - name: Check .github/cli/ is in sync
+              run: node .github/scripts/sync-cli-lockfile.mjs --check
+            # An unpublished pin holds the major tag until its release, so there is nothing to install yet.
+            # The release commit regenerates nothing: package-lock.json there is the one the version ships with.
+            - name: Install the pinned CLI from it
+              run: |
+                  pinned_version=$(cat .github/workflows-package-version)
+                  if ! npm view "apify-test-tools@$pinned_version" version >/dev/null 2>&1; then
+                      echo "::notice::apify-test-tools@$pinned_version is not published yet, skipping the install check."
+                      exit 0
+                  fi
+                  bash .github/scripts/install-cli.sh "$pinned_version" "$RUNNER_TEMP/apify-test-tools-cli"
+                  "$RUNNER_TEMP/apify-test-tools-cli/bin/apify-test-tools" --help

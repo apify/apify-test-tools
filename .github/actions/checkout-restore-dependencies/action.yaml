@@ -54,8 +54,7 @@ runs:
           uses: actions/cache@v5
           with:
               path: node_modules
-              # v2: caches before it hold the apify-test-tools version these workflows used to install over the lockfile.
-              key: modules-npm-v2-${{ hashFiles('package-lock.json') }}
+              key: modules-npm-${{ hashFiles('package-lock.json') }}
 
         - name: install npm dependencies
           if: steps.check-dependencies-cache.outputs.cache-hit != 'true'

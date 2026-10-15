@@ -5,6 +5,10 @@ import { GitCommandError, runGitCommand } from './utils.js';
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
 
+// Lists the changed paths. With rename detection (on by default) a moved file is listed only under its new path,
+// so the Actor whose context it left wouldn't count as changed. --no-renames lists it as deleted and added instead.
+const LIST_CHANGED_PATHS = ['--name-only', '--no-renames'];
+
 /**
  * Gets the list of changed files between the given commits (inclusive).
  */
@@ -16,7 +20,7 @@ export const getChangedFiles = async (commits: Commit[]) => {
     }
 
     const changedFilesString = await runGitCommand(
-        ['diff', '--name-only', `${commits[0].sha}~..${commits[commits.length - 1].sha}`],
+        ['diff', ...LIST_CHANGED_PATHS, `${commits[0].sha}~..${commits[commits.length - 1].sha}`],
         { operation: 'get the list of changed files between commits' },
     );
 
@@ -74,7 +78,7 @@ export const hasMergeFromTarget = async (sourceBranch: string, targetBranch: str
  */
 export const getBranchOnlyChangedFiles = async (sourceBranch: string, targetBranch: string): Promise<string[]> => {
     const output = await runGitCommand(
-        ['log', '--no-merges', '--name-only', '--pretty=format:', `${targetBranch}..${sourceBranch}`],
+        ['log', '--no-merges', ...LIST_CHANGED_PATHS, '--pretty=format:', `${targetBranch}..${sourceBranch}`],
         { operation: 'list files changed by non-merge commits on the source branch' },
     );
     return output.split('\n').filter(Boolean);
@@ -321,7 +325,7 @@ export const getReleaseChanges = async (baseSha: string) => {
         return null;
     }
     const commits = await fetchAllBranchCommits('HEAD', baseSha);
-    const changedFiles = await runGitCommand(['diff', '--name-only', baseSha, 'HEAD'], {
+    const changedFiles = await runGitCommand(['diff', ...LIST_CHANGED_PATHS, baseSha, 'HEAD'], {
         operation: 'list files changed since the last release',
     }).then((output) => output.split('\n').filter(Boolean));
     const changelog = await getChangelogAdditions(baseSha, changedFiles);

@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,15 +8,7 @@ import { ApifyClient } from 'apify-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { ActorBuild } from './helpers.js';
-import {
-    cliEnv,
-    gitEnv,
-    PROCESS_TIMEOUT_MS,
-    projectRoot,
-    runCli as runCliIn,
-    token,
-    TOKEN_ENV_VAR,
-} from './helpers.js';
+import { cliEnv, gitEnv, projectRoot, runCli as runCliIn, runProcess, token, TOKEN_ENV_VAR } from './helpers.js';
 
 // End-to-end run of the shipped CLI bundle against two dummy Actors in an isolated sandbox account:
 // dry-run plans read the real Actors, `build-from-local` really builds them, the lib runs them
@@ -41,7 +33,7 @@ const writeRepoFile = async (file: string, content: string) => {
     await writeFile(path.join(repoDir, file), content);
 };
 
-const runCli = (...args: string[]) => runCliIn(repoDir, ...args);
+const runCli = async (...args: string[]) => runCliIn(repoDir, ...args);
 
 describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 }, () => {
     let builds: ActorBuild[];
@@ -85,8 +77,8 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         if (repoDir) await rm(repoDir, { recursive: true, force: true });
     });
 
-    it('build --dry-run plans a test build of the changed Actor only', () => {
-        const { status, stdout, stderr } = runCli(
+    it('build --dry-run plans a test build of the changed Actor only', async () => {
+        const { status, stdout, stderr } = await runCli(
             'build',
             '--source-branch',
             'feature',
@@ -110,8 +102,15 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         });
     });
 
-    it('release --dry-run plans a build of the default version and tag', () => {
-        const { status, stderr } = runCli('release', '--base-commit', baseSha, '--repo-url', REPO_URL, '--dry-run');
+    it('release --dry-run plans a build of the default version and tag', async () => {
+        const { status, stderr } = await runCli(
+            'release',
+            '--base-commit',
+            baseSha,
+            '--repo-url',
+            REPO_URL,
+            '--dry-run',
+        );
         expect(status, stderr).toBe(0);
         expect(stderr).toContain(
             `[DRY RUN] Would build:\n  ${ACTORS[0]} (0.0) from ${REPO_URL}#feature:actors/dummy-1`,
@@ -119,8 +118,8 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         expect(stderr).toContain('Skipping slack notification');
     });
 
-    it('build-from-local --dry-run plans both Actors from the working tree', () => {
-        const { status, stdout, stderr } = runCli('build-from-local', '--dry-run');
+    it('build-from-local --dry-run plans both Actors from the working tree', async () => {
+        const { status, stdout, stderr } = await runCli('build-from-local', '--dry-run');
         expect(status, stderr).toBe(0);
         expect(JSON.parse(stdout)).toMatchObject({
             dryRun: true,
@@ -128,8 +127,8 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         });
     });
 
-    it('build-from-local builds both Actors', { timeout: 10 * 60_000 }, () => {
-        const { status, stdout, stderr } = runCli('build-from-local');
+    it('build-from-local builds both Actors', { timeout: 10 * 60_000 }, async () => {
+        const { status, stdout, stderr } = await runCli('build-from-local');
         expect(status, stderr).toBe(0);
         builds = JSON.parse(stdout);
         expect(builds.map((build) => build.actorFullName)).toEqual(ACTORS);
@@ -159,20 +158,15 @@ describe('sandbox dummies', () => {${actorTests}
 `,
         );
 
-        const vitest = spawnSync(
+        const vitest = await runProcess(
             process.execPath,
             [vitestPath, 'run', 'test/platform', '--reporter=json', '--outputFile=./test-output.json'],
             {
                 cwd: repoDir,
-                encoding: 'utf8',
-                timeout: PROCESS_TIMEOUT_MS,
-                env: { ...cliEnv, TESTER_APIFY_TOKEN: token, ACTOR_BUILDS: JSON.stringify(builds) },
+                env: { ...cliEnv, TESTER_APIFY_TOKEN: token!, ACTOR_BUILDS: JSON.stringify(builds) },
             },
         );
-        expect(
-            vitest.status,
-            `${vitest.stdout}\n${vitest.stderr}${vitest.error ? `\n${vitest.error.message}` : ''}`,
-        ).toBe(0);
+        expect(vitest.status, `${vitest.stdout}\n${vitest.stderr}`).toBe(0);
 
         // Each run used the build from ACTOR_BUILDS, not the Actor's default build.
         const report = JSON.parse(await readFile(path.join(repoDir, 'test-output.json'), 'utf8'));
@@ -188,15 +182,15 @@ describe('sandbox dummies', () => {${actorTests}
         );
         expect(runBuildIds.sort()).toEqual(builds.map((build) => build.buildId).sort());
 
-        const { status, stderr } = runCli('report-tests', '--report-file', 'test-output.json', '--dry-run');
+        const { status, stderr } = await runCli('report-tests', '--report-file', 'test-output.json', '--dry-run');
         expect(status, stderr).toBe(0);
         expect(stderr).toContain(`PASSED: ${ACTORS.length}, FAILED: 0`);
         expect(stderr).toContain('https://console.apify.com/view/runs/');
     });
 
     // Last, so builds from earlier runs of this suite don't pile up in the sandbox.
-    it('delete-old-builds keeps the default builds', () => {
-        const { status, stderr } = runCli('delete-old-builds');
+    it('delete-old-builds keeps the default builds', async () => {
+        const { status, stderr } = await runCli('delete-old-builds');
         expect(status, stderr).toBe(0);
         for (const actorFullName of ACTORS) {
             expect(stderr).toContain(`[DELETE OLD BUILDS][${actorFullName}]: Skipping default build`);

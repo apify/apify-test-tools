@@ -32,7 +32,7 @@ const gitRange = ['--source-branch', `origin/${FEATURE_BRANCH}`, '--target-branc
 let repoDir: string;
 
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repoDir, env: gitEnv, encoding: 'utf8' }).trim();
-const runCli = (...args: string[]) => runCliIn(repoDir, ...args);
+const runCli = async (...args: string[]) => runCliIn(repoDir, ...args);
 
 describe.runIf(token)('CLI bundle building a real repository', { timeout: 2 * 60_000 }, () => {
     const client = new ApifyClient({ token });
@@ -54,14 +54,14 @@ describe.runIf(token)('CLI bundle building a real repository', { timeout: 2 * 60
         if (repoDir) await rm(repoDir, { recursive: true, force: true });
     });
 
-    it('get-affected-actors finds only the Actor the feature branch changed', () => {
-        const { status, stdout, stderr } = runCli('get-affected-actors', ...gitRange);
+    it('get-affected-actors finds only the Actor the feature branch changed', async () => {
+        const { status, stdout, stderr } = await runCli('get-affected-actors', ...gitRange);
         expect(status, stderr).toBe(0);
         expect(JSON.parse(stdout)).toMatchObject([{ actorFullName: CHANGED_ACTOR, folder: CHANGED_ACTOR_FOLDER }]);
     });
 
     it('build builds the changed Actor from the feature branch', { timeout: 10 * 60_000 }, async () => {
-        const { status, stdout, stderr } = runCli('build', ...gitRange, '--use-docker-cache');
+        const { status, stdout, stderr } = await runCli('build', ...gitRange, '--use-docker-cache');
         expect(status, stderr).toBe(0);
         const builds: ActorBuild[] = JSON.parse(stdout);
         expect(builds).toMatchObject([
@@ -75,7 +75,7 @@ describe.runIf(token)('CLI bundle building a real repository', { timeout: 2 * 60
 
     it('release rebuilds the default version of the changed Actor', { timeout: 10 * 60_000 }, async () => {
         const baseSha = git('rev-parse', `origin/${BASE_BRANCH}`);
-        const { status, stderr } = runCli('release', '--base-commit', baseSha, '--use-docker-cache');
+        const { status, stderr } = await runCli('release', '--base-commit', baseSha, '--use-docker-cache');
         expect(status, stderr).toBe(0);
         expect(stderr).toMatch(new RegExp(`\\[${CHANGED_ACTOR}\\]: 0\\.0\\.\\d+`));
         expect(stderr).toContain('Skipping slack notification');

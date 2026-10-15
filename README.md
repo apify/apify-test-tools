@@ -682,7 +682,7 @@ TESTER_APIFY_TOKEN=apify_api_yyy \
 The range always ends at the checked-out `HEAD`, so check out the branch you want to inspect first.
 
 ```bash
-# A PR: the branch's own commits, after its last validated commit
+# A PR: the branch's own changes, narrowed to the Actors that changed since its last validated commit
 npx apify-test-tools get-affected-actors --base origin/master --since <sha>
 
 # A release: everything after the last released commit
@@ -691,22 +691,30 @@ npx apify-test-tools get-affected-actors --since <sha>
 
 | Flag                | Default | Meaning                                                                                                                                    |
 | ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--base`            |         | Only commits on `HEAD` that are not on this branch count                                                                                   |
-| `--since`           |         | Only commits after this one count (see below)                                                                                              |
+| `--base`            |         | Only what `HEAD` changes compared to this branch counts, like `git diff <base>...HEAD`                                                     |
+| `--since`           |         | Only changes after this commit count (see below)                                                                                           |
 | `--test-files-glob` |         | Test files (glob from the repo root) that count as changes even when `.dockerignore` lists them, see [Change detection](#change-detection) |
 | `--actors`          | all     | Only report these Actors                                                                                                                   |
 | `--ignore`          | none    | Never report these Actors                                                                                                                  |
 
 Pass `--base`, `--since`, or both:
 
-- **`--base` only** inspects the whole branch. If the branch merged `--base` in and has no functional changes
-  of its own, no Actor is reported as functional, since `--base` is already validated (and none as cosmetic
-  either, if the branch has no changes of its own at all).
-- **`--base` and `--since`** inspects the branch after its last validated commit. If `--since` is not on the
-  branch (force-push), or it is the head (a rerun), the whole branch is inspected instead.
+- **`--base` only** inspects what the branch changes, the same files GitHub's "Files changed" tab shows: the diff
+  from where the branch forked from `--base`, or the last commit of `--base` it merged in. What it merged in from
+  `--base` is already validated there, so it doesn't count.
+- **`--base` and `--since`** also inspects what changed after the branch's last validated commit, and reports only
+  the Actors that changed in both. An Actor in only one of them is already validated, by this branch or on `--base`.
+  When both changed an Actor, the changes can interact, so it is reported, but as functional only when both changes
+  are functional. A validated functional change followed by README edits is cosmetic, and so is a functional
+  change merged in from `--base` that meets only cosmetic changes of the branch. `--since` doesn't have to be on
+  the branch, so a rebase only re-checks the Actors that `--base` changed too. If `--since` is not in the local
+  history (a force-push), or it is `HEAD` (a rerun), it is ignored and the whole branch is checked.
 - **`--since` only** inspects everything after it up to `HEAD`. It must be an ancestor of `HEAD` and fails
   otherwise, see [Releasing Actors](#releasing-actors). If `HEAD` is `--since`, nothing is
   reported.
+
+`commits`, `changedFiles` and `changelog` describe the whole range, `--base...HEAD` or `--since..HEAD`: `--since`
+together with `--base` only narrows the Actor lists.
 
 The output is a JSON document:
 

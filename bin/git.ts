@@ -35,59 +35,22 @@ export const getChangedFilesBetween = async (fromRef: string, toRef: string) => 
 };
 
 /**
- * Returns true if the branch contains a merge commit whose parent is reachable from targetBranch
- * (i.e. a genuine "merge from target" commit, not a merge of some unrelated branch).
- * Uses the full targetBranch..sourceBranch range, ignoring baseCommit.
+ * The commit `git diff base...head` compares against: where `head` forked from `base`, or the last commit of `base`
+ * that `head` merged in. The diff from it holds only what `head` itself changed, like GitHub's "Files changed" tab.
+ * With criss-cross merges there are several such commits and git picks one.
  */
-export const hasMergeFromTarget = async (sourceBranch: string, targetBranch: string): Promise<boolean> => {
-    const mergeShas = (
-        await runGitCommand(['log', '--merges', '--pretty=format:%H', `${targetBranch}..${sourceBranch}`], {
-            operation: 'find merge commits on the source branch that are absent from the target branch',
-        })
-    )
-        .split('\n')
-        .filter(Boolean);
+export const getMergeBase = async (base: string, head: string): Promise<string> =>
+    runGitCommand(['merge-base', base, head], { operation: `find where ${head} forked from ${base}` });
 
-    for (const sha of mergeShas) {
-        const parents = (
-            await runGitCommand(['log', '-1', '--pretty=format:%P', sha], {
-                operation: 'get parents of a merge commit',
-            })
-        ).split(' ');
-        for (const parent of parents) {
-            // git merge-base A B outputs the common ancestor.
-            // If that equals A, then A is an ancestor of B (i.e. parent is reachable from targetBranch).
-            let mergeBase: string;
-            try {
-                mergeBase = await runGitCommand(['merge-base', parent, targetBranch], {
-                    operation: 'check whether a merge parent is reachable from the target branch',
-                });
-            } catch (error) {
-                // Exit code 1 on merge-base means the histories have no common ancestor.
-                if (error instanceof GitCommandError && error.exitCode === 1) {
-                    continue;
-                }
-                throw error;
-            }
-            if (mergeBase === parent) {
-                return true;
-            }
-        }
-    }
-    return false;
-};
-
-/**
- * Returns all files touched by non-merge commits on the branch (full history, ignoring baseCommit).
- * Used to check whether the branch itself has any functional changes, independent of what master merged in.
- */
-export const getBranchOnlyChangedFiles = async (sourceBranch: string, targetBranch: string): Promise<string[]> => {
-    const output = await runGitCommand(
-        ['log', '--no-merges', '--name-only', '--pretty=format:', `${targetBranch}..${sourceBranch}`],
-        { operation: 'list files changed by non-merge commits on the source branch' },
-    );
-    return output.split('\n').filter(Boolean);
-};
+/** Resolves a ref to a commit, or undefined when it isn't in the local history (e.g. it was force-pushed away). */
+export const findCommitSha = async (ref: string): Promise<string | undefined> =>
+    runGitCommand(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
+        operation: `look up ${ref} in local Git history`,
+    }).catch((error: unknown) => {
+        // --quiet suppresses Git's error text for a missing commit, but Git still exits with code 1
+        if (error instanceof GitCommandError && error.exitCode === 1) return undefined;
+        throw error;
+    });
 
 const SHA_REGEX = /^[0-9a-f]{40}$/i;
 

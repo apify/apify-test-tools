@@ -10,6 +10,12 @@ export interface Config {
     testFilesGlob?: string;
 }
 
+/** The changes from `fromRef` (excluded) to `toRef`, compared as trees like `git diff fromRef toRef`. */
+export interface GitRange {
+    fromRef: string;
+    toRef: string;
+}
+
 export type Commit = {
     sha: string;
     author: string;

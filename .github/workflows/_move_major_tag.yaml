@@ -79,8 +79,8 @@ jobs:
                   while :; do
                       # --prefer-online so a 404 cached from an earlier attempt cannot outlive the
                       # publish it was polling for.
-                      if output=$(npm view "apify-test-tools@$pinned_version" version --prefer-online 2>&1); then
-                          echo "apify-test-tools@$pinned_version is on npm"
+                      if output=$(npm view "@apify/test-tools-cli@$pinned_version" version --prefer-online 2>&1); then
+                          echo "@apify/test-tools-cli@$pinned_version is on npm"
                           echo "published=true" >> "$GITHUB_OUTPUT"
                           exit 0
                       fi
@@ -96,7 +96,7 @@ jobs:
                       if [ "$(date +%s)" -ge "$deadline" ]; then
                           break
                       fi
-                      echo "apify-test-tools@$pinned_version is not on npm yet, retrying in 30s"
+                      echo "@apify/test-tools-cli@$pinned_version is not on npm yet, retrying in 30s"
                       sleep 30
                   done
 
@@ -105,7 +105,7 @@ jobs:
                   # A release waited for its own publish and never saw it. That is a broken release,
                   # not a held tag, and it has to be red so it can be re-run once npm catches up.
                   if [ "$WAIT_SECONDS" -gt 0 ]; then
-                      echo "::error::apify-test-tools@$pinned_version was published by this run but is still not readable after $((WAIT_SECONDS / 60))m. Re-run this job once it appears on npm."
+                      echo "::error::@apify/test-tools-cli@$pinned_version was published by this run but is still not readable after $((WAIT_SECONDS / 60))m. Re-run this job once it appears on npm."
                       exit 1
                   fi
 
@@ -120,7 +120,7 @@ jobs:
                       echo "### \`$MAJOR_TAG\` moved"
                       echo
                       echo "Now points at \`$TARGET_SHA\`."
-                      echo "Pins \`apify-test-tools@${{ steps.check.outputs.pinned_version }}\`, which is published."
+                      echo "Pins \`@apify/test-tools-cli@${{ steps.check.outputs.pinned_version }}\`, which is published."
                   } >> "$GITHUB_STEP_SUMMARY"
 
             # Not a failure. Holding the tag is the designed outcome of merging a workflow change
@@ -133,10 +133,10 @@ jobs:
                   {
                       echo "### \`$MAJOR_TAG\` held"
                       echo
-                      echo "\`$TARGET_SHA\` pins \`apify-test-tools@${{ steps.check.outputs.pinned_version }}\`, which is not on npm."
+                      echo "\`$TARGET_SHA\` pins \`@apify/test-tools-cli@${{ steps.check.outputs.pinned_version }}\`, which is not on npm."
                       echo "Consumers keep running the workflows \`$MAJOR_TAG\` already points at."
                       echo
                       echo "Publish that version with the **Stable release** workflow. The tag moves on the"
                       echo "next master push, or immediately via the **Move major version tag** workflow."
                   } >> "$GITHUB_STEP_SUMMARY"
-                  echo "::warning::$MAJOR_TAG not moved: apify-test-tools@${{ steps.check.outputs.pinned_version }} is not published yet."
+                  echo "::warning::$MAJOR_TAG not moved: @apify/test-tools-cli@${{ steps.check.outputs.pinned_version }} is not published yet."

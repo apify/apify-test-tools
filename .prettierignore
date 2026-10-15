@@ -7,4 +7,4 @@ CHANGELOG.md
 .github/review-prompt.md
 
 # Fixtures must stay byte-exact — several are deliberately malformed or empty
-test/fixtures
+packages/cli/test/fixtures

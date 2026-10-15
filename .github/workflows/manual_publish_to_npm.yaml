@@ -47,7 +47,9 @@ jobs:
               run: node ./.github/scripts/before-beta-release.js
             - name: Build
               run: npm run build
+            # Publishes every workspace package: apify-test-tools (the library) and
+            # @apify/test-tools-cli. The root package is private and is skipped.
             - name: Publish
-              run: npm publish --provenance --tag ${{ inputs.tag }}
+              run: npm publish --workspaces --provenance --tag ${{ inputs.tag }}
               env:
                   NODE_AUTH_TOKEN: ${{ secrets.APIFY_SERVICE_ACCOUNT_NPM_TOKEN }}

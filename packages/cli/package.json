@@ -1,0 +1,38 @@
+{
+    "name": "@apify/test-tools-cli",
+    "version": "0.10.2",
+    "type": "module",
+    "description": "CLI behind the apify-test-tools CI workflows: change detection, Actor builds, releases and test reports",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/apify/apify-test-tools.git",
+        "directory": "packages/cli"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "bin": {
+        "apify-test-tools": "dist/main.js"
+    },
+    "files": [
+        "dist"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "dependencies": {
+        "@apify/consts": "^3.0.1",
+        "@slack/web-api": "^8.2.0",
+        "adm-zip": "^0.6.1",
+        "apify-client": "^2.25.0",
+        "ignore": "^7.0.5",
+        "picomatch": "^4.0.7",
+        "yargs": "^18.0.0",
+        "zod": "^4.6.5"
+    },
+    "scripts": {
+        "build": "tsc -p tsconfig.build.json && chmod +x ./dist/main.js"
+    },
+    "author": "oklinov",
+    "license": "ISC"
+}

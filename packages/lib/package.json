@@ -1,0 +1,30 @@
+{
+    "name": "apify-test-tools",
+    "version": "0.10.2",
+    "type": "module",
+    "description": "Vitest helpers for running and asserting Apify Actor platform tests",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/apify/apify-test-tools.git",
+        "directory": "packages/lib"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "types": "./dist/index.d.ts",
+    "main": "./dist/src/lib.js",
+    "files": [
+        "dist"
+    ],
+    "dependencies": {
+        "apify-client": "^2.25.0"
+    },
+    "peerDependencies": {
+        "vitest": ">=3.2.4"
+    },
+    "scripts": {
+        "build": "tsc -p tsconfig.build.json"
+    },
+    "author": "oklinov",
+    "license": "ISC"
+}

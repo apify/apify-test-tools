@@ -1,8 +1,8 @@
 {
-    "name": "apify-test-tools",
-    "version": "0.10.2",
+    "name": "apify-test-tools-monorepo",
+    "private": true,
     "type": "module",
-    "description": "TBD",
+    "description": "Monorepo for the apify-test-tools library and the @apify/test-tools-cli CLI",
     "repository": {
         "type": "git",
         "url": "https://github.com/apify/apify-test-tools.git"
@@ -10,21 +10,10 @@
     "engines": {
         "node": ">=18.0.0"
     },
-    "bin": {
-        "apify-test-tools": "dist/bin/main.js"
-    },
-    "types": "./dist/index.d.ts",
-    "main": "./dist/lib/lib.js",
-    "dependencies": {
-        "@apify/consts": "^3.0.1",
-        "@slack/web-api": "^8.2.0",
-        "adm-zip": "^0.6.1",
-        "apify-client": "^2.25.0",
-        "ignore": "^7.0.5",
-        "picomatch": "^4.0.7",
-        "yargs": "^18.0.0",
-        "zod": "^4.6.5"
-    },
+    "workspaces": [
+        "packages/lib",
+        "packages/cli"
+    ],
     "devDependencies": {
         "@apify/eslint-config": "^1.0.0",
         "@apify/tsconfig": "^0.1.1",
@@ -44,13 +33,9 @@
         "typescript-eslint": "^8.34.1",
         "vitest": "^3.2.4"
     },
-    "peerDependencies": {
-        "vitest": ">=3.2.4"
-    },
     "scripts": {
-        "start": "npm run dist/bin/main.js",
-        "start:dev": "cd local-clone && tsx ../bin/main.ts",
-        "build": "tsc && chmod +x ./dist/bin/main.js",
+        "start:dev": "cd local-clone && tsx ../packages/cli/src/main.ts",
+        "build": "npm run build --workspaces",
         "lint": "eslint",
         "lint:fix": "eslint --fix",
         "format": "prettier --write .",

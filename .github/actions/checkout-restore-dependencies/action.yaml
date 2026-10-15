@@ -64,32 +64,39 @@ runs:
               NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
           run: npm ci
 
-        # Repos can still have older version locally but on cloud we enforce uniformity.
-        # --no-save swaps the package in node_modules only and leaves the repo's package.json and
-        # package-lock.json untouched, so node_modules is ahead of the lockfile but the checkout stays clean.
-        - name: Enforce test tools version required by these workflows
-          # We don't override beta so we can use it to test branch-specific versions of apify-test-tools
-          # Needs the npm token too: a repo whose .npmrc routes all traffic through a private
-          # registry has to authenticate even for public packages.
+        # The CLI is its own package (@apify/test-tools-cli), so the workflows install exactly the
+        # version they ship with, in a folder of its own, and put its `apify-test-tools` command on
+        # PATH. The repo's node_modules is left alone: the library its tests import stays whatever
+        # its lockfile says, so a workflow release never upgrades a repo's test library behind its back.
+        #
+        # The workflows name the exact CLI version they ship with, so a tag is a complete statement:
+        # these workflows and this CLI. A frozen major tag then keeps installing what it was tested
+        # against however far the package moves on. A `>=` floor could not do that — being
+        # open-ended, it resolves to the newest release forever, so freezing the tag would freeze the
+        # workflow files but not their dependency. The stable release writes this file, so it always
+        # names a published version; the release that publishes X is the commit that pins X.
+        #
+        # Branch testing: when the repo's lockfile holds a `-beta` of the library, the CLI with the
+        # same version is installed instead. Both packages are released together under one version
+        # number, so a beta of the library always has a matching beta of the CLI.
+        #
+        # Installed outside the repo, so the repo's own .npmrc does not apply and the public registry
+        # is used. The token is still passed in case a runner-level .npmrc references it.
+        - name: Install the test tools CLI required by these workflows
           shell: bash
           env:
               NPM_TOKEN: ${{ inputs.npm-token }}
               NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
           run: |
-              locked_version=$(jq -r '.packages["node_modules/apify-test-tools"].version' package-lock.json)
-              echo "Package-lock version of apify-test-tools: $locked_version"
+              locked_version=$(jq -r '.packages["node_modules/apify-test-tools"].version // empty' package-lock.json)
+              echo "Package-lock version of apify-test-tools: ${locked_version:-none}"
               if [[ "$locked_version" == *"-beta"* ]]; then
-                echo "Beta version detected, reinstalling $locked_version to ensure cache consistency"
-                npm install "apify-test-tools@$locked_version" --no-save --audit=false --no-fund;
+                cli_version=$locked_version
+                echo "Beta library detected, installing @apify/test-tools-cli@$cli_version to match it"
               else
-                # The workflows name the exact package version they ship with, so a tag is a complete
-                # statement: these workflows and this library. A frozen major tag then keeps
-                # installing what it was tested against however far the package moves on. A `>=`
-                # floor could not do that — being open-ended, it resolves to the newest release
-                # forever, so freezing the tag would freeze the workflow files but not their
-                # dependency. The stable release writes this file, so it always names a published
-                # version; the release that publishes X is the commit that pins X.
-                pinned_version=$(cat "${{ github.action_path }}/../../workflows-package-version")
-                echo "Installing apify-test-tools@$pinned_version (pinned by these workflows)"
-                npm install "apify-test-tools@$pinned_version" --no-save --audit=false --no-fund;
+                cli_version=$(cat "${{ github.action_path }}/../../workflows-package-version")
+                echo "Installing @apify/test-tools-cli@$cli_version (pinned by these workflows)"
               fi
+              cli_dir="$RUNNER_TEMP/apify-test-tools-cli"
+              npm install --prefix "$cli_dir" "@apify/test-tools-cli@$cli_version" --audit=false --fund=false
+              echo "$cli_dir/node_modules/.bin" >> "$GITHUB_PATH"

@@ -36,6 +36,9 @@ jobs:
     tests:
         name: Tests
         uses: ./.github/workflows/_tests.yaml
+        # Only the sandbox token, not `secrets: inherit`: the test job runs test code.
+        secrets:
+            E2E_TEST_APIFY_TOKEN_DBYPODOIHUZABNQTR: ${{ secrets.E2E_TEST_APIFY_TOKEN_DBYPODOIHUZABNQTR }}
 
     release_metadata:
         name: Update release metadata

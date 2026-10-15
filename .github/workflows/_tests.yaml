@@ -3,6 +3,10 @@ name: Tests
 on:
     workflow_dispatch:
     workflow_call:
+        secrets:
+            # Token of an isolated sandbox account that can only reach the e2e test's two dummy Actors.
+            E2E_TEST_APIFY_TOKEN_DBYPODOIHUZABNQTR:
+                required: false
 
 permissions:
     contents: read
@@ -33,3 +37,33 @@ jobs:
 
             - name: Unit tests
               run: npm test
+
+    # Runs the shipped CLI bundle against real Actors (test/e2e). Node 24 only, so one push builds
+    # and runs the sandbox Actors once rather than once per Node version.
+    e2e_tests:
+        name: E2E tests
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+
+            - name: Use Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+                  cache: 'npm'
+                  cache-dependency-path: 'package-lock.json'
+
+            - name: Install dependencies
+              run: npm ci
+
+            # The token is only on this step. Fork and Dependabot PRs don't get the secret, and the
+            # suite skips itself without it.
+            - name: E2E tests
+              env:
+                  E2E_TEST_APIFY_TOKEN_DBYPODOIHUZABNQTR: ${{ secrets.E2E_TEST_APIFY_TOKEN_DBYPODOIHUZABNQTR }}
+              run: |
+                  if [ -z "$E2E_TEST_APIFY_TOKEN_DBYPODOIHUZABNQTR" ]; then
+                      echo "::notice::E2E_TEST_APIFY_TOKEN_DBYPODOIHUZABNQTR is not available to this run, the e2e tests are skipped."
+                  fi
+                  npm run test:e2e

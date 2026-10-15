@@ -65,7 +65,8 @@
         "format": "prettier --write .",
         "format:check": "prettier --check .",
         "type-check": "tsc --noEmit",
-        "test": "vitest run",
+        "test": "vitest run --exclude 'test/e2e/**'",
+        "test:e2e": "vitest run test/e2e",
         "check-unused": "npx knip",
         "prepare": "husky .husky || true"
     },

@@ -40,19 +40,18 @@ describe('getAffectedActors', () => {
     });
 
     describe('with --base', () => {
-        let getCommitsSpy: MockInstance;
+        const mergeBaseSha = 'b'.repeat(40);
+        let commitsBetweenSpy: MockInstance;
 
         beforeEach(() => {
-            vi.spyOn(Git, 'hasMergeFromTarget').mockResolvedValue(false);
-            getCommitsSpy = vi.spyOn(Git, 'getCommits').mockResolvedValue(commits);
+            vi.spyOn(Git, 'getMergeBase').mockResolvedValue(mergeBaseSha);
+            commitsBetweenSpy = vi.spyOn(Git, 'getCommitsBetween').mockResolvedValue(commits);
         });
 
-        it('inspects the branch commits after --since', async () => {
-            const result = await getAffectedActors({
-                base: 'origin/master',
-                since: sinceSha,
-                ...selection,
-            });
+        it("inspects the branch's own changes, from where it forked from or last merged --base", async () => {
+            const findCommitSpy = vi.spyOn(Git, 'findCommitSha');
+
+            const result = await getAffectedActors({ base: 'origin/master', ...selection });
 
             expect(result).toStrictEqual({
                 version: 1,
@@ -64,62 +63,95 @@ describe('getAffectedActors', () => {
                 functionallyChangedActors: [{ actorFullName: 'owner/a' }],
                 cosmeticallyChangedActors: [{ actorFullName: 'owner/b' }],
             });
-            expect(getCommitsSpy).toHaveBeenCalledWith({
-                sourceBranch: 'HEAD',
-                targetBranch: 'origin/master',
-                baseCommit: sinceSha,
-            });
-            // From the parent of the oldest commit to the newest one, for the files and the changelog alike
-            expect(Git.getChangedFilesBetween).toHaveBeenCalledWith(`${commits[0].sha}~`, commits[1].sha);
-            expect(Git.getChangelogAdditions).toHaveBeenCalledWith(`${commits[0].sha}~`, commits[1].sha, changedFiles);
+            expect(Git.getMergeBase).toHaveBeenCalledWith('origin/master', 'HEAD');
+            expect(Git.getChangedFilesBetween).toHaveBeenCalledWith(mergeBaseSha, headSha);
+            expect(Git.getChangelogAdditions).toHaveBeenCalledWith(mergeBaseSha, headSha, changedFiles);
+            expect(commitsBetweenSpy).toHaveBeenCalledWith(mergeBaseSha, headSha);
             expect(changedActorsSpy).toHaveBeenCalledWith({
                 filepathsChanged: changedFiles,
                 actorConfigs: [actorA, actorB],
-                commits,
+                range: { fromRef: mergeBaseSha, toRef: headSha },
             });
+            expect(findCommitSpy).not.toHaveBeenCalled();
         });
 
-        describe('when the branch merged --base in', () => {
+        it('has no commits when HEAD is on --base', async () => {
+            vi.spyOn(Git, 'getMergeBase').mockResolvedValue(headSha);
+            const result = await getAffectedActors({ base: 'origin/master', ...selection });
+            expect(result.commits).toStrictEqual([]);
+            expect(commitsBetweenSpy).not.toHaveBeenCalled();
+        });
+
+        describe('and --since', () => {
+            const sinceFiles = ['README.md'];
+
             beforeEach(() => {
-                vi.spyOn(Git, 'hasMergeFromTarget').mockResolvedValue(true);
-                vi.spyOn(Git, 'getBranchOnlyChangedFiles').mockResolvedValue(['own-file']);
+                vi.spyOn(Git, 'findCommitSha').mockResolvedValue(sinceSha);
+                vi.spyOn(Git, 'getChangedFilesBetween').mockImplementation(async (fromRef) =>
+                    fromRef === sinceSha ? sinceFiles : changedFiles,
+                );
             });
 
-            const getWithOwnChanges = async (own: DiffChanges.ChangedActors) => {
-                changedActorsSpy.mockImplementation(async ({ filepathsChanged }) =>
-                    filepathsChanged[0] === 'own-file' ? own : { functional: [actorA], cosmetic: [actorB] },
+            const getNarrowed = async (
+                branch: DiffChanges.ChangedActors,
+                sinceValidated: DiffChanges.ChangedActors,
+            ) => {
+                changedActorsSpy.mockImplementation(async ({ range }) =>
+                    range.fromRef === sinceSha ? sinceValidated : branch,
                 );
-                return getAffectedActors({ base: 'master', since: sinceSha, ...selection });
+                const result = await getAffectedActors({ base: 'origin/master', since: sinceSha, ...selection });
+                return {
+                    functional: result.functionallyChangedActors.map(({ actorFullName }) => actorFullName),
+                    cosmetic: result.cosmeticallyChangedActors.map(({ actorFullName }) => actorFullName),
+                };
             };
 
-            it("classifies the branch's own files against the whole branch, ignoring --since", async () => {
-                await getWithOwnChanges({ functional: [actorA], cosmetic: [] });
+            it('classifies the changes since --since separately', async () => {
+                await getNarrowed({ functional: [actorA], cosmetic: [] }, { functional: [actorA], cosmetic: [] });
                 expect(changedActorsSpy).toHaveBeenCalledWith({
-                    filepathsChanged: ['own-file'],
+                    filepathsChanged: sinceFiles,
                     actorConfigs: [actorA, actorB],
-                    commits,
+                    range: { fromRef: sinceSha, toRef: headSha },
                 });
-                expect(getCommitsSpy).toHaveBeenCalledWith({ sourceBranch: 'HEAD', targetBranch: 'master' });
             });
 
-            it('reports everything when the branch has functional changes of its own', async () => {
-                const result = await getWithOwnChanges({ functional: [actorA], cosmetic: [] });
-                expect(result.functionallyChangedActors).toStrictEqual([{ actorFullName: 'owner/a' }]);
-                expect(result.cosmeticallyChangedActors).toStrictEqual([{ actorFullName: 'owner/b' }]);
-            });
-
-            it('reports only cosmetic Actors when its own changes are only cosmetic', async () => {
-                const result = await getWithOwnChanges({ functional: [], cosmetic: [actorB] });
-                expect(result.functionallyChangedActors).toStrictEqual([]);
-                expect(result.cosmeticallyChangedActors).toStrictEqual([{ actorFullName: 'owner/b' }]);
-            });
-
-            it('reports nothing when it has no changes of its own', async () => {
-                const result = await getWithOwnChanges({ functional: [], cosmetic: [] });
-                expect(result.functionallyChangedActors).toStrictEqual([]);
-                expect(result.cosmeticallyChangedActors).toStrictEqual([]);
-                // The range is still reported
+            it('still describes the whole branch', async () => {
+                const result = await getAffectedActors({ base: 'origin/master', since: sinceSha, ...selection });
                 expect(result.commits).toStrictEqual(commits);
+                expect(result.changedFiles).toStrictEqual(changedFiles);
+            });
+
+            it('retests an Actor whose validated change meets a new functional change', async () => {
+                await expect(
+                    getNarrowed({ functional: [actorA], cosmetic: [] }, { functional: [actorA], cosmetic: [] }),
+                ).resolves.toStrictEqual({ functional: ['owner/a'], cosmetic: [] });
+            });
+
+            it('leaves out Actors that only the branch changed before --since or only --base changed', async () => {
+                await expect(
+                    getNarrowed({ functional: [actorA], cosmetic: [] }, { functional: [actorB], cosmetic: [] }),
+                ).resolves.toStrictEqual({ functional: [], cosmetic: [] });
+            });
+
+            it('takes the less impactful change when the two disagree', async () => {
+                // A validated functional change, then only cosmetic changes (e.g. a README merged in from base)
+                await expect(
+                    getNarrowed({ functional: [actorA], cosmetic: [] }, { functional: [], cosmetic: [actorA] }),
+                ).resolves.toStrictEqual({ functional: [], cosmetic: ['owner/a'] });
+                // A functional change merged in from base, while the branch only changes the README
+                await expect(
+                    getNarrowed({ functional: [], cosmetic: [actorA] }, { functional: [actorA], cosmetic: [] }),
+                ).resolves.toStrictEqual({ functional: [], cosmetic: ['owner/a'] });
+            });
+
+            it.each([
+                ['is HEAD (a rerun)', headSha],
+                ['is not in the local history', undefined],
+            ])('checks the whole branch when --since %s', async (_, found) => {
+                vi.spyOn(Git, 'findCommitSha').mockResolvedValue(found);
+                const result = await getAffectedActors({ base: 'origin/master', since: sinceSha, ...selection });
+                expect(result.functionallyChangedActors).toStrictEqual([{ actorFullName: 'owner/a' }]);
+                expect(changedActorsSpy).toHaveBeenCalledTimes(1);
             });
         });
     });
@@ -133,7 +165,7 @@ describe('getAffectedActors', () => {
             commitsBetweenSpy = vi.spyOn(Git, 'getCommitsBetween').mockResolvedValue(commits);
         });
 
-        it('inspects everything after --since up to --head', async () => {
+        it('inspects everything after --since up to HEAD', async () => {
             const result = await getAffectedActors({ since: 'HEAD~2', ...selection });
 
             expect(result).toStrictEqual({

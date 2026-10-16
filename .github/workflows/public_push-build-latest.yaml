@@ -36,11 +36,11 @@ jobs:
                   SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
               run: |
                   node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
-                    npx apify-test-tools release --base-commit ${{ github.event.before }} --release-slack-channel "#delivery-public-actors" --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" --use-docker-cache
+                    apify-test-tools release --base-commit ${{ github.event.before }} --release-slack-channel "#delivery-public-actors" --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" --use-docker-cache
 
             - name: Delete old builds
               env:
                   ALL_SECRETS: ${{ toJSON(secrets) }}
               run: |
                   node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
-                    npx apify-test-tools delete-old-builds
+                    apify-test-tools delete-old-builds

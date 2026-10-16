@@ -1,13 +1,8 @@
 name: Move major version tag
 
-# Consumer repos track a floating major tag (`...@v0`), not `master`, so merging to master does not
-# ship anything by itself. This workflow is what ships: it moves that tag forward, but only once the
-# package version the workflows pin in .github/workflows-package-version is actually on npm.
-#
-# That gate is the whole point. The workflows and the npm package release on their own schedules, so
-# the only combination that can break consumers is a workflow that calls a CLI feature which has not
-# been published yet. In that case the tag simply stays where it is and production keeps running the
-# previous workflows until someone cuts a release.
+# Consumer repos track a floating major tag (`...@workflows-v0`), not `master`. This workflow is what
+# ships: it moves that tag forward. The workflows and the CLI they call (bundled in .github/cli/)
+# live in the same commit, so whatever the tag points at is consistent on its own.
 
 on:
     workflow_call:
@@ -16,13 +11,6 @@ on:
                 description: Commit to move the tag to. Defaults to the commit that triggered the caller.
                 type: string
                 default: ''
-            wait_for_publish:
-                description: >-
-                    Set by a release that has just published the pinned version. npm accepts a publish
-                    before the version is readable, so the check waits instead of treating the gap as
-                    a held tag, and fails if the version never appears.
-                type: boolean
-                default: false
 
 permissions:
     contents: read
@@ -63,54 +51,7 @@ jobs:
               with:
                   ref: ${{ inputs.ref || github.sha }}
 
-            - name: Check the required package version is published
-              id: check
-              env:
-                  # npm accepts a publish and processes it asynchronously ("Your package is being
-                  # processed and may take a few minutes to become available"). Observed at ~19
-                  # minutes for a provenance-signed release, so the release path waits well past
-                  # npm's own estimate rather than shipping a tag consumers cannot install against.
-                  WAIT_SECONDS: ${{ inputs.wait_for_publish && 2400 || 0 }}
-              run: |
-                  pinned_version=$(cat .github/workflows-package-version)
-                  echo "pinned_version=$pinned_version" >> "$GITHUB_OUTPUT"
-
-                  deadline=$(( $(date +%s) + WAIT_SECONDS ))
-                  while :; do
-                      # --prefer-online so a 404 cached from an earlier attempt cannot outlive the
-                      # publish it was polling for.
-                      if output=$(npm view "apify-test-tools@$pinned_version" version --prefer-online 2>&1); then
-                          echo "apify-test-tools@$pinned_version is on npm"
-                          echo "published=true" >> "$GITHUB_OUTPUT"
-                          exit 0
-                      fi
-
-                      # Anything that is not "this version does not exist" is a registry, network or
-                      # auth problem. Sitting in the retry loop would hide it behind a held tag.
-                      if ! grep -q 'code E404' <<< "$output"; then
-                          echo "::error::npm view failed for a reason other than the version being absent."
-                          echo "$output"
-                          exit 1
-                      fi
-
-                      if [ "$(date +%s)" -ge "$deadline" ]; then
-                          break
-                      fi
-                      echo "apify-test-tools@$pinned_version is not on npm yet, retrying in 30s"
-                      sleep 30
-                  done
-
-                  echo "published=false" >> "$GITHUB_OUTPUT"
-
-                  # A release waited for its own publish and never saw it. That is a broken release,
-                  # not a held tag, and it has to be red so it can be re-run once npm catches up.
-                  if [ "$WAIT_SECONDS" -gt 0 ]; then
-                      echo "::error::apify-test-tools@$pinned_version was published by this run but is still not readable after $((WAIT_SECONDS / 60))m. Re-run this job once it appears on npm."
-                      exit 1
-                  fi
-
             - name: Move tag
-              if: steps.check.outputs.published == 'true'
               env:
                   TARGET_SHA: ${{ inputs.ref || github.sha }}
               run: |
@@ -120,23 +61,4 @@ jobs:
                       echo "### \`$MAJOR_TAG\` moved"
                       echo
                       echo "Now points at \`$TARGET_SHA\`."
-                      echo "Pins \`apify-test-tools@${{ steps.check.outputs.pinned_version }}\`, which is published."
                   } >> "$GITHUB_STEP_SUMMARY"
-
-            # Not a failure. Holding the tag is the designed outcome of merging a workflow change
-            # that needs an unreleased package feature, and consumers are unaffected while it waits.
-            - name: Report held tag
-              if: steps.check.outputs.published != 'true'
-              env:
-                  TARGET_SHA: ${{ inputs.ref || github.sha }}
-              run: |
-                  {
-                      echo "### \`$MAJOR_TAG\` held"
-                      echo
-                      echo "\`$TARGET_SHA\` pins \`apify-test-tools@${{ steps.check.outputs.pinned_version }}\`, which is not on npm."
-                      echo "Consumers keep running the workflows \`$MAJOR_TAG\` already points at."
-                      echo
-                      echo "Publish that version with the **Stable release** workflow. The tag moves on the"
-                      echo "next master push, or immediately via the **Move major version tag** workflow."
-                  } >> "$GITHUB_STEP_SUMMARY"
-                  echo "::warning::$MAJOR_TAG not moved: apify-test-tools@${{ steps.check.outputs.pinned_version }} is not published yet."

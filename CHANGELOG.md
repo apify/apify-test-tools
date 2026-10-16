@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 <!-- git-cliff-unreleased-start -->
 ## 0.10.2 - **not yet released**
 
+### 🚀 Features
+
+- **ci:** Ship the workflows&#x27; CLI as a bundle in the action instead of installing it ([#200](https://github.com/apify/apify-test-tools/pull/200)) ([a0ef975](https://github.com/apify/apify-test-tools/commit/a0ef9756123a30a8210590b080a2a289c6a9c17c)) by [@metalwarrior665](https://github.com/metalwarrior665)
+
 ### 🐛 Bug Fixes
 
 - **toBeObject:** Reject null ([#191](https://github.com/apify/apify-test-tools/pull/191)) ([6bdae49](https://github.com/apify/apify-test-tools/commit/6bdae4905756e0ae8dd6146942e6fc04dbead48e)) by [@JuanGalilea](https://github.com/JuanGalilea), closes [#88](https://github.com/apify/apify-test-tools/issues/88)

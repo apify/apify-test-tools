@@ -1,8 +1,8 @@
 name: Move major version tag
 
-# Escape hatch for the two cases the automatic move does not cover: shipping a workflow change right
-# after the release that unblocked it, without waiting for the next master push, and rolling the tag
-# back to an earlier commit when a shipped workflow turns out to be broken.
+# Escape hatch for what the automatic move on master pushes does not cover: rolling the tag back to
+# an earlier commit when a shipped workflow or CLI turns out to be broken, or moving it after a push
+# whose checks failed for an unrelated reason.
 
 on:
     workflow_dispatch:

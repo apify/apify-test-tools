@@ -9,7 +9,6 @@ import { type RelativeDir, RelativeFile } from './utils/path/repo-relative.js';
 interface ShouldBuildAndTestOptions {
     filepathsChanged: string[];
     actorConfigs: ActorConfig[];
-    isLatest?: boolean;
     commits: Commit[];
     // Glob relative to the repo root. Matching files count as changes even when .dockerignore lists them.
     testFilesGlob?: string;
@@ -112,6 +111,7 @@ const isExcludedBySibling = (filePath: RelativeFile, actor: ActorConfig, allActo
 type ActorChangeEntry = {
     actorConfig: ActorConfig;
     files: string[];
+    hasFunctionalChange: boolean;
 };
 
 type ChangeGroup = { actors: string[]; files: string[] };
@@ -164,13 +164,20 @@ const logChangeGroups = (groups: ChangeGroup[]): void => {
     }
 };
 
+export interface ChangedActors {
+    /** Actors with at least one functional change. They need a new build and tests. */
+    functional: ActorConfig[];
+    /** Actors whose changes are all cosmetic. They only need a new build when released. */
+    cosmetic: ActorConfig[];
+}
+
+/** Finds the Actors the changed files belong to, split by the most impactful change each Actor has. */
 export const getChangedActors = async ({
     filepathsChanged,
     actorConfigs,
-    isLatest = false,
     commits,
     testFilesGlob,
-}: ShouldBuildAndTestOptions): Promise<ActorConfig[]> => {
+}: ShouldBuildAndTestOptions): Promise<ChangedActors> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
     const testFilesInContext = new Set<string>();
     const isTestFile = testFilesGlob ? picomatch(testFilesGlob, { nocase: true, dot: true }) : () => false;
@@ -191,21 +198,21 @@ export const getChangedActors = async ({
             }
 
             if (change.impact === 'ignored' || change.impact === 'outside-context') continue;
-            if (change.impact === 'cosmetic' && !isLatest) continue;
 
-            const entry = actorsChangedMap.get(actorConfig.folder.path) ?? { actorConfig, files: [] };
+            const entry = actorsChangedMap.get(actorConfig.folder.path) ?? {
+                actorConfig,
+                files: [],
+                hasFunctionalChange: false,
+            };
             entry.files.push(originalFilePath);
+            entry.hasFunctionalChange ||= change.impact === 'functional';
             actorsChangedMap.set(actorConfig.folder.path, entry);
         }
     }
 
-    const actorsChanged = Array.from(actorsChangedMap.values()).map((entry) => entry.actorConfig);
-
     // Log changes grouped by actor set, so changes shared across actors are logged once
     // instead of being repeated per actor.
-    const fileToActors = buildFileToActorsMap(actorsChangedMap);
-    const groups = groupFilesByActorSet(fileToActors);
-    logChangeGroups(groups);
+    logChangeGroups(groupFilesByActorSet(buildFileToActorsMap(actorsChangedMap)));
 
     for (const testFile of filepathsChanged.filter(
         (filePath) => isTestFile(filePath) && !testFilesInContext.has(filePath),
@@ -216,12 +223,13 @@ export const getChangedActors = async ({
         );
     }
 
-    if (actorsChanged.length > 0) {
-        const actors = actorsChanged.map((config) => config.actorFullName);
-        logger.info(`[DIFF]: Actors to be built and tested: ${actors.join(', ')}`);
-    } else {
-        logger.info(`[DIFF]: No relevant files changed, skipping builds and tests`);
-    }
+    const entries = Array.from(actorsChangedMap.values());
+    const functional = entries.filter((entry) => entry.hasFunctionalChange).map((entry) => entry.actorConfig);
+    const cosmetic = entries.filter((entry) => !entry.hasFunctionalChange).map((entry) => entry.actorConfig);
 
-    return actorsChanged;
+    const names = (configs: ActorConfig[]) => configs.map((config) => config.actorFullName).join(', ') || 'none';
+    logger.info(`[DIFF]: Actors with functional changes: ${names(functional)}`);
+    logger.info(`[DIFF]: Actors with only cosmetic changes: ${names(cosmetic)}`);
+
+    return { functional, cosmetic };
 };

@@ -130,9 +130,16 @@ describe('CLI bundle', () => {
     });
 
     it('get-affected-actors returns only the Actor whose files changed', () => {
-        const { status, stdout, stderr } = runCli('get-affected-actors', ...gitRange);
+        // `feature` is checked out, and the range always ends at HEAD
+        const { status, stdout, stderr } = runCli('get-affected-actors', '--base', 'main');
         expect(status, stderr).toBe(0);
-        expect(JSON.parse(stdout)).toMatchObject([{ actorFullName: 'tester/foo', folder: 'actors/foo' }]);
+        expect(JSON.parse(stdout)).toMatchObject({
+            version: 1,
+            head: headSha,
+            functionallyChangedActors: [{ actorFullName: 'tester/foo' }],
+            // The root README isn't in tester/bar's folder, so it doesn't count for it
+            cosmeticallyChangedActors: [],
+        });
     });
 
     it('build --dry-run with nothing to build needs no token', () => {

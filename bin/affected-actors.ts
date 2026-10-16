@@ -6,7 +6,6 @@ import {
     getCommits,
     getCommitsBetween,
     hasMergeFromTarget,
-    resolveBranchName,
     resolveCommitSha,
     resolveReleaseBaseCommit,
 } from './git.js';
@@ -14,14 +13,15 @@ import { logger } from './logger.js';
 import type { ActorConfig, Commit } from './types.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
+// The range always ends at the checked-out commit: check out what you want to inspect
+const HEAD = 'HEAD';
+
 interface AffectedActorsOptions {
-    /** End of the range. */
-    head: string;
-    /** Only the commits on head that are not on base count, i.e. the branch's own changes. */
+    /** Only the commits on HEAD that are not on base count, i.e. the branch's own changes. */
     base?: string;
     /**
      * Only changes after this commit count. With `base` it's the last validated commit of the branch and is
-     * ignored when it isn't on the branch. Without `base` it must be an ancestor of head (e.g. the last release).
+     * ignored when it isn't on the branch. Without `base` it must be an ancestor of HEAD (e.g. the last release).
      */
     since?: string;
     /** Glob relative to the repo root. Matching files count as changes even when .dockerignore lists them. */
@@ -32,8 +32,6 @@ interface AffectedActorsOptions {
 
 interface AffectedActors {
     headSha: string;
-    /** Branch head points to, which is what git builds are made from. Null for a SHA or a detached HEAD. */
-    ref: string | null;
     commits: Commit[];
     changedFiles: string[];
     changelog: string | null;
@@ -50,14 +48,14 @@ interface CommitRange {
 }
 
 /** The branch's own commits, after `since` when it is on the branch (see getCommits). */
-const getBranchRange = async (head: string, base: string, since: string | undefined): Promise<CommitRange> => {
-    const commits = await getCommits({ sourceBranch: head, targetBranch: base, baseCommit: since });
+const getBranchRange = async (base: string, since: string | undefined): Promise<CommitRange> => {
+    const commits = await getCommits({ sourceBranch: HEAD, targetBranch: base, baseCommit: since });
     return { commits, fromRef: `${commits[0].sha}~`, toRef: commits[commits.length - 1].sha };
 };
 
-/** Everything after `since` up to head. Unlike on a branch, `since` must be an ancestor of head. */
-const getRangeSince = async (head: string, headSha: string, since: string): Promise<CommitRange> => {
-    const sinceSha = await resolveReleaseBaseCommit(since, head);
+/** Everything after `since` up to HEAD. Unlike on a branch, `since` must be an ancestor of HEAD. */
+const getRangeSince = async (headSha: string, since: string): Promise<CommitRange> => {
+    const sinceSha = await resolveReleaseBaseCommit(since);
     const commits = sinceSha === headSha ? [] : await getCommitsBetween(sinceSha, headSha);
     return { commits, fromRef: sinceSha, toRef: headSha };
 };
@@ -76,21 +74,20 @@ const getRangeSince = async (head: string, headSha: string, since: string): Prom
  * branch's own keeps every Actor, and the log messages below describe the whole branch.
  */
 const getOwnChangesIfMergedFromBase = async (
-    head: string,
     base: string,
     actorConfigs: ActorConfig[],
     testFilesGlob: string | undefined,
 ): Promise<ChangedActors | undefined> => {
-    if (!(await hasMergeFromTarget(head, base))) return undefined;
+    if (!(await hasMergeFromTarget(HEAD, base))) return undefined;
 
     logger.info(
         '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
     );
     const own = await getChangedActors({
-        filepathsChanged: await getBranchOnlyChangedFiles(head, base),
+        filepathsChanged: await getBranchOnlyChangedFiles(HEAD, base),
         actorConfigs,
         // Omit since to get full branch history. Validated functional commits can still interact with merged ones
-        commits: await getCommits({ sourceBranch: head, targetBranch: base }),
+        commits: await getCommits({ sourceBranch: HEAD, targetBranch: base }),
         testFilesGlob,
     });
     logger.info(
@@ -106,7 +103,6 @@ const getOwnChangesIfMergedFromBase = async (
  * (a PR), `since` the commits after a known one (a release, or the last validated commit of a PR).
  */
 export const getAffectedActors = async ({
-    head,
     base,
     since: sinceOption,
     testFilesGlob,
@@ -119,21 +115,18 @@ export const getAffectedActors = async ({
         throw new Error('Pass --base, --since, or both to select the commits to inspect.');
     }
 
-    const headSha = await resolveCommitSha(head);
-    const { commits, fromRef, toRef } = base
-        ? await getBranchRange(head, base, since)
-        : await getRangeSince(head, headSha, since!);
+    const headSha = await resolveCommitSha(HEAD);
+    const { commits, fromRef, toRef } = base ? await getBranchRange(base, since) : await getRangeSince(headSha, since!);
     const actorConfigs = await readConfigFile({ actors, ignore });
 
     // What the branch only merged in from base is already validated. Without functional changes of its own
     // the branch has nothing to test, and without any changes of its own nothing to release either.
-    const own = base ? await getOwnChangesIfMergedFromBase(head, base, actorConfigs, testFilesGlob) : undefined;
+    const own = base ? await getOwnChangesIfMergedFromBase(base, actorConfigs, testFilesGlob) : undefined;
     const changedFiles = await getChangedFilesBetween(fromRef, toRef);
     const changed = await getChangedActors({ filepathsChanged: changedFiles, actorConfigs, commits, testFilesGlob });
 
     return {
         headSha,
-        ref: await resolveBranchName(head),
         commits,
         changedFiles,
         changelog: await getChangelogAdditions(fromRef, toRef, changedFiles),
@@ -145,7 +138,6 @@ export const getAffectedActors = async ({
 /** The JSON document `get-affected-actors` prints. Versioned, since other commands and workflows consume it. */
 export const toAffectedActorsDocument = ({
     headSha,
-    ref,
     commits,
     changedFiles,
     changelog,
@@ -155,7 +147,6 @@ export const toAffectedActorsDocument = ({
     const names = (configs: ActorConfig[]) => configs.map(({ actorFullName }) => ({ actorFullName }));
     return {
         version: 1,
-        ref,
         head: headSha,
         commits,
         changedFiles,

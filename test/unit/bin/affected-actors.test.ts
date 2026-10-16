@@ -28,13 +28,12 @@ describe('getAffectedActors', () => {
             .spyOn(DiffChanges, 'getChangedActors')
             .mockResolvedValue({ functional: [actorA], cosmetic: [actorB] });
         vi.spyOn(Git, 'resolveCommitSha').mockResolvedValue(headSha);
-        vi.spyOn(Git, 'resolveBranchName').mockResolvedValue('feature');
         vi.spyOn(Git, 'getChangedFilesBetween').mockResolvedValue(changedFiles);
         vi.spyOn(Git, 'getChangelogAdditions').mockResolvedValue('- Added foo');
     });
 
     it('requires --base or --since', async () => {
-        const options = { head: 'HEAD', ...selection };
+        const options = { ...selection };
         await expect(getAffectedActors(options)).rejects.toThrow('Pass --base, --since, or both');
         // An empty --since (e.g. from an empty cache file) counts as not passed
         await expect(getAffectedActors({ ...options, since: '' })).rejects.toThrow('Pass --base, --since, or both');
@@ -50,7 +49,6 @@ describe('getAffectedActors', () => {
 
         it('inspects the branch commits after --since', async () => {
             const result = await getAffectedActors({
-                head: 'origin/feature',
                 base: 'origin/master',
                 since: sinceSha,
                 ...selection,
@@ -58,7 +56,6 @@ describe('getAffectedActors', () => {
 
             expect(result).toStrictEqual({
                 headSha,
-                ref: 'feature',
                 commits,
                 changedFiles,
                 changelog: '- Added foo',
@@ -66,7 +63,7 @@ describe('getAffectedActors', () => {
                 cosmeticallyChangedActors: [actorB],
             });
             expect(getCommitsSpy).toHaveBeenCalledWith({
-                sourceBranch: 'origin/feature',
+                sourceBranch: 'HEAD',
                 targetBranch: 'origin/master',
                 baseCommit: sinceSha,
             });
@@ -90,7 +87,7 @@ describe('getAffectedActors', () => {
                 changedActorsSpy.mockImplementation(async ({ filepathsChanged }) =>
                     filepathsChanged[0] === 'own-file' ? own : { functional: [actorA], cosmetic: [actorB] },
                 );
-                return getAffectedActors({ head: 'feature', base: 'master', since: sinceSha, ...selection });
+                return getAffectedActors({ base: 'master', since: sinceSha, ...selection });
             };
 
             it("classifies the branch's own files against the whole branch, ignoring --since", async () => {
@@ -100,7 +97,7 @@ describe('getAffectedActors', () => {
                     actorConfigs: [actorA, actorB],
                     commits,
                 });
-                expect(getCommitsSpy).toHaveBeenCalledWith({ sourceBranch: 'feature', targetBranch: 'master' });
+                expect(getCommitsSpy).toHaveBeenCalledWith({ sourceBranch: 'HEAD', targetBranch: 'master' });
             });
 
             it('reports everything when the branch has functional changes of its own', async () => {
@@ -135,18 +132,17 @@ describe('getAffectedActors', () => {
         });
 
         it('inspects everything after --since up to --head', async () => {
-            const result = await getAffectedActors({ head: 'release', since: 'HEAD~2', ...selection });
+            const result = await getAffectedActors({ since: 'HEAD~2', ...selection });
 
             expect(result).toStrictEqual({
                 headSha,
-                ref: 'feature',
                 commits,
                 changedFiles,
                 changelog: '- Added foo',
                 functionallyChangedActors: [actorA],
                 cosmeticallyChangedActors: [actorB],
             });
-            expect(resolveBaseSpy).toHaveBeenCalledWith('HEAD~2', 'release');
+            expect(resolveBaseSpy).toHaveBeenCalledWith('HEAD~2');
             expect(commitsBetweenSpy).toHaveBeenCalledWith(sinceSha, headSha);
             expect(Git.getChangedFilesBetween).toHaveBeenCalledWith(sinceSha, headSha);
             expect(Git.getChangelogAdditions).toHaveBeenCalledWith(sinceSha, headSha, changedFiles);
@@ -155,7 +151,7 @@ describe('getAffectedActors', () => {
         it('has no commits when head is the --since commit', async () => {
             resolveBaseSpy.mockResolvedValue(headSha);
 
-            const result = await getAffectedActors({ head: 'HEAD', since: headSha, ...selection });
+            const result = await getAffectedActors({ since: headSha, ...selection });
 
             expect(result.commits).toStrictEqual([]);
             // Empty `git log x..x` output doesn't parse as a commit, so it's never run
@@ -169,7 +165,6 @@ describe('toAffectedActorsDocument', () => {
         expect(
             toAffectedActorsDocument({
                 headSha,
-                ref: null,
                 commits,
                 changedFiles: ['src/main.ts'],
                 changelog: null,
@@ -178,7 +173,6 @@ describe('toAffectedActorsDocument', () => {
             }),
         ).toStrictEqual({
             version: 1,
-            ref: null,
             head: headSha,
             commits,
             changedFiles: ['src/main.ts'],

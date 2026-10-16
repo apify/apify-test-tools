@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Runs apify-test-tools and passes it only secrets needed for the Actors, no other secrets are leaked.
 //
-//     node .github/scripts/run-with-apify-tokens.mjs apify-test-tools build --target-branch ...
+//     node .github/scripts/run-with-apify-tokens.mjs apify-test-tools build-for-test --target-branch ...
 //
 // The step passes the whole secrets map as ALL_SECRETS. The token names come from `tokenEnvVar` in
 // the repo's apify-test-tools.config.json, which is the same file apify-test-tools itself reads, so

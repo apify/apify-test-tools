@@ -1,8 +1,9 @@
-import { spawn } from 'node:child_process';
+import { execFile, type ExecFileException } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
 // Shared by the e2e suites. They run the shipped CLI bundle against Actors in the isolated
 // `test-tools-testing-sandbox` org, whose token can reach nothing else.
@@ -34,6 +35,7 @@ export const gitEnv = {
 // of a build, long enough for vitest's own worker RPC to time out. The kill timeout still applies on
 // top of vitest's, since apify-client retries an unreachable API for minutes.
 export const PROCESS_TIMEOUT_MS = 8 * 60_000;
+const execFileAsync = promisify(execFile);
 
 export interface ProcessResult {
     status: number | null;
@@ -45,24 +47,24 @@ export const runProcess = async (
     command: string,
     args: string[],
     options: { cwd: string; env: Record<string, string> },
-): Promise<ProcessResult> =>
-    new Promise((resolve) => {
-        const child = spawn(command, args, { ...options, timeout: PROCESS_TIMEOUT_MS });
-        let stdout = '';
-        let stderr = '';
-        child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-            stdout += chunk;
+): Promise<ProcessResult> => {
+    try {
+        const { stdout, stderr } = await execFileAsync(command, args, {
+            ...options,
+            encoding: 'utf8',
+            timeout: PROCESS_TIMEOUT_MS,
+            maxBuffer: 100 * 1024 * 1024,
         });
-        child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
-            stderr += chunk;
-        });
-        child.on('error', (error) => {
-            stderr += `\n${error.message}`;
-        });
-        child.on('close', (status, signal) => {
-            resolve({ status, stdout, stderr: signal ? `${stderr}\nKilled by ${signal}` : stderr });
-        });
-    });
+        return { status: 0, stdout, stderr };
+    } catch (error) {
+        // A non-zero exit rejects too, with the output on the error.
+        const { code, stdout = '', stderr = '', message } = error as ExecFileException;
+        // Without an exit code (killed by the timeout, or never started) the message says why.
+        return typeof code === 'number'
+            ? { status: code, stdout, stderr }
+            : { status: null, stdout, stderr: `${stderr}\n${message}` };
+    }
+};
 
 export const runCli = async (cwd: string, ...args: string[]) =>
     runProcess(process.execPath, [bundlePath, ...args], { cwd, env: cliEnv });

@@ -89,24 +89,14 @@ Consumers pin `@workflows-v0`, not `@master`. See
 [Versioning and releases](./README.md#versioning-and-releases) in the README for how the tag and the
 npm release relate — the short version:
 
-- changing only a workflow needs no npm release
-- changing only the package needs no workflow change
-- a workflow that calls a **new** CLI feature must set `.github/workflows-package-version` to the
-  version that will contain it, in the same PR. The `workflows-v0` tag is then held until that version is on
-  npm, so merging can't ship a workflow that calls a CLI that doesn't exist yet.
-
-`.github/workflows-package-version` holds one exact version, and the stable release writes it. The
-workflows install exactly it, which is what makes a frozen major tag stay frozen — it keeps the
-library it was tested with instead of following `latest` forever.
-
-The `Package version bump needed` check enforces the point above: a PR touching both a `public_`
-workflow (or the composite action) and `bin/`, `lib/` or `index.ts` has to move the pin. When the
-two changes are unrelated and the workflow doesn't need the new code, label the PR
-`no-version-bump-needed`.
-
-It only looks at a single PR, so it won't catch a workflow that starts using a CLI feature merged in
-an earlier, still-unreleased PR. That needs someone to land a CLI change and sit on it unreleased;
-catching it would mean flagging every workflow edit made while any package change is unreleased.
+- the workflows and the CLI ship together on every master push, through the tag; no npm release needed
+- the lib ships through a stable npm release
+- the CLI runs from `.github/cli/apify-test-tools.mjs`, a bundle the pre-commit hook rebuilds with
+  `npm run bundle`. If you commit with `--no-verify`, run it yourself: the `CLI bundle` check fails
+  on a stale bundle, and a stale bundle would hold the tag.
+- `npm test` covers the bundle without network (`test/bundle/`). `npm run test:e2e` runs it against two
+  dummy Actors in an isolated sandbox account (`test/e2e/`) and skips itself unless
+  `E2E_TEST_APIFY_TOKEN_DBYPODOIHUZABNQTR` is set. CI passes that secret only to the `E2E tests` job.
 
 `npm run lint` and `actionlint` (via the `Code checks` workflow) both gate master, so run them before
 pushing workflow changes.

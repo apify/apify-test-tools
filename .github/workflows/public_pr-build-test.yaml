@@ -57,7 +57,7 @@ jobs:
                     --test-files-glob 'test/platform/**'
                   )
                   [ -n "$base_commit" ] && args+=(--since "$base_commit")
-                  npx apify-test-tools get-affected-actors "${args[@]}" > affected.json
+                  apify-test-tools get-affected-actors "${args[@]}" > affected.json
 
             # Cosmetic-only changes need no tests, so only the functionally changed Actors are built, into the
             # test version 0.99 that users never run.
@@ -73,7 +73,7 @@ jobs:
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
               run: |
                   actor_builds=$(jq '{ actors: .functionallyChangedActors }' affected.json \
-                    | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" npx apify-test-tools build --version-number 0.99)
+                    | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99)
                   echo "actor_builds=$actor_builds" | tee -a "$GITHUB_OUTPUT"
 
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.

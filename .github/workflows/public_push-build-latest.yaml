@@ -30,7 +30,7 @@ jobs:
             # Needs no tokens, it only reads git and apify-test-tools.config.json.
             - name: Find changes since the last release
               run: |
-                  npx apify-test-tools get-affected-actors --since ${{ github.event.before }} > affected.json
+                  apify-test-tools get-affected-actors --since ${{ github.event.before }} > affected.json
 
             # A release ships cosmetic changes too (README, input schema descriptions), so both lists are built,
             # into each Actor's default version: the one its default build tag points to, which users run.
@@ -45,18 +45,18 @@ jobs:
               run: |
                   jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json \
                     | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
-                        npx apify-test-tools build --version-number default
+                        apify-test-tools build --version-number default
 
             # Skips the announcement when the push brought no new commits
             - name: Announce the release on Slack
               env:
                   SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
               run: |
-                  npx apify-test-tools notify-release --release-slack-channel "#delivery-public-actors" --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" < affected.json
+                  apify-test-tools notify-release --release-slack-channel "#delivery-public-actors" --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" < affected.json
 
             - name: Delete old builds
               env:
                   ALL_SECRETS: ${{ toJSON(secrets) }}
               run: |
                   node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
-                    npx apify-test-tools delete-old-builds
+                    apify-test-tools delete-old-builds

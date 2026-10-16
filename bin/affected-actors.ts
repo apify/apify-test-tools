@@ -30,16 +30,23 @@ interface AffectedActorsOptions {
     ignore: string[];
 }
 
+/** The JSON document `get-affected-actors` prints. Versioned, since other commands and workflows consume it. */
 interface AffectedActors {
-    headSha: string;
+    version: 1;
+    head: string;
     commits: Commit[];
     changedFiles: string[];
     changelog: string | null;
-    /** Actors with at least one functional change. They need a new build and tests. */
-    functionallyChangedActors: ActorConfig[];
+    /**
+     * Actors with at least one functional change. They need a new build and tests. Only the names: the config file
+     * stays the source of truth for the rest.
+     */
+    functionallyChangedActors: { actorFullName: string }[];
     /** Actors whose changes are all cosmetic (README, CHANGELOG, cosmetic .actor JSON). They only need a release build. */
-    cosmeticallyChangedActors: ActorConfig[];
+    cosmeticallyChangedActors: { actorFullName: string }[];
 }
+
+const names = (configs: ActorConfig[]) => configs.map(({ actorFullName }) => ({ actorFullName }));
 
 interface CommitRange {
     commits: Commit[];
@@ -126,32 +133,13 @@ export const getAffectedActors = async ({
     const changed = await getChangedActors({ filepathsChanged: changedFiles, actorConfigs, commits, testFilesGlob });
 
     return {
-        headSha,
-        commits,
-        changedFiles,
-        changelog: await getChangelogAdditions(fromRef, toRef, changedFiles),
-        functionallyChangedActors: own && own.functional.length === 0 ? [] : changed.functional,
-        cosmeticallyChangedActors: own && own.functional.length + own.cosmetic.length === 0 ? [] : changed.cosmetic,
-    };
-};
-
-/** The JSON document `get-affected-actors` prints. Versioned, since other commands and workflows consume it. */
-export const toAffectedActorsDocument = ({
-    headSha,
-    commits,
-    changedFiles,
-    changelog,
-    functionallyChangedActors,
-    cosmeticallyChangedActors,
-}: AffectedActors) => {
-    const names = (configs: ActorConfig[]) => configs.map(({ actorFullName }) => ({ actorFullName }));
-    return {
         version: 1,
         head: headSha,
         commits,
         changedFiles,
-        changelog,
-        functionallyChangedActors: names(functionallyChangedActors),
-        cosmeticallyChangedActors: names(cosmeticallyChangedActors),
+        changelog: await getChangelogAdditions(fromRef, toRef, changedFiles),
+        functionallyChangedActors: own && own.functional.length === 0 ? [] : names(changed.functional),
+        cosmeticallyChangedActors:
+            own && own.functional.length + own.cosmetic.length === 0 ? [] : names(changed.cosmetic),
     };
 };

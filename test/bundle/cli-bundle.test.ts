@@ -98,8 +98,6 @@ describe('CLI bundle', () => {
             'get-affected-actors',
             'report-tests',
             'build',
-            'build-for-test',
-            'release',
             'notify-release',
             'build-from-local',
             'delete-old-builds',
@@ -181,35 +179,27 @@ describe('CLI bundle', () => {
         expect(stderr).toContain('got nothing');
     });
 
-    it('build-for-test --dry-run with nothing to build needs no token', () => {
-        const { status, stdout, stderr } = runCli(
-            'build-for-test',
-            '--target-branch',
-            'main',
-            '--actors',
-            'tester/bar',
-            '--dry-run',
-        );
+    it('get-affected-actors --since HEAD reports nothing', () => {
+        const { status, stdout, stderr } = runCli('get-affected-actors', '--since', headSha);
         expect(status, stderr).toBe(0);
-        expect(JSON.parse(stdout)).toEqual({ dryRun: true, builds: [] });
+        expect(JSON.parse(stdout)).toMatchObject({
+            commits: [],
+            functionallyChangedActors: [],
+            cosmeticallyChangedActors: [],
+        });
     });
 
-    it('build-for-test --dry-run fails cleanly when the Actor token is missing', () => {
-        const { status, stderr } = runCli('build-for-test', '--target-branch', 'main', '--dry-run');
-        expect(status).toBe(1);
-        expect(stderr).toContain('Env var FOO_TOKEN is not set (needed for actor "tester/foo")');
+    it('notify-release announces nothing, and needs no token, when there are no new commits', () => {
+        const affected = runCli('get-affected-actors', '--since', headSha).stdout;
+        const { status, stderr } = runCliWithInput(affected, 'notify-release', '--release-slack-channel', '#releases');
+        expect(status, stderr).toBe(0);
+        expect(stderr).toContain('No new commits, so there is no release to announce');
     });
 
-    it('release --dry-run stops when HEAD is the base commit', () => {
-        const { status, stderr } = runCli('release', '--base-commit', headSha, '--dry-run');
+    it('notify-release skips Slack without a channel', () => {
+        const affected = runCli('get-affected-actors', '--since', baseSha).stdout;
+        const { status, stderr } = runCliWithInput(affected, 'notify-release', '--dry-run');
         expect(status, stderr).toBe(0);
-        expect(stderr).toContain(`HEAD is the base commit ${headSha}, there is nothing new to release`);
-    });
-
-    it('release --dry-run with nothing to build skips Slack without a token', () => {
-        const { status, stderr } = runCli('release', '--base-commit', baseSha, '--actors', 'tester/bar', '--dry-run');
-        expect(status, stderr).toBe(0);
-        expect(stderr).toContain('{"dryRun":true,"builds":[]}');
         expect(stderr).toContain('Skipping slack notification');
     });
 

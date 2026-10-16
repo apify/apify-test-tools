@@ -139,31 +139,24 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         });
     });
 
-    it('build-for-test --dry-run plans a test build of the changed Actor only', () => {
-        const { status, stdout, stderr } = runCli(
-            'build-for-test',
-            '--target-branch',
-            'main',
+    it('a release pipeline plans a build of the default version of every changed Actor', () => {
+        const affected = runCli('get-affected-actors', '--since', baseSha);
+        expect(affected.status, affected.stderr).toBe(0);
+        const { functionallyChangedActors, cosmeticallyChangedActors } = JSON.parse(affected.stdout);
+
+        const { status, stderr } = runCliWithInput(
+            JSON.stringify({ actors: [...functionallyChangedActors, ...cosmeticallyChangedActors] }),
+            'build',
+            '--version-number',
+            'default',
             '--repo-url',
             REPO_URL,
             '--dry-run',
         );
         expect(status, stderr).toBe(0);
-        expect(JSON.parse(stdout)).toEqual({
-            dryRun: true,
-            builds: [
-                { actorFullName: ACTORS[0], versionNumber: '0.99', gitRepoUrl: `${REPO_URL}#feature:actors/dummy-1` },
-            ],
-        });
-    });
-
-    it('release --dry-run plans a build of the default version and tag', () => {
-        const { status, stderr } = runCli('release', '--base-commit', baseSha, '--repo-url', REPO_URL, '--dry-run');
-        expect(status, stderr).toBe(0);
         expect(stderr).toContain(
             `[DRY RUN] Would build:\n  ${ACTORS[0]} (0.0) from ${REPO_URL}#feature:actors/dummy-1`,
         );
-        expect(stderr).toContain('Skipping slack notification');
     });
 
     it('build-from-local --dry-run plans both Actors from the working tree', () => {

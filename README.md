@@ -310,48 +310,35 @@ Slack credentials in scope, so a postinstall script in the dependency tree canno
 
 ## Versioning and releases
 
-The workflows and the npm package live in one repo but ship on their own schedules. Two pointers
-decide what a consumer repo actually runs:
+The workflows and the npm package live in one repo but ship on their own schedules:
 
-| Pointer                             | What it selects                                | Moves when                                               |
-| ----------------------------------- | ---------------------------------------------- | -------------------------------------------------------- |
-| the `@workflows-v0` tag in `uses:`  | which workflows run                            | a master push, once the version below is published       |
-| `.github/workflows-package-version` | which `apify-test-tools` the workflows install | a stable release writes it; you may set it ahead of time |
+| What                                         | Consumers get it through                   | Ships when              |
+| -------------------------------------------- | ------------------------------------------ | ----------------------- |
+| the workflows and the CLI they call          | the `@workflows-v0` tag in `uses:`         | every master push       |
+| the lib (`testActor`, `describe`, matchers…) | `apify-test-tools` in their `package.json` | a stable release on npm |
 
-The setup action installs that **exact** version — not a range. A tag is therefore a complete
-statement: these workflows _and_ this library. The stable release writes the file into the same
-commit that bumps `package.json` and `CHANGELOG.md`, so a released commit always names the version
-it published, and rollout latency is unchanged: the release publishes and moves the tag in one run.
+The CLI is bundled with its dependencies into `.github/cli/apify-test-tools.mjs` (`npm run bundle`,
+run by the pre-commit hook and checked in CI), and the setup action runs it from there. Nothing is
+installed for it, so a tag is a complete statement: these workflows and this CLI, with the exact
+dependency versions from `package-lock.json` at that commit. The consumer's own `node_modules` is
+left alone, so their tests keep the lib version they locked.
 
-Prereleases are excluded. Master pushes publish a `-beta` that consumer repos must never install, so
-the pin only moves on a stable release; betas stay reachable through the lockfile path in the setup
-action, which is how branch testing works.
+- **Workflow or CLI change** — merge it. `workflows-v0` moves once checks and tests pass, and it goes
+  live. No release needed, even when a workflow starts using a new CLI feature: both are in the
+  same commit.
+- **Lib change** — merge it, then cut a release when you want it out. Consumers pick it up when
+  they update `apify-test-tools`.
 
-Nothing is coupled that doesn't need to be:
-
-- **Workflow-only change** — merge it. `workflows-v0` moves, it goes live, no release needed.
-- **Package-only change** — merge it, then cut a release when you want it out. The workflows are
-  unchanged, so consumers see nothing until the release lands.
-- **A workflow that calls a new CLI feature** — the one case that can break consumers, and the only
-  one with any ceremony. Put the package change, the workflow change, and the new pin in one PR. On
-  merge the tag is **held**: the CI job reports that the pinned version isn't on npm and leaves `workflows-v0`
-  where it is, so consumers keep running the previous workflows. Cut a stable release, and the tag
-  moves on its own. Run **Move major version tag** if you don't want to wait for the next master
-  push.
+The CLI and the lib in one job can be different versions now, so the formats between them are a
+contract: the `ACTOR_BUILDS` JSON that `build` writes and the lib reads, and the vitest JSON report
+`report-tests` reads. Add fields freely; renaming or removing one needs a new major tag.
 
 `workflows-v0` moving on every master push means `@workflows-v0` is as live as `@master` was —
-there's no staging step, just a gate on the package version. What the tag buys you is a
-`workflows-v1` for breaking workflow changes, so repos migrate one at a time instead of all at once,
-and a way to roll back by pointing the tag at an earlier commit. Bump `MAJOR_TAG` in
+there's no staging step. What the tag buys you is a `workflows-v1` for breaking workflow changes,
+so repos migrate one at a time instead of all at once, and a way to roll back by pointing the tag at
+an earlier commit (**Move major version tag** workflow). Bump `MAJOR_TAG` in
 `.github/workflows/_move_major_tag.yaml` to cut the next major; the old tag then freezes where it is
-and keeps working.
-
-Freezing is real, which is the whole reason the version is pinned rather than a floor. A frozen `workflows-v0`
-points at a commit whose pinned version never changes, so it keeps installing the library it was
-tested against no matter how far the package moves on. Had the workflows installed `>=<floor>`, a
-frozen `workflows-v0` would still resolve to whatever is newest — and since the release that enables
-`workflows-v1` is usually the same release that breaks `workflows-v0`, the migration window would
-have been zero.
+and keeps working, CLI included, since the bundle is part of the frozen commit.
 
 The tag tracks the **workflows'** contract, not the npm package version. They move independently on
 purpose, so `@workflows-v0` is expected to stay `@workflows-v0` after the package reaches 1.0 —
@@ -362,9 +349,8 @@ and those refs disagree, which is the mistake that would otherwise ship silently
 ### Testing workflow changes
 
 - Point [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions)
-  at your branch (`uses: ...@your-branch`). It has real attached Actors and tests. Because the
-  package lives here too, a master push publishes a `beta`, and the lockfile-beta path in the setup
-  action installs that exact version — so one branch tests both halves of a change together.
+  at your branch (`uses: ...@your-branch`). It has real attached Actors and tests. The branch carries
+  its own CLI bundle, so one branch tests the workflows and the CLI together.
 - To change the composite action itself, repoint the `uses:` refs inside the reusable workflows at
   your branch as well, and change them back before merging.
 - Make sure the shell code actually works on your laptop first.

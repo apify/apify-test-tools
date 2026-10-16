@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Runs apify-test-tools and passes it only secrets needed for the Actors, no other secrets are leaked.
 //
-//     jq ... | node .github/scripts/run-with-apify-tokens.mjs npx apify-test-tools build --version-number 0.99
+//     jq ... | node .github/scripts/run-with-apify-tokens.mjs apify-test-tools build --version-number 0.99
 //
 // The step passes the whole secrets map as ALL_SECRETS. The token names come from `tokenEnvVar` in
 // the repo's apify-test-tools.config.json, which is the same file apify-test-tools itself reads, so
 // the two can't drift. Everything else in the secrets map (npm, Slack, GitHub, anything else the
-// repo holds) is left out, and ALL_SECRETS itself is dropped, so the blob never reaches npx or
+// repo holds) is left out, and ALL_SECRETS itself is dropped, so the blob never reaches the CLI or
 // anything under node_modules.
 //
 // The command runs without a shell, so branch names and other interpolated arguments are passed

@@ -92,3 +92,28 @@ jobs:
               run: npm ci
             - name: Build
               run: npm run build
+
+    # The composite action runs the CLI from .github/cli/apify-test-tools.mjs, which the pre-commit
+    # hook rebuilds. This catches commits that skipped the hook, so a stale bundle never ships.
+    cli_bundle:
+        name: CLI bundle
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+            - name: Use Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+                  cache: 'npm'
+                  cache-dependency-path: 'package-lock.json'
+            - name: Install dependencies
+              run: npm ci
+            - name: Check the bundle is up to date
+              run: |
+                  npm run bundle
+                  if ! git diff --quiet -- .github/cli/; then
+                      echo "::error::.github/cli/apify-test-tools.mjs is out of date. Run \`npm run bundle\` and commit the result."
+                      exit 1
+                  fi
+                  node .github/cli/apify-test-tools.mjs --help > /dev/null

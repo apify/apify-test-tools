@@ -1,6 +1,11 @@
 echo "pre-commit: typechecking, linting, testing, checking code formatting, checking for unused exports & validating schemas"
 
 
+# The workflows run the CLI from this bundle, so it ships with every commit that changes bin/ or its
+# dependencies. Rebuilding takes well under a second.
+npm run -s bundle
+git add .github/cli/apify-test-tools.mjs
+
 npm test
 npm run format:check
 # We typecheck & lint last when we know our code works

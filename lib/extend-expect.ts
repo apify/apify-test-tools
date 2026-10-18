@@ -1,69 +1,67 @@
-import { inspect } from 'node:util';
-
 import type { Assertion, ExpectStatic } from 'vitest';
 
-import { checkRun } from './run-checks.js';
+import { getFinishChecks } from './finish-checks.js';
 import type { RunTestResult } from './run-test-result.js';
 import type { ToFinishWithOptions } from './types.js';
 
-/** Matchers that only check the type or shape of a value. */
-const SHAPE_MATCHERS = {
-    toBeArray: ['an array', (actual: unknown) => Array.isArray(actual)],
-    toBeBoolean: ['a boolean', (actual: unknown) => typeof actual === 'boolean'],
-    toBeEmptyArray: ['an empty array', (actual: unknown) => Array.isArray(actual) && actual.length === 0],
-    toBeNonEmptyArray: ['a non-empty array', (actual: unknown) => Array.isArray(actual) && actual.length > 0],
-    toBeNonEmptyString: ['a non-empty string', (actual: unknown) => typeof actual === 'string' && actual.length > 0],
-    toBeNumber: ['a number', (actual: unknown) => typeof actual === 'number'],
-    toBeFalse: ['false', (actual: unknown) => actual === false],
-    toBeTrue: ['true', (actual: unknown) => actual === true],
-    toBeNonEmptyObject: ['a non-empty object', (actual: unknown) => isObject(actual) && Object.keys(actual).length > 0],
-    toBeObject: ['an object', isObject],
-    toBeString: ['a string', (actual: unknown) => typeof actual === 'string'],
-    toBeWholeNumber: ['a whole number', (actual: unknown) => Number.isInteger(actual)],
-} as const satisfies Record<string, readonly [string, (actual: unknown) => boolean]>;
+const show = (value: unknown): string => {
+    try {
+        return JSON.stringify(value) ?? String(value);
+    } catch {
+        return String(value);
+    }
+};
 
-function isObject(actual: unknown): actual is object {
-    return typeof actual === 'object' && !Array.isArray(actual) && actual !== null;
-}
+const isObject = (value: unknown): value is object =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const shapeMatchers = Object.fromEntries(
-    Object.entries(SHAPE_MATCHERS).map(([name, [description, predicate]]) => [
-        name,
-        (actual: unknown) => ({
-            pass: predicate(actual),
-            message: () => `Expected ${inspect(actual)} to be ${description}`,
-            actual,
-        }),
-    ]),
-);
+/** A matcher that checks one property of the value, e.g. `toBeString` or `toBeEmptyArray`. */
+const predicateMatcher = (description: string, predicate: (actual: unknown) => boolean) => (actual: unknown) => {
+    const pass = predicate(actual);
+    return { pass, message: () => `Expected ${show(actual)} ${pass ? 'not ' : ''}to be ${description}` };
+};
 
 export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
     expect.extend({
-        ...shapeMatchers,
+        toBeArray: predicateMatcher('an array', Array.isArray),
+        toBeBoolean: predicateMatcher('a boolean', (actual) => typeof actual === 'boolean'),
+        toBeEmptyArray: predicateMatcher('an empty array', (actual) => Array.isArray(actual) && actual.length === 0),
+        toBeNonEmptyArray: predicateMatcher(
+            'a non-empty array',
+            (actual) => Array.isArray(actual) && actual.length > 0,
+        ),
+        toBeNonEmptyString: predicateMatcher(
+            'a non-empty string',
+            (actual) => typeof actual === 'string' && actual.length > 0,
+        ),
+        toBeNumber: predicateMatcher('a number', (actual) => typeof actual === 'number'),
+        toBeNonEmptyObject: predicateMatcher(
+            'a non-empty object',
+            (actual) => isObject(actual) && Object.keys(actual).length > 0,
+        ),
+        toBeObject: predicateMatcher('an object', isObject),
+        toBeString: predicateMatcher('a string', (actual) => typeof actual === 'string'),
+        toBeTrue: predicateMatcher('true', (actual) => actual === true),
+        toBeFalse: predicateMatcher('false', (actual) => actual === false),
+        toBeWholeNumber: predicateMatcher('a whole number', Number.isInteger),
         toBeWithinRange: (received, lower, upper) => {
             const pass = received >= lower && received <= upper;
             return {
                 pass,
-                message: () => `Expected ${received} to be within range <${lower}, ${upper}>`,
+                message: () => `Expected ${received} ${pass ? 'not ' : ''}to be within range <${lower}, ${upper}>`,
             };
         },
         toFinishWith: async <PpeEvent extends string>(
             received: RunTestResult,
             userOptions: ToFinishWithOptions<PpeEvent>,
         ) => {
-            const checks = await checkRun(received, userOptions);
-            const failed = checks.filter(({ pass }) => !pass);
+            const failed = (await getFinishChecks(received, userOptions)).filter((check) => !check.ok);
             return {
                 pass: failed.length === 0,
                 message: () =>
-                    `Run did not finish as expected. Failed assertions: ${failed
-                        .map(
-                            ({ name, expected, actual }) =>
-                                `Failed ${name} check, expected ${expected}, got ${actual}.`,
-                        )
-                        .join(' ')}`,
-                actual: ['Run:', ...failed.map(({ name, actual }) => `${name}=${actual}`)].join('\n  '),
-                expected: ['Run:', ...failed.map(({ name, expected }) => `${name}=${expected}`)].join('\n  '),
+                    `Run did not finish as expected. Failed assertions: ${failed.map((check) => check.failure).join(' ')}`,
+                actual: ['Run:', ...failed.map((check) => check.actual)].join('\n  '),
+                expected: ['Run:', ...failed.map((check) => check.expected)].join('\n  '),
             };
         },
         toStartWith: (received, prefix) => {

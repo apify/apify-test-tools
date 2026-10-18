@@ -2,67 +2,60 @@ import type { ActorRun, ApifyClient, KeyValueStoreClient } from 'apify-client';
 
 import type { Dataset, SdkCrawlerStatistics } from './types.js';
 
-/** Items fetched per request, so no single response can exceed Node's string limit on large datasets. */
+// Large datasets exceed the Node string limit when downloaded in one response, see
+// https://github.com/apify/apify-test-tools/issues/169
 const DATASET_PAGE_SIZE = 1000;
 
 /**
- * Runs `fn` at most once and shares its promise, so repeated and concurrent calls are one request.
- * A failure is not cached, the next call retries.
+ * Wraps `load` so it runs once, on first use. The promise is cached, so concurrent callers share one request
+ * and a falsy result (an empty input, a missing record) is cached too. A failure is not cached, the next call retries.
  */
-const once = <T>(fn: () => Promise<T>): (() => Promise<T>) => {
-    let promise: Promise<T> | undefined;
+const lazy = <T>(load: () => Promise<T>): (() => Promise<T>) => {
+    let cached: Promise<T> | undefined;
     return async () => {
-        promise ??= fn().catch((error) => {
-            promise = undefined;
+        cached ??= load().catch((error) => {
+            cached = undefined;
             throw error;
         });
-        return promise;
+        return cached;
     };
 };
 
 export class RunTestResult {
+    private readonly kvs: KeyValueStoreClient;
+
     constructor(
         private readonly apifyClient: ApifyClient,
         private readonly run: ActorRun,
     ) {
-        /**/
+        this.kvs = apifyClient.keyValueStore(run.defaultKeyValueStoreId);
     }
 
-    getStatistics = once(async (): Promise<SdkCrawlerStatistics | undefined> => {
-        const record = await this.getKeyValueStoreClient().getRecord('SDK_CRAWLER_STATISTICS_0');
-        return record?.value as SdkCrawlerStatistics | undefined;
-    });
+    getStatistics = lazy(
+        async () => (await this.kvs.getRecord('SDK_CRAWLER_STATISTICS_0'))?.value as SdkCrawlerStatistics | undefined,
+    );
 
-    getLog = once(async (): Promise<string> => {
-        return (await this.apifyClient.run(this.id).log().get()) as string;
-    });
+    getLog = lazy(async () => (await this.apifyClient.run(this.run.id).log().get()) as string);
 
-    private readonly datasetItems = once(async (): Promise<unknown[]> => {
+    private readonly loadDataset = lazy(async (): Promise<Dataset<unknown>> => {
         const dataset = this.apifyClient.dataset(this.run.defaultDatasetId);
         const items: unknown[] = [];
         for (;;) {
             const page = await dataset.listItems({ offset: items.length, limit: DATASET_PAGE_SIZE });
             items.push(...page.items);
-            if (page.items.length === 0 || items.length >= page.total) {
-                return items;
-            }
+            if (page.items.length < DATASET_PAGE_SIZE) return { items };
         }
     });
 
-    getDataset = async <T>(): Promise<Dataset<T>> => ({ items: (await this.datasetItems()) as T[] });
+    getDataset = async <T>(): Promise<Dataset<T>> => (await this.loadDataset()) as Dataset<T>;
 
-    getKeyValueStoreClient = (): KeyValueStoreClient => {
-        return this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
-    };
+    getKeyValueStoreClient = (): KeyValueStoreClient => this.kvs;
 
-    private readonly inputRecord = once(async () => (await this.getKeyValueStoreClient().getRecord('INPUT'))?.value);
+    private readonly loadInput = lazy(async () => (await this.kvs.getRecord('INPUT'))?.value);
 
-    getInput = async <T>(): Promise<T> => (await this.inputRecord()) as T;
+    getInput = async <T>(): Promise<T> => (await this.loadInput()) as T;
 
-    /** Fetches the run again, so unlike `id` and `status` it also reflects what changed after the run finished. */
-    getRunInfo = once(async (): Promise<ActorRun> => {
-        return (await this.apifyClient.run(this.run.id).get())!;
-    });
+    getRunInfo = lazy(async () => (await this.apifyClient.run(this.run.id).get())!);
 
     get id(): string {
         return this.run.id;

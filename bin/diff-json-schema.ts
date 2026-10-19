@@ -54,6 +54,7 @@ const getJsonFileVersions = async (
 /**
  * Returns true when the selected JSON file differs only in cosmetic fields
  * across every baseline represented by the resolved diff.
+ * (title, description, example, enumTitles, sectionCaption, sectionDescription).
  */
 export const isCosmeticOnlyJsonSchemaChange = async (
     diff: ResolvedGitFileDiff,

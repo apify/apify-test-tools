@@ -139,13 +139,18 @@ describe('isCosmeticOnlyJsonSchemaChange', () => {
         await expect(isCosmeticOnlyJsonSchemaChange(simpleDiff, 'actors/foo/actor.json')).resolves.toBe(false);
     });
 
-    test('returns false when invalid JSON in old content', async () => {
-        mockGitCalls('not json', '{}');
-        await expect(isCosmeticOnlyJsonSchemaChange(simpleDiff, 'actors/foo/actor.json')).resolves.toBe(false);
+    test('compares unreadable old content as empty when the current file is cosmetic', async () => {
+        mockGitCalls('not json', JSON.stringify({ title: 'New title' }));
+        await expect(isCosmeticOnlyJsonSchemaChange(simpleDiff, 'actors/foo/actor.json')).resolves.toBe(true);
     });
 
-    test('returns false when invalid JSON in new content', async () => {
-        mockGitCalls('{}', 'not json');
+    test('compares unreadable new content as empty when the old file is cosmetic', async () => {
+        mockGitCalls(JSON.stringify({ title: 'Old title' }), 'not json');
+        await expect(isCosmeticOnlyJsonSchemaChange(simpleDiff, 'actors/foo/actor.json')).resolves.toBe(true);
+    });
+
+    test('does not classify an unreadable version as cosmetic when the other has a functional field', async () => {
+        mockGitCalls('not json', JSON.stringify({ type: 'string', title: 'New title' }));
         await expect(isCosmeticOnlyJsonSchemaChange(simpleDiff, 'actors/foo/actor.json')).resolves.toBe(false);
     });
 
@@ -263,5 +268,22 @@ describe('isCosmeticOnlyJsonSchemaChange', () => {
         gitCommandSpy.mockRejectedValueOnce(new Error('missing schema'));
 
         await expect(isCosmeticOnlyJsonSchemaChange(diff, 'actors/foo/actor.json')).resolves.toBe(false);
+    });
+
+    it('compares both baselines when an intersected file is absent at the merge base', async () => {
+        const diff = {
+            resolutionType: 'intersection' as const,
+            changedFiles: ['actors/foo/actor.json'],
+            mergeBaseSha: 'merge-base',
+            currentRef: 'HEAD',
+            baseCommit: 'validated-commit',
+        };
+        gitCommandSpy
+            .mockRejectedValueOnce(new Error('missing base'))
+            .mockResolvedValueOnce(JSON.stringify({ title: 'New title' }))
+            .mockResolvedValueOnce(JSON.stringify({ title: 'Old title that still belongs to the branch' }));
+
+        await expect(isCosmeticOnlyJsonSchemaChange(diff, 'actors/foo/actor.json')).resolves.toBe(true);
+        expect(gitCommandSpy).toHaveBeenCalledTimes(3);
     });
 });

@@ -25,6 +25,32 @@ const isCosmeticObjectChange = (oldVal: unknown, newVal: unknown, currentKey?: s
     return false;
 };
 
+const getJsonFileVersions = async (
+    filePath: string,
+    diff: ResolvedGitFileDiff,
+): Promise<{
+    mergeBaseJson?: unknown;
+    currentJson?: unknown;
+    baseCommitJson?: unknown;
+}> => {
+    const readJson = async (ref: string): Promise<unknown | undefined> => {
+        try {
+            return JSON.parse(await runGitCommand(['show', `${ref}:${filePath}`]));
+        } catch {
+            return undefined;
+        }
+    };
+
+    const refs = [
+        diff.mergeBaseSha,
+        diff.currentRef,
+        ...(diff.resolutionType === 'intersection' ? [diff.baseCommit] : []),
+    ];
+    // destructuring `baseCommitJson` out of range is intentional, since it will be undefined which is what we want
+    const [mergeBaseJson, currentJson, baseCommitJson] = await Promise.all(refs.map(readJson));
+    return { mergeBaseJson, currentJson, baseCommitJson };
+};
+
 /**
  * Returns true when the selected JSON file differs only in cosmetic fields
  * across every baseline represented by the resolved diff.
@@ -33,35 +59,34 @@ export const isCosmeticOnlyJsonSchemaChange = async (
     diff: ResolvedGitFileDiff,
     changedFilepath: string,
 ): Promise<boolean> => {
-    const [mergeBaseJson, newJson] = await Promise.all([
-        runGitCommand(['show', `${diff.mergeBaseSha}:${changedFilepath}`])
-            .then(JSON.parse)
-            .catch(() => undefined),
-        runGitCommand(['show', `${diff.currentRef}:${changedFilepath}`])
-            .then(JSON.parse)
-            .catch(() => undefined),
-    ]);
-    if (!mergeBaseJson || !newJson) {
+    let { mergeBaseJson, currentJson, baseCommitJson } = await getJsonFileVersions(changedFilepath, diff);
+    // 2 cases here and none of them are expected:
+    // - none are defined, but then how do we got a diff?? probably malformed everywhere
+    // - only baseCommitJson is defined which might be all malformed or deleted outside of branch (which shouldn't be able to get past our previous checks)
+    if (!mergeBaseJson && !currentJson) {
         logger.info(
-            `Failed to get JSON content for ${changedFilepath} at refs ${diff.mergeBaseSha} and ${diff.currentRef}, maybe it is new file or deleted? Treating it as a non-cosmetic change.`,
+            `Could not read JSON content for ${changedFilepath} at refs ${diff.mergeBaseSha} and ${diff.currentRef}. Could the file be missing or malformed at both refs? Treating the change as non-cosmetic.`,
         );
         return false;
     }
-    const isBranchACosmeticChange = isCosmeticObjectChange(mergeBaseJson, newJson);
+    // Compare an unavailable version with an empty object. The change is cosmetic
+    // only if every field in the available version is cosmetic, as can happen when
+    // adding or deleting a file containing only cosmetic fields.
+    mergeBaseJson ??= {};
+    currentJson ??= {};
+    const isBranchACosmeticChange = isCosmeticObjectChange(mergeBaseJson, currentJson);
 
     if (diff.resolutionType === 'simple') {
         return isBranchACosmeticChange;
     }
-    const previousRevisionJson = await runGitCommand(['show', `${diff.baseCommit}:${changedFilepath}`])
-        .then(JSON.parse)
-        .catch(() => undefined);
-    if (!previousRevisionJson) {
+    if (!baseCommitJson) {
         logger.info(
-            `Failed to get JSON content for ${changedFilepath} at refs ${diff.baseCommit}, maybe it is new file or deleted? Treating it as a non-cosmetic change.`,
+            `Could not read JSON content for ${changedFilepath} at ref ${diff.baseCommit}. Could the file be missing or malformed there? Comparing that version as an empty object.`,
         );
-        return false;
+        // this might doom the comparison to false, but it could still go through in some cases
+        baseCommitJson ??= {};
     }
-    const isChangeFromPreviousCosmetic = isCosmeticObjectChange(previousRevisionJson, newJson);
+    const isChangeFromPreviousCosmetic = isCosmeticObjectChange(baseCommitJson, currentJson);
     // Same as diffing, we need the intersection of the two cosmetics to be cosmetic overall
     return isBranchACosmeticChange && isChangeFromPreviousCosmetic;
 };

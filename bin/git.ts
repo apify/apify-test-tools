@@ -5,6 +5,21 @@ import { GitCommandError, runGitCommand } from './utils.js';
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
 
+/** List paths whose contents differ between two refs. */
+export const getDiffChangedFiles = async (fromRef: string, toRef: string): Promise<string[]> => {
+    const output = await runGitCommand(['diff', '--name-only', '-z', fromRef, toRef], {
+        operation: `list files changed between refs ${fromRef} and ${toRef}`,
+    });
+    return output.split('\0').filter(Boolean);
+};
+
+/** Find a common ancestor of two refs. */
+export const getMergeBase = async (targetRef: string, currentRef: string): Promise<string> => {
+    return runGitCommand(['merge-base', targetRef, currentRef], {
+        operation: 'find the common ancestor of the target and current commits',
+    });
+};
+
 /**
  * Gets the list of changed files between the given commits (inclusive).
  */

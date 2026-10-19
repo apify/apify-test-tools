@@ -5,24 +5,19 @@ import { GitCommandError, runGitCommand } from './utils.js';
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
 
-/**
- * Gets the list of changed files between the given commits (inclusive).
- */
-export const getChangedFiles = async (commits: Commit[]) => {
-    // getCommits never returns an empty list (the rerun check returns all commits when the base commit
-    // is the branch HEAD, and an empty git range throws when parsing), so this signals a programmer error
-    if (commits.length === 0) {
-        throw new Error('Cannot get changed files: the commit list is empty. This should never happen.');
-    }
+/** List paths whose contents differ between two refs. */
+export const getDiffChangedFiles = async (fromRef: string, toRef: string): Promise<string[]> => {
+    const output = await runGitCommand(['diff', '--name-only', '-z', fromRef, toRef], {
+        operation: `list files changed between refs ${fromRef} and ${toRef}`,
+    });
+    return output.split('\0').filter(Boolean);
+};
 
-    const changedFilesString = await runGitCommand(
-        ['diff', '--name-only', `${commits[0].sha}~..${commits[commits.length - 1].sha}`],
-        { operation: 'get the list of changed files between commits' },
-    );
-
-    const changedFiles = changedFilesString.split('\n').filter(Boolean);
-    logger.info(`Changed files (up to 50): ${changedFiles.slice(0, 50).join(', ')}`);
-    return changedFiles;
+/** Find a common ancestor of two refs. */
+export const getMergeBase = async (targetRef: string, currentRef: string): Promise<string> => {
+    return runGitCommand(['merge-base', targetRef, currentRef], {
+        operation: 'find the common ancestor of the target and current commits',
+    });
 };
 
 /**

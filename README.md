@@ -51,7 +51,9 @@ For a single-actor repo, set `"folder": "."` in the config and place `.actor/act
 
 ### Change detection
 
-When a PR is opened or code is pushed, the tool determines which actors need to be built and tested based on the changed files. For each changed file, for each actor:
+When a PR is opened or code is pushed, the tool determines which actors need to be built and tested based on the changed files. For PRs, it also considers the last successfully validated commit when available.
+
+Then it checks for changes on each changed file, for each actor by doing the following:
 
 1. **Sibling exclusion** — files inside another actor's `folder` are excluded first. This prevents an actor with broad context from being triggered by changes that belong to a sibling actor.
 2. **CHANGELOG classification** — a `CHANGELOG.md` file is always `cosmetic` (only triggers a release build, not tests), for every actor, regardless of context or folder. (See [issue #106](https://github.com/apify/apify-test-tools/issues/106).)

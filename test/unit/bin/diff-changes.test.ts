@@ -59,7 +59,7 @@ const amazonActor = actorConfig('junglee/amazon-crawler', 'actors/junglee_Amazon
     'shared',
 ]);
 
-const commits = [{ sha: 'Commit1', author: '', date: '', message: '' }];
+const cosmeticDiffRefs = { oldRef: 'Commit1', newRef: 'HEAD' };
 
 describe('getChangedActors', () => {
     beforeEach(() => {
@@ -68,14 +68,14 @@ describe('getChangedActors', () => {
     });
 
     it('returns empty array when no files changed', async () => {
-        expect(await getChangedActors({ filepathsChanged: [], actorConfigs, commits })).toEqual([]);
+        expect(await getChangedActors({ filepathsChanged: [], actorConfigs, diffRefs: cosmeticDiffRefs })).toEqual([]);
     });
 
     it('returns empty array when only ignored top-level files changed', async () => {
         const result = await getChangedActors({
             filepathsChanged: ['.gitignore', 'README.md', '.husky/pre-commit', '.vscode/settings.json'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([]);
     });
@@ -84,7 +84,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/.gitignore-helper.ts'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([miniActor]);
     });
@@ -93,7 +93,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/main.ts'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([miniActor]);
     });
@@ -102,7 +102,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/README.md'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: true,
         });
         expect(result).toEqual([miniActor]);
@@ -112,7 +112,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/README.md'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: false,
         });
         expect(result).toEqual([]);
@@ -123,7 +123,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: true,
         });
         expect(result).toEqual([miniActor]);
@@ -134,7 +134,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: false,
         });
         expect(result).toEqual([]);
@@ -144,7 +144,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/.actor/actor.json'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([miniActor]);
     });
@@ -154,7 +154,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/package.json'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: false,
         });
         expect(result).toEqual([miniActor]);
@@ -166,21 +166,66 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/.actor/input_schema.json'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: false,
         });
         expect(result).toEqual([]);
         expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).toHaveBeenCalledWith(
-            commits,
+            cosmeticDiffRefs.oldRef,
+            cosmeticDiffRefs.newRef,
             'actors/foo_bar/.actor/input_schema.json',
         );
+    });
+
+    it('checks both baselines when the changed files came from an intersection', async () => {
+        const cosmeticSpy = vi
+            .spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange')
+            .mockResolvedValueOnce(true)
+            .mockResolvedValueOnce(false);
+        const filePath = 'actors/foo_bar/.actor/input_schema.json';
+
+        const result = await getChangedActors({
+            filepathsChanged: [filePath],
+            actorConfigs,
+            diffRefs: { oldRef: 'merge-base', newRef: 'HEAD', baseCommit: 'validated-commit' },
+        });
+
+        expect(result).toEqual([miniActor]);
+        expect(cosmeticSpy).toHaveBeenNthCalledWith(1, 'merge-base', 'HEAD', filePath);
+        expect(cosmeticSpy).toHaveBeenNthCalledWith(2, 'validated-commit', 'HEAD', filePath);
+    });
+
+    it('skips an intersected JSON change only when both comparisons are cosmetic', async () => {
+        vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(true);
+
+        const result = await getChangedActors({
+            filepathsChanged: ['actors/foo_bar/.actor/input_schema.json'],
+            actorConfigs,
+            diffRefs: { oldRef: 'merge-base', newRef: 'HEAD', baseCommit: 'validated-commit' },
+        });
+
+        expect(result).toEqual([]);
+        expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).toHaveBeenCalledTimes(2);
+    });
+
+    it('builds when the whole-branch JSON comparison is functional', async () => {
+        const cosmeticSpy = vi.spyOn(DiffJsonSchema, 'isCosmeticOnlyJsonSchemaChange').mockResolvedValue(false);
+
+        const result = await getChangedActors({
+            filepathsChanged: ['actors/foo_bar/.actor/input_schema.json'],
+            actorConfigs,
+            diffRefs: { oldRef: 'merge-base', newRef: 'HEAD', baseCommit: 'validated-commit' },
+        });
+
+        expect(result).toEqual([miniActor]);
+        expect(cosmeticSpy).toHaveBeenCalledTimes(1);
     });
 
     it('does not trigger narrow-context actor when shared file changes', async () => {
         const result = await getChangedActors({
             filepathsChanged: ['shared/utils.ts'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toContainEqual(miniActor);
         expect(result).not.toContainEqual(standaloneActor);
@@ -190,7 +235,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['CHANGELOG.md'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: true,
         });
         expect(result).toEqual(expect.arrayContaining([miniActor, standaloneActor]));
@@ -201,7 +246,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['CHANGELOG.md'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: false,
         });
         expect(result).toEqual([]);
@@ -211,7 +256,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['docs/CHANGELOG.md'],
             actorConfigs: [miniActor, standaloneActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: true,
         });
         expect(result).toEqual([miniActor, standaloneActor]);
@@ -225,7 +270,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['docs/guide.md'],
             actorConfigs: [configuredActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: true,
         });
         expect(result).toEqual([]);
@@ -235,7 +280,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['standalone-actors/standalone/src/main.ts'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toContainEqual(standaloneActor);
     });
@@ -244,7 +289,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/main.ts', 'actors/foo_bar/package.json'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toHaveLength(1);
         expect(result).toContainEqual(miniActor);
@@ -254,7 +299,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/main.ts', 'standalone-actors/standalone/Dockerfile'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toContainEqual(miniActor);
         expect(result).toContainEqual(standaloneActor);
@@ -265,7 +310,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/shopify/src/main.ts'],
             actorConfigs: [ownerlessActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([ownerlessActor]);
     });
@@ -275,7 +320,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['.actor/actor.json'],
             actorConfigs: [rootActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([rootActor]);
     });
@@ -284,7 +329,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['.actor/actor.json'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([miniActor]);
     });
@@ -296,7 +341,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['Actors/FOO_BAR/Main.ts'],
             actorConfigs: [narrowActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([]);
     });
@@ -312,7 +357,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['packages/shared/utils.ts'],
             actorConfigs: [overrideActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([overrideActor]);
     });
@@ -328,7 +373,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['other-dir/file.ts'],
             actorConfigs: [overrideActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([]);
     });
@@ -339,7 +384,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/b/src/main.ts'],
             actorConfigs: [actorA, actorB],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([actorB]);
     });
@@ -352,7 +397,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/child/src/main.ts'],
             actorConfigs: [rootActor, childActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).not.toContainEqual(rootActor);
         expect(result).toContainEqual(childActor);
@@ -366,7 +411,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['lib/shared-utils.ts'],
             actorConfigs: [rootActor, childActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toContainEqual(rootActor);
         expect(result).not.toContainEqual(childActor);
@@ -379,7 +424,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/node_modules/foo.js'],
             actorConfigs: [miniActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([]);
     });
@@ -389,7 +434,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/main.ts'],
             actorConfigs: [miniActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([miniActor]);
     });
@@ -399,7 +444,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['test/platform/daily/foo.test.ts'],
             actorConfigs: [miniActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             testFilesGlob: 'test/platform/**',
         });
         expect(result).toEqual([miniActor]);
@@ -410,7 +455,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['test/platform/daily/foo.test.ts'],
             actorConfigs: [miniActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([]);
     });
@@ -420,7 +465,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['Test/Platform/Foo.test.ts'],
             actorConfigs: [miniActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             testFilesGlob: 'test/platform/**',
         });
         expect(result).toEqual([miniActor]);
@@ -428,7 +473,7 @@ describe('getChangedActors', () => {
             await getChangedActors({
                 filepathsChanged: ['actors/foo_bar/node_modules/foo.js'],
                 actorConfigs: [miniActor],
-                commits,
+                diffRefs: cosmeticDiffRefs,
                 testFilesGlob: 'test/platform/**',
             }),
         ).toEqual([]);
@@ -439,7 +484,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['test/platform/daily/foo.test.ts'],
             actorConfigs: [standaloneActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             testFilesGlob: 'test/platform/**',
         });
         expect(result).toEqual([]);
@@ -454,7 +499,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['test/platform/standalone.test.ts'],
             actorConfigs: [actorWithTests],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             testFilesGlob: 'test/platform/**',
         });
         expect(result).toEqual([actorWithTests]);
@@ -464,7 +509,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['lib/config.json'],
             actorConfigs: [miniActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([miniActor]);
     });
@@ -473,7 +518,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['docs/README.md'],
             actorConfigs: [miniActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: true,
         });
         expect(result).toEqual([]);
@@ -483,7 +528,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['actors/foo_bar/README.md'],
             actorConfigs: [miniActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: true,
         });
         expect(result).toEqual([miniActor]);
@@ -493,7 +538,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['standalone-actors/standalone/.eslintrc'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([]);
     });
@@ -502,7 +547,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['code/some/code.ts'],
             actorConfigs: [miniActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([miniActor]);
     });
@@ -511,7 +556,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['code/.eslintrc'],
             actorConfigs: [amazonActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([]);
     });
@@ -520,7 +565,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['shared/Dockerfile'],
             actorConfigs: [amazonActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(result).toEqual([amazonActor]);
     });
@@ -529,7 +574,7 @@ describe('getChangedActors', () => {
         const result = await getChangedActors({
             filepathsChanged: ['code/README.md'],
             actorConfigs: [amazonActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             isLatest: true,
         });
         expect(result).toEqual([]);
@@ -547,7 +592,7 @@ describe('getChangedActors logging', () => {
         await getChangedActors({
             filepathsChanged: ['actors/foo_bar/src/main.ts'],
             actorConfigs: [miniActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(logger.info).toHaveBeenCalledWith(
@@ -563,7 +608,7 @@ describe('getChangedActors logging', () => {
         await getChangedActors({
             filepathsChanged: ['shared/shared.ts'],
             actorConfigs: [actorA, actorB],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(logger.info).toHaveBeenCalledWith(
@@ -580,7 +625,7 @@ describe('getChangedActors logging', () => {
         await getChangedActors({
             filepathsChanged: ['shared.ts', 'actors/a/a-only.ts', 'actors/b/b-only.ts'],
             actorConfigs: [actorA, actorB],
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         const errorCalls = vi.mocked(logger.info).mock.calls.map((call) => call[0]);
@@ -601,7 +646,7 @@ describe('getChangedActors logging', () => {
         await getChangedActors({
             filepathsChanged: ['test/platform/standalone.test.ts'],
             actorConfigs: [standaloneActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             testFilesGlob: 'test/platform/**',
         });
 
@@ -612,7 +657,7 @@ describe('getChangedActors logging', () => {
         const result = await getChangedActors({
             filepathsChanged: ['test/platform/standalone.test.ts', 'standalone-actors/standalone/src/main.ts'],
             actorConfigs: [standaloneActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             testFilesGlob: 'test/platform/**',
         });
 
@@ -624,7 +669,7 @@ describe('getChangedActors logging', () => {
         await getChangedActors({
             filepathsChanged: ['test/platform/foo.test.ts', 'test/platform/README.md', 'test/platform/CHANGELOG.md'],
             actorConfigs: [miniActor],
-            commits,
+            diffRefs: cosmeticDiffRefs,
             testFilesGlob: 'test/platform/**',
         });
 
@@ -635,7 +680,7 @@ describe('getChangedActors logging', () => {
         await getChangedActors({
             filepathsChanged: ['.gitignore', '.prettierrc'],
             actorConfigs,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('Shared changes'));

@@ -1,5 +1,4 @@
 import { logger } from './logger.js';
-import type { Commit } from './types.js';
 import { runGitCommand } from './utils.js';
 
 const COSMETIC_JSON_FIELD_NAMES = new Set([
@@ -29,11 +28,11 @@ const isCosmeticObjectChange = (oldVal: unknown, newVal: unknown, currentKey?: s
  * Returns true if the two JSON strings differ only in cosmetic fields
  * (title, description, example, enumTitles, sectionCaption, sectionDescription).
  */
-export const isCosmeticOnlyJsonSchemaChange = async (commits: Commit[], changedFilepath: string): Promise<boolean> => {
-    // TODO: validate this is the right commit range
-    const oldRef = `${commits[0].sha}~`;
-    const newRef = commits[commits.length - 1].sha;
-
+export const isCosmeticOnlyJsonSchemaChange = async (
+    oldRef: string,
+    newRef: string,
+    changedFilepath: string,
+): Promise<boolean> => {
     const [oldJson, newJson] = await Promise.all([
         runGitCommand(['show', `${oldRef}:${changedFilepath}`])
             .then(JSON.parse)

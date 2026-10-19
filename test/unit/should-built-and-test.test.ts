@@ -62,7 +62,7 @@ describe('Should build and test parser', () => {
         ),
     ];
 
-    const cosmeticDiffRefs = { oldRef: 'Commit1', newRef: 'Commit3' };
+    const simpleDiff = { resolutionType: 'simple' as const, mergeBaseSha: 'Commit1', currentRef: 'Commit3' };
 
     test('Ignores dev-only readme', async () => {
         const FILES = ['README.md', 'code/README.md', 'shared/README.md'];
@@ -70,8 +70,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual([]);
@@ -83,8 +82,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual([]);
@@ -96,8 +94,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -109,16 +106,14 @@ describe('Should build and test parser', () => {
         const actorsChangedNotLatest = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
         expect(actorsChangedNotLatest).toEqual([]);
 
         const actorsChangedLatest = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
         expect(actorsChangedLatest).toEqual(ACTOR_CONFIGS);
     });
@@ -129,8 +124,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -142,8 +136,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -158,8 +151,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0], ACTOR_CONFIGS[2]]);
@@ -171,8 +163,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -188,8 +179,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS);
@@ -204,8 +194,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual([]);
@@ -217,8 +206,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -230,8 +218,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -243,8 +230,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -259,8 +245,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -272,8 +257,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[2]]);
@@ -331,8 +315,7 @@ describe('Should build and test parser', () => {
         const actorsChanged = await getChangedActors({
             actorConfigs: ACTOR_CONFIGS_GOOGLE_MAPS,
             isLatest: false,
-            filepathsChanged: FILES,
-            diffRefs: cosmeticDiffRefs,
+            diff: { ...simpleDiff, changedFiles: FILES },
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS_GOOGLE_MAPS.slice(0, 8));

@@ -92,19 +92,12 @@ const globalOptions = {
 
 const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: boolean }) => {
     const actorConfigs = await readConfigFile(config);
-    const fileDiff = await resolveGitFileDiff(config);
-    const cosmeticDiffRefs = {
-        oldRef: fileDiff.mergeBaseSha,
-        newRef: fileDiff.currentRef,
-        ...(fileDiff.resolutionType === 'intersection' ? { baseCommit: fileDiff.baseCommit } : {}),
-    };
-
+    const diff = await resolveGitFileDiff(config);
     // The full check uses the net merge-base diff, optionally restricted to files changed since validation.
     return getChangedActors({
-        filepathsChanged: fileDiff.changedFiles,
         actorConfigs,
         isLatest,
-        diffRefs: cosmeticDiffRefs,
+        diff,
         testFilesGlob: config.testFilesGlob,
     });
 };
@@ -138,8 +131,8 @@ await yargs()
         '',
         (y) => y.options(gitRangeOptions),
         async (args) => {
-            const fileDiff = await resolveGitFileDiff(args);
-            writeJson(fileDiff.changedFiles);
+            const diff = await resolveGitFileDiff(args);
+            writeJson(diff.changedFiles);
         },
     )
     .command(
@@ -225,10 +218,9 @@ await yargs()
             const isLatest = true;
             const actorConfigs = await readConfigFile(args);
             const actorsChanged = await getChangedActors({
-                filepathsChanged: changedFiles,
                 actorConfigs,
                 isLatest,
-                diffRefs: { oldRef: baseSha, newRef: 'HEAD' },
+                diff: { resolutionType: 'simple', changedFiles, mergeBaseSha: baseSha, currentRef: 'HEAD' },
             });
             const { dryRun, reportSlackChannel, releaseSlackChannel } = args;
             const builds = await runBuilds({

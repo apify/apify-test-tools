@@ -2,15 +2,15 @@ import picomatch from 'picomatch';
 
 import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
 import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
+import type { ResolvedGitFileDiff } from './git-file-diff.js';
 import { logger } from './logger.js';
 import type { ActorConfig } from './types.js';
 import { type RelativeDir, RelativeFile } from './utils/path/repo-relative.js';
 
 interface ShouldBuildAndTestOptions {
-    filepathsChanged: string[];
     actorConfigs: ActorConfig[];
     isLatest?: boolean;
-    diffRefs: { oldRef: string; newRef: string; baseCommit?: string };
+    diff: ResolvedGitFileDiff;
     // Glob relative to the repo root. Matching files count as changes even when .dockerignore lists them.
     testFilesGlob?: string;
 }
@@ -53,7 +53,7 @@ type FileChangeForActor =
 const classifyFileChange = async (
     changedFile: RelativeFile,
     actorConfig: ActorConfig,
-    diffRefs: ShouldBuildAndTestOptions['diffRefs'],
+    diff: ShouldBuildAndTestOptions['diff'],
     dockerIgnoreMatcher: DockerIgnoreMatcher,
     isTestFile: (filePath: string) => boolean,
 ): Promise<FileChangeForActor> => {
@@ -92,12 +92,7 @@ const classifyFileChange = async (
     }
 
     if (lowercaseFilePath.endsWith('.json') && isUnderActorDotDir) {
-        const { oldRef, newRef, baseCommit } = diffRefs;
-        // A file selected by both diffs is cosmetic only if neither range contains a functional JSON change.
-        const isCosmetic =
-            // TODO: this is a temporary measure to reduce the size of this PR. Will rework `isCosmeticOnlyJsonSchemaChange` on a follow-up PR.
-            (await isCosmeticOnlyJsonSchemaChange(oldRef, newRef, changedFile.path)) &&
-            (baseCommit === undefined || (await isCosmeticOnlyJsonSchemaChange(baseCommit, newRef, changedFile.path)));
+        const isCosmetic = await isCosmeticOnlyJsonSchemaChange(diff, changedFile.path);
         if (isCosmetic) return { impact: 'cosmetic', semanticallyVerified: true };
     }
 
@@ -170,10 +165,9 @@ const logChangeGroups = (groups: ChangeGroup[]): void => {
 };
 
 export const getChangedActors = async ({
-    filepathsChanged,
     actorConfigs,
     isLatest = false,
-    diffRefs,
+    diff,
     testFilesGlob,
 }: ShouldBuildAndTestOptions): Promise<ActorConfig[]> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
@@ -183,14 +177,14 @@ export const getChangedActors = async ({
     for (const actorConfig of actorConfigs) {
         const dockerIgnoreMatcher = loadDockerIgnore(actorConfig.dockerContextDir);
 
-        for (const originalFilePath of filepathsChanged) {
+        for (const originalFilePath of diff.changedFiles) {
             const filePath = new RelativeFile(originalFilePath);
 
             if (isExcludedBySibling(filePath, actorConfig, actorConfigs)) {
                 continue;
             }
 
-            const change = await classifyFileChange(filePath, actorConfig, diffRefs, dockerIgnoreMatcher, isTestFile);
+            const change = await classifyFileChange(filePath, actorConfig, diff, dockerIgnoreMatcher, isTestFile);
             if (change.impact !== 'outside-context' && isTestFile(originalFilePath)) {
                 testFilesInContext.add(originalFilePath);
             }
@@ -212,7 +206,7 @@ export const getChangedActors = async ({
     const groups = groupFilesByActorSet(fileToActors);
     logChangeGroups(groups);
 
-    for (const testFile of filepathsChanged.filter(
+    for (const testFile of diff.changedFiles.filter(
         (filePath) => isTestFile(filePath) && !testFilesInContext.has(filePath),
     )) {
         logger.warn(

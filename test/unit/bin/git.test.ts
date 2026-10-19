@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     getBranchOnlyChangedFiles,
-    getChangedFiles,
     getCommits,
     getCurrentBranch,
     getReleaseChanges,
@@ -97,73 +96,6 @@ describe('getCommits', () => {
             ['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', 'main..feature-branch'],
             { operation: 'list commits reachable from the source ref but absent from the target ref' },
         );
-    });
-});
-
-describe('getChangedFiles', () => {
-    let gitCommandSpy: MockInstance;
-
-    beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('file1.txt\nfolder/file2.txt');
-    });
-
-    it('should return changed files between commits', async () => {
-        // Arrange
-        const firstSha = '1'.repeat(40);
-        const lastSha = '3'.repeat(40);
-        const commits = [
-            { sha: firstSha, author: '', date: '', message: '' },
-            { sha: lastSha, author: '', date: '', message: '' },
-        ];
-
-        // Act
-        const changedFiles = await getChangedFiles(commits);
-
-        // Assert
-        expect(changedFiles).toStrictEqual(['file1.txt', 'folder/file2.txt']);
-
-        expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(['diff', '--name-only', `${firstSha}~..${lastSha}`], {
-            operation: 'get the list of changed files between commits',
-        });
-    });
-
-    it('should throw without running git when the commit list is empty', async () => {
-        // Act & Assert
-        await expect(getChangedFiles([])).rejects.toThrow('Cannot get changed files: the commit list is empty');
-        expect(gitCommandSpy).not.toHaveBeenCalled();
-    });
-
-    it('should handle only one commit', async () => {
-        // Arrange
-        const onlySha = '1'.repeat(40);
-        const commits = [{ sha: onlySha, author: '', date: '', message: '' }];
-
-        // Act
-        const changedFiles = await getChangedFiles(commits);
-
-        // Assert
-        expect(changedFiles).toStrictEqual(['file1.txt', 'folder/file2.txt']);
-
-        expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(['diff', '--name-only', `${onlySha}~..${onlySha}`], {
-            operation: 'get the list of changed files between commits',
-        });
-    });
-
-    it('should return an empty list when the net diff is empty (e.g. a commit and its revert)', async () => {
-        // Arrange
-        gitCommandSpy.mockResolvedValue('');
-        const commits = [
-            { sha: '1'.repeat(40), author: '', date: '', message: '' },
-            { sha: '2'.repeat(40), author: '', date: '', message: '' },
-        ];
-
-        // Act
-        const changedFiles = await getChangedFiles(commits);
-
-        // Assert
-        expect(changedFiles).toStrictEqual([]);
     });
 });
 

@@ -3,14 +3,14 @@ import picomatch from 'picomatch';
 import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
 import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
 import { logger } from './logger.js';
-import type { ActorConfig, Commit } from './types.js';
+import type { ActorConfig } from './types.js';
 import { type RelativeDir, RelativeFile } from './utils/path/repo-relative.js';
 
 interface ShouldBuildAndTestOptions {
     filepathsChanged: string[];
     actorConfigs: ActorConfig[];
     isLatest?: boolean;
-    commits: Commit[];
+    diffRefs: { oldRef: string; newRef: string; baseCommit?: string };
     // Glob relative to the repo root. Matching files count as changes even when .dockerignore lists them.
     testFilesGlob?: string;
 }
@@ -53,7 +53,7 @@ type FileChangeForActor =
 const classifyFileChange = async (
     changedFile: RelativeFile,
     actorConfig: ActorConfig,
-    commits: Commit[],
+    diffRefs: ShouldBuildAndTestOptions['diffRefs'],
     dockerIgnoreMatcher: DockerIgnoreMatcher,
     isTestFile: (filePath: string) => boolean,
 ): Promise<FileChangeForActor> => {
@@ -92,7 +92,12 @@ const classifyFileChange = async (
     }
 
     if (lowercaseFilePath.endsWith('.json') && isUnderActorDotDir) {
-        const isCosmetic = await isCosmeticOnlyJsonSchemaChange(commits, changedFile.path);
+        const { oldRef, newRef, baseCommit } = diffRefs;
+        // A file selected by both diffs is cosmetic only if neither range contains a functional JSON change.
+        const isCosmetic =
+            // TODO: this is a temporary measure to reduce the size of this PR. Will rework `isCosmeticOnlyJsonSchemaChange` on a follow-up PR.
+            (await isCosmeticOnlyJsonSchemaChange(oldRef, newRef, changedFile.path)) &&
+            (baseCommit === undefined || (await isCosmeticOnlyJsonSchemaChange(baseCommit, newRef, changedFile.path)));
         if (isCosmetic) return { impact: 'cosmetic', semanticallyVerified: true };
     }
 
@@ -168,7 +173,7 @@ export const getChangedActors = async ({
     filepathsChanged,
     actorConfigs,
     isLatest = false,
-    commits,
+    diffRefs,
     testFilesGlob,
 }: ShouldBuildAndTestOptions): Promise<ActorConfig[]> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
@@ -185,7 +190,7 @@ export const getChangedActors = async ({
                 continue;
             }
 
-            const change = await classifyFileChange(filePath, actorConfig, commits, dockerIgnoreMatcher, isTestFile);
+            const change = await classifyFileChange(filePath, actorConfig, diffRefs, dockerIgnoreMatcher, isTestFile);
             if (change.impact !== 'outside-context' && isTestFile(originalFilePath)) {
                 testFilesInContext.add(originalFilePath);
             }

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
 
 import { getChangedActors } from '../../bin/diff-changes.js';
-import type { ActorConfig, Commit } from '../../bin/types.js';
+import type { ActorConfig } from '../../bin/types.js';
 import { ExistingDir, ExistingFile, RelativeDir, RelativeFile } from '../../bin/utils/path/repo-relative.js';
 
 const originalCwd = process.cwd();
@@ -62,10 +62,7 @@ describe('Should build and test parser', () => {
         ),
     ];
 
-    const commits: Commit[] = [
-        { sha: 'Commit1', author: '', date: '', message: '' },
-        { sha: 'Commit3', author: '', date: '', message: '' },
-    ];
+    const cosmeticDiffRefs = { oldRef: 'Commit1', newRef: 'Commit3' };
 
     test('Ignores dev-only readme', async () => {
         const FILES = ['README.md', 'code/README.md', 'shared/README.md'];
@@ -74,7 +71,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual([]);
@@ -87,7 +84,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual([]);
@@ -100,7 +97,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -113,7 +110,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(actorsChangedNotLatest).toEqual([]);
 
@@ -121,7 +118,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
         expect(actorsChangedLatest).toEqual(ACTOR_CONFIGS);
     });
@@ -133,7 +130,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -146,7 +143,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -162,7 +159,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0], ACTOR_CONFIGS[2]]);
@@ -175,7 +172,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -192,7 +189,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS);
@@ -208,7 +205,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual([]);
@@ -221,7 +218,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -234,7 +231,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -247,7 +244,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -263,7 +260,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -276,7 +273,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[2]]);
@@ -335,7 +332,7 @@ describe('Should build and test parser', () => {
             actorConfigs: ACTOR_CONFIGS_GOOGLE_MAPS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            diffRefs: cosmeticDiffRefs,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS_GOOGLE_MAPS.slice(0, 8));

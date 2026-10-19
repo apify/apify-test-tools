@@ -10,16 +10,14 @@ import { deleteOldBuilds, runBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedActors } from './diff-changes.js';
 import {
-    getBranchOnlyChangedFiles,
-    getChangedFiles,
     getCommits,
     getCurrentBranch,
     getReleaseChanges,
     getRepoName,
-    hasMergeFromTarget,
     resolveReleaseBaseCommit,
     resolveRepoUrl,
 } from './git.js';
+import { resolveGitFileDiff } from './git-file-diff.js';
 import { logger, logLevels } from './logger.js';
 import { writeJson } from './output.js';
 import { notifyToSlack } from './slack.js';
@@ -94,42 +92,19 @@ const globalOptions = {
 
 const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: boolean }) => {
     const actorConfigs = await readConfigFile(config);
+    const fileDiff = await resolveGitFileDiff(config);
+    const cosmeticDiffRefs = {
+        oldRef: fileDiff.mergeBaseSha,
+        newRef: fileDiff.currentRef,
+        ...(fileDiff.resolutionType === 'intersection' ? { baseCommit: fileDiff.baseCommit } : {}),
+    };
 
-    // This is an optimization for the common case where a branch only has cosmetic changes but had to smerge in
-    // functional changes from master (being up-to-date is a CI requirement). Master is already validated, and
-    // since the branch has no functional changes of its own, there is nothing new to validate.
-    // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
-    // individually validated changes can have novel interactions when combined.
-    if (await hasMergeFromTarget(config.sourceBranch, config.targetBranch)) {
-        logger.info(
-            '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
-        );
-        const branchOnlyFiles = await getBranchOnlyChangedFiles(config.sourceBranch, config.targetBranch);
-        // Omit baseCommit to get full branch history. Validated functional commits can still interact with merged ones
-        const allBranchCommits = await getCommits({ ...config, baseCommit: undefined });
-        const branchOnlyActorsChanged = await getChangedActors({
-            filepathsChanged: branchOnlyFiles,
-            actorConfigs,
-            commits: allBranchCommits,
-            testFilesGlob: config.testFilesGlob,
-        });
-        if (branchOnlyActorsChanged.length === 0) {
-            logger.info('[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests');
-            return [];
-        }
-        logger.info(
-            `[MERGE-FROM-TARGET-OPTIMIZATION]: Branch has ${branchOnlyActorsChanged.length} functional changes, cannot optimize, we continue with full check`,
-        );
-    }
-
-    // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply baseCommit and check merge commits (they might be functional or just cosmetic)
-    const commits = await getCommits(config);
-    const changedFiles = await getChangedFiles(commits);
+    // The full check uses the net merge-base diff, optionally restricted to files changed since validation.
     return getChangedActors({
-        filepathsChanged: changedFiles,
+        filepathsChanged: fileDiff.changedFiles,
         actorConfigs,
         isLatest,
-        commits,
+        diffRefs: cosmeticDiffRefs,
         testFilesGlob: config.testFilesGlob,
     });
 };
@@ -163,9 +138,8 @@ await yargs()
         '',
         (y) => y.options(gitRangeOptions),
         async (args) => {
-            const commits = await getCommits(args);
-            const changedFiles = await getChangedFiles(commits);
-            writeJson(changedFiles);
+            const fileDiff = await resolveGitFileDiff(args);
+            writeJson(fileDiff.changedFiles);
         },
     )
     .command(
@@ -254,7 +228,7 @@ await yargs()
                 filepathsChanged: changedFiles,
                 actorConfigs,
                 isLatest,
-                commits,
+                diffRefs: { oldRef: baseSha, newRef: 'HEAD' },
             });
             const { dryRun, reportSlackChannel, releaseSlackChannel } = args;
             const builds = await runBuilds({

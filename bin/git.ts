@@ -21,26 +21,6 @@ export const getMergeBase = async (targetRef: string, currentRef: string): Promi
 };
 
 /**
- * Gets the list of changed files between the given commits (inclusive).
- */
-export const getChangedFiles = async (commits: Commit[]) => {
-    // getCommits never returns an empty list (the rerun check returns all commits when the base commit
-    // is the branch HEAD, and an empty git range throws when parsing), so this signals a programmer error
-    if (commits.length === 0) {
-        throw new Error('Cannot get changed files: the commit list is empty. This should never happen.');
-    }
-
-    const changedFilesString = await runGitCommand(
-        ['diff', '--name-only', `${commits[0].sha}~..${commits[commits.length - 1].sha}`],
-        { operation: 'get the list of changed files between commits' },
-    );
-
-    const changedFiles = changedFilesString.split('\n').filter(Boolean);
-    logger.info(`Changed files (up to 50): ${changedFiles.slice(0, 50).join(', ')}`);
-    return changedFiles;
-};
-
-/**
  * Returns true if the branch contains a merge commit whose parent is reachable from targetBranch
  * (i.e. a genuine "merge from target" commit, not a merge of some unrelated branch).
  * Uses the full targetBranch..sourceBranch range, ignoring baseCommit.

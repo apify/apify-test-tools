@@ -1,47 +1,36 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
 
 import { ApifyClient } from 'apify-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import type { ActorBuild } from './helpers.js';
+import {
+    cliEnv,
+    gitEnv,
+    projectRoot,
+    runCli as runCliIn,
+    runCliWithInput as runCliWithInputIn,
+    runProcess,
+    token,
+    TOKEN_ENV_VAR,
+} from './helpers.js';
+
 // End-to-end run of the shipped CLI bundle against two dummy Actors in an isolated sandbox account:
 // dry-run plans read the real Actors, `build-from-local` really builds them, the lib runs them
 // through `testActor` on exactly those builds (the ACTOR_BUILDS handoff), `report-tests` reads the
-// result, and `delete-old-builds` cleans up. Git builds (`build`/`release` without --dry-run) are
-// not covered: the Apify builder would have to clone the fixture repo, which only exists locally.
+// result, and `delete-old-builds` cleans up. Git builds of a real repository are in
+// git-build-release.e2e.test.ts.
 //
 // Runs with `npm run test:e2e`, kept out of `npm test`. Skipped without the token, e.g. on fork PRs.
-const TOKEN_ENV_VAR = 'E2E_TEST_APIFY_TOKEN_DBYPODOIHUZABNQTR';
-const token = process.env[TOKEN_ENV_VAR];
-
 const ACTORS = ['test-tools-testing-sandbox/dummy-for-testing-1', 'test-tools-testing-sandbox/dummy-for-testing-2'];
 // Only used as the source URL in dry-run plans; nothing is cloned from it.
 const REPO_URL = 'https://github.com/apify/apify-test-tools-e2e-fixture';
 
-const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
-const bundlePath = path.join(projectRoot, '.github/cli/apify-test-tools.mjs');
 const vitestPath = path.join(projectRoot, 'node_modules/vitest/vitest.mjs');
-
-// Proxy and CA settings pass through so the API is reachable behind a proxy; no other variable does.
-const networkEnv = Object.fromEntries(
-    ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'NO_PROXY', 'no_proxy', 'NODE_EXTRA_CA_CERTS']
-        .filter((name) => process.env[name] !== undefined)
-        .map((name) => [name, process.env[name]!]),
-);
-const baseEnv = { PATH: process.env.PATH ?? '', HOME: os.tmpdir() };
-// The CLI gets only the sandbox token, under the name the fixture config points at.
-const cliEnv = { ...baseEnv, ...networkEnv, [TOKEN_ENV_VAR]: token ?? '' };
-const gitEnv = {
-    ...baseEnv,
-    GIT_AUTHOR_NAME: 'Tester',
-    GIT_AUTHOR_EMAIL: 'tester@example.com',
-    GIT_COMMITTER_NAME: 'Tester',
-    GIT_COMMITTER_EMAIL: 'tester@example.com',
-};
 
 let repoDir: string;
 let baseSha: string;
@@ -53,30 +42,8 @@ const writeRepoFile = async (file: string, content: string) => {
     await writeFile(path.join(repoDir, file), content);
 };
 
-// Spawned processes are blocking, so vitest's own timeouts can't stop one that hangs. apify-client
-// retries an unreachable API for minutes, so a hang is killed here and fails with a clear error.
-const PROCESS_TIMEOUT_MS = 8 * 60_000;
-
-const runCliWithInput = (input: string, ...args: string[]) => {
-    const result = spawnSync(process.execPath, [bundlePath, ...args], {
-        cwd: repoDir,
-        env: cliEnv,
-        encoding: 'utf8',
-        timeout: PROCESS_TIMEOUT_MS,
-        input,
-    });
-    const error = result.error ? `\n${result.error.message}` : '';
-    return { status: result.status, stdout: result.stdout, stderr: result.stderr + error };
-};
-
-const runCli = (...args: string[]) => runCliWithInput('', ...args);
-
-interface ActorBuild {
-    buildId: string;
-    actorRawId: string;
-    buildNumber: string;
-    actorFullName: string;
-}
+const runCli = async (...args: string[]) => runCliIn(repoDir, ...args);
+const runCliWithInput = async (input: string, ...args: string[]) => runCliWithInputIn(repoDir, input, ...args);
 
 describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 }, () => {
     let builds: ActorBuild[];
@@ -120,8 +87,8 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         if (repoDir) await rm(repoDir, { recursive: true, force: true });
     });
 
-    it('build --dry-run plans a test build of the Actors it is given', () => {
-        const { status, stdout, stderr } = runCliWithInput(
+    it('build --dry-run plans a test build of the Actors it is given', async () => {
+        const { status, stdout, stderr } = await runCliWithInput(
             JSON.stringify({ actors: [{ actorFullName: ACTORS[0] }] }),
             'build',
             '--version-number',
@@ -139,12 +106,12 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         });
     });
 
-    it('a release pipeline plans a build of the default version of every changed Actor', () => {
-        const affected = runCli('get-affected-actors', '--since', baseSha);
+    it('a release pipeline plans a build of the default version of every changed Actor', async () => {
+        const affected = await runCli('get-affected-actors', '--since', baseSha);
         expect(affected.status, affected.stderr).toBe(0);
         const { functionallyChangedActors, cosmeticallyChangedActors } = JSON.parse(affected.stdout);
 
-        const { status, stderr } = runCliWithInput(
+        const { status, stderr } = await runCliWithInput(
             JSON.stringify({ actors: [...functionallyChangedActors, ...cosmeticallyChangedActors] }),
             'build',
             '--version-number',
@@ -159,8 +126,8 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         );
     });
 
-    it('build-from-local --dry-run plans both Actors from the working tree', () => {
-        const { status, stdout, stderr } = runCli('build-from-local', '--dry-run');
+    it('build-from-local --dry-run plans both Actors from the working tree', async () => {
+        const { status, stdout, stderr } = await runCli('build-from-local', '--dry-run');
         expect(status, stderr).toBe(0);
         expect(JSON.parse(stdout)).toMatchObject({
             dryRun: true,
@@ -168,8 +135,8 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         });
     });
 
-    it('build-from-local builds both Actors', { timeout: 10 * 60_000 }, () => {
-        const { status, stdout, stderr } = runCli('build-from-local');
+    it('build-from-local builds both Actors', { timeout: 10 * 60_000 }, async () => {
+        const { status, stdout, stderr } = await runCli('build-from-local');
         expect(status, stderr).toBe(0);
         builds = JSON.parse(stdout);
         expect(builds.map((build) => build.actorFullName)).toEqual(ACTORS);
@@ -199,20 +166,15 @@ describe('sandbox dummies', () => {${actorTests}
 `,
         );
 
-        const vitest = spawnSync(
+        const vitest = await runProcess(
             process.execPath,
             [vitestPath, 'run', 'test/platform', '--reporter=json', '--outputFile=./test-output.json'],
             {
                 cwd: repoDir,
-                encoding: 'utf8',
-                timeout: PROCESS_TIMEOUT_MS,
-                env: { ...cliEnv, TESTER_APIFY_TOKEN: token, ACTOR_BUILDS: JSON.stringify(builds) },
+                env: { ...cliEnv, TESTER_APIFY_TOKEN: token!, ACTOR_BUILDS: JSON.stringify(builds) },
             },
         );
-        expect(
-            vitest.status,
-            `${vitest.stdout}\n${vitest.stderr}${vitest.error ? `\n${vitest.error.message}` : ''}`,
-        ).toBe(0);
+        expect(vitest.status, `${vitest.stdout}\n${vitest.stderr}`).toBe(0);
 
         // Each run used the build from ACTOR_BUILDS, not the Actor's default build.
         const report = JSON.parse(await readFile(path.join(repoDir, 'test-output.json'), 'utf8'));
@@ -228,15 +190,15 @@ describe('sandbox dummies', () => {${actorTests}
         );
         expect(runBuildIds.sort()).toEqual(builds.map((build) => build.buildId).sort());
 
-        const { status, stderr } = runCli('report-tests', '--report-file', 'test-output.json', '--dry-run');
+        const { status, stderr } = await runCli('report-tests', '--report-file', 'test-output.json', '--dry-run');
         expect(status, stderr).toBe(0);
         expect(stderr).toContain(`PASSED: ${ACTORS.length}, FAILED: 0`);
         expect(stderr).toContain('https://console.apify.com/view/runs/');
     });
 
     // Last, so builds from earlier runs of this suite don't pile up in the sandbox.
-    it('delete-old-builds keeps the default builds', () => {
-        const { status, stderr } = runCli('delete-old-builds');
+    it('delete-old-builds keeps the default builds', async () => {
+        const { status, stderr } = await runCli('delete-old-builds');
         expect(status, stderr).toBe(0);
         for (const actorFullName of ACTORS) {
             expect(stderr).toContain(`[DELETE OLD BUILDS][${actorFullName}]: Skipping default build`);

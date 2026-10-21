@@ -6,12 +6,12 @@ import type { Commit } from './types.js';
 import { getEnvVar } from './utils.js';
 
 type NotifyToSlackOptions = {
-    repository: string;
     changedFiles: string[];
     changelog: string | null;
     commits: Commit[];
+    // Defaults to the `origin` remote, see resolveRepoUrl
+    repoUrl?: string;
     dryRun: boolean;
-    author: string;
     releaseSlackChannel?: string;
     reportSlackChannel?: string;
 };
@@ -38,16 +38,23 @@ export const sendingLabel = (dryRun: boolean) => (dryRun ? '[DRY RUN] Would send
 // Git authors come as "Name<email>", Slack only needs the name
 const displayName = (author: string) => author.replace(/\s*<[^>]*>$/, '');
 
+/**
+ * Posts what a release changed: its commits, changed files and changelog, as get-affected-actors reports them.
+ * Posts nothing when there are no commits, which means there is nothing new to release.
+ */
 export const notifyToSlack = async ({
     changedFiles,
     commits,
     changelog,
-    repository,
+    repoUrl,
     dryRun,
-    author,
     releaseSlackChannel,
     reportSlackChannel,
 }: NotifyToSlackOptions) => {
+    if (commits.length === 0) {
+        logger.info('No new commits, so there is no release to announce');
+        return;
+    }
     if (!changelog) {
         logger.warn('No new changelog entries found, did you forget to update it?');
     }
@@ -58,6 +65,9 @@ export const notifyToSlack = async ({
     }
     const slack = await getSlackClient('SLACK_TOKEN_RELEASES_BOT', dryRun);
 
+    const repository = getRepoName((await resolveRepoUrl(repoUrl)).repoUrl);
+    // The newest commit, same as the pushed head commit
+    const { author } = commits[commits.length - 1];
     let shortMessage = `*${repository}* – New release (by ${displayName(author)}):\n\n`;
 
     // This one is just for broader public that only cares about public facing changes
@@ -95,29 +105,6 @@ export const notifyToSlack = async ({
             });
         }
     }
-};
-
-type AnnounceReleaseOptions = Omit<NotifyToSlackOptions, 'author' | 'repository'> & {
-    // Defaults to the `origin` remote, see resolveRepoUrl
-    repoUrl?: string;
-};
-
-/**
- * Posts what a release changed: its commits, changed files and changelog, as get-affected-actors reports them.
- * Posts nothing when there are no commits, which means there is nothing new to release.
- */
-export const announceRelease = async ({ commits, repoUrl, ...options }: AnnounceReleaseOptions) => {
-    if (commits.length === 0) {
-        logger.info('No new commits, so there is no release to announce');
-        return;
-    }
-    await notifyToSlack({
-        ...options,
-        commits,
-        repository: getRepoName((await resolveRepoUrl(repoUrl)).repoUrl),
-        // The newest commit, same as the pushed head commit
-        author: commits[commits.length - 1].author,
-    });
 };
 
 export const sendSlackMessage = async (slack: WebClient, channel: string, text: string, blocks: string[]) => {

@@ -1,7 +1,7 @@
 import type { MockInstance } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getAffectedActors, toAffectedActorsDocument } from '../../../bin/affected-actors.js';
+import { getAffectedActors } from '../../../bin/affected-actors.js';
 import * as DiffChanges from '../../../bin/diff-changes.js';
 import * as Git from '../../../bin/git.js';
 import type { ActorConfig, Commit } from '../../../bin/types.js';
@@ -55,12 +55,14 @@ describe('getAffectedActors', () => {
             });
 
             expect(result).toStrictEqual({
-                headSha,
+                version: 1,
+                head: headSha,
                 commits,
                 changedFiles,
                 changelog: '- Added foo',
-                functionallyChangedActors: [actorA],
-                cosmeticallyChangedActors: [actorB],
+                // Only the names, the config file stays the source of truth for the rest
+                functionallyChangedActors: [{ actorFullName: 'owner/a' }],
+                cosmeticallyChangedActors: [{ actorFullName: 'owner/b' }],
             });
             expect(getCommitsSpy).toHaveBeenCalledWith({
                 sourceBranch: 'HEAD',
@@ -102,14 +104,14 @@ describe('getAffectedActors', () => {
 
             it('reports everything when the branch has functional changes of its own', async () => {
                 const result = await getWithOwnChanges({ functional: [actorA], cosmetic: [] });
-                expect(result.functionallyChangedActors).toStrictEqual([actorA]);
-                expect(result.cosmeticallyChangedActors).toStrictEqual([actorB]);
+                expect(result.functionallyChangedActors).toStrictEqual([{ actorFullName: 'owner/a' }]);
+                expect(result.cosmeticallyChangedActors).toStrictEqual([{ actorFullName: 'owner/b' }]);
             });
 
             it('reports only cosmetic Actors when its own changes are only cosmetic', async () => {
                 const result = await getWithOwnChanges({ functional: [], cosmetic: [actorB] });
                 expect(result.functionallyChangedActors).toStrictEqual([]);
-                expect(result.cosmeticallyChangedActors).toStrictEqual([actorB]);
+                expect(result.cosmeticallyChangedActors).toStrictEqual([{ actorFullName: 'owner/b' }]);
             });
 
             it('reports nothing when it has no changes of its own', async () => {
@@ -135,12 +137,14 @@ describe('getAffectedActors', () => {
             const result = await getAffectedActors({ since: 'HEAD~2', ...selection });
 
             expect(result).toStrictEqual({
-                headSha,
+                version: 1,
+                head: headSha,
                 commits,
                 changedFiles,
                 changelog: '- Added foo',
-                functionallyChangedActors: [actorA],
-                cosmeticallyChangedActors: [actorB],
+                // Only the names, the config file stays the source of truth for the rest
+                functionallyChangedActors: [{ actorFullName: 'owner/a' }],
+                cosmeticallyChangedActors: [{ actorFullName: 'owner/b' }],
             });
             expect(resolveBaseSpy).toHaveBeenCalledWith('HEAD~2');
             expect(commitsBetweenSpy).toHaveBeenCalledWith(sinceSha, headSha);
@@ -156,29 +160,6 @@ describe('getAffectedActors', () => {
             expect(result.commits).toStrictEqual([]);
             // Empty `git log x..x` output doesn't parse as a commit, so it's never run
             expect(commitsBetweenSpy).not.toHaveBeenCalled();
-        });
-    });
-});
-
-describe('toAffectedActorsDocument', () => {
-    it('keeps only the Actor names, the config file stays the source of truth for the rest', () => {
-        expect(
-            toAffectedActorsDocument({
-                headSha,
-                commits,
-                changedFiles: ['src/main.ts'],
-                changelog: null,
-                functionallyChangedActors: [actorA],
-                cosmeticallyChangedActors: [actorB],
-            }),
-        ).toStrictEqual({
-            version: 1,
-            head: headSha,
-            commits,
-            changedFiles: ['src/main.ts'],
-            changelog: null,
-            functionallyChangedActors: [{ actorFullName: 'owner/a' }],
-            cosmeticallyChangedActors: [{ actorFullName: 'owner/b' }],
         });
     });
 });

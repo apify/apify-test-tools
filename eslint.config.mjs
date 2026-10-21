@@ -37,4 +37,13 @@ export default [
             'no-console': ['error', { allow: ['warn', 'error'] }],
         },
     },
+    {
+        files: ['workflow-scripts-src/**/*.ts'],
+        rules: {
+            // Workflow helpers preserve the existing standalone scripts' console output and GitHub expression text.
+            'no-console': 'off',
+            'no-template-curly-in-string': 'off',
+            'prefer-destructuring': 'off',
+        },
+    },
 ];

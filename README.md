@@ -660,6 +660,61 @@ TESTER_APIFY_TOKEN=apify_api_yyy \
   npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
 ```
 
+### Finding affected Actors (`get-affected-actors`)
+
+`get-affected-actors` lists the Actors whose context changed in a commit range, using the rules in
+[Change detection](#change-detection). It only reads git and the config file, so it needs no tokens.
+The range always ends at the checked-out `HEAD`, so check out the branch you want to inspect first.
+
+```bash
+# A PR: the branch's own commits, after its last validated commit
+npx apify-test-tools get-affected-actors --base origin/master --since <sha>
+
+# A release: everything after the last released commit
+npx apify-test-tools get-affected-actors --since <sha>
+```
+
+| Flag                | Default | Meaning                                                                                                                                    |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--base`            |         | Only commits on `HEAD` that are not on this branch count                                                                                   |
+| `--since`           |         | Only commits after this one count (see below)                                                                                              |
+| `--test-files-glob` |         | Test files (glob from the repo root) that count as changes even when `.dockerignore` lists them, see [Change detection](#change-detection) |
+| `--actors`          | all     | Only report these Actors                                                                                                                   |
+| `--ignore`          | none    | Never report these Actors                                                                                                                  |
+
+Pass `--base`, `--since`, or both:
+
+- **`--base` only** inspects the whole branch. If the branch merged `--base` in and has no functional changes
+  of its own, no Actor is reported as functional, since `--base` is already validated (and none as cosmetic
+  either, if the branch has no changes of its own at all).
+- **`--base` and `--since`** inspects the branch after its last validated commit. If `--since` is not on the
+  branch (force-push), or it is the head (a rerun), the whole branch is inspected instead.
+- **`--since` only** inspects everything after it up to `HEAD`. It must be an ancestor of `HEAD` and fails
+  otherwise, exactly like [`--base-commit` of `release`](#--base-commit). If `HEAD` is `--since`, nothing is
+  reported.
+
+The output is a JSON document:
+
+```json
+{
+    "version": 1,
+    "ref": "my-branch",
+    "head": "<sha of HEAD>",
+    "commits": [{ "sha": "…", "author": "…", "date": "…", "message": "…" }],
+    "changedFiles": ["src/main.ts", "CHANGELOG.md"],
+    "changelog": "Lines added to CHANGELOG.md, or null",
+    "functionallyChangedActors": [{ "actorFullName": "john.doe/my-actor" }],
+    "cosmeticallyChangedActors": [{ "actorFullName": "john.doe/other-actor" }]
+}
+```
+
+Each changed Actor is in exactly one of the lists. `functionallyChangedActors` have at least one functional change, so
+they need a new build and tests. `cosmeticallyChangedActors` only have cosmetic changes (see
+[Change detection](#change-detection)), so they need a new build only when released: `build` builds
+`functionallyChangedActors`, `release` builds both.
+
+`ref` is the checked-out branch, or `null` for a detached HEAD. `build` and `release` use the same detection internally.
+
 ### Releasing Actors (`release`)
 
 `release` builds the `latest` (default) version of every Actor changed since the last release and

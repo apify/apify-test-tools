@@ -315,11 +315,13 @@ The workflows and the npm package live in one repo but ship on their own schedul
 | the workflows and the CLI they call          | the `@workflows-v0` tag in `uses:`         | every master push       |
 | the lib (`testActor`, `describe`, matchers…) | `apify-test-tools` in their `package.json` | a stable release on npm |
 
-The CLI is bundled with its dependencies into `.github/cli/apify-test-tools.mjs` (`npm run bundle`,
-run by the pre-commit hook and checked in CI), and the setup action runs it from there. Nothing is
-installed for it, so a tag is a complete statement: these workflows and this CLI, with the exact
-dependency versions from `package-lock.json` at that commit. The consumer's own `node_modules` is
-left alone, so their tests keep the lib version they locked.
+The CLI is bundled with its dependencies into `.github/cli/apify-test-tools.mjs`, and the token
+wrapper is bundled from `workflow-scripts-src/run-with-apify-tokens.ts` into
+`.github/scripts/run-with-apify-tokens.mjs`. `npm run bundle` builds both; the pre-commit hook runs
+it and CI checks the committed bundles. Nothing is installed for them, so a tag is a complete
+statement: these workflows and their scripts, with the exact dependency versions from
+`package-lock.json` at that commit. The consumer's own `node_modules` is left alone, so their tests
+keep the lib version they locked.
 
 - **Workflow or CLI change** — merge it. `workflows-v0` moves once checks and tests pass, and it goes
   live. No release needed, even when a workflow starts using a new CLI feature: both are in the

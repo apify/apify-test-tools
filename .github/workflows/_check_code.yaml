@@ -93,10 +93,10 @@ jobs:
             - name: Build
               run: npm run build
 
-    # The composite action runs the CLI from .github/cli/apify-test-tools.mjs, which the pre-commit
-    # hook rebuilds. This catches commits that skipped the hook, so a stale bundle never ships.
+    # The composite action runs the CLI and workflow helper bundles, which the pre-commit hook rebuilds.
+    # This catches commits that skipped the hook, so stale bundles never ship.
     cli_bundle:
-        name: CLI bundle
+        name: CLI and workflow bundles
         runs-on: ubuntu-latest
         steps:
             - name: Checkout repository
@@ -112,8 +112,8 @@ jobs:
             - name: Check the bundle is up to date
               run: |
                   npm run bundle
-                  if ! git diff --quiet -- .github/cli/; then
-                      echo "::error::.github/cli/apify-test-tools.mjs is out of date. Run \`npm run bundle\` and commit the result."
+                  if ! git diff --quiet -- .github/cli/ .github/scripts/run-with-apify-tokens.mjs; then
+                      echo "::error::A CLI or workflow script bundle is out of date. Run \`npm run bundle\` and commit the result."
                       exit 1
                   fi
                   node .github/cli/apify-test-tools.mjs --help > /dev/null

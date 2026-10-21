@@ -49,8 +49,7 @@ runs:
           shell: bash
           run: echo "path=$(cd "${{ github.action_path }}/../../scripts" && pwd)" >> "$GITHUB_OUTPUT"
 
-        # A repo is on pnpm when it has a pnpm-lock.yaml and no package-lock.json; every other repo
-        # stays on npm exactly as before, cache key included.
+        # A repo is on pnpm when it has a pnpm-lock.yaml and no package-lock.json.
         - name: Detect package manager
           id: package-manager
           shell: bash
@@ -64,7 +63,7 @@ runs:
         # Takes the pnpm version from the `packageManager` field of the repo's package.json.
         - name: Install pnpm
           if: steps.package-manager.outputs.name == 'pnpm'
-          uses: pnpm/action-setup@v4
+          uses: pnpm/action-setup@v6
 
         - name: Cache dependencies npm
           if: steps.package-manager.outputs.name == 'npm'
@@ -82,17 +81,23 @@ runs:
               NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
           run: npm ci
 
-        # pnpm keeps its virtual store in node_modules/.pnpm, so caching node_modules is enough here too.
-        - name: Cache dependencies pnpm
+        # Caching node_modules would miss each workspace package's own node_modules, so we cache the
+        # store and always install; with a warm store that only links files.
+        - name: Resolve pnpm store path
           if: steps.package-manager.outputs.name == 'pnpm'
-          id: check-pnpm-dependencies-cache
+          id: pnpm-store
+          shell: bash
+          run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+        - name: Cache pnpm store
+          if: steps.package-manager.outputs.name == 'pnpm'
           uses: actions/cache@v5
           with:
-              path: node_modules
-              key: modules-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+              path: ${{ steps.pnpm-store.outputs.path }}
+              key: pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
 
         - name: install pnpm dependencies
-          if: steps.package-manager.outputs.name == 'pnpm' && steps.check-pnpm-dependencies-cache.outputs.cache-hit != 'true'
+          if: steps.package-manager.outputs.name == 'pnpm'
           shell: bash
           env:
               NPM_TOKEN: ${{ inputs.npm-token }}

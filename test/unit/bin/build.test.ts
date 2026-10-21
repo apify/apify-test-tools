@@ -7,11 +7,15 @@ import { ActorSourceType, ApifyClient } from 'apify-client';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    ApifyBuilder,
     assertRepoUrlMatchesDefaultVersion,
+    buildActors,
     deleteOldBuilds,
     resolveDefaultVersion,
     runBuilds,
 } from '../../../bin/build.js';
+import * as Git from '../../../bin/git.js';
+import { logger } from '../../../bin/logger.js';
 import type { ActorConfig } from '../../../bin/types.js';
 import { ExistingDir, ExistingFile, RelativeDir } from '../../../bin/utils/path/repo-relative.js';
 
@@ -84,6 +88,71 @@ describe('assertRepoUrlMatchesDefaultVersion', () => {
     });
 });
 
+describe('runBuilds version number', () => {
+    // Only the name and folder of the Actor matter here, the builder is stubbed
+    const actorConfig = { actorFullName: ACTOR, folder: { isRoot: () => true } } as unknown as ActorConfig;
+    // Restored after each test, so the stub never reaches the tests that run the real builder
+    afterEach(() => {
+        vi.mocked(ApifyBuilder.fromActorConfig).mockRestore();
+    });
+
+    const dryRunBuild = async (versionNumber: string, actorInfo = makeActorInfo()) => {
+        vi.spyOn(ApifyBuilder, 'fromActorConfig').mockReturnValue({
+            getActorInfo: async () => actorInfo,
+        } as unknown as ApifyBuilder);
+        const result = await runBuilds({
+            actorConfigs: [actorConfig],
+            versionNumber,
+            repoUrl: REPO_URL,
+            shouldVerifyRepoUrl: false,
+            branch: 'master',
+            dryRun: true,
+        });
+        if (Array.isArray(result)) throw new Error('A dry run must return a plan, not builds');
+        return result.builds[0].versionNumber;
+    };
+
+    it('builds the version it is given', async () => {
+        await expect(dryRunBuild('0.99')).resolves.toBe('0.99');
+    });
+
+    it("resolves default to the version the Actor's default build tag points to", async () => {
+        await expect(dryRunBuild('default')).resolves.toBe('0.1');
+    });
+
+    it('warns when the default version does not give its builds the default build tag', async () => {
+        const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        await dryRunBuild('default');
+        // The fixture's version 0.1 has no build tag of its own
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('users keep running the previous build'));
+    });
+
+    it('does not warn when the default version gives its builds the default build tag', async () => {
+        const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        const versions = [{ versionNumber: '0.1', buildTag: 'latest', sourceType: ActorSourceType.GitRepo }];
+        await dryRunBuild('default', makeActorInfo({ versions } as Partial<ApifyClientTypes.Actor>));
+        expect(warnSpy).not.toHaveBeenCalled();
+    });
+});
+
+describe('buildActors', () => {
+    it('builds nothing and needs no branch or repository when there are no Actors', async () => {
+        const branchSpy = vi.spyOn(Git, 'getCurrentBranch');
+        const repoSpy = vi.spyOn(Git, 'resolveRepoUrl');
+
+        await expect(buildActors({ actorConfigs: [], versionNumber: '0.99', dryRun: false })).resolves.toStrictEqual(
+            [],
+        );
+        // A dry run keeps the dry-run shape even with nothing to build
+        await expect(buildActors({ actorConfigs: [], versionNumber: '0.99', dryRun: true })).resolves.toStrictEqual({
+            dryRun: true,
+            builds: [],
+        });
+        expect(branchSpy).not.toHaveBeenCalled();
+        expect(repoSpy).not.toHaveBeenCalled();
+    });
+});
+
 describe('dry run', () => {
     const TOKEN_ENV_VAR = 'APIFY_TOKEN_OWNER';
     const originalCwd = process.cwd();
@@ -150,7 +219,7 @@ describe('dry run', () => {
             shouldVerifyRepoUrl: true,
             branch: 'feature',
             dryRun: true,
-            useDockerCache: false,
+            versionNumber: '0.99',
         });
 
     it('should return a build plan without creating versions or builds', async () => {
@@ -161,7 +230,6 @@ describe('dry run', () => {
                     actorFullName: ACTOR,
                     versionNumber: '0.99',
                     gitRepoUrl: `${REPO_URL}#feature:actors/a`,
-                    useDockerCache: false,
                 },
             ],
         });
@@ -182,7 +250,7 @@ describe('dry run', () => {
                 shouldVerifyRepoUrl: true,
                 branch: 'feature',
                 dryRun: true,
-                useDockerCache: false,
+                versionNumber: '0.99',
             }),
         ).rejects.toThrow('Repository mismatch');
     });

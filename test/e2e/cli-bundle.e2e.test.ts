@@ -57,16 +57,19 @@ const writeRepoFile = async (file: string, content: string) => {
 // retries an unreachable API for minutes, so a hang is killed here and fails with a clear error.
 const PROCESS_TIMEOUT_MS = 8 * 60_000;
 
-const runCli = (...args: string[]) => {
+const runCliWithInput = (input: string, ...args: string[]) => {
     const result = spawnSync(process.execPath, [bundlePath, ...args], {
         cwd: repoDir,
         env: cliEnv,
         encoding: 'utf8',
         timeout: PROCESS_TIMEOUT_MS,
+        input,
     });
     const error = result.error ? `\n${result.error.message}` : '';
     return { status: result.status, stdout: result.stdout, stderr: result.stderr + error };
 };
+
+const runCli = (...args: string[]) => runCliWithInput('', ...args);
 
 interface ActorBuild {
     buildId: string;
@@ -117,11 +120,28 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         if (repoDir) await rm(repoDir, { recursive: true, force: true });
     });
 
-    it('build --dry-run plans a test build of the changed Actor only', () => {
-        const { status, stdout, stderr } = runCli(
+    it('build --dry-run plans a test build of the Actors it is given', () => {
+        const { status, stdout, stderr } = runCliWithInput(
+            JSON.stringify({ actors: [{ actorFullName: ACTORS[0] }] }),
             'build',
-            '--source-branch',
-            'feature',
+            '--version-number',
+            '0.99',
+            '--repo-url',
+            REPO_URL,
+            '--dry-run',
+        );
+        expect(status, stderr).toBe(0);
+        expect(JSON.parse(stdout)).toEqual({
+            dryRun: true,
+            builds: [
+                { actorFullName: ACTORS[0], versionNumber: '0.99', gitRepoUrl: `${REPO_URL}#feature:actors/dummy-1` },
+            ],
+        });
+    });
+
+    it('build-for-test --dry-run plans a test build of the changed Actor only', () => {
+        const { status, stdout, stderr } = runCli(
+            'build-for-test',
             '--target-branch',
             'main',
             '--repo-url',
@@ -132,12 +152,7 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         expect(JSON.parse(stdout)).toEqual({
             dryRun: true,
             builds: [
-                {
-                    actorFullName: ACTORS[0],
-                    versionNumber: '0.99',
-                    gitRepoUrl: `${REPO_URL}#feature:actors/dummy-1`,
-                    useDockerCache: false,
-                },
+                { actorFullName: ACTORS[0], versionNumber: '0.99', gitRepoUrl: `${REPO_URL}#feature:actors/dummy-1` },
             ],
         });
     });

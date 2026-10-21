@@ -25,7 +25,7 @@ jobs:
             - name: Setup repository and dependencies
               id: setup
               # For testing, you have to temporarily change the branch
-              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
+              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@claude/raw-build-command-testing
               with:
                   # Some repos use private npm packages, they need to pass NPM_TOKEN secret to this workflow
                   npm-token: ${{ secrets.NPM_TOKEN }}
@@ -99,7 +99,7 @@ jobs:
         steps:
             - name: Setup repository and dependencies
               # For testing, you have to temporarily change the branch
-              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
+              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@claude/raw-build-command-testing
               with:
                   npm-token: ${{ secrets.NPM_TOKEN }}
 

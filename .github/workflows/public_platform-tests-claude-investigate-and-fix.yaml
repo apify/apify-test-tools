@@ -177,7 +177,7 @@ jobs:
             actions: read
         steps:
             - name: Setup repository and dependencies
-              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
+              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@claude/raw-build-command-testing
               with:
                   npm-token: ${{ secrets.NPM_TOKEN }}
 

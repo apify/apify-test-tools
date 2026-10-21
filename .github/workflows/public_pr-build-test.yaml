@@ -12,6 +12,11 @@ on:
                 type: string
                 default: ''
                 required: false
+            # Fail the build unless the env var names of version 0.99 match the default version's
+            require-env-vars-in-sync:
+                type: boolean
+                default: false
+                required: false
 
 concurrency:
     group: ${{ github.workflow }}-${{ github.ref }}
@@ -71,9 +76,11 @@ jobs:
               env:
                   ALL_SECRETS: ${{ toJSON(secrets) }}
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
+                  REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
               run: |
                   actor_builds=$(jq '{ actors: .functionallyChangedActors }' affected.json \
-                    | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99)
+                    | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99 \
+                        --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC")
                   echo "actor_builds=$actor_builds" | tee -a "$GITHUB_OUTPUT"
 
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.

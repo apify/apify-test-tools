@@ -15,8 +15,8 @@ import { gitEnv, runCli as runCliIn, runCliWithInput as runCliWithInputIn, token
 //
 // The repo's `e2e/base` and `e2e/feature` branches are fixtures and never change: `e2e/feature`
 // adds one commit touching only dummy-for-testing-1. Like the reusable workflows, the commands run
-// with `e2e/feature` checked out and compare it with `origin/e2e/base`. `release` rebuilds dummy-for-testing-1 under `latest` on every
-// run, which is fine for a sandbox Actor nobody else uses.
+// with `e2e/feature` checked out and compare it with `origin/e2e/base`. The release pipeline rebuilds
+// dummy-for-testing-1 under `latest` on every run, which is fine for a sandbox Actor nobody else uses.
 //
 // Runs with `npm run test:e2e`, kept out of `npm test`. Skipped without the token, e.g. on fork PRs.
 const FIXTURE_REPO = 'https://github.com/apify-store/testing-repo-for-github-actions';
@@ -86,14 +86,28 @@ describe.runIf(token)('CLI bundle building a real repository', { timeout: 2 * 60
         expect((await client.build(builds[0].buildId).get())?.status).toBe('SUCCEEDED');
     });
 
-    it('release rebuilds the default version of the changed Actor', { timeout: 10 * 60_000 }, async () => {
+    it('the release pipeline rebuilds the default version of the changed Actor', { timeout: 10 * 60_000 }, async () => {
+        // What the release workflow does: every Actor changed since the last release, built into its default version
         const baseSha = git('rev-parse', `origin/${BASE_BRANCH}`);
-        const { status, stderr } = await runCli('release', '--base-commit', baseSha);
+        const affected = await runCli('get-affected-actors', '--since', baseSha);
+        expect(affected.status, affected.stderr).toBe(0);
+        const { functionallyChangedActors, cosmeticallyChangedActors } = JSON.parse(affected.stdout);
+
+        const { status, stderr } = await runCliWithInput(
+            JSON.stringify({ actors: [...functionallyChangedActors, ...cosmeticallyChangedActors] }),
+            'build',
+            '--version-number',
+            'default',
+        );
         expect(status, stderr).toBe(0);
         expect(stderr).toMatch(new RegExp(`\\[${CHANGED_ACTOR}\\]: 0\\.0\\.\\d+`));
-        expect(stderr).toContain('Skipping slack notification');
 
         // Releasing builds the default version from the branch being released.
         expect(await versionSource('0.0')).toBe(BUILD_SOURCE);
+
+        // Without a channel the announcement is skipped, so it needs no Slack token
+        const notify = await runCliWithInput(affected.stdout, 'notify-release');
+        expect(notify.status, notify.stderr).toBe(0);
+        expect(notify.stderr).toContain('Skipping slack notification');
     });
 });

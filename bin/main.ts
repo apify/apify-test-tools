@@ -6,13 +6,13 @@ import yargs, { type Options } from 'yargs';
 // eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
-import { getAffectedActors, toAffectedActorsDocument } from './affected-actors.js';
-import { buildActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds, TEST_VERSION_NUMBER } from './build.js';
+import { getAffectedActors } from './affected-actors.js';
+import { buildActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
-import { getChangedFiles, getCommits, getCurrentBranch } from './git.js';
+import { getChangedFiles, getCommits } from './git.js';
 import { logger, logLevels } from './logger.js';
 import { writeJson } from './output.js';
-import { announceRelease } from './slack.js';
+import { notifyToSlack } from './slack.js';
 import { parseBuildInput, parseReleaseChanges, readStdin } from './stdin-input.js';
 import { reportTestResults } from './test-report.js';
 import { readConfigFile } from './utils/config/load-config.js';
@@ -101,14 +101,7 @@ const buildOptions = {
     },
 } as const satisfies Record<string, Options>;
 
-/** Range of build-for-test: the checked-out branch's own commits, after its last validated one. */
-const buildForTestOptions = {
-    'target-branch': { type: 'string', demandOption: true },
-    'base-commit': { type: 'string' },
-    'test-files-glob': { type: 'string' },
-} as const satisfies Record<string, Options>;
-
-/** Where `release` and `notify-release` post the release. */
+/** Where `notify-release` posts the release. */
 const releaseSlackOptions = {
     'report-slack-channel': { type: 'string', describe: 'Channel for the full report: commits and changed files' },
     'release-slack-channel': { type: 'string', describe: 'Channel for the changelog additions only' },
@@ -172,7 +165,7 @@ await yargs()
         'Find the Actors whose context changed in a commit range ending at the checked-out HEAD',
         (y) => y.options(affectedRangeOptions).options(actorSelectionOptions),
         async (args) => {
-            writeJson(toAffectedActorsDocument(await getAffectedActors(args)));
+            writeJson(await getAffectedActors(args));
         },
     )
     .command(
@@ -208,95 +201,12 @@ await yargs()
         },
     )
     .command(
-        'build-for-test',
-        'Build the Actors the checked-out branch changed functionally, for testing',
-        (y) =>
-            y
-                .options(buildForTestOptions)
-                .options(actorSelectionOptions)
-                .options(repoUrlOptions)
-                .options(dryRunOptions),
-        async (config) => {
-            logger.info(
-                '[BUILD-FOR-TEST]: Same as get-affected-actors --base <target-branch> [--since <base-commit>] ' +
-                    `| jq '{ actors: .functionallyChangedActors }' | build --version-number ${TEST_VERSION_NUMBER}`,
-            );
-            // Cosmetic-only changes don't need testing, so they don't need a build either
-            const { functionallyChangedActors } = await getAffectedActors({
-                base: config.targetBranch,
-                since: config.baseCommit,
-                testFilesGlob: config.testFilesGlob,
-                actors: config.actors,
-                ignore: config.ignore,
-            });
-            const builds = await buildActors({
-                actorConfigs: functionallyChangedActors,
-                versionNumber: TEST_VERSION_NUMBER,
-                repoUrl: config.repoUrl,
-                dryRun: config.dryRun,
-            });
-            writeJson(builds);
-        },
-    )
-    .command(
-        'release',
-        'Build the default version of the Actors changed since the last release and announce it on Slack',
-        (y) =>
-            y
-                .options(actorSelectionOptions)
-                .options(repoUrlOptions)
-                .options(dryRunOptions)
-                // The last commit that is already released, everything after it up to HEAD gets released.
-                // Required, see the README section "Releasing Actors" for how to set it for each merge strategy.
-                .option('base-commit', { type: 'string', demandOption: true })
-                .options(releaseSlackOptions),
-        async (args) => {
-            logger.info(
-                '[RELEASE]: Same as get-affected-actors --since <base-commit> > affected.json, then ' +
-                    "jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json " +
-                    `| build --version-number ${DEFAULT_VERSION_KEYWORD}, then notify-release < affected.json`,
-            );
-            // Fail before anything else on a detached HEAD: there is no branch to release
-            await getCurrentBranch();
-            const { commits, changedFiles, changelog, functionallyChangedActors, cosmeticallyChangedActors } =
-                await getAffectedActors({
-                    since: args.baseCommit,
-                    actors: args.actors,
-                    ignore: args.ignore,
-                });
-            if (commits.length === 0) {
-                logger.info(`HEAD is the base commit ${args.baseCommit}, there is nothing new to release`);
-                return;
-            }
-
-            const { dryRun, reportSlackChannel, releaseSlackChannel } = args;
-            const builds = await buildActors({
-                // A release ships cosmetic changes (README, input schema descriptions, ...) too
-                actorConfigs: [...functionallyChangedActors, ...cosmeticallyChangedActors],
-                versionNumber: DEFAULT_VERSION_KEYWORD,
-                repoUrl: args.repoUrl,
-                dryRun,
-            });
-            logger.info(JSON.stringify(builds));
-
-            await announceRelease({
-                commits,
-                changedFiles,
-                changelog,
-                repoUrl: args.repoUrl,
-                dryRun,
-                reportSlackChannel,
-                releaseSlackChannel,
-            });
-        },
-    )
-    .command(
         'notify-release',
         'Announce a release on Slack, from the get-affected-actors output on stdin',
         (y) => y.options(releaseSlackOptions).options(repoUrlOptions).options(dryRunOptions),
         async (args) => {
             const { commits, changedFiles, changelog } = parseReleaseChanges(await readStdin());
-            await announceRelease({
+            await notifyToSlack({
                 commits,
                 changedFiles,
                 changelog,

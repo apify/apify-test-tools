@@ -14,8 +14,6 @@ type BuildPrActorOptions = {
 
 // Fixed version number used to build from local source files, since there is no real version to track.
 export const LOCAL_SOURCE_VERSION_NUMBER = '0.98';
-// Version that build-for-test builds, so tests never touch the version users run
-export const TEST_VERSION_NUMBER = '0.99';
 // Stands for each Actor's default version: the one its default build tag points to
 export const DEFAULT_VERSION_KEYWORD = 'default';
 

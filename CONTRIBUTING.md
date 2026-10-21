@@ -97,7 +97,7 @@ npm release relate — the short version:
 - `npm test` covers the bundle without network (`test/bundle/`). `npm run test:e2e` runs it against
   dummy Actors in an isolated sandbox account (`test/e2e/`) and skips itself unless
   `E2E_TEST_APIFY_TOKEN_DBYPODOIHUZABNQTR` is set. CI passes that secret only to the `E2E tests` job.
-  The git `build` and `release` tests clone
+  The git `build` and release pipeline tests clone
   [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions) and
   use its `e2e/base` and `e2e/feature` branches as fixtures, so never rebase or delete those.
 

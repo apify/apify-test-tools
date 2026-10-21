@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 ### 🚀 Features
 
 - **ci:** Ship the workflows&#x27; CLI as a bundle in the action instead of installing it ([#200](https://github.com/apify/apify-test-tools/pull/200)) ([a0ef975](https://github.com/apify/apify-test-tools/commit/a0ef9756123a30a8210590b080a2a289c6a9c17c)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- [**breaking**] Revamp get-affected-actors to be a core logic command ([#190](https://github.com/apify/apify-test-tools/pull/190)) ([ea5f244](https://github.com/apify/apify-test-tools/commit/ea5f244cfd42bf3fa9ffd38cd2ad499dde2e83f8)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- [**breaking**] Add logic-less build command and use command chaining in workflows ([#193](https://github.com/apify/apify-test-tools/pull/193)) ([e5b0b86](https://github.com/apify/apify-test-tools/commit/e5b0b86ee06fca51d4be0ddc81b0a4a469d31603)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 ### 🐛 Bug Fixes
 

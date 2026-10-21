@@ -1,7 +1,7 @@
 import { WebClient } from '@slack/web-api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { notifyToSlack } from '../../../bin/slack.js';
+import { announceRelease, notifyToSlack } from '../../../bin/slack.js';
 
 vi.mock('@slack/web-api', () => ({ WebClient: vi.fn() }));
 
@@ -61,5 +61,48 @@ describe('notifyToSlack', () => {
         await notify({ dryRun: false });
         expect(authTest).not.toHaveBeenCalled();
         expect(postMessage).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('announceRelease', () => {
+    const commit = (author: string, message: string) => ({ sha: '1', author, date: '', message });
+
+    beforeEach(() => {
+        vi.stubEnv(TOKEN_ENV_VAR, 'token');
+        vi.mocked(WebClient).mockImplementation(function () {
+            return { chat: { postMessage }, auth: { test: authTest } };
+        } as never);
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.clearAllMocks();
+    });
+
+    it('should announce nothing, and need no token, when there are no new commits', async () => {
+        vi.stubEnv(TOKEN_ENV_VAR, '');
+        await announceRelease({
+            commits: [],
+            changedFiles: [],
+            changelog: null,
+            dryRun: false,
+            reportSlackChannel: '#notif',
+        });
+        expect(WebClient).not.toHaveBeenCalled();
+    });
+
+    it('should announce the release by the author of the newest commit, named after the repository', async () => {
+        await announceRelease({
+            commits: [commit('Old<old@example.com>', 'fix: older'), commit('New<new@example.com>', 'feat: newer')],
+            changedFiles: ['src/main.ts'],
+            changelog: '- Added foo',
+            repoUrl: 'git@github.com:owner/my-repo',
+            dryRun: false,
+            reportSlackChannel: '#notif',
+        });
+        expect(postMessage).toHaveBeenCalledWith({
+            channel: '#notif',
+            text: expect.stringContaining('*my-repo* – New release (by New)'),
+        });
     });
 });

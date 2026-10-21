@@ -6,25 +6,15 @@ import yargs, { type Options } from 'yargs';
 // eslint-disable-next-line import/extensions --- With .js, it cannot find types
 import { hideBin } from 'yargs/helpers';
 
-import { deleteOldBuilds, runBuilds } from './build.js';
+import { getAffectedActors, toAffectedActorsDocument } from './affected-actors.js';
+import { buildActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds, TEST_VERSION_NUMBER } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
-import { getChangedActors } from './diff-changes.js';
-import {
-    getBranchOnlyChangedFiles,
-    getChangedFiles,
-    getCommits,
-    getCurrentBranch,
-    getReleaseChanges,
-    getRepoName,
-    hasMergeFromTarget,
-    resolveReleaseBaseCommit,
-    resolveRepoUrl,
-} from './git.js';
+import { getChangedFiles, getCommits, getCurrentBranch } from './git.js';
 import { logger, logLevels } from './logger.js';
 import { writeJson } from './output.js';
-import { notifyToSlack } from './slack.js';
+import { announceRelease } from './slack.js';
+import { parseBuildInput, parseReleaseChanges, readStdin } from './stdin-input.js';
 import { reportTestResults } from './test-report.js';
-import type { Config } from './types.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
 /**
@@ -65,6 +55,23 @@ const actorSelectionOptions = {
 } as const satisfies Record<string, Options>;
 
 /**
+ * Commit range for get-affected-actors, which always ends at the checked-out HEAD. `base` and `since` combine:
+ * `base` alone is a branch's own commits (a PR), `since` alone is everything after a commit (a release), both is
+ * a branch after its last validated commit.
+ */
+const affectedRangeOptions = {
+    base: { type: 'string', describe: 'Only count commits on HEAD that are not on this branch' },
+    since: {
+        type: 'string',
+        describe: 'Only count commits after this one. Ignored with --base if it is not on the branch',
+    },
+    'test-files-glob': {
+        type: 'string',
+        describe: 'Glob (from the repo root) of test files that count as changes even when .dockerignore lists them',
+    },
+} as const satisfies Record<string, Options>;
+
+/**
  * For commands that change something (builds, deletes, Slack posts). A dry run still does every read and check
  * the real run does, credentials included, and only skips the writes. So it needs the same tokens, though
  * read-only ones are enough. Read-only commands don't take it since they have nothing to skip.
@@ -77,9 +84,34 @@ const dryRunOptions = {
     },
 } as const satisfies Record<string, Options>;
 
-/** Flags for commands that trigger Apify builds. */
+/** Flags of `build`, which builds exactly the Actors it is given. */
 const buildOptions = {
-    'use-docker-cache': { type: 'boolean', default: false },
+    'version-number': {
+        type: 'string',
+        demandOption: true,
+        describe: `Version to build, like 0.1, or "${DEFAULT_VERSION_KEYWORD}" for each Actor's default version`,
+        coerce: (value: string) => {
+            if (value !== DEFAULT_VERSION_KEYWORD && !/^\d+\.\d+$/.test(value)) {
+                throw new Error(
+                    `--version-number must look like 0.1 or be "${DEFAULT_VERSION_KEYWORD}", got "${value}"`,
+                );
+            }
+            return value;
+        },
+    },
+} as const satisfies Record<string, Options>;
+
+/** Range of build-for-test: the checked-out branch's own commits, after its last validated one. */
+const buildForTestOptions = {
+    'target-branch': { type: 'string', demandOption: true },
+    'base-commit': { type: 'string' },
+    'test-files-glob': { type: 'string' },
+} as const satisfies Record<string, Options>;
+
+/** Where `release` and `notify-release` post the release. */
+const releaseSlackOptions = {
+    'report-slack-channel': { type: 'string', describe: 'Channel for the full report: commits and changed files' },
+    'release-slack-channel': { type: 'string', describe: 'Channel for the changelog additions only' },
 } as const satisfies Record<string, Options>;
 
 /** Global flags, available to every command. */
@@ -91,48 +123,6 @@ const globalOptions = {
         describe: 'Minimum diagnostic level written to stderr; silent disables logging',
     },
 } as const satisfies Record<string, Options>;
-
-const resolveChangedActors = async (config: Config, { isLatest }: { isLatest: boolean }) => {
-    const actorConfigs = await readConfigFile(config);
-
-    // This is an optimization for the common case where a branch only has cosmetic changes but had to smerge in
-    // functional changes from master (being up-to-date is a CI requirement). Master is already validated, and
-    // since the branch has no functional changes of its own, there is nothing new to validate.
-    // Exception: if the branch has any functional changes alongside the merge, we must re-test — even
-    // individually validated changes can have novel interactions when combined.
-    if (await hasMergeFromTarget(config.sourceBranch, config.targetBranch)) {
-        logger.info(
-            '[MERGE-FROM-TARGET-OPTIMIZATION]: There is merge from target branch, checking if there are no functional changes in our own branch. If so, we can skip tests',
-        );
-        const branchOnlyFiles = await getBranchOnlyChangedFiles(config.sourceBranch, config.targetBranch);
-        // Omit baseCommit to get full branch history. Validated functional commits can still interact with merged ones
-        const allBranchCommits = await getCommits({ ...config, baseCommit: undefined });
-        const branchOnlyActorsChanged = await getChangedActors({
-            filepathsChanged: branchOnlyFiles,
-            actorConfigs,
-            commits: allBranchCommits,
-            testFilesGlob: config.testFilesGlob,
-        });
-        if (branchOnlyActorsChanged.length === 0) {
-            logger.info('[MERGE-FROM-TARGET-OPTIMIZATION]: Branch itself has no functional changes, skipping tests');
-            return [];
-        }
-        logger.info(
-            `[MERGE-FROM-TARGET-OPTIMIZATION]: Branch has ${branchOnlyActorsChanged.length} functional changes, cannot optimize, we continue with full check`,
-        );
-    }
-
-    // If the optimization doesn't apply, we check all branch commits including merges for full coverage. We don't reuse the merge optimization results because here we can apply baseCommit and check merge commits (they might be functional or just cosmetic)
-    const commits = await getCommits(config);
-    const changedFiles = await getChangedFiles(commits);
-    return getChangedActors({
-        filepathsChanged: changedFiles,
-        actorConfigs,
-        isLatest,
-        commits,
-        testFilesGlob: config.testFilesGlob,
-    });
-};
 
 await yargs()
     .scriptName('public-actors-utils')
@@ -179,11 +169,10 @@ await yargs()
     )
     .command(
         'get-affected-actors',
-        '',
-        (y) => y.options(gitRangeOptions).options(actorSelectionOptions),
-        async (config) => {
-            const actorsChanged = await resolveChangedActors(config, { isLatest: false });
-            writeJson(actorsChanged);
+        'Find the Actors whose context changed in a commit range ending at the checked-out HEAD',
+        (y) => y.options(affectedRangeOptions).options(actorSelectionOptions),
+        async (args) => {
+            writeJson(toAffectedActorsDocument(await getAffectedActors(args)));
         },
     )
     .command(
@@ -202,82 +191,119 @@ await yargs()
     )
     .command(
         'build',
-        '',
+        'Build the Actors listed on stdin, as {"actors": [{"actorFullName": ...}]}, from the checked-out branch',
+        (y) => y.options(buildOptions).options(repoUrlOptions).options(dryRunOptions),
+        async (args) => {
+            const input = parseBuildInput(await readStdin());
+            const names = input.actors.map(({ actorFullName }) => actorFullName);
+            // An empty --actors selects every Actor, but an empty list here means there is nothing to build
+            const actorConfigs = names.length > 0 ? await readConfigFile({ actors: names, ignore: [] }) : [];
+            const builds = await buildActors({
+                actorConfigs,
+                versionNumber: args.versionNumber,
+                repoUrl: args.repoUrl,
+                dryRun: args.dryRun,
+            });
+            writeJson(builds);
+        },
+    )
+    .command(
+        'build-for-test',
+        'Build the Actors the checked-out branch changed functionally, for testing',
         (y) =>
             y
-                .options(gitRangeOptions)
+                .options(buildForTestOptions)
                 .options(actorSelectionOptions)
-                .options(buildOptions)
                 .options(repoUrlOptions)
-                .options(dryRunOptions)
-                .option('test-files-glob', { type: 'string' }),
+                .options(dryRunOptions),
         async (config) => {
-            const actorsChanged = await resolveChangedActors(config, { isLatest: false });
-            const builds = await runBuilds({
-                ...(await resolveRepoUrl(config.repoUrl)),
-                actorConfigs: actorsChanged,
-                branch: config.sourceBranch.replace('origin/', ''),
+            logger.info(
+                '[BUILD-FOR-TEST]: Same as get-affected-actors --base <target-branch> [--since <base-commit>] ' +
+                    `| jq '{ actors: .functionallyChangedActors }' | build --version-number ${TEST_VERSION_NUMBER}`,
+            );
+            // Cosmetic-only changes don't need testing, so they don't need a build either
+            const { functionallyChangedActors } = await getAffectedActors({
+                base: config.targetBranch,
+                since: config.baseCommit,
+                testFilesGlob: config.testFilesGlob,
+                actors: config.actors,
+                ignore: config.ignore,
+            });
+            const builds = await buildActors({
+                actorConfigs: functionallyChangedActors,
+                versionNumber: TEST_VERSION_NUMBER,
+                repoUrl: config.repoUrl,
                 dryRun: config.dryRun,
-                useDockerCache: config.useDockerCache,
             });
             writeJson(builds);
         },
     )
     .command(
         'release',
-        '',
+        'Build the default version of the Actors changed since the last release and announce it on Slack',
         (y) =>
             y
                 .options(actorSelectionOptions)
-                .options(buildOptions)
                 .options(repoUrlOptions)
                 .options(dryRunOptions)
                 // The last commit that is already released, everything after it up to HEAD gets released.
                 // Required, see the README section "Releasing Actors" for how to set it for each merge strategy.
                 .option('base-commit', { type: 'string', demandOption: true })
-                .option('report-slack-channel', { type: 'string' })
-                .option('release-slack-channel', { type: 'string' }),
+                .options(releaseSlackOptions),
         async (args) => {
-            const baseSha = await resolveReleaseBaseCommit(args.baseCommit);
-            const branch = await getCurrentBranch();
-            const changes = await getReleaseChanges(baseSha);
-            if (!changes) {
-                logger.info(`HEAD is the base commit ${baseSha}, there is nothing new to release`);
+            logger.info(
+                '[RELEASE]: Same as get-affected-actors --since <base-commit> > affected.json, then ' +
+                    "jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json " +
+                    `| build --version-number ${DEFAULT_VERSION_KEYWORD}, then notify-release < affected.json`,
+            );
+            // Fail before anything else on a detached HEAD: there is no branch to release
+            await getCurrentBranch();
+            const { commits, changedFiles, changelog, functionallyChangedActors, cosmeticallyChangedActors } =
+                await getAffectedActors({
+                    since: args.baseCommit,
+                    actors: args.actors,
+                    ignore: args.ignore,
+                });
+            if (commits.length === 0) {
+                logger.info(`HEAD is the base commit ${args.baseCommit}, there is nothing new to release`);
                 return;
             }
-            const { commits, changedFiles, changelog } = changes;
-            const { repoUrl, shouldVerifyRepoUrl } = await resolveRepoUrl(args.repoUrl);
 
-            const isLatest = true;
-            const actorConfigs = await readConfigFile(args);
-            const actorsChanged = await getChangedActors({
-                filepathsChanged: changedFiles,
-                actorConfigs,
-                isLatest,
-                commits,
-            });
             const { dryRun, reportSlackChannel, releaseSlackChannel } = args;
-            const builds = await runBuilds({
-                isLatest,
-                repoUrl,
-                shouldVerifyRepoUrl,
-                actorConfigs: actorsChanged,
-                branch,
+            const builds = await buildActors({
+                // A release ships cosmetic changes (README, input schema descriptions, ...) too
+                actorConfigs: [...functionallyChangedActors, ...cosmeticallyChangedActors],
+                versionNumber: DEFAULT_VERSION_KEYWORD,
+                repoUrl: args.repoUrl,
                 dryRun,
-                useDockerCache: args.useDockerCache,
             });
             logger.info(JSON.stringify(builds));
 
-            await notifyToSlack({
-                changedFiles,
+            await announceRelease({
                 commits,
+                changedFiles,
                 changelog,
-                repository: getRepoName(repoUrl),
+                repoUrl: args.repoUrl,
                 dryRun,
-                // The newest commit, same as the pushed head commit
-                author: commits[commits.length - 1].author,
                 reportSlackChannel,
                 releaseSlackChannel,
+            });
+        },
+    )
+    .command(
+        'notify-release',
+        'Announce a release on Slack, from the get-affected-actors output on stdin',
+        (y) => y.options(releaseSlackOptions).options(repoUrlOptions).options(dryRunOptions),
+        async (args) => {
+            const { commits, changedFiles, changelog } = parseReleaseChanges(await readStdin());
+            await announceRelease({
+                commits,
+                changedFiles,
+                changelog,
+                repoUrl: args.repoUrl,
+                dryRun: args.dryRun,
+                reportSlackChannel: args.reportSlackChannel,
+                releaseSlackChannel: args.releaseSlackChannel,
             });
         },
     )

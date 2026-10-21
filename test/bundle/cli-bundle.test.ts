@@ -34,10 +34,17 @@ const writeRepoFile = async (file: string, content: string) => {
     await writeFile(path.join(repoDir, file), content);
 };
 
-const runCli = (...args: string[]) => {
-    const result = spawnSync(process.execPath, [bundlePath, ...args], { cwd: repoDir, env: cliEnv, encoding: 'utf8' });
+const runCliWithInput = (input: string, ...args: string[]) => {
+    const result = spawnSync(process.execPath, [bundlePath, ...args], {
+        cwd: repoDir,
+        env: cliEnv,
+        encoding: 'utf8',
+        input,
+    });
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 };
+
+const runCli = (...args: string[]) => runCliWithInput('', ...args);
 
 const gitRange = ['--source-branch', 'feature', '--target-branch', 'main'];
 
@@ -91,7 +98,9 @@ describe('CLI bundle', () => {
             'get-affected-actors',
             'report-tests',
             'build',
+            'build-for-test',
             'release',
+            'notify-release',
             'build-from-local',
             'delete-old-builds',
         ]) {
@@ -130,19 +139,63 @@ describe('CLI bundle', () => {
     });
 
     it('get-affected-actors returns only the Actor whose files changed', () => {
-        const { status, stdout, stderr } = runCli('get-affected-actors', ...gitRange);
+        // `feature` is checked out, and the range always ends at HEAD
+        const { status, stdout, stderr } = runCli('get-affected-actors', '--base', 'main');
         expect(status, stderr).toBe(0);
-        expect(JSON.parse(stdout)).toMatchObject([{ actorFullName: 'tester/foo', folder: 'actors/foo' }]);
+        expect(JSON.parse(stdout)).toMatchObject({
+            version: 1,
+            head: headSha,
+            functionallyChangedActors: [{ actorFullName: 'tester/foo' }],
+            // The root README isn't in tester/bar's folder, so it doesn't count for it
+            cosmeticallyChangedActors: [],
+        });
     });
 
     it('build --dry-run with nothing to build needs no token', () => {
-        const { status, stdout, stderr } = runCli('build', ...gitRange, '--actors', 'tester/bar', '--dry-run');
+        const { status, stdout, stderr } = runCliWithInput(
+            JSON.stringify({ actors: [] }),
+            'build',
+            '--version-number',
+            '0.99',
+            '--dry-run',
+        );
         expect(status, stderr).toBe(0);
         expect(JSON.parse(stdout)).toEqual({ dryRun: true, builds: [] });
     });
 
     it('build --dry-run fails cleanly when the Actor token is missing', () => {
-        const { status, stderr } = runCli('build', ...gitRange, '--dry-run');
+        const { status, stderr } = runCliWithInput(
+            JSON.stringify({ actors: [{ actorFullName: 'tester/foo' }] }),
+            'build',
+            '--version-number',
+            '0.99',
+            '--dry-run',
+        );
+        expect(status).toBe(1);
+        expect(stderr).toContain('Env var FOO_TOKEN is not set (needed for actor "tester/foo")');
+    });
+
+    it('build fails on empty input instead of building nothing', () => {
+        const { status, stderr } = runCli('build', '--version-number', '0.99', '--dry-run');
+        expect(status).toBe(1);
+        expect(stderr).toContain('got nothing');
+    });
+
+    it('build-for-test --dry-run with nothing to build needs no token', () => {
+        const { status, stdout, stderr } = runCli(
+            'build-for-test',
+            '--target-branch',
+            'main',
+            '--actors',
+            'tester/bar',
+            '--dry-run',
+        );
+        expect(status, stderr).toBe(0);
+        expect(JSON.parse(stdout)).toEqual({ dryRun: true, builds: [] });
+    });
+
+    it('build-for-test --dry-run fails cleanly when the Actor token is missing', () => {
+        const { status, stderr } = runCli('build-for-test', '--target-branch', 'main', '--dry-run');
         expect(status).toBe(1);
         expect(stderr).toContain('Env var FOO_TOKEN is not set (needed for actor "tester/foo")');
     });

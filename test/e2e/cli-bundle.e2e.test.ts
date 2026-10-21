@@ -8,7 +8,16 @@ import { ApifyClient } from 'apify-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { ActorBuild } from './helpers.js';
-import { cliEnv, gitEnv, projectRoot, runCli as runCliIn, runProcess, token, TOKEN_ENV_VAR } from './helpers.js';
+import {
+    cliEnv,
+    gitEnv,
+    projectRoot,
+    runCli as runCliIn,
+    runCliWithInput as runCliWithInputIn,
+    runProcess,
+    token,
+    TOKEN_ENV_VAR,
+} from './helpers.js';
 
 // End-to-end run of the shipped CLI bundle against two dummy Actors in an isolated sandbox account:
 // dry-run plans read the real Actors, `build-from-local` really builds them, the lib runs them
@@ -34,6 +43,7 @@ const writeRepoFile = async (file: string, content: string) => {
 };
 
 const runCli = async (...args: string[]) => runCliIn(repoDir, ...args);
+const runCliWithInput = async (input: string, ...args: string[]) => runCliWithInputIn(repoDir, input, ...args);
 
 describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 }, () => {
     let builds: ActorBuild[];
@@ -77,11 +87,28 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         if (repoDir) await rm(repoDir, { recursive: true, force: true });
     });
 
-    it('build --dry-run plans a test build of the changed Actor only', async () => {
-        const { status, stdout, stderr } = await runCli(
+    it('build --dry-run plans a test build of the Actors it is given', async () => {
+        const { status, stdout, stderr } = await runCliWithInput(
+            JSON.stringify({ actors: [{ actorFullName: ACTORS[0] }] }),
             'build',
-            '--source-branch',
-            'feature',
+            '--version-number',
+            '0.99',
+            '--repo-url',
+            REPO_URL,
+            '--dry-run',
+        );
+        expect(status, stderr).toBe(0);
+        expect(JSON.parse(stdout)).toEqual({
+            dryRun: true,
+            builds: [
+                { actorFullName: ACTORS[0], versionNumber: '0.99', gitRepoUrl: `${REPO_URL}#feature:actors/dummy-1` },
+            ],
+        });
+    });
+
+    it('build-for-test --dry-run plans a test build of the changed Actor only', async () => {
+        const { status, stdout, stderr } = await runCli(
+            'build-for-test',
             '--target-branch',
             'main',
             '--repo-url',
@@ -92,12 +119,7 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         expect(JSON.parse(stdout)).toEqual({
             dryRun: true,
             builds: [
-                {
-                    actorFullName: ACTORS[0],
-                    versionNumber: '0.99',
-                    gitRepoUrl: `${REPO_URL}#feature:actors/dummy-1`,
-                    useDockerCache: false,
-                },
+                { actorFullName: ACTORS[0], versionNumber: '0.99', gitRepoUrl: `${REPO_URL}#feature:actors/dummy-1` },
             ],
         });
     });

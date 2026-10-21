@@ -57,7 +57,7 @@ When a PR is opened or code is pushed, the tool determines which actors need to 
 2. **CHANGELOG classification** — a `CHANGELOG.md` file is always `cosmetic` (only triggers a release build, not tests), for every actor, regardless of context or folder. (See [issue #106](https://github.com/apify/apify-test-tools/issues/106).)
 3. **Context matching** — the file must fall within one of the actor's context paths (`dockerContextDir` from `actor.json` by default, or `overrideActorContext` from config if set). Files outside every context path are skipped.
 4. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it matched (e.g. a standalone actor's own `.eslintrc` is checked as just `.eslintrc`, not the full repo-root-relative path), then checked against repo-level dev file patterns (`.vscode/`, `.gitignore`, `.husky/`, `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`). There's no hardcoded special-casing for legacy `code/`/`shared/` layouts — repos that need those directories treated as top-level must list them explicitly in `overrideActorContext`.
-5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior. Test files are the exception: `build --test-files-glob <glob>` (relative to the repo root) skips this check for matching files, so a changed test triggers a build, and with it its tests, even when `.dockerignore` lists it. The PR workflow passes `test/platform/**`. Context matching still applies, so tests outside an actor's `dockerContextDir` (e.g. a root `test/` with standalone actors) need to be listed in its `overrideActorContext`; `build` logs a warning for changed test files outside every actor's context.
+5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the actor's `dockerContextDir`, matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior. Test files are the exception: `build-for-test --test-files-glob <glob>` (relative to the repo root, also taken by `get-affected-actors`) skips this check for matching files, so a changed test triggers a build, and with it its tests, even when `.dockerignore` lists it. The PR workflow passes `test/platform/**`. Context matching still applies, so tests outside an actor's `dockerContextDir` (e.g. a root `test/` with standalone actors) need to be listed in its `overrideActorContext`; `build-for-test` logs a warning for changed test files outside every actor's context.
 6. **README classification** — a `README.md` file is `cosmetic` (only triggers a release build, not tests) if it lives inside the actor's own `folder`; otherwise it's ignored entirely, since it isn't documentation for this actor.
 7. **Cosmetic JSON classification** — `.json` files inside the actor's own `.actor/` directory with only cosmetic schema changes (whitespace, key ordering) only trigger a release build.
 8. **Functional** — everything else triggers both build and tests.
@@ -226,9 +226,10 @@ jobs:
         secrets: inherit
 ```
 
-This workflow runs `apify-test-tools release --base-commit ${{ github.event.before }}`. See
-[Releasing Actors](#releasing-actors-release) for how the released range is determined and what to
-pass if you call the CLI from somewhere else.
+This workflow does what `apify-test-tools release --base-commit ${{ github.event.before }}` does, one
+step per command: `get-affected-actors --since ${{ github.event.before }}`, then `build --version-number default`
+on every changed Actor, then `notify-release`. See [Releasing Actors](#releasing-actors-release) for how the
+released range is determined and what to pass if you call the CLI from somewhere else.
 
 ### `claude-review.yaml`
 
@@ -261,9 +262,9 @@ environment variables, so a secret is only visible to the step that needs it:
 | Secret                                                                    | Reaches                                                                                                                                                                                                                      |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NPM_TOKEN`                                                               | dependency install steps only, as both `NPM_TOKEN` and `NODE_AUTH_TOKEN`. Use a read-only token: npm granular tokens can be read-only, classic automation tokens can publish.                                                |
-| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the `build`, `release`, and `delete-old-builds` steps only                                                                                                                                                                   |
+| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the build and `delete-old-builds` steps only                                                                                                                                                                                 |
 | `TESTER_APIFY_TOKEN`                                                      | the vitest step, and the Claude investigation step: the Apify MCP server's bearer token for reading the failing run, its log and its storages, and Claude's token for re-running it to measure how often the failure happens |
-| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and release steps only                                                                                                                                                                                         |
+| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and announcement steps only                                                                                                                                                                                    |
 
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its
 own token via `tokenEnvVar` in `apify-test-tools.config.json`. Those steps pass
@@ -277,7 +278,7 @@ secrets to pass on:
       ALL_SECRETS: ${{ toJSON(secrets) }}
   run: |
       node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
-        npx apify-test-tools build --target-branch ...
+        npx apify-test-tools build-for-test --target-branch ...
 ```
 
 The wrapper passes only the tokens the config declares and drops `ALL_SECRETS`, so neither `npx` nor
@@ -568,12 +569,12 @@ The package includes a CLI binary used by CI workflows to build Actors, detect c
 
 ### Dry runs (`--dry-run`)
 
-Every command that changes something (`build`, `build-from-local`, `release`, `delete-old-builds`, `report-tests`) takes `--dry-run`. A dry run:
+Every command that changes something (`build`, `build-for-test`, `build-from-local`, `release`, `notify-release`, `delete-old-builds`, `report-tests`) takes `--dry-run`. A dry run:
 
 - **Changes nothing.** No versions or builds are created, nothing is uploaded or deleted, and no Slack message is posted.
 - **Does every read and check the real run does**, so it fails wherever the real run would: change detection, the Apify token and Actor lookup, the [repository check](#repository-check), collecting and zipping local sources, and the Slack token (verified with Slack's read-only `auth.test`).
 - **Needs the same tokens as the real run.** Read-only tokens are enough, since nothing is written. A dry run can't tell whether a token is also allowed to write, because the Apify API has no dry-run mode of its own.
-- **Prints a plan, not results.** Logs start with `[DRY RUN] Would …`. `build` and `build-from-local` write `{ "dryRun": true, "builds": [...] }` to stdout instead of the build array, so the plan can't be passed to tests as `ACTOR_BUILDS` by mistake.
+- **Prints a plan, not results.** Logs start with `[DRY RUN] Would …`. `build`, `build-for-test` and `build-from-local` write `{ "dryRun": true, "builds": [...] }` to stdout instead of the build array, so the plan can't be passed to tests as `ACTOR_BUILDS` by mistake.
 
 ### Running locally
 
@@ -599,13 +600,15 @@ Requires `APIFY_TOKEN_<USERNAME>` for all Apify users that own your Actors (e.g.
 
 ```bash
 APIFY_TOKEN_JOHN_DOE=<token> \
-  npx apify-test-tools build \
+  npx apify-test-tools build-for-test \
     --target-branch origin/master \
-    --source-branch origin/my-dummy-branch \
     --dry-run
 ```
 
-With `--dry-run`, it prints the plan (the version and Git URL each Actor would be built from). Remove `--dry-run` to actually trigger builds and update the branch names. The command outputs a JSON array of build objects to stdout:
+Run it with your dummy branch checked out: it builds the Actors that branch changed, from the branch as it is on
+the remote. With `--dry-run`, it prints the plan (the version and Git URL each Actor would be built from). Remove
+`--dry-run` to actually trigger builds and update the target branch name. The command outputs a JSON array of build
+objects to stdout:
 
 ```json
 [{ "buildId": "...", "actorRawId": "...", "buildNumber": "...", "actorFullName": "john.doe/my-actor" }]
@@ -649,9 +652,8 @@ Tests only run for Actors in `ACTOR_BUILDS`, so a custom workflow has to build (
 ```bash
 # Build and capture output
 BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
-    npx apify-test-tools build \
+    npx apify-test-tools build-for-test \
     --target-branch origin/master \
-    --source-branch origin/my-dummy-branch \
     --test-files-glob 'test/platform/**')
 
 # Run tests with the builds
@@ -659,6 +661,100 @@ ACTOR_BUILDS="$BUILDS" \
 TESTER_APIFY_TOKEN=apify_api_yyy \
   npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
 ```
+
+### Finding affected Actors (`get-affected-actors`)
+
+`get-affected-actors` lists the Actors whose context changed in a commit range, using the rules in
+[Change detection](#change-detection). It only reads git and the config file, so it needs no tokens.
+The range always ends at the checked-out `HEAD`, so check out the branch you want to inspect first.
+
+```bash
+# A PR: the branch's own commits, after its last validated commit
+npx apify-test-tools get-affected-actors --base origin/master --since <sha>
+
+# A release: everything after the last released commit
+npx apify-test-tools get-affected-actors --since <sha>
+```
+
+| Flag                | Default | Meaning                                                                                                                                    |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--base`            |         | Only commits on `HEAD` that are not on this branch count                                                                                   |
+| `--since`           |         | Only commits after this one count (see below)                                                                                              |
+| `--test-files-glob` |         | Test files (glob from the repo root) that count as changes even when `.dockerignore` lists them, see [Change detection](#change-detection) |
+| `--actors`          | all     | Only report these Actors                                                                                                                   |
+| `--ignore`          | none    | Never report these Actors                                                                                                                  |
+
+Pass `--base`, `--since`, or both:
+
+- **`--base` only** inspects the whole branch. If the branch merged `--base` in and has no functional changes
+  of its own, no Actor is reported as functional, since `--base` is already validated (and none as cosmetic
+  either, if the branch has no changes of its own at all).
+- **`--base` and `--since`** inspects the branch after its last validated commit. If `--since` is not on the
+  branch (force-push), or it is the head (a rerun), the whole branch is inspected instead.
+- **`--since` only** inspects everything after it up to `HEAD`. It must be an ancestor of `HEAD` and fails
+  otherwise, exactly like [`--base-commit` of `release`](#--base-commit). If `HEAD` is `--since`, nothing is
+  reported.
+
+The output is a JSON document:
+
+```json
+{
+    "version": 1,
+    "head": "<sha of HEAD>",
+    "commits": [{ "sha": "…", "author": "…", "date": "…", "message": "…" }],
+    "changedFiles": ["src/main.ts", "CHANGELOG.md"],
+    "changelog": "Lines added to CHANGELOG.md, or null",
+    "functionallyChangedActors": [{ "actorFullName": "john.doe/my-actor" }],
+    "cosmeticallyChangedActors": [{ "actorFullName": "john.doe/other-actor" }]
+}
+```
+
+Each changed Actor is in exactly one of the lists. `functionallyChangedActors` have at least one functional change, so
+they need a new build and tests. `cosmeticallyChangedActors` only have cosmetic changes (see
+[Change detection](#change-detection)), so they need a new build only when released: `build-for-test` builds
+`functionallyChangedActors`, `release` builds both.
+
+`build-for-test` and `release` use the same detection internally.
+
+### Building Actors (`build`)
+
+`build` builds exactly the Actors it is given on stdin, from the checked-out branch as it is on the remote, and
+prints the builds as the same JSON array `build-for-test` and `build-from-local` print. A detached HEAD is an
+error, since there is no branch to build from. It doesn't look at git history: which Actors to build is
+up to you, usually picked from the output of [`get-affected-actors`](#finding-affected-actors-get-affected-actors).
+
+```bash
+# What build-for-test does: the Actors a branch changed functionally, built into the test version
+npx apify-test-tools get-affected-actors --base origin/master \
+  | jq '{ actors: .functionallyChangedActors }' \
+  | npx apify-test-tools build --version-number 0.99
+
+# What release builds: every Actor changed since the last release, into the version users run
+npx apify-test-tools get-affected-actors --since <sha> \
+  | jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' \
+  | npx apify-test-tools build --version-number default
+
+# One Actor, whatever changed
+echo '{ "actors": [{ "actorFullName": "john.doe/my-actor" }] }' | npx apify-test-tools build --version-number 0.99
+```
+
+The input is `{ "actors": [{ "actorFullName": "<owner/name>" }] }`; other fields are ignored. An empty `actors` list builds nothing and prints `[]`. Empty or invalid input is an error,
+so a failed command earlier in the pipe can't turn into a successful run that built nothing. In GitHub
+Actions, give such a step `shell: bash` so the pipe also fails on its own (the default shell has no `pipefail`).
+
+| Flag               | Default             | Meaning                                                                                                                |
+| ------------------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--version-number` | required            | Version to build, like `0.99`, or `default` for each Actor's default version (the one its default build tag points to) |
+| `--repo-url`       | the `origin` remote | Repository to build from, see [Repository check](#repository-check)                                                    |
+
+`build` never sets or changes build tags. A build gets the tag its version is configured with on the platform,
+so building the default version moves its tag (usually `latest`) to the new build, and building a version
+without a tag leaves every tag where it is. Builds always use the Docker cache.
+
+`build-for-test` and `release` are shortcuts for the two pipelines above, with the flags they always had.
+`build-for-test` takes `--target-branch`, `--base-commit` and `--test-files-glob`, inspects and builds the
+checked-out branch, and builds into version `0.99`. `release` takes `--base-commit`, and announces the release on Slack after building, the same
+way `notify-release` does.
 
 ### Releasing Actors (`release`)
 
@@ -669,6 +765,15 @@ the `origin` remote.
 
 ```bash
 npx apify-test-tools release --base-commit <sha> --release-slack-channel "#releases" --dry-run
+```
+
+The announcement is also its own command, `notify-release`, which reads the output of `get-affected-actors` on
+stdin. It posts the changelog additions to `--release-slack-channel` and the commits and changed files to
+`--report-slack-channel`, and posts nothing when there are no new commits. It needs `SLACK_TOKEN_RELEASES_BOT`.
+
+```bash
+npx apify-test-tools get-affected-actors --since <sha> \
+  | npx apify-test-tools notify-release --release-slack-channel "#releases" --dry-run
 ```
 
 #### `--base-commit`

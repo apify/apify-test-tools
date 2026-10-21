@@ -46,15 +46,18 @@ export interface ProcessResult {
 export const runProcess = async (
     command: string,
     args: string[],
-    options: { cwd: string; env: Record<string, string> },
+    { input = '', ...options }: { cwd: string; env: Record<string, string>; input?: string },
 ): Promise<ProcessResult> => {
     try {
-        const { stdout, stderr } = await execFileAsync(command, args, {
+        const promise = execFileAsync(command, args, {
             ...options,
             encoding: 'utf8',
             timeout: PROCESS_TIMEOUT_MS,
             maxBuffer: 100 * 1024 * 1024,
         });
+        // Closing stdin hands a command that reads it (e.g. `build`) the input, and one that doesn't never waits
+        promise.child.stdin?.end(input);
+        const { stdout, stderr } = await promise;
         return { status: 0, stdout, stderr };
     } catch (error) {
         // A non-zero exit rejects too, with the output on the error.
@@ -66,8 +69,10 @@ export const runProcess = async (
     }
 };
 
-export const runCli = async (cwd: string, ...args: string[]) =>
-    runProcess(process.execPath, [bundlePath, ...args], { cwd, env: cliEnv });
+export const runCliWithInput = async (cwd: string, input: string, ...args: string[]) =>
+    runProcess(process.execPath, [bundlePath, ...args], { cwd, env: cliEnv, input });
+
+export const runCli = async (cwd: string, ...args: string[]) => runCliWithInput(cwd, '', ...args);
 
 export interface ActorBuild {
     buildId: string;

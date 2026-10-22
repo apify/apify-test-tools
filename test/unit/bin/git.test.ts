@@ -125,9 +125,12 @@ describe('getChangedFiles', () => {
         expect(changedFiles).toStrictEqual(['file1.txt', 'folder/file2.txt']);
 
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(['diff', '--name-only', `${firstSha}~..${lastSha}`], {
-            operation: 'get the list of changed files between commits',
-        });
+        expect(gitCommandSpy).toHaveBeenCalledWith(
+            ['diff', '--name-only', '--no-renames', `${firstSha}~..${lastSha}`],
+            {
+                operation: 'get the list of changed files between commits',
+            },
+        );
     });
 
     it('should throw without running git when the commit list is empty', async () => {
@@ -148,7 +151,7 @@ describe('getChangedFiles', () => {
         expect(changedFiles).toStrictEqual(['file1.txt', 'folder/file2.txt']);
 
         expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(['diff', '--name-only', `${onlySha}~..${onlySha}`], {
+        expect(gitCommandSpy).toHaveBeenCalledWith(['diff', '--name-only', '--no-renames', `${onlySha}~..${onlySha}`], {
             operation: 'get the list of changed files between commits',
         });
     });
@@ -275,7 +278,14 @@ describe('getBranchOnlyChangedFiles', () => {
 
         expect(result).toStrictEqual(['README.md', 'actors/foo_bar/src/main.ts']);
         expect(gitCommandSpy).toHaveBeenCalledWith(
-            ['log', '--no-merges', '--name-only', '--pretty=format:', `${targetBranch}..${sourceBranch}`],
+            [
+                'log',
+                '--no-merges',
+                '--name-only',
+                '--no-renames',
+                '--pretty=format:',
+                `${targetBranch}..${sourceBranch}`,
+            ],
             { operation: 'list files changed by non-merge commits on the source branch' },
         );
     });
@@ -515,7 +525,7 @@ describe('getChangedFilesBetween', () => {
             'src/main.ts',
             'CHANGELOG.md',
         ]);
-        expect(spy).toHaveBeenCalledWith(['diff', '--name-only', 'base-sha..head-sha'], {
+        expect(spy).toHaveBeenCalledWith(['diff', '--name-only', '--no-renames', 'base-sha..head-sha'], {
             operation: 'get the list of changed files between commits',
         });
     });

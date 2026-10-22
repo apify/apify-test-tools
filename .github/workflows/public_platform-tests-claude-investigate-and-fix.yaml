@@ -80,6 +80,12 @@ on:
             NPM_TOKEN:
                 required: false
                 description: Read-only token for installing private npm packages before Claude runs.
+            REDASH_API_KEY:
+                required: false
+                description: Redash API key for measuring the failure's impact — affected runs, high-touch customers and revenue — from Snowflake.
+            AGENT_SKILLS_INTERNAL_GITHUB_TOKEN:
+                required: false
+                description: GitHub token with read access to apify/agent-skills-internal, for installing its redash-analyst plugin.
 
 jobs:
     investigate:
@@ -95,11 +101,37 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v5
 
+            - name: Check which optional secrets are set
+              id: optional-secrets
+              run: echo "agent-skills-token=${{ secrets.AGENT_SKILLS_INTERNAL_GITHUB_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+            - name: Checkout internal agent skills
+              id: agent-skills-internal
+              if: steps.optional-secrets.outputs.agent-skills-token == 'true'
+              uses: actions/checkout@v5
+              with:
+                  repository: apify/agent-skills-internal
+                  token: ${{ secrets.AGENT_SKILLS_INTERNAL_GITHUB_TOKEN }}
+                  path: .agent-skills-internal
+                  sparse-checkout: |
+                      .claude-plugin
+                      skills/redash-analyst
+                  persist-credentials: false
+
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+
+            - name: Install Redash MCP server
+              working-directory: ${{ runner.temp }}
+              run: npm install --prefix redash-mcp --ignore-scripts --no-audit --no-fund @suthio/redash-mcp@0.1.0
+
             - name: Run Claude Code
               id: claude
               uses: anthropics/claude-code-action@8251c103ac8c1d761882c86aba1412c7f583c844 # v1.0.213
               env:
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+                  REDASH_API_KEY: ${{ secrets.REDASH_API_KEY }}
                   MAX_FLAKINESS_RUNS: ${{ inputs.max_flakiness_runs }}
               with:
                   prompt: |
@@ -108,15 +140,22 @@ jobs:
                       ${{ inputs.investigate_prompt }}
                   github_token: ${{ secrets.GITHUB_TOKEN }}
                   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-                  plugin_marketplaces: https://github.com/apify/apify-test-tools.git
-                  plugins: platform-tests-investigate-and-fix@apify-test-tools
+                  plugin_marketplaces: |
+                      https://github.com/apify/apify-test-tools.git
+                      ${{ steps.agent-skills-internal.outcome == 'success' && format('{0}/.agent-skills-internal', github.workspace) || '' }}
+                  plugins: |
+                      platform-tests-investigate-and-fix@apify-test-tools
+                      ${{ steps.agent-skills-internal.outcome == 'success' && 'redash-analyst@apify-agent-skills-internal' || '' }}
                   # The `tools` query parameter below selects which tools the Apify MCP server
                   # exposes: reading an Actor run — its status, exit code, storage ids and log — and
                   # reading that run's dataset items and its key-value store keys and records, e.g.
                   # INPUT, OUTPUT and error snapshots. WARN: the server adds `abort-actor-run` on top
                   # even when not listed here, see https://github.com/apify/apify-mcp-server
+                  # `--disallowedTools` removes the Redash MCP server's tools that change Redash: creating,
+                  # editing, sharing or deleting queries, visualizations, dashboards, widgets, alerts and snippets.
                   claude_args: |
-                      --mcp-config '{"mcpServers":{"apify":{"type":"http","url":"https://mcp.apify.com/?tools=get-actor-run,get-actor-run-log,get-dataset-list,get-dataset,get-dataset-items,get-key-value-store-list,get-key-value-store,get-key-value-store-keys,get-key-value-store-record","headers":{"Authorization":"Bearer ${TESTER_APIFY_TOKEN}"}}}}'
+                      --mcp-config '{"mcpServers":{"apify":{"type":"http","url":"https://mcp.apify.com/?tools=get-actor-run,get-actor-run-log,get-dataset-list,get-dataset,get-dataset-items,get-key-value-store-list,get-key-value-store,get-key-value-store-keys,get-key-value-store-record","headers":{"Authorization":"Bearer ${TESTER_APIFY_TOKEN}"}},"redash":{"type":"stdio","command":"${{ runner.temp }}/redash-mcp/node_modules/.bin/redash-mcp","env":{"REDASH_URL":"https://charts.apify.com/","REDASH_API_KEY":"${REDASH_API_KEY}"}}}}'
+                      --disallowedTools mcp__redash__create_query,mcp__redash__update_query,mcp__redash__update_query_parameters,mcp__redash__archive_query,mcp__redash__fork_query,mcp__redash__add_query_favorite,mcp__redash__remove_query_favorite,mcp__redash__create_visualization,mcp__redash__update_visualization,mcp__redash__update_chart_visualization,mcp__redash__delete_visualization,mcp__redash__create_dashboard,mcp__redash__update_dashboard,mcp__redash__update_dashboard_parameters,mcp__redash__archive_dashboard,mcp__redash__fork_dashboard,mcp__redash__share_dashboard,mcp__redash__unshare_dashboard,mcp__redash__add_dashboard_favorite,mcp__redash__remove_dashboard_favorite,mcp__redash__create_alert,mcp__redash__update_alert,mcp__redash__delete_alert,mcp__redash__mute_alert,mcp__redash__add_alert_subscription,mcp__redash__remove_alert_subscription,mcp__redash__create_widget,mcp__redash__update_widget,mcp__redash__update_widget_layout,mcp__redash__update_dashboard_layout,mcp__redash__update_widget_parameter_mappings,mcp__redash__delete_widget,mcp__redash__create_query_snippet,mcp__redash__update_query_snippet,mcp__redash__delete_query_snippet
                       --model ${{ inputs.model }}
                       --dangerously-skip-permissions
 

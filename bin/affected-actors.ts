@@ -71,29 +71,29 @@ const findValidatedSha = async (since: string, headSha: string): Promise<string 
 
 /**
  * This is Juan's magical algorithm where we need just 2 git diffs to determine functional changes on Actors.
- * 
- * Naively, we could just check branch HEAD changes vs base or parent of first commit and be done but 
+ *
+ * Naively, we could just check branch HEAD changes vs base or parent of first commit and be done but
  * we do this jiu-jitsu code to apply 2 optimizations:
  * 1. On our PR branch, we track last validated commit (since) that was tested and so we only need to test new commits.
  * 2. We also merge changes from the base branch (usually master) and we can consider those already validated as well.
- * 
+ *
  * But there is annoying problem: even if both our branch and base are validated, they could have novel interactions and
  * we need to retest those.
- * 
+ *
  * So we look at:
  * 1. The changes introduced by our branch since the last validated commit (`since..HEAD`).
  * 2. The changes introduced by the branch compared to the base branch (`base...HEAD`). The important part is that this
  * diff does check the whole branch, discarding the last validated commit (since) so it checks those novel interactions problem.
- * 
+ *
  * The magic is that both need to contain changes for an Actor to be retested:
  * 1. If we have changes only in since..HEAD (and not in base...HEAD), it means those changes came from merging the base alone
  * which is already validated and there were actually no real changes introduced by our branch alone.
  * 2. If we have changes only in base...HEAD (and not in since..HEAD), it means there are no new changes on our branch
  * since it was last validated. base...HEAD has changes that we already validated.
- * 
+ *
  * This enables to simply do those 2 diffs for each Actor's context separately and only Actors that have changes
  * in both diffs need to be retested.
- * 
+ *
  * THIS ASSUMES BRANCH IS UP TO DATE WITH BASE WHEN IT MERGES, which we currently require. Only then is HEAD what lands on
  * base, and base's commits validated. Otherwise what lands is HEAD combined with base's newer commits, which nobody
  * tested, however the Actors are picked.
@@ -160,7 +160,12 @@ export const getAffectedActors = async ({
         const changedFiles = await getChangedFilesBetween(range.fromRef, range.toRef);
         return {
             changedFiles,
-            changedActors: await getChangedActors({ filepathsChanged: changedFiles, actorConfigs, range, testFilesGlob }),
+            changedActors: await getChangedActors({
+                filepathsChanged: changedFiles,
+                actorConfigs,
+                range,
+                testFilesGlob,
+            }),
         };
     };
 

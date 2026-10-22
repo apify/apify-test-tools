@@ -41,31 +41,39 @@ jobs:
                   # This is needed to force overriding the cache with new entry at the end
                   restore-keys: base_commit-
 
+            # Needs no tokens, it only reads git and apify-test-tools.config.json. The setup action checks out
+            # the PR branch itself (not GitHub's merge commit), so the range ends at the branch's HEAD.
+            - name: Find affected Actors
+              env:
+                  # Branch names are attacker-controlled on fork PRs, so they reach the script as
+                  # environment variables rather than being interpolated into it.
+                  BASE_REF: ${{ github.base_ref }}
+              run: |
+                  base_commit=$(cat base_commit.txt 2>/dev/null || echo "")
+                  echo "Last validated (base) commit to be used for build & test: $base_commit"
+                  args=(
+                    --base "origin/$BASE_REF"
+                    # TODO: Temporary hotfix until build glob matching aligns with Vitest's test selection glob.
+                    --test-files-glob 'test/platform/**'
+                  )
+                  [ -n "$base_commit" ] && args+=(--since "$base_commit")
+                  apify-test-tools get-affected-actors "${args[@]}" > affected.json
+
+            # Cosmetic-only changes need no tests, so only the functionally changed Actors are built, into the
+            # test version 0.99 that users never run.
             # run-with-apify-tokens.mjs reads the token names from in apify-test-tools.config.json
             # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
             # The library never sees secrets it doesn't need
             - name: Build
               id: build
+              # bash rather than the default shell, for pipefail
+              shell: bash
               env:
                   ALL_SECRETS: ${{ toJSON(secrets) }}
-                  # Branch names are attacker-controlled on fork PRs, so they reach the script as
-                  # environment variables rather than being interpolated into it.
-                  HEAD_REF: ${{ github.head_ref }}
-                  BASE_REF: ${{ github.base_ref }}
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
               run: |
-                  base_commit=$(cat base_commit.txt 2>/dev/null || echo "")
-                  echo "Last validated (base) commit to be used for build & test: $base_commit"
-                  args=(
-                    --source-branch "origin/$HEAD_REF"
-                    --target-branch "origin/$BASE_REF"
-                    # TODO: Temporary hotfix until build glob matching aligns with Vitest's test selection glob.
-                    --test-files-glob 'test/platform/**'
-                    --use-docker-cache
-                  )
-                  [ -n "$base_commit" ] && args+=(--base-commit "$base_commit")
-                  actor_builds=$(node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" \
-                    apify-test-tools build "${args[@]}")
+                  actor_builds=$(jq '{ actors: .functionallyChangedActors }' affected.json \
+                    | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99)
                   echo "actor_builds=$actor_builds" | tee -a "$GITHUB_OUTPUT"
 
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.
@@ -77,18 +85,10 @@ jobs:
 
             # NOTE: This is an optimization that if we did functional changes and later only cosmetic changes (e.g. dev readme), we will compare changes files only for the last commit. This must run after tests because we want to cache the latest commit only if the tests are successful
             - name: Store last validated commit to cache
-              env:
-                  HEAD_REF: ${{ github.head_ref }}
-                  BASE_REF: ${{ github.base_ref }}
               run: |
-                  base_commit=$(cat base_commit.txt 2>/dev/null || echo "")
-                  echo "Old last validated (base) commit: $base_commit"
-                  args=(
-                    --source-branch "origin/$HEAD_REF"
-                    --target-branch "origin/$BASE_REF"
-                  )
-                  [ -n "$base_commit" ] && args+=(--base-commit "$base_commit")
-                  apify-test-tools get-latest-commit "${args[@]}" > ./base_commit.txt
+                  echo "Old last validated (base) commit: $(cat base_commit.txt 2>/dev/null || echo "")"
+                  # The HEAD that was just built and tested
+                  jq -r .head affected.json > base_commit.txt
                   echo "New last validated (base) commit: $(cat base_commit.txt)"
 
     # Pure static checks against the repo. Needs no Apify or Slack credentials, only the npm

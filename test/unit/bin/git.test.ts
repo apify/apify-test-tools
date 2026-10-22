@@ -8,7 +8,6 @@ import {
     getCommits,
     getCommitsBetween,
     getCurrentBranch,
-    getMergeBase,
     getRepoName,
     normalizeRepoUrl,
     parseBaseCommit,
@@ -414,28 +413,17 @@ describe('resolveCommitSha', () => {
     });
 });
 
-describe('getMergeBase', () => {
-    it('finds the commit a three-dot diff compares against', async () => {
-        const sha = 'b'.repeat(40);
-        const spy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(sha);
-        await expect(getMergeBase('origin/master', 'HEAD')).resolves.toBe(sha);
-        expect(spy).toHaveBeenCalledWith(['merge-base', 'origin/master', 'HEAD'], {
-            operation: 'find where HEAD forked from origin/master',
-        });
-    });
-});
-
 describe('findCommitSha', () => {
-    it('resolves a commit in the local history', async () => {
-        const sha = 'c'.repeat(40);
-        vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(sha);
-        await expect(findCommitSha(sha)).resolves.toBe(sha);
+    // Real git on this repository's own history, since what matters is how git answers
+    beforeEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('resolves a ref in the local history to its commit', async () => {
+        await expect(findCommitSha('HEAD')).resolves.toMatch(/^[0-9a-f]{40}$/);
     });
 
     it('returns undefined for a commit missing from the local history', async () => {
-        vi.spyOn(Utils, 'runGitCommand').mockRejectedValue(
-            new Utils.GitCommandError(['rev-parse'], Object.assign(new Error('missing'), { code: 1 })),
-        );
         await expect(findCommitSha('d'.repeat(40))).resolves.toBeUndefined();
     });
 

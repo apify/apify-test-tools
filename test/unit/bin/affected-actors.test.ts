@@ -144,7 +144,9 @@ describe('getAffectedActors', () => {
                 vi.spyOn(Git, 'findCommitSha').mockResolvedValue(found);
                 const result = await getAffectedActors({ base: 'origin/master', since: sinceSha, ...selection });
                 expect(result.functionallyChangedActors).toStrictEqual([{ actorFullName: 'owner/a' }]);
-                expect(changedActorsSpy).toHaveBeenCalledTimes(1);
+                // With no usable validated commit, the "since" diff falls back to the same range as the
+                // base diff, so getChangedActors runs twice for identical ranges instead of once.
+                expect(changedActorsSpy).toHaveBeenCalledTimes(2);
             });
         });
     });

@@ -17,6 +17,7 @@ const HEAD = 'HEAD';
 
 interface AffectedActorsOptions {
     /**
+     * Base usually points to the master branch
      * Only what HEAD changes compared to base counts, like `git diff base...HEAD` or GitHub's "Files changed" tab:
      * the branch's own changes, not what it merged in from base.
      */
@@ -69,16 +70,37 @@ const findValidatedSha = async (since: string, headSha: string): Promise<string 
 };
 
 /**
- * Keeps the Actors the branch changed that also changed since its last validated commit. The two diffs answer
- * different questions: `base...HEAD` is what the branch changes, `since..HEAD` what changed since the last validation,
- * including what came from base through a merge or a rebase. An Actor in only one of them is already validated, either
- * by this branch or on base. Changes in both can interact, so only those are checked again.
- *
- * An Actor is functional only when both diffs say so. A validated functional change of the branch plus cosmetic
- * changes since is cosmetic, and so is a functional change from base meeting only cosmetic changes of the branch.
+ * This is Juan's magical algorithm where we need just 2 git diffs to determine functional changes on Actors.
+ * 
+ * Naively, we could just check branch HEAD changes vs base or parent of first commit and be done but 
+ * we do this jiu-jitsu code to apply 2 optimizations:
+ * 1. On our PR branch, we track last validated commit (since) that was tested and so we only need to test new commits.
+ * 2. We also merge changes from the base branch (usually master) and we can consider those already validated as well.
+ * 
+ * But there is annoying problem: even if both our branch and base are validated, they could have novel interactions and
+ * we need to retest those.
+ * 
+ * So we look at:
+ * 1. The changes introduced by our branch since the last validated commit (`since..HEAD`).
+ * 2. The changes introduced by the branch compared to the base branch (`base...HEAD`). The important part is that this
+ * diff does check the whole branch, discarding the last validated commit (since) so it checks those novel interactions problem.
+ * 
+ * The magic is that both need to contain changes for an Actor to be retested:
+ * 1. If we have changes only in since..HEAD (and not in base...HEAD), it means those changes came from merging the base alone
+ * which is already validated and there were actually no real changes introduced by our branch alone.
+ * 2. If we have changes only in base...HEAD (and not in since..HEAD), it means there are no new changes on our branch
+ * since it was last validated. base...HEAD has changes that we already validated.
+ * 
+ * This enables to simply do those 2 diffs for each Actor's context separately and only Actors that have changes
+ * in both diffs need to be retested.
+ * 
+ * THIS ASSUMES BRANCH IS UP TO DATE WITH BASE WHEN IT MERGES, which we currently require. Only then is HEAD what lands on
+ * base, and base's commits validated. Otherwise what lands is HEAD combined with base's newer commits, which nobody
+ * tested, however the Actors are picked.
  *
  * In each example the branch's functional change to Actor A was validated at `since`, then one more push follows:
  *
+ * Example scenarios:
  * - Our own branch only: a commit changes A's README and B's code.
  *   `since..HEAD`: A cosmetic, B functional. `base...HEAD`: A and B functional.
  *   → A cosmetic, B functional: only B is tested, A's code is still the validated one.
@@ -90,22 +112,23 @@ const findValidatedSha = async (since: string, headSha: string): Promise<string 
  *   `since..HEAD`: A and C functional. `base...HEAD`: A functional.
  *   → A functional, C left out: A is tested, since base's change can interact with the branch's, while C only has
  *   base's change, which base already validated.
- *
- * This assumes the branch is up to date with base when it merges, which we require. Only then is HEAD what lands on
- * base, and base's commits validated. Otherwise what lands is HEAD combined with base's newer commits, which nobody
- * tested, however the Actors are picked.
  */
-const narrowToChangedSince = (branch: ChangedActors, sinceValidated: ChangedActors): ChangedActors => {
+const intersectChangedInBranchVsSince = (branch: ChangedActors, sinceValidated: ChangedActors): ChangedActors => {
     const narrowed: ChangedActors = { functional: [], cosmetic: [] };
+    // All checks are done for each Actor separately, that's cleanest and most accurate
     for (const actor of [...branch.functional, ...branch.cosmetic]) {
+        // base...HEAD
         const changedFunctionallyOnBranch = branch.functional.includes(actor);
+        // since..HEAD
         const changedFunctionallySince = sinceValidated.functional.includes(actor);
+
+        // changedSince is used for release. Release cares also about cosmetic.
         const changedSince = changedFunctionallySince || sinceValidated.cosmetic.includes(actor);
 
         // Nothing changed since the last validation, so the branch's change to this Actor is already validated
         if (!changedSince) continue;
 
-        // Functional only when both diffs say so, otherwise its code matches a validated version
+        // As we said, only intersection counts as functional, otherwise it's cosmetic
         if (changedFunctionallyOnBranch && changedFunctionallySince) {
             narrowed.functional.push(actor);
         } else {
@@ -132,34 +155,39 @@ export const getAffectedActors = async ({
         throw new Error('Pass --base, --since, or both to select the commits to inspect.');
     }
 
-    const headSha = await resolveCommitSha(HEAD);
     const actorConfigs = await readConfigFile({ actors, ignore });
-    const inspect = async (range: GitRange) => {
+    const getChangedInRange = async (range: GitRange) => {
         const changedFiles = await getChangedFilesBetween(range.fromRef, range.toRef);
         return {
             changedFiles,
-            changed: await getChangedActors({ filepathsChanged: changedFiles, actorConfigs, range, testFilesGlob }),
+            changedActors: await getChangedActors({ filepathsChanged: changedFiles, actorConfigs, range, testFilesGlob }),
         };
     };
 
-    const range: GitRange = {
+    const headSha = await resolveCommitSha(HEAD);
+    const rangeVsBase: GitRange = {
+        // merge base = PR, release base = push to master (release)
         fromRef: base ? await getMergeBase(base, HEAD) : await resolveReleaseBaseCommit(since!),
         toRef: headSha,
     };
-    const { changedFiles, changed: changedInRange } = await inspect(range);
 
+    // Falls back to rangeVsBase.fromRef when there's no (usable) last validated commit — same as
+    // intersecting the branch's changes with themselves, which is a no-op (see this function's docs).
     const validatedSha = base && since ? await findValidatedSha(since, headSha) : undefined;
-    const changed = validatedSha
-        ? narrowToChangedSince(changedInRange, (await inspect({ fromRef: validatedSha, toRef: headSha })).changed)
-        : changedInRange;
+    const sinceFromRef = validatedSha ?? rangeVsBase.fromRef;
+
+    const { changedFiles, changedActors: changedVsBase } = await getChangedInRange(rangeVsBase);
+    const { changedActors: changedSinceActors } = await getChangedInRange({ fromRef: sinceFromRef, toRef: headSha });
+    // See this function's docs to understand the algorithm: only intersection counts as functional, otherwise it's cosmetic.
+    const changedActors = intersectChangedInBranchVsSince(changedVsBase, changedSinceActors);
 
     return {
         version: 1,
         head: headSha,
-        commits: await getCommitsBetween(range.fromRef, range.toRef),
+        commits: await getCommitsBetween(rangeVsBase.fromRef, rangeVsBase.toRef),
         changedFiles,
-        changelog: await getChangelogAdditions(range.fromRef, range.toRef, changedFiles),
-        functionallyChangedActors: names(changed.functional),
-        cosmeticallyChangedActors: names(changed.cosmetic),
+        changelog: await getChangelogAdditions(rangeVsBase.fromRef, rangeVsBase.toRef, changedFiles),
+        functionallyChangedActors: names(changedActors.functional),
+        cosmeticallyChangedActors: names(changedActors.cosmetic),
     };
 };

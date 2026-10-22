@@ -9,8 +9,8 @@ const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR
  * Gets the list of changed files between the given commits (inclusive), so it diffs from the parent of the oldest.
  */
 export const getChangedFiles = async (commits: Commit[]) => {
-    // getCommits never returns an empty list (the rerun check returns all commits when the base commit
-    // is the branch HEAD, and an empty git range throws when parsing), so this signals a programmer error
+    // getCommits never returns an empty list (it throws on an empty range, and the rerun check returns all
+    // commits when the base commit is the branch HEAD), so this signals a programmer error
     if (commits.length === 0) {
         throw new Error('Cannot get changed files: the commit list is empty. This should never happen.');
     }
@@ -83,8 +83,8 @@ export const getCommitsBetween = async (fromRef: string, toRef: string): Promise
     const output = await runGitCommand(['log', `--pretty=format:${GIT_LOG_FORMAT}`, `${fromRef}..${toRef}`], {
         operation: 'list commits reachable from the source ref but absent from the target ref',
     });
-    const commitsStrings = output.split('\n');
-    const commits = commitsStrings.map((commitString) => parseCommit(commitString));
+    // An empty range (e.g. `x..x`) prints nothing
+    const commits = output.split('\n').filter(Boolean).map(parseCommit);
     commits.reverse();
     return commits;
 };
@@ -100,6 +100,9 @@ export const getCommits = async ({
 }: Pick<Config, 'sourceBranch' | 'targetBranch' | 'baseCommit'>): Promise<Commit[]> => {
     const baseCommitSha = parseBaseCommit(baseCommit);
     const commits = await getCommitsBetween(targetBranch, sourceBranch);
+    if (commits.length === 0) {
+        throw new Error(`${sourceBranch} has no commits that are not on ${targetBranch}.`);
+    }
 
     // The last validated (base) commit being the branch HEAD means nothing new was pushed since the last
     // validation — the dev reran the workflow (or force-pushed to the same state) to trigger a clean test

@@ -387,6 +387,22 @@ describe('getCommitsBetween', () => {
         });
     });
 });
+describe('empty commit ranges', () => {
+    // Real git on this repository's own history: HEAD..HEAD has no commits
+    beforeEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('getCommitsBetween returns no commits', async () => {
+        await expect(getCommitsBetween('HEAD', 'HEAD')).resolves.toStrictEqual([]);
+    });
+
+    it('getCommits fails clearly, since the commands built on it need at least one commit', async () => {
+        await expect(getCommits({ sourceBranch: 'HEAD', targetBranch: 'HEAD' })).rejects.toThrow(
+            'HEAD has no commits that are not on HEAD.',
+        );
+    });
+});
 
 describe('getChangedFilesBetween', () => {
     it('diffs the two endpoints directly', async () => {

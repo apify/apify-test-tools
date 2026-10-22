@@ -75,13 +75,6 @@ describe('getAffectedActors', () => {
             expect(findCommitSpy).not.toHaveBeenCalled();
         });
 
-        it('has no commits when HEAD is on --base', async () => {
-            vi.spyOn(Git, 'getMergeBase').mockResolvedValue(headSha);
-            const result = await getAffectedActors({ base: 'origin/master', ...selection });
-            expect(result.commits).toStrictEqual([]);
-            expect(commitsBetweenSpy).not.toHaveBeenCalled();
-        });
-
         describe('and --since', () => {
             const sinceFiles = ['README.md'];
 
@@ -182,16 +175,6 @@ describe('getAffectedActors', () => {
             expect(commitsBetweenSpy).toHaveBeenCalledWith(sinceSha, headSha);
             expect(Git.getChangedFilesBetween).toHaveBeenCalledWith(sinceSha, headSha);
             expect(Git.getChangelogAdditions).toHaveBeenCalledWith(sinceSha, headSha, changedFiles);
-        });
-
-        it('has no commits when head is the --since commit', async () => {
-            resolveBaseSpy.mockResolvedValue(headSha);
-
-            const result = await getAffectedActors({ since: headSha, ...selection });
-
-            expect(result.commits).toStrictEqual([]);
-            // Empty `git log x..x` output doesn't parse as a commit, so it's never run
-            expect(commitsBetweenSpy).not.toHaveBeenCalled();
         });
     });
 });

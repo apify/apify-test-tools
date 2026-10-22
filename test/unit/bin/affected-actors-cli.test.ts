@@ -66,10 +66,14 @@ const commitOnMain = async (message: string, ...files: string[]) => {
     git('checkout', '-q', 'feature');
 };
 
-const getAffectedActors = (...args: string[]) => {
+const runGetAffectedActors = (...args: string[]) => {
     const result = spawnSync(cliPath, ['get-affected-actors', ...args], { cwd: repoDir, env, encoding: 'utf8' });
     expect(result.status, result.stderr).toBe(0);
-    const document = JSON.parse(result.stdout);
+    return JSON.parse(result.stdout);
+};
+
+const getAffectedActors = (...args: string[]) => {
+    const document = runGetAffectedActors(...args);
     const names = (actors: { actorFullName: string }[]) =>
         actors.map(({ actorFullName }) => actorFullName.replace('owner/actor-', '')).sort();
     return {
@@ -177,5 +181,13 @@ describe('get-affected-actors CLI on real git histories', () => {
         const wholeBranch = { functional: ['a'], cosmetic: [] };
         expect(getAffectedActors('--base', 'main', '--since', head)).toStrictEqual(wholeBranch);
         expect(getAffectedActors('--base', 'main', '--since', 'e'.repeat(40))).toStrictEqual(wholeBranch);
+    });
+
+    it('reports nothing for an empty range', async () => {
+        const nothing = { commits: [], changedFiles: [], functionallyChangedActors: [], cosmeticallyChangedActors: [] };
+        // The branch has no commits of its own yet
+        expect(runGetAffectedActors('--base', 'main')).toMatchObject(nothing);
+        // A release with nothing new since the last one
+        expect(runGetAffectedActors('--since', git('rev-parse', 'HEAD'))).toMatchObject(nothing);
     });
 });

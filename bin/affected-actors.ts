@@ -96,12 +96,23 @@ const findValidatedSha = async (since: string, headSha: string): Promise<string 
  * tested, however the Actors are picked.
  */
 const narrowToChangedSince = (branch: ChangedActors, sinceValidated: ChangedActors): ChangedActors => {
-    const changedSince = [...sinceValidated.functional, ...sinceValidated.cosmetic];
-    const functional = branch.functional.filter((actor) => sinceValidated.functional.includes(actor));
-    const cosmetic = [...branch.functional, ...branch.cosmetic].filter(
-        (actor) => changedSince.includes(actor) && !functional.includes(actor),
-    );
-    return { functional, cosmetic };
+    const narrowed: ChangedActors = { functional: [], cosmetic: [] };
+    for (const actor of [...branch.functional, ...branch.cosmetic]) {
+        const changedFunctionallyOnBranch = branch.functional.includes(actor);
+        const changedFunctionallySince = sinceValidated.functional.includes(actor);
+        const changedSince = changedFunctionallySince || sinceValidated.cosmetic.includes(actor);
+
+        // Nothing changed since the last validation, so the branch's change to this Actor is already validated
+        if (!changedSince) continue;
+
+        // Functional only when both diffs say so, otherwise its code matches a validated version
+        if (changedFunctionallyOnBranch && changedFunctionallySince) {
+            narrowed.functional.push(actor);
+        } else {
+            narrowed.cosmetic.push(actor);
+        }
+    }
+    return narrowed;
 };
 
 /**
@@ -145,8 +156,7 @@ export const getAffectedActors = async ({
     return {
         version: 1,
         head: headSha,
-        // Empty `git log x..x` output doesn't parse as a commit
-        commits: range.fromRef === headSha ? [] : await getCommitsBetween(range.fromRef, range.toRef),
+        commits: await getCommitsBetween(range.fromRef, range.toRef),
         changedFiles,
         changelog: await getChangelogAdditions(range.fromRef, range.toRef, changedFiles),
         functionallyChangedActors: names(changed.functional),

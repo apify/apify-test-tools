@@ -211,8 +211,8 @@ jobs:
         secrets: inherit
 ```
 
-Set `require-env-vars-in-sync: true` under `with:` to fail the build when the env vars of the test
-version differ from the default version's. See [Env var check](#env-var-check).
+The build fails when the env vars of the test version differ from the default version's. Set
+`require-env-vars-in-sync: false` under `with:` to turn that off. See [Env var check](#env-var-check).
 
 ### `release-latest.yaml`
 
@@ -824,8 +824,9 @@ extra. Only names are compared, since the API doesn't return secret values. A ve
 exist yet counts as having no env vars, so if the default version has any, create the test version on
 the platform with the same env vars first. A dry run checks the env vars too.
 
-It's off by default, so a one-off build, e.g. of a debug branch, isn't held up by it. To turn it on in
-CI, set the `require-env-vars-in-sync` input of [`public_pr-build-test.yaml`](#pr-build-devel-testyaml).
+The CLI leaves it off by default, so a one-off build, e.g. of a debug branch, isn't held up by it.
+[`public_pr-build-test.yaml`](#pr-build-devel-testyaml) turns it on by default; set its
+`require-env-vars-in-sync` input to `false` to turn it off.
 
 #### Dev mode
 

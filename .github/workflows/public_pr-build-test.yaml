@@ -15,7 +15,7 @@ on:
             # Fail the build unless the env var names of version 0.99 match the default version's
             require-env-vars-in-sync:
                 type: boolean
-                default: false
+                default: true
                 required: false
 
 concurrency:

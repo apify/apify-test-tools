@@ -211,6 +211,9 @@ jobs:
         secrets: inherit
 ```
 
+The build fails when the env vars of the test version differ from the default version's. Set
+`require-env-vars-in-sync: false` under `with:` to turn that off. See [Env var check](#env-var-check).
+
 ### `release-latest.yaml`
 
 ```yaml
@@ -811,6 +814,19 @@ repository. The URL form doesn't matter (`https://github.com/org/repo` equals
 
 To build from a different repository on purpose, e.g. when moving an Actor, pass `--repo-url`. That
 skips the check.
+
+#### Env var check
+
+Tests should run the Actor with the same env vars users run it with. Pass `--require-env-vars-in-sync`
+to `build` or `build-from-local` to compare the env vars of the version they build (e.g. `0.99`, or
+`0.98` for `build-from-local`) with those of the default version, and fail if a name is missing or
+extra. Only names are compared, since the API doesn't return secret values. A version that doesn't
+exist yet counts as having no env vars, so if the default version has any, create the test version on
+the platform with the same env vars first. A dry run checks the env vars too.
+
+The CLI leaves it off by default, so a one-off build, e.g. of a debug branch, isn't held up by it.
+[`public_pr-build-test.yaml`](#pr-build-devel-testyaml) turns it on by default; set its
+`require-env-vars-in-sync` input to `false` to turn it off.
 
 #### Dev mode
 

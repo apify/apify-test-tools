@@ -265,7 +265,7 @@ environment variables, so a secret is only visible to the step that needs it:
 | `TESTER_APIFY_TOKEN`                                                      | the vitest step, and the Claude investigation step: the Apify MCP server's bearer token for reading the failing run, its log and its storages, and Claude's token for re-running it to measure how often the failure happens |
 | `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and release steps only                                                                                                                                                                                         |
 | `REDASH_API_KEY`                                                          | the Claude investigation step: the Redash MCP server's key for measuring the failure's impact from Snowflake. Optional                                                                                                       |
-| `AGENT_SKILLS_INTERNAL_GITHUB_TOKEN`                                      | the investigation job's checkout of `apify/agent-skills-internal` only, for the `redash-analyst` plugin. It isn't left in the checkout. Optional                                                                             |
+| `AGENT_SKILLS_INTERNAL_GITHUB_TOKEN`                                      | the investigation job's checkout of `apify/agent-skills-internal` only, for the `redash-analyst` plugin. Optional                                                                                                            |
 
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its
 own token via `tokenEnvVar` in `apify-test-tools.config.json`. Those steps pass

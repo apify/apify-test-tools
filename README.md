@@ -470,6 +470,21 @@ testActor(
 
 ---
 
+Any other vitest test option works too. For example, `fails: true` marks a test as expected to fail, so a known breakage doesn't turn CI red until someone fixes it (the test fails the run again once it starts passing):
+
+```ts
+testActor(
+    actorId,
+    'known broken',
+    async ({ expect, run }) => {
+        /* ... */
+    },
+    { fails: true },
+);
+```
+
+---
+
 ### Using prefilled input
 
 If the actor has a prefilled input on the platform, you can merge it with your test input:

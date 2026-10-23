@@ -1,241 +1,67 @@
 import type { Assertion, ExpectStatic } from 'vitest';
 
-import { TO_FINISH_WITH_OPTIONS } from './consts.js';
+import { getFinishChecks } from './finish-checks.js';
 import type { RunTestResult } from './run-test-result.js';
-import type { Interval, ToFinishWithOptions } from './types.js';
+import type { ToFinishWithOptions } from './types.js';
+
+const show = (value: unknown): string => {
+    try {
+        return JSON.stringify(value) ?? String(value);
+    } catch {
+        return String(value);
+    }
+};
+
+const isObject = (value: unknown): value is object =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** A matcher that checks one property of the value, e.g. `toBeString` or `toBeEmptyArray`. */
+const predicateMatcher = (description: string, predicate: (actual: unknown) => boolean) => (actual: unknown) => {
+    const pass = predicate(actual);
+    return { pass, message: () => `Expected ${show(actual)} ${pass ? 'not ' : ''}to be ${description}` };
+};
 
 export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
     expect.extend({
-        toBeArray: (actual) => {
-            const pass = Array.isArray(actual);
-            return {
-                pass,
-                message: () => `Expected "${actual}" to be a array`,
-            };
-        },
-        toBeBoolean: (received) => {
-            const actual = typeof received;
-            const expected = 'boolean';
-            return {
-                pass: actual === expected,
-                message: () => `Expected "${actual}" to be a boolean`,
-                expected: 'boolean',
-            };
-        },
-        toBeEmptyArray: (actual) => {
-            const pass = Array.isArray(actual) && actual.length === 0;
-            return {
-                pass,
-                message: () => `Expected ${actual} to be an empty array`,
-                actual,
-                expected: [],
-            };
-        },
-        toBeNonEmptyArray: (actual) => {
-            const pass = Array.isArray(actual) && actual.length > 0;
-            return {
-                pass,
-                message: () => `Expected ${actual} to be a non-empty array`,
-            };
-        },
-        toBeNonEmptyString: (actual) => {
-            const pass = typeof actual === 'string' && actual.length > 0;
-            return {
-                pass,
-                message: () => `Expected "${actual}" to be a non-empty string`,
-            };
-        },
-        toBeNumber: (actual) => {
-            const pass = typeof actual === 'number';
-            return {
-                pass,
-                message: () => `Expected "${actual}" to be a number`,
-            };
-        },
-        toBeNonEmptyObject: (actual) => {
-            const isObject = typeof actual === 'object' && !Array.isArray(actual) && actual !== null;
-            const isNonEmpty = Object.entries(actual).length > 0;
-            const pass = isObject && isNonEmpty;
-            return {
-                pass,
-                message: () => `Expected "${actual}" to be a non-emtpy object`,
-            };
-        },
-        toBeObject: (actual) => {
-            const pass = typeof actual === 'object' && !Array.isArray(actual) && actual !== null;
-            return {
-                pass,
-                message: () => `Expected "${actual}" to be an object`,
-            };
-        },
-        toBeString: (received) => {
-            const actual = typeof received;
-            const expected = 'string';
-            return {
-                pass: actual === expected,
-                message: () => `Expected "${actual}" to be a string`,
-                actual,
-                expected,
-            };
-        },
-        toBeTrue: (actual) => {
-            const pass = actual === true;
-            return {
-                pass,
-                message: () => `Expected "${actual}" to be true`,
-                expected: true,
-                actual,
-            };
-        },
-        toBeFalse: (actual) => {
-            const pass = actual === false;
-            return {
-                pass,
-                message: () => `Expected "${actual}" to be false`,
-            };
-        },
-        toBeWholeNumber: (received) => {
-            const pass = Number.isInteger(received);
-            return {
-                pass,
-                message: () => `Expected "${received}" to be a whole number`,
-            };
-        },
+        toBeArray: predicateMatcher('an array', Array.isArray),
+        toBeBoolean: predicateMatcher('a boolean', (actual) => typeof actual === 'boolean'),
+        toBeEmptyArray: predicateMatcher('an empty array', (actual) => Array.isArray(actual) && actual.length === 0),
+        toBeNonEmptyArray: predicateMatcher(
+            'a non-empty array',
+            (actual) => Array.isArray(actual) && actual.length > 0,
+        ),
+        toBeNonEmptyString: predicateMatcher(
+            'a non-empty string',
+            (actual) => typeof actual === 'string' && actual.length > 0,
+        ),
+        toBeNumber: predicateMatcher('a number', (actual) => typeof actual === 'number'),
+        toBeNonEmptyObject: predicateMatcher(
+            'a non-empty object',
+            (actual) => isObject(actual) && Object.keys(actual).length > 0,
+        ),
+        toBeObject: predicateMatcher('an object', isObject),
+        toBeString: predicateMatcher('a string', (actual) => typeof actual === 'string'),
+        toBeTrue: predicateMatcher('true', (actual) => actual === true),
+        toBeFalse: predicateMatcher('false', (actual) => actual === false),
+        toBeWholeNumber: predicateMatcher('a whole number', Number.isInteger),
         toBeWithinRange: (received, lower, upper) => {
             const pass = received >= lower && received <= upper;
             return {
                 pass,
-                message: () => `Expected ${received} to be within range <${lower}, ${upper}>`,
+                message: () => `Expected ${received} ${pass ? 'not ' : ''}to be within range <${lower}, ${upper}>`,
             };
         },
         toFinishWith: async <PpeEvent extends string>(
             received: RunTestResult,
             userOptions: ToFinishWithOptions<PpeEvent>,
         ) => {
-            const options = {
-                ...TO_FINISH_WITH_OPTIONS,
-                ...userOptions,
-            };
-
-            const failedAssertions: string[] = [];
-
-            const diffs: Diffs = {
-                pass: true,
-                actual: ['Run:'],
-                expected: ['Run:'],
-            };
-            {
-                const expected = options?.status;
-                const actual = received.status;
-                const statusTest = expected === actual;
-                if (statusTest === false) {
-                    diffs.pass = false;
-                    diffs.actual.push(`status=${actual}`);
-                    diffs.expected.push(`status=${expected}`);
-                    failedAssertions.push(`Failed status check, expected "${expected}", got "${actual}".`);
-                }
-            }
-
-            const {
-                chargedEventCounts,
-                stats: { durationMillis },
-            } = await received.getRunInfo();
-            const datasetItemCount = (await received.getDataset()).items.length;
-            const stats = await received.getStatistics();
-
-            const checkInterval = (
-                value: number | undefined,
-                key: ['datasetItemCount', 'duration', 'failedRequests', 'requestsRetries'][number],
-                label: string,
-            ) => {
-                const result = isWithinInterval(diffs, value, options, key);
-                if (result === false) {
-                    failedAssertions.push(
-                        `Failed ${label} check, expected ${JSON.stringify(options[key])}, got ${value}.`,
-                    );
-                }
-            };
-
-            checkInterval(datasetItemCount, 'datasetItemCount', 'dataset item count');
-            checkInterval(durationMillis, 'duration', 'duration');
-            checkInterval(stats?.requestsFailed, 'failedRequests', 'failed requests');
-            checkInterval(stats?.requestsRetries, 'requestsRetries', 'requests retries');
-
-            if (options.maxRetriesPerRequest !== null) {
-                const maxRetriesPerRequestObserved = (stats?.requestRetryHistogram ?? [0]).length - 1;
-                if (maxRetriesPerRequestObserved > options.maxRetriesPerRequest) {
-                    diffs.pass = false;
-                    diffs.actual.push(`maxRetriesPerRequest=${maxRetriesPerRequestObserved}`);
-                    diffs.expected.push(`maxRetriesPerRequest<=${options.maxRetriesPerRequest}`);
-                    failedAssertions.push(
-                        `Failed max retries observed check, expected <=${options.maxRetriesPerRequest}, got ${maxRetriesPerRequestObserved}.`,
-                    );
-                }
-            }
-            const ppeDiffs: Diffs = {
-                pass: true,
-                actual: ['PPE Events:'],
-                expected: ['PPE Events:'],
-            };
-
-            if (options.chargedEventCounts) {
-                const expected = options.chargedEventCounts;
-                const actual = chargedEventCounts ?? {};
-                const uniquePpeEvents = new Set([
-                    ...Array.from(Object.keys(expected)),
-                    ...Array.from(Object.keys(actual)),
-                ]);
-
-                for (const ppeEvent of uniquePpeEvents) {
-                    if (!(ppeEvent in expected)) {
-                        isWithinInterval(ppeDiffs, actual[ppeEvent], { [ppeEvent]: 0 }, ppeEvent);
-                        continue;
-                    }
-                    if (!(ppeEvent in actual)) {
-                        ppeDiffs.pass = false;
-                        ppeDiffs.actual.push(`${ppeEvent}=X`);
-                        ppeDiffs.expected.push(`${ppeEvent}=${expected[ppeEvent as PpeEvent]}`);
-                        continue;
-                    }
-                    isWithinInterval(ppeDiffs, actual[ppeEvent], expected, ppeEvent as PpeEvent);
-                }
-
-                if (ppeDiffs.pass === false) {
-                    diffs.pass = ppeDiffs.pass;
-                    diffs.actual.push(ppeDiffs.actual.join('\n    '));
-                    diffs.expected.push(ppeDiffs.expected.join('\n    '));
-                    failedAssertions.push(
-                        `Failed PPE event counts check, expected ${JSON.stringify(
-                            options.chargedEventCounts,
-                        )}, got ${JSON.stringify(chargedEventCounts)}.`,
-                    );
-                }
-            }
-
-            {
-                const { forbiddenLogs } = options;
-                const log = await received.getLog();
-                const occuredLogs = [];
-                for (const forbiddenLog of forbiddenLogs) {
-                    if (log.includes(forbiddenLog)) {
-                        occuredLogs.push(forbiddenLog);
-                    }
-                }
-                if (occuredLogs.length > 0) {
-                    diffs.pass = false;
-                    diffs.actual.push(` logs=[${occuredLogs.join(', ')}]`);
-                    diffs.expected.push(` logs=[]`);
-                    failedAssertions.push(
-                        `Failed forbidden logs check, expected [] but got [${occuredLogs.join(', ')}].`,
-                    );
-                }
-            }
-
+            const failed = (await getFinishChecks(received, userOptions)).filter((check) => !check.ok);
             return {
-                pass: diffs.pass,
-                message: () => `Run did not finish as expected. Failed assertions: ${failedAssertions.join(' ')}`,
-                actual: diffs.actual.join('\n  '),
-                expected: diffs.expected.join('\n  '),
+                pass: failed.length === 0,
+                message: () =>
+                    `Run did not finish as expected. Failed assertions: ${failed.map((check) => check.failure).join(' ')}`,
+                actual: ['Run:', ...failed.map((check) => check.actual)].join('\n  '),
+                expected: ['Run:', ...failed.map((check) => check.expected)].join('\n  '),
             };
         },
         toStartWith: (received, prefix) => {
@@ -266,42 +92,4 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
     };
 
     return softExpect as unknown as ExpectStatic;
-};
-
-type Diffs = {
-    pass: boolean;
-    actual: string[];
-    expected: string[];
-};
-
-const isWithinInterval = <T extends string>(
-    diffs: Diffs,
-    actual: number | undefined,
-    options: Record<T, Interval | null>,
-    intervalOption: T,
-) => {
-    const expected = options[intervalOption];
-    if (expected === null) {
-        // check is disabled if expected value is null
-        return undefined;
-    }
-    if (typeof expected === 'number') {
-        if (actual !== expected) {
-            // eslint-disable-next-line no-param-reassign --- Don't want to touch this code :)
-            diffs.pass = false;
-            diffs.actual.push(`${intervalOption}=${actual}`);
-            diffs.expected.push(`${intervalOption}=${expected}`);
-            return false;
-        }
-    } else if (typeof expected === 'object') {
-        const { min, max } = expected;
-        if (actual === undefined || (min !== undefined && actual < min) || (max !== undefined && actual > max)) {
-            // eslint-disable-next-line no-param-reassign
-            diffs.pass = false;
-            diffs.actual.push(`${intervalOption}=${actual}`);
-            diffs.expected.push(`${intervalOption}=<${min ?? ''},${max ?? ''}>`);
-            return false;
-        }
-    }
-    return undefined;
 };

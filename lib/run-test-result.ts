@@ -2,77 +2,63 @@ import type { ActorRun, ApifyClient, KeyValueStoreClient } from 'apify-client';
 
 import type { Dataset, SdkCrawlerStatistics } from './types.js';
 
+// Large datasets exceed the Node string limit when downloaded in one response, see
+// https://github.com/apify/apify-test-tools/issues/169
+const DATASET_PAGE_SIZE = 5000;
+
+/**
+ * Wraps `load` so it runs once, on first use. The promise is cached, so concurrent callers share one request
+ * and a falsy result (an empty input, a missing record) is cached too.
+ */
+const lazy = <T>(load: () => Promise<T>): (() => Promise<T>) => {
+    let cached: Promise<T> | undefined;
+    return async () => {
+        cached ??= load();
+        return cached;
+    };
+};
+
 export class RunTestResult {
-    private log: string | undefined;
-    private dataset: Dataset<unknown> | undefined;
-    private keyValueStoreClient: KeyValueStoreClient | undefined;
-    private statistics: SdkCrawlerStatistics | undefined;
-    private runInfo: ActorRun | undefined;
-    private input: unknown | undefined;
+    private readonly kvs: KeyValueStoreClient;
 
     constructor(
         private readonly apifyClient: ApifyClient,
         private readonly run: ActorRun,
     ) {
-        /**/
+        this.kvs = apifyClient.keyValueStore(run.defaultKeyValueStoreId);
     }
 
-    getStatistics = async (): Promise<SdkCrawlerStatistics | undefined> => {
-        if (this.statistics) {
-            return this.statistics;
-        }
-        const kvs = this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
-        const stats = await kvs.getRecord('SDK_CRAWLER_STATISTICS_0');
-        this.statistics = stats?.value as unknown as SdkCrawlerStatistics;
-        return this.statistics;
-    };
+    getStatistics = lazy(
+        async () => (await this.kvs.getRecord('SDK_CRAWLER_STATISTICS_0'))?.value as SdkCrawlerStatistics | undefined,
+    );
 
-    getLog = async (): Promise<string> => {
-        if (this.log) {
-            return this.log;
-        }
-        const runLog = await this.apifyClient.run(this.id).log().get();
-        this.log = runLog;
-        return runLog as string;
-    };
+    getLog = lazy(async () => (await this.apifyClient.run(this.run.id).log().get()) as string);
 
-    getDataset = async <T>(): Promise<Dataset<T>> => {
-        if (this.dataset) {
-            return this.dataset as Dataset<T>;
-        }
+    /** Number of items in the default dataset, without downloading them. */
+    getDatasetItemCount = lazy(async () => {
+        const dataset = await this.apifyClient.dataset(this.run.defaultDatasetId).get();
+        return dataset?.itemCount ?? 0;
+    });
+
+    private readonly loadDataset = lazy(async (): Promise<Dataset<unknown>> => {
         const dataset = this.apifyClient.dataset(this.run.defaultDatasetId);
-        const items = (await dataset.listItems()).items as T[];
-        this.dataset = { items };
-        return this.dataset as Dataset<T>;
-    };
-
-    getKeyValueStoreClient = (): KeyValueStoreClient => {
-        if (this.keyValueStoreClient) {
-            return this.keyValueStoreClient;
+        const items: unknown[] = [];
+        for (;;) {
+            const page = await dataset.listItems({ offset: items.length, limit: DATASET_PAGE_SIZE });
+            items.push(...page.items);
+            if (page.items.length < DATASET_PAGE_SIZE) return { items };
         }
-        const keyValueStoreClient = this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
-        this.keyValueStoreClient = keyValueStoreClient;
-        return keyValueStoreClient;
-    };
+    });
 
-    getInput = async <T>(): Promise<T> => {
-        if (this.input) {
-            return this.input as T;
-        }
-        const kvs = this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
-        const input = await kvs.getRecord('INPUT');
-        this.input = input?.value;
-        return this.input as T;
-    };
+    getDataset = async <T>(): Promise<Dataset<T>> => (await this.loadDataset()) as Dataset<T>;
 
-    getRunInfo = async (): Promise<ActorRun> => {
-        if (this.runInfo) {
-            return this.runInfo;
-        }
-        const run = this.apifyClient.run(this.run.id);
-        this.runInfo = await run.get();
-        return this.runInfo!;
-    };
+    getKeyValueStoreClient = (): KeyValueStoreClient => this.kvs;
+
+    private readonly loadInput = lazy(async () => (await this.kvs.getRecord('INPUT'))?.value);
+
+    getInput = async <T>(): Promise<T> => (await this.loadInput()) as T;
+
+    getRunInfo = lazy(async () => (await this.apifyClient.run(this.run.id).get())!);
 
     get id(): string {
         return this.run.id;

@@ -1,4 +1,4 @@
-import type { ToFinishWithOptionsWithDefaults } from './types.js';
+import type { ActorTestOptions, ToFinishWithOptionsWithDefaults } from './types.js';
 
 export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
     status: 'SUCCEEDED',
@@ -27,3 +27,11 @@ export const DEFAULT_TEST_ACTOR_TIMEOUT_SECS = DEFAULT_TEST_RUN_DURATION_MS / 10
  * - Super rarely the platform is still not synced even after 10s, so 20s should be sufficient practically always.
  */
 export const DATASET_SYNC_DELAY_MS = 20 * 1000; // 20 seconds
+
+export const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
+    // we want to run tests concurrently
+    concurrent: true,
+    // test should finish within 1 hour
+    timeout: DEFAULT_TEST_RUN_DURATION_MS,
+    retry: 1,
+};

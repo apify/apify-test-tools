@@ -70,6 +70,26 @@ on:
 
                     If you create a new issue, you MUST write its issue number (just the number, nothing else) to $GITHUB_WORKSPACE/issue-number.txt as the very last thing you do. If you skip creating one because a duplicate already exists, do not create the file.
                 description: Prompt given to Claude for the investigation phase. Override to customize how issues are investigated, titled, and described.
+            priority_prompt:
+                required: false
+                type: string
+                # The priority thresholds assume a run hitting the bug loses about 100% of its value when
+                # catastrophic, 50% when high, 20% when medium and 5% when low (rather arbitrary). Times the
+                # revenue actually at risk, that's the expected monthly loss: Urgent from about 0.5% of the
+                # cluster's revenue, High from 0.1% and Normal from 0.02%.
+                default: |
+                    After you create a new issue and before you write its issue number to $GITHUB_WORKSPACE/issue-number.txt, set its Priority field from the failure's impact and flakiness:
+
+                    1. Take the revenue actually at risk: the revenue over the past month from the potentially affected runs, times the failure rate — the rate from the Flakiness section or, if you didn't measure it, the rate your investigation showed, e.g. 100% for a failure that always happens. Express it as a % of the cluster's revenue over the same month. The cluster is all Actors with the same `tag_team` as the failing Actor in `APIFY_ANALYTICS.DATAMART_KEBOOLA."actor_analytics_tags"`.
+                    2. Pick the priority by the relative severity and that %:
+                        - Catastrophic: Urgent from 0.5%, High from 0.1%, Normal from 0.01%, Low below.
+                        - High: Urgent from 2%, High from 0.5%, Normal from 0.1%, Low below.
+                        - Medium: High from 2%, Normal from 0.5%, Low below.
+                        - Low: Normal from 2%, Low below.
+                        - Invisible to the user or Test: Low.
+
+                    Priority is an organization-level issue field. If the revenue actually at risk can't be determined, e.g. the Impact section says "Cannot be determined" or the failing Actor has no `tag_team`, leave Priority unset, unless the relative severity is Invisible to the user or Test.
+                description: Prompt given to Claude for setting a new issue's Priority field from its impact and flakiness. Override to customize the priority matrix, e.g. its revenue thresholds.
         secrets:
             ANTHROPIC_API_KEY:
                 required: true
@@ -103,11 +123,14 @@ jobs:
 
             - name: Check which optional secrets are set
               id: optional-secrets
-              run: echo "agent-skills-token=${{ secrets.AGENT_SKILLS_INTERNAL_GITHUB_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+              run: |
+                  echo "agent-skills-token=${{ secrets.AGENT_SKILLS_INTERNAL_GITHUB_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+                  echo "redash-api-key=${{ secrets.REDASH_API_KEY != '' }}" >> "$GITHUB_OUTPUT"
 
             - name: Checkout internal agent skills
               id: agent-skills-internal
               if: steps.optional-secrets.outputs.agent-skills-token == 'true'
+              continue-on-error: true
               uses: actions/checkout@v5
               with:
                   repository: apify/agent-skills-internal
@@ -119,10 +142,13 @@ jobs:
                   persist-credentials: false
 
             - uses: actions/setup-node@v6
+              if: steps.optional-secrets.outputs.redash-api-key == 'true'
               with:
                   node-version: 24
 
             - name: Install Redash MCP server
+              if: steps.optional-secrets.outputs.redash-api-key == 'true'
+              continue-on-error: true
               working-directory: ${{ runner.temp }}
               run: npm install --prefix redash-mcp --ignore-scripts --no-audit --no-fund @suthio/redash-mcp@0.1.0
 
@@ -138,6 +164,8 @@ jobs:
                       The failing E2E platform test ran in workflow run ${{ github.run_id }} of this repo.
 
                       ${{ inputs.investigate_prompt }}
+
+                      ${{ inputs.priority_prompt }}
                   github_token: ${{ secrets.GITHUB_TOKEN }}
                   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
                   plugin_marketplaces: |

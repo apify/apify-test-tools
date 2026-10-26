@@ -33,6 +33,20 @@ Build, test and release Apify Actors from a Git repository. The package has thre
 Most repos only need the library and the workflows: the workflows call the CLI for you. Use the CLI directly only to
 build your own pipeline, e.g. on a CI platform other than GitHub, or to build and test locally.
 
+## Only what changed is retested
+
+Builds and platform tests cost time and money, so the tool skips everything a change can't affect:
+
+- **Only affected Actors.** A changed file only counts for the Actors whose build context it falls in, minus their
+  `.dockerignore`. In a monorepo, a change to one Actor doesn't build or test the others.
+- **Cosmetic changes skip tests.** README, CHANGELOG and formatting-only schema changes don't trigger tests on a PR;
+  they're only rebuilt when released.
+- **Only new changes on a PR.** Each push to a PR retests only the Actors that changed since its last green run, not
+  the whole PR again.
+- **Only their tests.** Only the tests of the Actors that were built run.
+
+See [Change detection](docs/cli.md#change-detection) for the exact rules.
+
 This README covers what you need to get a repo running. The full reference lives in `docs/`:
 
 - [Vitest library API](docs/lib.md) — `testActor`, `testStandbyActor`, `RunTestResult`, matchers, running tests locally

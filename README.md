@@ -305,8 +305,9 @@ Two tidier-looking alternatives don't work, so don't reach for them:
   an output whose value contains a registered secret. It logs `Skip output <name> since it may
 contain secret` and leaves the output empty, so anything reading it downstream gets nothing.
 
-The `unitTest` job runs static checks and needs `NPM_TOKEN` only. No job runs `npm ci` with Apify or
-Slack credentials in scope, so a postinstall script in the dependency tree cannot read them.
+The `unitTest` job runs static checks and needs `NPM_TOKEN` only. No job runs `npm ci` or
+`pnpm install` with Apify or Slack credentials in scope, so a postinstall script in the dependency
+tree cannot read them.
 
 ## Versioning and releases
 

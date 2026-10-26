@@ -21,9 +21,9 @@ const describeInterval = (interval: Interval): string => {
     return typeof interval === 'number' ? `${interval}` : `<${interval.min ?? ''},${interval.max ?? ''}>`;
 };
 
-const intervalCheck = (name: string, actual: number | undefined, interval: Interval | null): Check[] => {
-    // a `null` interval disables the check
-    if (interval === null) {
+const intervalCheck = (name: string, actual: number | undefined, interval: Interval | null | undefined): Check[] => {
+    // `null` disables the check, and so does an explicit `undefined`, e.g. from a caller forwarding an optional setting
+    if (interval == null) {
         return [];
     }
     return [
@@ -80,7 +80,7 @@ export const checkRun = async <PpeEvent extends string>(
         ...intervalCheck('duration', runInfo.stats.durationMillis, options.duration),
         ...intervalCheck('failedRequests', stats?.requestsFailed, options.failedRequests),
         ...intervalCheck('requestsRetries', stats?.requestsRetries, options.requestsRetries),
-        ...(options.maxRetriesPerRequest === null
+        ...(options.maxRetriesPerRequest == null
             ? []
             : [
                   {

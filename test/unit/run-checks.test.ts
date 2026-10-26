@@ -43,6 +43,11 @@ describe('checkRun()', () => {
         expect(await failures(run, { datasetItemCount: 10, failedRequests: null })).toEqual([]);
     });
 
+    it('treats explicitly undefined options as disabled checks', async () => {
+        const options = { datasetItemCount: 10, duration: undefined, maxRetriesPerRequest: undefined };
+        expect(await failures(fakeRun(), options)).toEqual([]);
+    });
+
     it('checks the longest retry chain only when asked to', async () => {
         expect(await failures(fakeRun(), { datasetItemCount: 10, maxRetriesPerRequest: 0 })).toEqual([
             'maxRetriesPerRequest',

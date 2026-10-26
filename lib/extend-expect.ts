@@ -20,7 +20,7 @@ const SHAPE_MATCHERS = {
     toBeObject: ['an object', isObject],
     toBeString: ['a string', (actual: unknown) => typeof actual === 'string'],
     toBeWholeNumber: ['a whole number', (actual: unknown) => Number.isInteger(actual)],
-} as const;
+} as const satisfies Record<string, readonly [string, (actual: unknown) => boolean]>;
 
 function isObject(actual: unknown): actual is object {
     return typeof actual === 'object' && !Array.isArray(actual) && actual !== null;

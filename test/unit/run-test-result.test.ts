@@ -39,6 +39,6 @@ describe('RunTestResult', () => {
 
         expect(items).toHaveLength(total);
         expect(items[24_999]).toBe(24_999);
-        expect(listItems).toHaveBeenCalledTimes(3);
+        expect(listItems).toHaveBeenCalledTimes(25);
     });
 });

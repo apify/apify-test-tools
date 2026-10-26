@@ -3,7 +3,7 @@ import type { ActorRun, ApifyClient, KeyValueStoreClient } from 'apify-client';
 import type { Dataset, SdkCrawlerStatistics } from './types.js';
 
 /** Items fetched per request, so no single response can exceed Node's string limit on large datasets. */
-const DATASET_PAGE_SIZE = 10_000;
+const DATASET_PAGE_SIZE = 1000;
 
 /**
  * Runs `fn` at most once and shares its promise, so repeated and concurrent calls are one request.

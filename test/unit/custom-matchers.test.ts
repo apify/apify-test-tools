@@ -1,84 +1,63 @@
-import process from 'node:process';
+import { describe, expect, it } from 'vitest';
 
-import { ApifyClient } from 'apify-client';
-import { describe } from 'vitest';
+import { extendExpect } from '../../lib/extend-expect.js';
+import type { RunTestResult } from '../../lib/run-test-result.js';
 
-import { testStandbyActor, testTestActor } from '../../lib/lib.js';
-import { RunTestResult } from '../../lib/run-test-result.js';
+extendExpect(expect);
 
-type PpeEventType = 'actor-start' | 'search-page-scraped' | 'ads-scraped';
-enum PpeEventEnum {
-    ACTOR_START = 'actor-start',
-    SEARCH_PAGE_SCRAPED = 'search-page-scraped',
-    ADS_SCRAPED = 'ads-scraped',
-}
-type PPE_EVENT_CONST = {
-    ACTOR_START: 'actor-start';
-    ITEM_PUSHED: 'search-page-scraped';
-    ADS_SCRAPED: 'ads-scraped';
-};
-
-// TODO: Remake these tests. k5MNKmaDGHlABDn2I run doesn't exist and we probably don't want to depend on fixed run
-describe.skip('custom-matchers', { timeout: 100_000 }, () => {
-    testTestActor('basic', async ({ expect }) => {
-        const apifyClient = new ApifyClient({ token: process.env.TESTER_APIFY_TOKEN });
-        const run = await apifyClient.run('k5MNKmaDGHlABDn2I').get();
-        const runResult = new RunTestResult(apifyClient, run!);
-        await expect(runResult).toFinishWith<PpeEventType>({
-            datasetItemCount: { min: 10, max: 20 },
-            duration: 10,
-            status: 'TIMING-OUT',
-            chargedEventCounts: {
-                'actor-start': 1,
-                'search-page-scraped': { min: 1 },
-                'ads-scraped': 3,
-            },
-        });
-
-        await expect(runResult).toFinishWith<PpeEventEnum>({
-            datasetItemCount: { min: 10, max: 20 },
-            chargedEventCounts: {
-                'actor-start': 1,
-                'search-page-scraped': { min: 1 },
-                'ads-scraped': 0,
-            },
-        });
-
-        await expect(runResult).toFinishWith<PPE_EVENT_CONST[keyof PPE_EVENT_CONST]>({
-            datasetItemCount: { min: 1, max: 20 },
-            chargedEventCounts: {
-                'actor-start': 1,
-                'search-page-scraped': { min: 1 },
-                'ads-scraped': 0,
-            },
-        });
-
-        expect(3).toEqual(3);
-        expect.hard(5).toEqual(5);
-        expect(10).toEqual(10);
+describe('custom matchers', () => {
+    it.each([
+        ['toBeArray', [[], [1]], [{}, 'a', null]],
+        ['toBeBoolean', [true, false], [0, 'true', null]],
+        ['toBeEmptyArray', [[]], [[1], {}, undefined]],
+        ['toBeNonEmptyArray', [[1]], [[], {}, 'a']],
+        ['toBeNonEmptyString', ['a'], ['', 1, null]],
+        ['toBeNumber', [0, 1.5], ['1', null]],
+        ['toBeNonEmptyObject', [{ a: 1 }], [{}, [1], null, undefined]],
+        ['toBeObject', [{}, { a: 1 }], [[], null, undefined, 'a']],
+        ['toBeString', ['', 'a'], [1, null]],
+        ['toBeTrue', [true], [1, 'true', false]],
+        ['toBeFalse', [false], [0, '', true]],
+        ['toBeWholeNumber', [0, 3], [1.5, '3', null]],
+    ] as const)('%s', (matcher, passing, failing) => {
+        for (const value of passing) expect(value)[matcher]();
+        for (const value of failing) {
+            expect(() => expect(value)[matcher]()).toThrow();
+            expect(value).not[matcher]();
+        }
     });
 
-    testStandbyActor('ondrejklinovsky/contact-info', 'CDS standby', async ({ expect, callStandby }) => {
-        {
-            const { data, status } = await callStandby({
-                input: {
-                    startUrls: [{ url: 'https://apify.com' }],
-                    maxRequests: 3,
-                    aggregateContacts: true,
-                },
-            });
-            expect(status).toBe(200);
-            expect(data[0].domain).toEqual('apify.com');
-        }
+    it('toBeWithinRange', () => {
+        expect(5).toBeWithinRange(1, 5);
+        expect(() => expect(6).toBeWithinRange(1, 5)).toThrow('to be within range <1, 5>');
+    });
 
-        const { data, status } = await callStandby({
-            input: {
-                startUrls: [{ url: 'https://apify.com' }],
-                maxRequests: 3,
-                aggregateContacts: true,
-            },
+    it('toStartWith', () => {
+        expect('prefix-and-more').toStartWith('prefix');
+        expect(() => expect('other').toStartWith('prefix')).toThrow();
+    });
+
+    it('describes the failing value in the message', () => {
+        expect(() => expect({ a: 1 }).toBeString()).toThrow('Expected { a: 1 } to be a string');
+    });
+
+    describe('toFinishWith', () => {
+        const run = {
+            status: 'FAILED',
+            getRunInfo: async () => ({ stats: { durationMillis: 5000 } }),
+            getDataset: async () => ({ items: new Array(3) }),
+            getStatistics: async () => ({ requestsFailed: 0, requestsRetries: 0 }),
+            getLog: async () => '',
+        } as unknown as RunTestResult;
+
+        it('passes when every check passes', async () => {
+            await expect({ ...run, status: 'SUCCEEDED' }).toFinishWith({ datasetItemCount: 3 });
         });
-        expect(status).toBe(200);
-        expect(data[0].domain).toEqual('apify.com');
+
+        it('fails with every failed assertion in the message', async () => {
+            await expect(expect(run).toFinishWith({ datasetItemCount: { min: 5 } })).rejects.toThrow(
+                /Failed status check, expected SUCCEEDED, got FAILED\. Failed datasetItemCount check/,
+            );
+        });
     });
 });

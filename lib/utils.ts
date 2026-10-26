@@ -1,4 +1,4 @@
-import type { ApifyClient } from 'apify-client';
+import type { ActorRun, ActorRunListItem, ApifyClient } from 'apify-client';
 
 /**
  * Gets prefilled values for a provided build or, if not provided, uses actor's
@@ -55,4 +55,8 @@ export const sleep = async (ms: number) => {
     await new Promise((resolve) => {
         setTimeout(resolve, ms);
     });
+};
+
+export const generateRunLink = (run: ActorRun | ActorRunListItem): string => {
+    return `https://console.apify.com/view/runs/${run.id}`;
 };

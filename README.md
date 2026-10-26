@@ -57,6 +57,12 @@ This README covers what you need to get a repo running. The full reference lives
 
 ## Getting started
 
+Your Actors can be written in any programming language, e.g. Python: anything the platform builds from a Dockerfile
+works. Only the tests and this tooling run on Node.js, so all a repo needs is a `package.json` at the root with
+`apify-test-tools` and `vitest` in its `devDependencies`, and tests written in TypeScript or JavaScript. If you use the
+[PR workflow](docs/workflows.md#public_pr-build-testyaml), also define the `build-check`, `lint` and `test` scripts
+its static checks run, e.g. with your language's own linter and unit tests.
+
 ### 1. Install the package
 
 ```bash

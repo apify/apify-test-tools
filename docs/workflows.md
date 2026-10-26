@@ -57,6 +57,9 @@ Validates a pull request. It runs two jobs in parallel.
 | Formatter      | `npm run format:check` if it exists, else `npx prettier --check .` if prettier is installed |
 | Unused exports | `npm run check-unused` if it exists                                                         |
 
+In a repo whose Actors aren't written in JavaScript or TypeScript, define the `build-check`, `lint` and `test`
+scripts, e.g. to run your language's own checks: without them, the TypeScript, Lint and Test checks fail.
+
 | Input                 | Type    | Default | Description                                                                  |
 | --------------------- | ------- | ------- | ---------------------------------------------------------------------------- |
 | `skip-platform-tests` | boolean | `false` | Skip the `platformTest` job and run the static checks only                   |

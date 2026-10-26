@@ -30,6 +30,9 @@ Build, test and release Apify Actors from a Git repository. The package has thre
             secrets: inherit
     ```
 
+Most repos only need the library and the workflows: the workflows call the CLI for you. Use the CLI directly only to
+build your own pipeline, e.g. on a CI platform other than GitHub, or to build and test locally.
+
 This README covers what you need to get a repo running. The full reference lives in `docs/`:
 
 - [Vitest library API](docs/lib.md) — `testActor`, `testStandbyActor`, `RunTestResult`, matchers, running tests locally

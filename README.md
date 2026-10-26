@@ -1,16 +1,40 @@
 # Apify Test Tools
 
-Build, test and release Apify Actors from a GitHub repository. The package has three parts:
+Build, test and release Apify Actors from a Git repository. The package has three parts:
 
-- **Reusable GitHub workflows** that build the Actors a PR changes, run their platform tests, and release them on merge
-- **A vitest library** (`testActor`, `expect(run).toFinishWith(...)`, …) for writing platform tests
-- **A CLI** (`apify-test-tools`) the workflows call, which you can also run locally
+1. **A vitest library** for writing platform tests that run your Actors on Apify and check the results:
+
+    ```ts
+    testActor('myteam/web-scraper', 'scrapes the start URL', async ({ expect, run }) => {
+        const runResult = await run({ input: { startUrls: [{ url: 'https://apify.com' }] } });
+        await expect(runResult).toFinishWith({ datasetItemCount: { min: 1, max: 10 } });
+    });
+    ```
+
+2. **A CLI** that finds the Actors a change affects, builds them, and reports the results. It runs anywhere, so you
+   can build your own pipeline on it in any CI:
+
+    ```bash
+    npx apify-test-tools get-affected-actors --base origin/master \
+      | jq '{ actors: .functionallyChangedActors }' \
+      | npx apify-test-tools build --version-number 0.99
+    ```
+
+3. **Ready-made GitHub Actions workflows** built on the CLI and the library, so a GitHub repo needs only a few lines
+   per workflow:
+
+    ```yaml
+    jobs:
+        buildDevelAndTest:
+            uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
+            secrets: inherit
+    ```
 
 This README covers what you need to get a repo running. The full reference lives in `docs/`:
 
-- [Workflow API](docs/workflows.md) — every reusable workflow, its inputs and secrets, versioning
 - [Vitest library API](docs/lib.md) — `testActor`, `testStandbyActor`, `RunTestResult`, matchers, running tests locally
 - [CLI API](docs/cli.md) — every command, change detection, releasing, building locally
+- [Workflow API](docs/workflows.md) — every GitHub workflow, its inputs and secrets, versioning
 
 [Contributing](CONTRIBUTING.md)
 
@@ -30,7 +54,7 @@ npm i -D apify-test-tools
 
 ### 2. Create the config file
 
-Every repo that uses `apify-test-tools` must have an `apify-test-tools.config.json` file at the root. See
+Every repo must have an `apify-test-tools.config.json` file at the root that lists its Actors. See
 [Config file](#config-file) below.
 
 ### 3. Set up Actor folders
@@ -52,87 +76,27 @@ my-repo
 │       │   └── actor.json
 │       └── src/
 └── test
-    ├── unit
     └── platform
-        ├── core                    <- Core (hourly) tests
-        │   └── core.test.ts
-        ├── some.test.ts            <- Daily tests can be anywhere inside platform/
-        └── some-other.test.ts
+        └── web-scraper.test.ts
 ```
 
-For a single-actor repo, set `"folder": "."` in the config and place `.actor/actor.json` at the repo root.
+For a single-Actor repo, set `"folder": "."` in the config and place `.actor/actor.json` at the repo root.
 
-### 4. Create test directories
+### 4. Write tests
 
-```bash
-mkdir -p test/platform/core
-```
+Put platform tests in `test/platform`. How you organize them inside is up to you. See
+[Writing tests](#writing-tests) below.
 
-- Core (hourly) tests go in `test/platform/core`
-- Daily tests go anywhere in `test/platform`
+### 5. Set up CI
 
-### 5. Add the GitHub workflows
-
-See [GitHub workflows](#github-workflows) below.
-
-### 6. Write a test
-
-See [Writing tests](#writing-tests) below.
+On GitHub, add the [GitHub workflows](#github-workflows) below. On another CI platform, call the
+[CLI](docs/cli.md) from your own pipeline; the workflows are a good template for the steps.
 
 ## Config file
 
-`apify-test-tools.config.json` lives at the repo root and tells the tool which Actors live in the repo, how to
-identify them, and which token to use.
-
-### Actor fields
-
-Every Actor in the config is described by these fields, whatever the mode:
-
-| Field                  | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ---------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `folder`               | yes      | Relative path from repo root to the actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`), the actor's README/CHANGELOG, and its source. Use `"."` for a single-actor repo where `.actor/` is at the root.                                                                                                                                                                                                                          |
-| `actorFullName`        | yes      | Full actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                               |
-| `tokenEnvVar`          | yes      | Name of the environment variable holding the Apify API token for this actor. In [grouped mode](#grouped-mode) it's inherited from the group unless the actor sets its own. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                      |
-| `overrideActorContext` | no       | Array of paths (relative to repo root) that define which files are relevant to this actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
-
-### Modes
-
-The file's layout is picked by the top-level `mode` field. Each mode is a different way of writing the same thing:
-every mode resolves to a list of Actors with the fields above, and the same rules apply to all of them — no two
-Actors may share a `folder`, and no two entries may point at the same `actorFullName`. If `mode` is left out,
-[`"legacy"`](#legacy-mode) is used, so existing config files keep working unchanged.
-
-### Legacy mode
-
-The default. A flat `actors` array where every entry carries all of its settings. Good for repos with a few Actors,
-or where every Actor has different settings.
-
-```json
-{
-    "mode": "legacy",
-    "actors": [
-        {
-            "folder": "actors/web-scraper",
-            "actorFullName": "myteam/web-scraper",
-            "tokenEnvVar": "APIFY_TOKEN_MYTEAM"
-        },
-        {
-            "folder": "actors/email-sender",
-            "actorFullName": "myteam/email-sender",
-            "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
-            "overrideActorContext": ["actors/email-sender", "packages/shared"]
-        }
-    ]
-}
-```
-
-`actors` must hold at least one entry. Every entry takes all the [Actor fields](#actor-fields) directly, and
-`tokenEnvVar` is required on each one.
-
-### Grouped mode
-
-Actors are organized into `groups`, and each group sets `tokenEnvVar` and `overrideActorContext` once for all of its
-Actors. Good for repos where many Actors share the same token or context.
+`apify-test-tools.config.json` lives at the repo root and tells the tool which Actors live in the repo, where they
+are, and which token builds them. Actors are organized into groups, and each group sets the token once for all of its
+Actors:
 
 ```json
 {
@@ -140,7 +104,6 @@ Actors. Good for repos where many Actors share the same token or context.
     "groups": {
         "myteam": {
             "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
-            "overrideActorContext": ["packages/shared"],
             "actors": [
                 { "folder": "actors/web-scraper", "actorFullName": "myteam/web-scraper" },
                 {
@@ -158,23 +121,41 @@ Actors. Good for repos where many Actors share the same token or context.
 }
 ```
 
-`groups` is an object with at least one group. The group key (`myteam`, `partner` above) is only a label for
-readability; it has no effect on the result, and it does not need to match any folder or username. Each group needs
-a `tokenEnvVar` and at least one Actor, and can optionally set `overrideActorContext`.
+The group key (`myteam`, `partner` above) is only a label for readability; it doesn't need to match any folder or
+username. Each group needs a `tokenEnvVar` and at least one Actor.
 
-An Actor inside a group can set its own `tokenEnvVar` or `overrideActorContext`, and that value replaces the group's
-for that Actor only. Values are replaced, not merged: in the example above, `myteam/email-sender` gets
-`["actors/email-sender", "packages/mailer"]`, not `packages/shared` as well.
+| Field                  | Where          | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `folder`               | Actor          | yes      | Relative path from repo root to the Actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`), the Actor's README/CHANGELOG, and its source. Use `"."` for a single-Actor repo where `.actor/` is at the root.                                                                                                                                                                                                                         |
+| `actorFullName`        | Actor          | yes      | Full Actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the Actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                              |
+| `tokenEnvVar`          | group or Actor | yes      | Name of the environment variable holding the Apify API token that builds the group's Actors. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                   |
+| `overrideActorContext` | group or Actor | no       | Array of paths (relative to repo root) that define which files are relevant to the Actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an Actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The Actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
+
+A value set on an Actor replaces the group's for that Actor only. Values are replaced, not merged: in the example
+above, if the `myteam` group also set `overrideActorContext`, `myteam/email-sender` would still get only
+`["actors/email-sender", "packages/mailer"]`.
+
+No two Actors may share a `folder`, and no two entries may point at the same `actorFullName`.
 
 ## GitHub workflows
 
-Add these four files to `.github/workflows` in your repo. They call the reusable workflows in this repo, pinned at
-the `@workflows-v0` major tag — never at `@master`. Every input, the optional Claude workflows, and how the tag
-moves are in the [Workflow API](docs/workflows.md).
+The workflows take every change straight to production, with tests in between:
+
+- **Every push to a PR** builds the Actors the PR changes into a test version (`0.99`) that users never run, and runs
+  their platform tests against those builds. Only the Actors whose files changed are built and tested, and a later
+  push only re-tests what changed since the last green run.
+- **Every merge to `master`** builds the changed Actors into their default version (`latest`), which is what users
+  run, and announces the release on Slack. There is no separate release step.
+- **Scheduled runs** (optional) run the tests against the released builds to catch what breaks without a code change,
+  like a website changing its layout.
+
+These are GitHub Actions workflows. On another CI platform, build the same flow with the [CLI](docs/cli.md).
+
+Add these files to `.github/workflows` in your repo. They call the reusable workflows in this repo, pinned at the
+`@workflows-v0` major tag — never at `@master`. Every input, the optional Claude workflows, and how the tag moves are
+in the [Workflow API](docs/workflows.md).
 
 ### `pr-build-devel-test.yaml`
-
-Builds the Actors a PR changes into version `0.99` and runs their platform tests against those builds.
 
 ```yaml
 name: PR Test
@@ -191,8 +172,6 @@ jobs:
 
 ### `release-latest.yaml`
 
-Builds the Actors a push to `master` changed into their default version, and announces the release on Slack.
-
 ```yaml
 name: Release latest
 
@@ -206,30 +185,9 @@ jobs:
         secrets: inherit
 ```
 
-### `platform-tests-core.yaml`
+### Scheduled tests (optional)
 
-Runs the tests in `test/platform/core` every hour against the released builds.
-
-```yaml
-name: Platform tests - Core
-
-on:
-    schedule:
-        # Runs at the start of every hour
-        - cron: '0 * * * *'
-    workflow_dispatch:
-
-jobs:
-    platformTestsCore:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
-        with:
-            test-files-glob: core
-        secrets: inherit
-```
-
-### `platform-tests-daily.yaml`
-
-Runs every test in `test/platform` once a day against the released builds.
+How often to run which tests is up to you. For example, you can run every test once a day:
 
 ```yaml
 name: Platform tests - Daily
@@ -246,6 +204,25 @@ jobs:
         secrets: inherit
 ```
 
+and a few critical tests, kept in e.g. `test/platform/hourly`, every hour:
+
+```yaml
+name: Platform tests - Hourly
+
+on:
+    schedule:
+        # Runs at the start of every hour
+        - cron: '0 * * * *'
+    workflow_dispatch:
+
+jobs:
+    platformTestsHourly:
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        with:
+            test-files-glob: hourly
+        secrets: inherit
+```
+
 ### Secrets
 
 Callers pass `secrets: inherit`, so set these as repository or organization secrets:
@@ -254,17 +231,17 @@ Callers pass `secrets: inherit`, so set these as repository or organization secr
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | building Actors and deleting their old builds                    |
 | `TESTER_APIFY_TOKEN`                                                      | running the platform tests                                       |
-| `SLACK_TOKEN_TESTS_BOT`                                                   | reporting scheduled test results to Slack                        |
 | `SLACK_TOKEN_RELEASES_BOT`                                                | announcing releases on Slack                                     |
+| `SLACK_TOKEN_TESTS_BOT`                                                   | reporting scheduled test results to Slack                        |
 | `NPM_TOKEN`                                                               | optional, installing private npm packages. Use a read-only token |
 
-Each secret only reaches the step that needs it. See [Secrets](docs/workflows.md#secrets) for how that works.
+Each secret only reaches the step that needs it. See [Secrets](docs/workflows.md#secrets).
 
 ## Writing tests
 
-Platform tests live in `test/platform` and use `describe` and `testActor` from `apify-test-tools` instead of the
-ones from `vitest`. `testActor` registers a test that only runs when CI built that Actor (or in the scheduled runs),
-and gives the callback an extended `expect` and a `run` function that starts the Actor.
+Platform tests use `describe` and `testActor` from `apify-test-tools` instead of the ones from `vitest`. `testActor`
+registers a test that only runs when that Actor was built for it (or when you ask for all tests), and gives the
+callback an extended `expect` and a `run` function that starts the Actor.
 
 ```ts
 import { describe, testActor } from 'apify-test-tools';
@@ -291,4 +268,4 @@ RUN_ALL_PLATFORM_TESTS=1 TESTER_APIFY_TOKEN=<token> npx vitest --run test/platfo
 ```
 
 The [Vitest library API](docs/lib.md) covers everything `toFinishWith` checks, the other matchers, standby Actors,
-reading run data, and running tests locally against builds of your own branch.
+reading run data, and running tests locally against builds of your own changes.

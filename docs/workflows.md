@@ -1,7 +1,7 @@
 # Workflow API
 
-The reusable workflows live in this repo, alongside the package they call. They are the `public_`-prefixed files in
-`.github/workflows`; everything else there is this repo's own CI. Call them from a job with `uses:` and pass
+Ready-made GitHub Actions workflows built on the [CLI](cli.md) and the [vitest library](lib.md). They are the
+`public_`-prefixed files in this repo's `.github/workflows`. Call them from a job with `uses:` and pass
 `secrets: inherit`:
 
 ```yaml
@@ -13,8 +13,10 @@ jobs:
         secrets: inherit
 ```
 
-Always reference them at the `@workflows-v0` major tag, never at `@master` — see
-[Versioning and releases](#versioning-and-releases).
+Always reference them at the `@workflows-v0` major tag, never at `@master` — see [Versioning](#versioning).
+
+They only run on GitHub Actions. On another CI platform, build the same steps with the [CLI](cli.md); each workflow
+The build, release and test workflows below list the CLI commands they run.
 
 | Workflow                                                                                                         | Typical trigger                     | What it does                                                                     |
 | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------- |
@@ -128,24 +130,7 @@ runs, not only those of built Actors. It then reports the results to Slack with
 
 Secrets: `TESTER_APIFY_TOKEN`, `SLACK_TOKEN_TESTS_BOT`, and optionally `NPM_TOKEN`.
 
-The usual setup is two callers: core tests every hour and everything once a day.
-
-```yaml
-name: Platform tests - Core
-
-on:
-    schedule:
-        # Runs at the start of every hour
-        - cron: '0 * * * *'
-    workflow_dispatch:
-
-jobs:
-    platformTestsCore:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
-        with:
-            test-files-glob: core
-        secrets: inherit
-```
+How often to run which tests is up to you. For example, every test once a day:
 
 ```yaml
 name: Platform tests - Daily
@@ -159,6 +144,25 @@ on:
 jobs:
     platformTestsDaily:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        secrets: inherit
+```
+
+and a few critical tests, kept in e.g. `test/platform/hourly`, every hour:
+
+```yaml
+name: Platform tests - Hourly
+
+on:
+    schedule:
+        # Runs at the start of every hour
+        - cron: '0 * * * *'
+    workflow_dispatch:
+
+jobs:
+    platformTestsHourly:
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        with:
+            test-files-glob: hourly
         secrets: inherit
 ```
 
@@ -249,14 +253,14 @@ Secrets: `ANTHROPIC_API_KEY`, `TESTER_APIFY_TOKEN`, and optionally `NPM_TOKEN`.
 
 ```yaml
 jobs:
-    platformTestsCore:
+    platformTestsHourly:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
-            test-files-glob: core
+            test-files-glob: hourly
         secrets: inherit
 
     handle-failure:
-        needs: platformTestsCore
+        needs: platformTestsHourly
         if: ${{ failure() }}
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v0
         secrets: inherit
@@ -275,88 +279,26 @@ variables, so a secret is only visible to the step that needs it:
 | `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and announcement steps only                                                                                                                                                                                    |
 | `ANTHROPIC_API_KEY`                                                       | the Claude steps of the Claude workflows only                                                                                                                                                                                |
 
-The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its own token via
-`tokenEnvVar` in `apify-test-tools.config.json`. Those steps pass `${{ toJSON(secrets) }}` as `ALL_SECRETS` and run
-the command through `.github/scripts/run-with-apify-tokens.mjs`, which reads that same config file to decide which
-secrets to pass on:
-
-```yaml
-- name: Build
-  shell: bash
-  env:
-      ALL_SECRETS: ${{ toJSON(secrets) }}
-  run: |
-      jq '{ actors: .functionallyChangedActors }' affected.json \
-        | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
-          apify-test-tools build --version-number 0.99
-```
-
-The wrapper passes only the tokens the config declares and drops `ALL_SECRETS`, so neither the CLI nor anything under
-`node_modules` sees the blob. Nothing is written to `$GITHUB_ENV`, so the tokens stay inside that one command rather
-than leaking into later steps. Reading the same file `apify-test-tools` reads means the two can't drift, and a secret
-that merely looks like an Actor token is not passed just because of its name.
-
-A token the config declares but the repo hasn't set is a warning, not a failure: a repo can carry an Actor whose
-token isn't configured and still build fine as long as that Actor never changes, and `apify-test-tools` raises a
-precise error naming the Actor at the point it actually needs the token.
-
-`scripts-path` comes from the setup action (give the step `id: setup`) and points at this repo's `.github/scripts/`
-directory inside the runner's action checkout, so workflows can run these helpers without checking this repo out
-again. The caller's workspace holds the caller's repo, not this one.
-
-Two tidier-looking alternatives don't work, so don't reach for them:
-
-- **Exporting to `$GITHUB_ENV`** would let the steps call the CLI directly with no wrapper, but `$GITHUB_ENV`
-  applies to every later step in the job. In `pr-build-test` the vitest step runs after the build, so it would
-  inherit Actor tokens it has no use for.
-- **Returning the tokens as a step output** would be scoped correctly, but the runner refuses to set an output whose
-  value contains a registered secret. It logs `Skip output <name> since it may contain secret` and leaves the output
-  empty, so anything reading it downstream gets nothing.
+The Actor tokens reach the build only for the Actors your config declares: a secret that merely looks like an Actor
+token is not passed on. A token the config declares but the repo hasn't set is a warning, not a failure: a repo can
+carry an Actor whose token isn't configured and still build fine as long as that Actor never changes. The build fails
+with an error naming the Actor once it actually needs the token.
 
 The `unitTest` job runs static checks and needs `NPM_TOKEN` only. No job runs `npm ci` or `pnpm install` with Apify
 or Slack credentials in scope, so a postinstall script in the dependency tree cannot read them.
 
-## Versioning and releases
+## Versioning
 
-The workflows and the npm package live in one repo but ship on their own schedules:
+The workflows and the vitest library ship separately:
 
-| What                                         | Consumers get it through                   | Ships when              |
-| -------------------------------------------- | ------------------------------------------ | ----------------------- |
-| the workflows and the CLI they call          | the `@workflows-v0` tag in `uses:`         | every master push       |
-| the lib (`testActor`, `describe`, matchers…) | `apify-test-tools` in their `package.json` | a stable release on npm |
+| What                                             | You get it through                        | Updates when                     |
+| ------------------------------------------------ | ----------------------------------------- | -------------------------------- |
+| the workflows and the CLI they run               | the `@workflows-v0` tag in `uses:`        | every change merged to this repo |
+| the library (`testActor`, `describe`, matchers…) | `apify-test-tools` in your `package.json` | you update the package           |
 
-The CLI is bundled with its dependencies into `.github/cli/apify-test-tools.mjs` (`npm run bundle`, run by the
-pre-commit hook and checked in CI), and the setup action runs it from there. Nothing is installed for it, so a tag is
-a complete statement: these workflows and this CLI, with the exact dependency versions from `package-lock.json` at
-that commit. The consumer's own `node_modules` is left alone, so their tests keep the lib version they locked.
+The workflows bring their own copy of the CLI, so they don't use or change the `apify-test-tools` version in your
+`node_modules`, and your tests keep the library version you locked.
 
-- **Workflow or CLI change** — merge it. `workflows-v0` moves once checks and tests pass, and it goes live. No
-  release needed, even when a workflow starts using a new CLI feature: both are in the same commit.
-- **Lib change** — merge it, then cut a release when you want it out. Consumers pick it up when they update
-  `apify-test-tools`.
-
-The CLI and the lib in one job can be different versions now, so the formats between them are a contract: the
-`ACTOR_BUILDS` JSON that `build` writes and the lib reads, and the vitest JSON report `report-tests` reads. Add
-fields freely; renaming or removing one needs a new major tag.
-
-`workflows-v0` moving on every master push means `@workflows-v0` is as live as `@master` was — there's no staging
-step. What the tag buys you is a `workflows-v1` for breaking workflow changes, so repos migrate one at a time instead
-of all at once, and a way to roll back by pointing the tag at an earlier commit (**Move major version tag**
-workflow). Bump `MAJOR_TAG` in `.github/workflows/_move_major_tag.yaml` to cut the next major; the old tag then
-freezes where it is and keeps working, CLI included, since the bundle is part of the frozen commit.
-
-The tag tracks the **workflows'** contract, not the npm package version. They move independently on purpose, so
-`@workflows-v0` is expected to stay `@workflows-v0` after the package reaches 1.0 — bump it when a workflow breaks
-its callers, not when the package does. Because `uses:` cannot take an expression, every ref into this repo repeats
-the tag literally; `check-major-tag-refs.mjs` fails the build if `MAJOR_TAG` and those refs disagree, which is the
-mistake that would otherwise ship silently during a bump.
-
-### Testing workflow changes
-
-- Point [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions) at your
-  branch (`uses: ...@your-branch`). It has real attached Actors and tests. The branch carries its own CLI bundle, so
-  one branch tests the workflows and the CLI together.
-- To change the composite action itself, repoint the `uses:` refs inside the reusable workflows at your branch as
-  well, and change them back before merging.
-- Make sure the shell code actually works on your laptop first.
-- After merging, watch the workflow on a real project before moving on.
+`@workflows-v0` always points at the latest workflows, so fixes and new features reach you without any change on your
+side. Changes that would break callers go to a new tag (`@workflows-v1`), and `@workflows-v0` keeps working, so you
+can migrate when it suits you.

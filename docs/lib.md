@@ -267,6 +267,5 @@ TESTER_APIFY_TOKEN=<token> \
 
 You can change the tests and re-run them against the same builds.
 
-`TESTER_APIFY_TOKEN` can point to your own account, if you have enough memory, or to the testing account
-(xRGg9iAfJSymqartk). To run only some tests, point vitest at a specific file instead of `test/platform`, or filter
+`TESTER_APIFY_TOKEN` can be the token of any account with enough memory for the runs. To run only some tests, point vitest at a specific file instead of `test/platform`, or filter
 by name with `-t`. See [Running locally](cli.md#running-locally) for the full flow.

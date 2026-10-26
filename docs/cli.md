@@ -304,8 +304,8 @@ Deletes builds older than 30 days of every selected Actor. It never deletes the 
 
 ## Listing Actors (`get-actor-configs`)
 
-Prints the config as the tool resolves it: one entry per Actor, after [grouped mode](../README.md#grouped-mode) is
-expanded and `actor.json` is read. Takes `--actors` and `--ignore`. Useful to check a config change.
+Prints the [config](../README.md#config-file) as the tool resolves it: one entry per Actor, with the group's values
+applied and `actor.json` read. Takes `--actors` and `--ignore`. Useful to check a config change.
 
 ## Running locally
 
@@ -356,11 +356,3 @@ TESTER_APIFY_TOKEN=apify_api_yyy \
 `get-commits`, `get-latest-commit` and `get-changed-files` print the commits, the newest commit, or the changed files
 on `--source-branch` since it diverged from `--target-branch` (optionally only after `--base-commit`). They predate
 `get-affected-actors`, which reports the same data, and are kept for older workflows.
-
-## Dev mode
-
-For development on `apify-test-tools` itself, run the CLI from source with `tsx`:
-
-```bash
-cd local-clone && tsx ../bin/main.ts get-actor-configs
-```

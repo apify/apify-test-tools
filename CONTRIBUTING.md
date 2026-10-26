@@ -13,8 +13,8 @@ The package consists of three parts:
 - `bin/main.ts` entrypoing
 - `bin/run-tests.ts` running the repository's vitest for the `test` command
 - `bin/test-report.ts` turning vitest's JSON report into the report `test` prints
-- `bin/notify.ts` the `notify` command and its targets (Slack for now)
-- `bin/slack.ts` the Slack client, and the `notify-release` announcement
+- `bin/notify.ts` the `notify` command: what it says about test runs and releases, and its targets (Slack for now)
+- `bin/slack.ts` the Slack client
 
 CLI command results use `writeJson` from `bin/output.ts` to write newline-terminated JSON to stdout.
 Use the CLI `logger` from `bin/logger.ts` for diagnostics; every level writes to stderr.

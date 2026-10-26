@@ -99,7 +99,6 @@ describe('CLI bundle', () => {
             'test [filters..]',
             'notify',
             'build',
-            'notify-release',
             'build-from-local',
             'delete-old-builds',
         ]) {
@@ -190,18 +189,18 @@ describe('CLI bundle', () => {
         });
     });
 
-    it('notify-release announces nothing, and needs no token, when there are no new commits', () => {
+    it('notify announces no release, and needs no token, when there are no new commits', () => {
         const affected = runCli('get-affected-actors', '--since', headSha).stdout;
-        const { status, stderr } = runCliWithInput(affected, 'notify-release', '--release-slack-channel', '#releases');
+        const { status, stderr } = runCliWithInput(affected, 'notify', '--slack-changelog-channel', '#releases');
         expect(status, stderr).toBe(0);
         expect(stderr).toContain('No new commits, so there is no release to announce');
     });
 
-    it('notify-release skips Slack without a channel', () => {
+    it('notify skips a release without a channel', () => {
         const affected = runCli('get-affected-actors', '--since', baseSha).stdout;
-        const { status, stderr } = runCliWithInput(affected, 'notify-release', '--dry-run');
+        const { status, stderr } = runCliWithInput(affected, 'notify', '--dry-run');
         expect(status, stderr).toBe(0);
-        expect(stderr).toContain('Skipping slack notification');
+        expect(stderr).toContain('Skipping notification, no --slack-channel or --slack-changelog-channel passed');
     });
 
     it('test fails clearly where vitest is not installed', () => {

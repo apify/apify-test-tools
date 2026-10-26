@@ -11,11 +11,10 @@ import { buildActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds } from './build.j
 import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedFiles, getCommits } from './git.js';
 import { logger, logLevels } from './logger.js';
-import { notifyOnChoices, notifyTestReport } from './notify.js';
+import { notify, notifyOnChoices } from './notify.js';
 import { writeJson } from './output.js';
 import { runTests } from './run-tests.js';
-import { notifyToSlack } from './slack.js';
-import { parseBuildInput, parseReleaseChanges, parseTestBuilds, parseTestReport, readStdin } from './stdin-input.js';
+import { parseBuildInput, parseNotifyInput, parseTestBuilds, readStdin } from './stdin-input.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
 /**
@@ -102,12 +101,6 @@ const buildOptions = {
     },
 } as const satisfies Record<string, Options>;
 
-/** Where `notify-release` posts the release. */
-const releaseSlackOptions = {
-    'report-slack-channel': { type: 'string', describe: 'Channel for the full report: commits and changed files' },
-    'release-slack-channel': { type: 'string', describe: 'Channel for the changelog additions only' },
-} as const satisfies Record<string, Options>;
-
 /** Flags of `test`, which runs the repository's vitest on the builds piped in from `build`. */
 const testOptions = {
     all: {
@@ -120,17 +113,41 @@ const testOptions = {
     'vitest-output-file': { type: 'string', describe: "Also keep vitest's own JSON report there, e.g. to upload it" },
 } as const satisfies Record<string, Options>;
 
-/** Flags of `notify`. Each target is optional, so a caller picks where the report goes. */
+/**
+ * Flags of `notify`. Each target is optional, so a caller picks where the notification goes. Some flags only fit one
+ * kind of input; `notify` fails on the others rather than ignoring them.
+ */
 const notifyOptions = {
     'slack-channel': {
         type: 'string',
         array: true,
         default: [] as string[],
-        describe: 'Slack channel to post to, repeat it for more channels. Needs SLACK_TOKEN_TESTS_BOT',
+        describe:
+            'Slack channel for the whole notification (a test report, or a release with its commits and changed files), repeat it for more',
     },
-    on: { choices: notifyOnChoices, default: 'failure' as const, describe: 'Notify only when tests fail, or always' },
-    title: { type: 'string', describe: 'What the message calls the run. Defaults to the GitHub workflow name' },
-    'job-url': { type: 'string', describe: 'Where the message links to. Defaults to the GitHub Actions run' },
+    'slack-changelog-channel': {
+        type: 'string',
+        array: true,
+        default: [] as string[],
+        describe: 'Releases only: Slack channel for just the changelog additions, repeat it for more',
+    },
+    on: {
+        choices: notifyOnChoices,
+        default: 'failure' as const,
+        describe: 'Tests only: notify only when tests fail, or always',
+    },
+    title: {
+        type: 'string',
+        describe: 'Tests only: what the message calls the run. Defaults to the GitHub workflow name',
+    },
+    'job-url': {
+        type: 'string',
+        describe: 'Tests only: where the message links to. Defaults to the GitHub Actions run',
+    },
+    'repo-url': {
+        type: 'string',
+        describe: 'Releases only: the repository the release is named after. Defaults to the origin remote',
+    },
 } as const satisfies Record<string, Options>;
 
 /** Global flags, available to every command. */
@@ -224,15 +241,17 @@ await yargs()
     )
     .command(
         'notify',
-        'Tell the configured targets how a test run went, from the report of test on stdin',
+        'Tell the configured targets about a test run (the output of test) or a release (of get-affected-actors) on stdin',
         (y) => y.options(notifyOptions).options(dryRunOptions),
         async (args) => {
-            await notifyTestReport({
-                report: parseTestReport(await readStdin()),
-                on: args.on,
+            await notify({
+                input: parseNotifyInput(await readStdin()),
                 slackChannels: args.slackChannel,
+                slackChangelogChannels: args.slackChangelogChannel,
+                on: args.on,
                 title: args.title,
                 jobUrl: args.jobUrl,
+                repoUrl: args.repoUrl,
                 dryRun: args.dryRun,
             });
         },
@@ -253,23 +272,6 @@ await yargs()
                 dryRun: args.dryRun,
             });
             writeJson(builds);
-        },
-    )
-    .command(
-        'notify-release',
-        'Announce a release on Slack, from the get-affected-actors output on stdin',
-        (y) => y.options(releaseSlackOptions).options(repoUrlOptions).options(dryRunOptions),
-        async (args) => {
-            const { commits, changedFiles, changelog } = parseReleaseChanges(await readStdin());
-            await notifyToSlack({
-                commits,
-                changedFiles,
-                changelog,
-                repoUrl: args.repoUrl,
-                dryRun: args.dryRun,
-                reportSlackChannel: args.reportSlackChannel,
-                releaseSlackChannel: args.releaseSlackChannel,
-            });
         },
     )
     .command(

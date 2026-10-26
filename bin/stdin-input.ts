@@ -29,6 +29,14 @@ const parseStdinJson = <T>(
     } catch (error) {
         throw new Error(`The input on stdin is not valid JSON: ${(error as Error).message}`);
     }
+    return validateStdinJson(json, schema, { expected, example });
+};
+
+const validateStdinJson = <T>(
+    json: unknown,
+    schema: ZodType<T>,
+    { expected, example }: { expected: string; example: string },
+) => {
     const result = schema.safeParse(json);
     if (!result.success) {
         throw new Error(`The input on stdin is not ${expected} (${example}):\n${prettifyError(result.error)}`);
@@ -49,19 +57,6 @@ export const parseBuildInput = (raw: string) =>
     parseStdinJson(raw, buildInputSchema, {
         expected: 'the Actors to build',
         example: `e.g. echo '{"actors":[{"actorFullName":"owner/name"}]}' | apify-test-tools build --version-number 0.1`,
-    });
-
-/** What `notify-release` reads: the parts of a get-affected-actors document that describe what changed. */
-const releaseChangesSchema = z.object({
-    commits: z.array(z.object({ sha: z.string(), author: z.string(), date: z.string(), message: z.string() })),
-    changedFiles: z.array(z.string()),
-    changelog: z.string().nullable(),
-});
-
-export const parseReleaseChanges = (raw: string) =>
-    parseStdinJson(raw, releaseChangesSchema, {
-        expected: 'the output of get-affected-actors',
-        example: 'e.g. apify-test-tools get-affected-actors --since <sha> | apify-test-tools notify-release',
     });
 
 /**
@@ -89,7 +84,7 @@ export const parseTestBuilds = (raw: string) => {
     return parseStdinJson(raw, testBuildsSchema, { expected: 'the builds to test', example });
 };
 
-/** What `notify` reads: the report `test` prints. */
+/** The report `test` prints, see TestReport. */
 const testRunSchema = z.object({ actorId: z.string(), runId: z.string(), runLink: z.string() });
 const testReportSchema = z.object({
     version: z.literal(1),
@@ -108,8 +103,40 @@ const testReportSchema = z.object({
     errors: z.array(z.string()),
 });
 
-export const parseTestReport = (raw: string) =>
-    parseStdinJson(raw, testReportSchema, {
-        expected: 'the output of test',
-        example: 'e.g. apify-test-tools test --all | apify-test-tools notify --slack-channel "#my-channel"',
-    });
+/** The parts of a get-affected-actors document that describe what a release changed. Other fields are ignored. */
+const releaseChangesSchema = z.object({
+    commits: z.array(z.object({ sha: z.string(), author: z.string(), date: z.string(), message: z.string() })),
+    changedFiles: z.array(z.string()),
+    changelog: z.string().nullable(),
+});
+
+export type ReleaseChanges = z.infer<typeof releaseChangesSchema>;
+
+export type NotifyInput =
+    | { kind: 'tests'; report: z.infer<typeof testReportSchema> }
+    | { kind: 'release'; changes: ReleaseChanges };
+
+/**
+ * What `notify` reads: a test run, as `test` reports it, or a release, as `get-affected-actors` reports it. Told
+ * apart by their fields, `tests` and `commits`, so either can be piped in as it is.
+ */
+export const parseNotifyInput = (raw: string): NotifyInput => {
+    const example =
+        'e.g. apify-test-tools test --all | apify-test-tools notify --slack-channel "#my-channel", ' +
+        'or apify-test-tools get-affected-actors --since <sha> | apify-test-tools notify --slack-channel "#my-channel"';
+    const expected = 'the output of test or get-affected-actors';
+    const json = parseStdinJson(raw, z.unknown(), { expected, example });
+    const has = (field: string) => typeof json === 'object' && json !== null && field in json;
+    if (has('tests')) {
+        const report = validateStdinJson(json, testReportSchema, { expected: 'the output of test', example });
+        return { kind: 'tests', report };
+    }
+    if (has('commits')) {
+        const changes = validateStdinJson(json, releaseChangesSchema, {
+            expected: 'the output of get-affected-actors',
+            example,
+        });
+        return { kind: 'release', changes };
+    }
+    throw new Error(`The input on stdin is not ${expected} (${example}).`);
+};

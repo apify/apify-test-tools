@@ -227,7 +227,7 @@ jobs:
 ```
 
 This workflow runs one step per command: `get-affected-actors --since ${{ github.event.before }}`, then
-`build --version-number default` on every changed Actor, then `notify-release`. See [Releasing Actors](#releasing-actors) for how the
+`build --version-number default` on every changed Actor, then `notify`. See [Releasing Actors](#releasing-actors) for how the
 released range is determined and what to pass if you call the CLI from somewhere else.
 
 ### `claude-review.yaml`
@@ -263,7 +263,7 @@ environment variables, so a secret is only visible to the step that needs it:
 | `NPM_TOKEN`                                                               | dependency install steps only, as both `NPM_TOKEN` and `NODE_AUTH_TOKEN`. Use a read-only token: npm granular tokens can be read-only, classic automation tokens can publish.                                                |
 | the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the build and `delete-old-builds` steps only                                                                                                                                                                                 |
 | `TESTER_APIFY_TOKEN`                                                      | the vitest step, and the Claude investigation step: the Apify MCP server's bearer token for reading the failing run, its log and its storages, and Claude's token for re-running it to measure how often the failure happens |
-| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the `notify` and `notify-release` steps only                                                                                                                                                                                 |
+| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the `notify` steps only                                                                                                                                                                                                      |
 
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its
 own token via `tokenEnvVar` in `apify-test-tools.config.json`. Those steps pass
@@ -572,7 +572,7 @@ The package includes a CLI binary used by CI workflows to build Actors, detect c
 
 ### Dry runs (`--dry-run`)
 
-Every command that changes something (`build`, `build-from-local`, `notify-release`, `notify`, `delete-old-builds`) takes `--dry-run`. A dry run:
+Every command that changes something (`build`, `build-from-local`, `notify`, `delete-old-builds`) takes `--dry-run`. A dry run:
 
 - **Changes nothing.** No versions or builds are created, nothing is uploaded or deleted, and no Slack message is posted.
 - **Does every read and check the real run does**, so it fails wherever the real run would: change detection, the Apify token and Actor lookup, the [repository check](#repository-check), collecting and zipping local sources, and the Slack token (verified with Slack's read-only `auth.test`).
@@ -761,7 +761,7 @@ without a tag leaves every tag where it is. Builds always use the Docker cache.
 
 `test` runs the repository's own vitest (the version in its `node_modules`, so the tests keep the lib version
 the repository locked) on the builds it is given on stdin, and prints a report of the run for
-[`notify`](#notifying-about-test-runs-notify).
+[`notify`](#notifying-notify).
 
 ```bash
 # A PR: test what was just built
@@ -815,28 +815,40 @@ gets only the report:
 load, or vitest exiting without a report. `test` exits with 1 whenever `success` is false, and prints the report
 anyway, so `notify` still hears about the failure.
 
-### Notifying about test runs (`notify`)
+### Notifying (`notify`)
 
-`notify` reads the report of `test` on stdin and tells the targets you pass how the run went. Slack is the only
-target for now. By default it posts only when the tests failed: the outcome and the first failure, linked to its
-run, with the other failures in the message's thread.
+`notify` tells the targets you pass about what it reads on stdin: a test run, as [`test`](#running-tests-test)
+reports it, or a release, as [`get-affected-actors`](#finding-affected-actors-get-affected-actors) reports it. It
+tells the two apart by their fields, so either can be piped in as it is. Slack is the only target for now.
 
 ```bash
+# A test run: posts only when the tests failed, the outcome and the first failure, linked to its run,
+# with the other failures in the message's thread
 npx apify-test-tools notify --slack-channel '#notif-my-repo' --slack-channel '#my-team' < test-report.json
 
 # Or straight from test. With `set -o pipefail` (`shell: bash` in GitHub Actions), failed tests still fail the pipe
 npx apify-test-tools test --all | npx apify-test-tools notify --slack-channel '#notif-my-repo'
+
+# A release, see Releasing Actors below
+npx apify-test-tools get-affected-actors --since <sha> \
+  | npx apify-test-tools notify --slack-changelog-channel '#releases' --slack-channel '#notif-my-repo'
 ```
 
-| Flag              | Default                  | Meaning                                                                     |
-| ----------------- | ------------------------ | --------------------------------------------------------------------------- |
-| `--slack-channel` |                          | Slack channel to post to, repeat it for more. Needs `SLACK_TOKEN_TESTS_BOT` |
-| `--on`            | `failure`                | `failure` posts only when the tests failed, `always` on every run           |
-| `--title`         | the GitHub workflow name | What the message calls the run                                              |
-| `--job-url`       | the GitHub Actions run   | Where the message links to                                                  |
+| Flag                        | Input   | Default                  | Meaning                                                                                                                          |
+| --------------------------- | ------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `--slack-channel`           | both    |                          | Slack channel for the whole notification: the test report, or the release with its commits and changed files. Repeat it for more |
+| `--slack-changelog-channel` | release |                          | Slack channel for just the release's changelog additions. Repeat it for more                                                     |
+| `--on`                      | tests   | `failure`                | `failure` posts only when the tests failed, `always` on every run                                                                |
+| `--title`                   | tests   | the GitHub workflow name | What the message calls the run                                                                                                   |
+| `--job-url`                 | tests   | the GitHub Actions run   | Where the message links to                                                                                                       |
+| `--repo-url`                | release | the `origin` remote      | The repository the release is named after                                                                                        |
+
+A flag the input has no use for, e.g. `--slack-changelog-channel` with a test report, is an error rather than
+ignored. Test notifications need `SLACK_TOKEN_TESTS_BOT`, release ones `SLACK_TOKEN_RELEASES_BOT`.
 
 Without a target, `notify` posts nothing and needs no token. With one, it checks the token on every run, also when
-there is nothing to post, so a broken token shows up on a green run rather than on the day tests fail.
+there is nothing to post, so a broken token shows up on a green run rather than on the day tests fail. A release
+with no new commits is the exception: there is nothing to announce, so it needs no token either.
 
 ### Releasing Actors
 
@@ -849,11 +861,11 @@ npx apify-test-tools get-affected-actors --since <sha> > affected.json
 jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json \
   | npx apify-test-tools build --version-number default --dry-run
 
-npx apify-test-tools notify-release --release-slack-channel "#releases" --dry-run < affected.json
+npx apify-test-tools notify --slack-changelog-channel "#releases" --dry-run < affected.json
 ```
 
-`notify-release` reads the output of `get-affected-actors` on stdin. It posts the changelog additions to
-`--release-slack-channel` and the commits and changed files to `--report-slack-channel`, and posts nothing when
+[`notify`](#notifying-notify) reads the output of `get-affected-actors` on stdin. It posts the changelog additions to
+`--slack-changelog-channel` and the commits and changed files to `--slack-channel`, and posts nothing when
 there are no new commits. It names the release after the `origin` remote (or `--repo-url`) and the author of the
 newest commit, and needs `SLACK_TOKEN_RELEASES_BOT`.
 

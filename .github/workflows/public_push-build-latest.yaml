@@ -52,7 +52,10 @@ jobs:
               env:
                   SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
               run: |
-                  apify-test-tools notify-release --release-slack-channel "#delivery-public-actors" --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" < affected.json
+                  apify-test-tools notify \
+                    --slack-changelog-channel "#delivery-public-actors" \
+                    --slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" \
+                    < affected.json
 
             - name: Delete old builds
               env:

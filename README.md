@@ -779,8 +779,9 @@ error, as with `build`. `--all` reads no stdin and runs the tests of every Actor
 is what `RUN_ALL_PLATFORM_TESTS=1` did. Both only come from these flags: `test` drops `ACTOR_BUILDS` and
 `RUN_ALL_PLATFORM_TESTS` from its own environment.
 
-It always runs vitest with `--maxConcurrency=20 --fileParallelism --maxWorkers=100`, since platform tests mostly
-wait on Actor runs rather than the CPU, and with its JSON reporter for the report.
+It runs vitest with `--maxConcurrency=20 --fileParallelism --maxWorkers=100`, since platform tests mostly wait on
+Actor runs rather than the CPU, and with its JSON reporter for the report. Passing one of those options after `--`
+replaces ours, e.g. `-- --maxConcurrency 5` to debug a flaky test.
 
 | Argument / flag        | Default         | Meaning                                                             |
 | ---------------------- | --------------- | ------------------------------------------------------------------- |

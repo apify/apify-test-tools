@@ -75,6 +75,13 @@ test('owner/a: fails', () => {
         expect(JSON.parse(result.stdout)).toMatchObject({ success: true, summary: { passed: 1, skipped: 1 } });
     });
 
+    it('lets a vitest flag after -- replace the one test sets, which vitest would reject twice', () => {
+        const result = run(['--log-level', 'debug', 'test', '--all', '--', '--maxConcurrency', '3', '-t', 'works']);
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stderr).toMatch(/Running vitest: .* --maxWorkers=100 --maxConcurrency 3 -t works/);
+        expect(result.stderr).not.toContain('--maxConcurrency=20');
+    });
+
     it('fails on empty stdin instead of testing nothing', () => {
         const result = run(['test']);
         expect(result.status).toBe(1);

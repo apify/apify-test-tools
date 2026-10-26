@@ -11,10 +11,11 @@ import { buildActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds } from './build.j
 import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedFiles, getCommits } from './git.js';
 import { logger, logLevels } from './logger.js';
+import { notifyOnChoices, notifyTestReport } from './notify.js';
 import { writeJson } from './output.js';
+import { runTests } from './run-tests.js';
 import { notifyToSlack } from './slack.js';
-import { parseBuildInput, parseReleaseChanges, readStdin } from './stdin-input.js';
-import { reportTestResults } from './test-report.js';
+import { parseBuildInput, parseReleaseChanges, parseTestBuilds, parseTestReport, readStdin } from './stdin-input.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
 /**
@@ -107,6 +108,31 @@ const releaseSlackOptions = {
     'release-slack-channel': { type: 'string', describe: 'Channel for the changelog additions only' },
 } as const satisfies Record<string, Options>;
 
+/** Flags of `test`, which runs the repository's vitest on the builds piped in from `build`. */
+const testOptions = {
+    all: {
+        type: 'boolean',
+        default: false,
+        describe: "Test every Actor's default build instead of reading builds on stdin, as the scheduled tests do",
+    },
+    'max-concurrency': { type: 'number', default: 20, describe: 'Tests run at once in a file (vitest maxConcurrency)' },
+    'max-workers': { type: 'number', default: 100, describe: 'Test files run at once (vitest maxWorkers)' },
+    'vitest-output-file': { type: 'string', describe: "Also keep vitest's own JSON report there, e.g. to upload it" },
+} as const satisfies Record<string, Options>;
+
+/** Flags of `notify`. Each target is optional, so a caller picks where the report goes. */
+const notifyOptions = {
+    'slack-channel': {
+        type: 'string',
+        array: true,
+        default: [] as string[],
+        describe: 'Slack channel to post to, repeat it for more channels. Needs SLACK_TOKEN_TESTS_BOT',
+    },
+    on: { choices: notifyOnChoices, default: 'failure' as const, describe: 'Notify only when tests fail, or always' },
+    title: { type: 'string', describe: 'What the message calls the run. Defaults to the GitHub workflow name' },
+    'job-url': { type: 'string', describe: 'Where the message links to. Defaults to the GitHub Actions run' },
+} as const satisfies Record<string, Options>;
+
 /** Global flags, available to every command. */
 const globalOptions = {
     'log-level': {
@@ -119,6 +145,8 @@ const globalOptions = {
 
 await yargs()
     .scriptName('public-actors-utils')
+    // Everything after `--` is kept apart, so `test` can pass it to vitest as it is
+    .parserConfiguration({ 'populate--': true })
     .options(globalOptions)
     .middleware(middlewares)
     .command(
@@ -169,17 +197,44 @@ await yargs()
         },
     )
     .command(
-        'report-tests',
-        '',
+        'test [filters..]',
+        'Run the tests on the builds listed on stdin (the output of build), and print a report for notify',
         (y) =>
             y
-                .options(dryRunOptions)
-                .option('report-file', { type: 'string', demandOption: true })
-                .option('report-slack-channel', { type: 'string' })
-                .option('job-url', { type: 'string' })
-                .option('workflow-name', { type: 'string' }),
+                .positional('filters', {
+                    type: 'string',
+                    array: true,
+                    default: ['test/platform'],
+                    describe: 'Test files to run, as vitest filters. Pass more vitest flags after --',
+                })
+                .options(testOptions),
         async (args) => {
-            await reportTestResults(args);
+            const report = await runTests({
+                filters: args.filters,
+                builds: args.all ? null : parseTestBuilds(await readStdin()),
+                maxConcurrency: args.maxConcurrency,
+                maxWorkers: args.maxWorkers,
+                vitestOutputFile: args.vitestOutputFile,
+                vitestArgs: ((args['--'] as (string | number)[] | undefined) ?? []).map(String),
+            });
+            writeJson(report);
+            // The report is printed either way, so `notify` later in the pipe still hears about the failure
+            if (!report.success) process.exitCode = 1;
+        },
+    )
+    .command(
+        'notify',
+        'Tell the configured targets how a test run went, from the report of test on stdin',
+        (y) => y.options(notifyOptions).options(dryRunOptions),
+        async (args) => {
+            await notifyTestReport({
+                report: parseTestReport(await readStdin()),
+                on: args.on,
+                slackChannels: args.slackChannel,
+                title: args.title,
+                jobUrl: args.jobUrl,
+                dryRun: args.dryRun,
+            });
         },
     )
     .command(

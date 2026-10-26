@@ -11,8 +11,10 @@ The package consists of three parts:
 - `bin/build.ts` actor building
 - `bin/git.ts` git wrappers for getting relevant git commits and changed files
 - `bin/main.ts` entrypoing
-- `bin/slack.ts` sending notifications to slack
-- `bin/test-report.ts` processing vitest's test reports
+- `bin/run-tests.ts` running the repository's vitest for the `test` command
+- `bin/test-report.ts` turning vitest's JSON report into the report `test` prints
+- `bin/notify.ts` the `notify` command and its targets (Slack for now)
+- `bin/slack.ts` the Slack client, and the `notify-release` announcement
 
 CLI command results use `writeJson` from `bin/output.ts` to write newline-terminated JSON to stdout.
 Use the CLI `logger` from `bin/logger.ts` for diagnostics; every level writes to stderr.

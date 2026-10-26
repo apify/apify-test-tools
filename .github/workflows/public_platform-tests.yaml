@@ -31,32 +31,30 @@ jobs:
               with:
                   npm-token: ${{ secrets.NPM_TOKEN }}
 
+            # Runs the repo's test code and its whole import graph, so it gets the tester token only.
+            # Fails on failing tests, but writes the report anyway for the notification below.
             - name: Test
               env:
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+              run: |
+                  apify-test-tools test --all ./test/platform/${{ inputs.test-files-glob || inputs.subtest }} \
+                    --vitest-output-file ./test-output.json > test-report.json
+
+            # Posts only when the tests failed, but checks the Slack token on every run
+            - name: Notify
+              if: ${{ !cancelled() }}
+              env:
                   SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
               run: |
-                  set +e
-                  export RUN_ALL_PLATFORM_TESTS=1
-                  npx vitest ./test/platform/${{ inputs.test-files-glob || inputs.subtest }} \
-                    --run \
-                    --reporter=default \
-                    --reporter=json \
-                    --outputFile=./test-output.json \
-                    --maxConcurrency 20 \
-                    --fileParallelism=true \
-                    --maxWorkers 100
-                  return_code=$?
-                  apify-test-tools report-tests \
-                    --report-file ./test-output.json \
-                    --workflow-name "${{ github.workflow }}" \
-                    --job-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-                    --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}"
-                  exit $return_code
+                  apify-test-tools notify \
+                    --slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" \
+                    < test-report.json
 
-            - name: Upload Vitest JSON artifact
+            - name: Upload test reports
               uses: actions/upload-artifact@v6
               if: always()
               with:
                   name: vitest-results
-                  path: ./test-output.json
+                  path: |
+                      ./test-output.json
+                      ./test-report.json

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseBuildInput, parseReleaseChanges } from '../../../bin/stdin-input.js';
+import { parseBuildInput, parseReleaseChanges, parseTestBuilds, parseTestReport } from '../../../bin/stdin-input.js';
 
 describe('parseBuildInput', () => {
     it('reads the Actors', () => {
@@ -57,5 +57,42 @@ describe('parseReleaseChanges', () => {
     it('rejects empty input and input that is not a get-affected-actors document', () => {
         expect(() => parseReleaseChanges('')).toThrow('got nothing');
         expect(() => parseReleaseChanges('{"actors":[]}')).toThrow('not the output of get-affected-actors');
+    });
+});
+
+describe('parseTestBuilds', () => {
+    const build = { buildId: 'b', actorRawId: 'r', buildNumber: '0.99.1', actorFullName: 'owner/a' };
+
+    it('reads the output of build', () => {
+        expect(parseTestBuilds(JSON.stringify([build]))).toStrictEqual([build]);
+        expect(parseTestBuilds('[]')).toStrictEqual([]);
+    });
+
+    it('rejects a dry-run plan, which built nothing', () => {
+        expect(() => parseTestBuilds(JSON.stringify({ dryRun: true, builds: [build] }))).toThrow('is a dry-run plan');
+    });
+
+    it('rejects empty input and input that is not builds', () => {
+        expect(() => parseTestBuilds('')).toThrow('Expected the builds to test as JSON on stdin, got nothing');
+        expect(() => parseTestBuilds('{"actors":[]}')).toThrow('is not the builds to test');
+        expect(() => parseTestBuilds('{oops')).toThrow('not valid JSON');
+    });
+});
+
+describe('parseTestReport', () => {
+    it('reads the output of test', () => {
+        const report = {
+            version: 1,
+            success: true,
+            summary: { total: 0, passed: 0, failed: 0, skipped: 0 },
+            tests: [],
+            errors: [],
+        };
+        expect(parseTestReport(JSON.stringify(report))).toStrictEqual(report);
+    });
+
+    it('rejects empty input and input that is not a test report, e.g. raw vitest JSON', () => {
+        expect(() => parseTestReport('')).toThrow('got nothing');
+        expect(() => parseTestReport('{"success":true,"testResults":[]}')).toThrow('is not the output of test');
     });
 });

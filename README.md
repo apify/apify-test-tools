@@ -263,7 +263,7 @@ environment variables, so a secret is only visible to the step that needs it:
 | `NPM_TOKEN`                                                               | dependency install steps only, as both `NPM_TOKEN` and `NODE_AUTH_TOKEN`. Use a read-only token: npm granular tokens can be read-only, classic automation tokens can publish.                                                |
 | the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the build and `delete-old-builds` steps only                                                                                                                                                                                 |
 | `TESTER_APIFY_TOKEN`                                                      | the vitest step, and the Claude investigation step: the Apify MCP server's bearer token for reading the failing run, its log and its storages, and Claude's token for re-running it to measure how often the failure happens |
-| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and announcement steps only                                                                                                                                                                                    |
+| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the `notify` and `notify-release` steps only                                                                                                                                                                                 |
 
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its
 own token via `tokenEnvVar` in `apify-test-tools.config.json`. Those steps pass
@@ -332,7 +332,8 @@ left alone, so their tests keep the lib version they locked.
 
 The CLI and the lib in one job can be different versions now, so the formats between them are a
 contract: the `ACTOR_BUILDS` JSON that `build` writes and the lib reads, and the vitest JSON report
-`report-tests` reads. Add fields freely; renaming or removing one needs a new major tag.
+(with the run each test started on its `meta`) that `test` reads. Add fields freely; renaming or removing one
+needs a new major tag.
 
 `workflows-v0` moving on every master push means `@workflows-v0` is as live as `@master` was —
 there's no staging step. What the tag buys you is a `workflows-v1` for breaking workflow changes,
@@ -571,7 +572,7 @@ The package includes a CLI binary used by CI workflows to build Actors, detect c
 
 ### Dry runs (`--dry-run`)
 
-Every command that changes something (`build`, `build-from-local`, `notify-release`, `delete-old-builds`, `report-tests`) takes `--dry-run`. A dry run:
+Every command that changes something (`build`, `build-from-local`, `notify-release`, `notify`, `delete-old-builds`) takes `--dry-run`. A dry run:
 
 - **Changes nothing.** No versions or builds are created, nothing is uploaded or deleted, and no Slack message is posted.
 - **Does every read and check the real run does**, so it fails wherever the real run would: change detection, the Apify token and Actor lookup, the [repository check](#repository-check), collecting and zipping local sources, and the Slack token (verified with Slack's read-only `auth.test`).
@@ -636,15 +637,16 @@ Since you already scoped the build to just the Actor(s) you care about, point vi
 
 #### 5. Run tests against the builds
 
-Pass the build output as `ACTOR_BUILDS` and provide `TESTER_APIFY_TOKEN`. The token can point to your own account (if you have enough memory) or you can use the testing account (xRGg9iAfJSymqartk). Platform test suites are skipped unless `TESTER_APIFY_TOKEN` is set, so regular unit test runs stay unaffected.
+Pipe the build output into [`test`](#running-tests-test) and provide `TESTER_APIFY_TOKEN`. The token can point to your own account (if you have enough memory) or you can use the testing account (xRGg9iAfJSymqartk). Platform test suites are skipped unless `TESTER_APIFY_TOKEN` is set, so regular unit test runs stay unaffected.
 
-If you want to run only certain tests, change the `test/platform` to be more specific.
+If you want to run only certain tests, pass a more specific path than the default `test/platform`.
 
 ```bash
-ACTOR_BUILDS='<JSON output from build command>' \
-TESTER_APIFY_TOKEN=<token> \
-  npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
+echo '<JSON output from build command>' \
+  | TESTER_APIFY_TOKEN=<token> npx apify-test-tools test test/platform/my-actor.test.ts
 ```
+
+Plain vitest works too, `test` only sets this up for you: `ACTOR_BUILDS='<JSON output from build command>' npx vitest run test/platform`.
 
 #### Full example
 
@@ -652,14 +654,12 @@ Tests only run for Actors in `ACTOR_BUILDS`, so a custom workflow has to build (
 
 ```bash
 # Build and capture output
-BUILDS=$(npx apify-test-tools get-affected-actors --base origin/master --test-files-glob 'test/platform/**' \
+npx apify-test-tools get-affected-actors --base origin/master --test-files-glob 'test/platform/**' \
     | jq '{ actors: .functionallyChangedActors }' \
-    | APIFY_TOKEN_JOHN_DOE=apify_api_xxx npx apify-test-tools build --version-number 0.99)
+    | APIFY_TOKEN_JOHN_DOE=apify_api_xxx npx apify-test-tools build --version-number 0.99 > builds.json
 
-# Run tests with the builds
-ACTOR_BUILDS="$BUILDS" \
-TESTER_APIFY_TOKEN=apify_api_yyy \
-  npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
+# Run tests with the builds, as often as you like
+TESTER_APIFY_TOKEN=apify_api_yyy npx apify-test-tools test < builds.json
 ```
 
 ### Finding affected Actors (`get-affected-actors`)
@@ -756,6 +756,87 @@ Actions, give such a step `shell: bash` so the pipe also fails on its own (the d
 `build` never sets or changes build tags. A build gets the tag its version is configured with on the platform,
 so building the default version moves its tag (usually `latest`) to the new build, and building a version
 without a tag leaves every tag where it is. Builds always use the Docker cache.
+
+### Running tests (`test`)
+
+`test` runs the repository's own vitest (the version in its `node_modules`, so the tests keep the lib version
+the repository locked) on the builds it is given on stdin, and prints a report of the run for
+[`notify`](#notifying-about-test-runs-notify).
+
+```bash
+# A PR: test what was just built
+... | npx apify-test-tools build --version-number 0.99 | npx apify-test-tools test > test-report.json
+
+# Scheduled tests: every Actor's default build, nothing on stdin
+npx apify-test-tools test --all test/platform/core > test-report.json
+
+# Extra vitest flags go after --
+npx apify-test-tools test --all -- -t 'finishes'
+```
+
+The input is the JSON array `build` and `build-from-local` print. A dry-run plan, empty or invalid input is an
+error, as with `build`. `--all` reads no stdin and runs the tests of every Actor against its default build, which
+is what `RUN_ALL_PLATFORM_TESTS=1` did. Both only come from these flags: `test` drops `ACTOR_BUILDS` and
+`RUN_ALL_PLATFORM_TESTS` from its own environment.
+
+| Argument / flag        | Default         | Meaning                                                                |
+| ---------------------- | --------------- | ---------------------------------------------------------------------- |
+| `[filters..]`          | `test/platform` | Test files to run, as vitest filters                                   |
+| `--all`                | `false`         | Test every Actor's default build instead of reading builds on stdin    |
+| `--max-concurrency`    | `20`            | Tests run at once in a file (vitest `maxConcurrency`)                  |
+| `--max-workers`        | `100`           | Test files run at once (vitest `maxWorkers`), with file parallelism on |
+| `--vitest-output-file` |                 | Also keep vitest's own JSON report there, e.g. to upload it            |
+| after `--`             |                 | Passed to vitest as they are                                           |
+
+Vitest's own output goes to stderr, followed by a summary that lists every test with the link to its run. Stdout
+gets only the report:
+
+```json
+{
+    "version": 1,
+    "success": false,
+    "summary": { "total": 3, "passed": 1, "failed": 1, "skipped": 1 },
+    "tests": [
+        {
+            "name": "john.doe/my-actor: finishes",
+            "file": "test/platform/my-actor.test.ts",
+            "status": "failed",
+            "durationMs": 61234,
+            "failureMessages": ["AssertionError: expected 'FAILED' to be 'SUCCEEDED'"],
+            "run": { "actorId": "john.doe/my-actor", "runId": "…", "runLink": "https://console.apify.com/view/runs/…" }
+        }
+    ],
+    "errors": ["test/platform/other.test.ts: Cannot find package 'foo'"]
+}
+```
+
+`failureMessages` keeps the first line of each failure; diffs and stack traces are in the vitest output. `run` is
+`null` for a test that started no run. `errors` lists what failed outside of any test: a test file that failed to
+load, or vitest exiting without a report. `test` exits with 1 whenever `success` is false, and prints the report
+anyway, so `notify` still hears about the failure.
+
+### Notifying about test runs (`notify`)
+
+`notify` reads the report of `test` on stdin and tells the targets you pass how the run went. Slack is the only
+target for now. By default it posts only when the tests failed: the outcome and the first failure, linked to its
+run, with the other failures in the message's thread.
+
+```bash
+npx apify-test-tools notify --slack-channel '#notif-my-repo' --slack-channel '#my-team' < test-report.json
+
+# Or straight from test. With `set -o pipefail` (`shell: bash` in GitHub Actions), failed tests still fail the pipe
+npx apify-test-tools test --all | npx apify-test-tools notify --slack-channel '#notif-my-repo'
+```
+
+| Flag              | Default                  | Meaning                                                                     |
+| ----------------- | ------------------------ | --------------------------------------------------------------------------- |
+| `--slack-channel` |                          | Slack channel to post to, repeat it for more. Needs `SLACK_TOKEN_TESTS_BOT` |
+| `--on`            | `failure`                | `failure` posts only when the tests failed, `always` on every run           |
+| `--title`         | the GitHub workflow name | What the message calls the run                                              |
+| `--job-url`       | the GitHub Actions run   | Where the message links to                                                  |
+
+Without a target, `notify` posts nothing and needs no token. With one, it checks the token on every run, also when
+there is nothing to post, so a broken token shows up on a green run rather than on the day tests fail.
 
 ### Releasing Actors
 

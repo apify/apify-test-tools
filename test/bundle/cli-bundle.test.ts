@@ -96,7 +96,8 @@ describe('CLI bundle', () => {
             'get-changed-files',
             'get-actor-configs',
             'get-affected-actors',
-            'report-tests',
+            'test [filters..]',
+            'notify',
             'build',
             'notify-release',
             'build-from-local',
@@ -203,33 +204,36 @@ describe('CLI bundle', () => {
         expect(stderr).toContain('Skipping slack notification');
     });
 
-    it('report-tests summarizes a vitest JSON report', async () => {
-        const assertion = (title: string, status: 'passed' | 'failed', runId: string) => ({
-            ancestorTitles: [],
-            fullName: `foo ${title}`,
-            title,
-            status,
-            failureMessages: status === 'failed' ? ['AssertionError: expected 1 to be 2\n    at foo.test.ts:1:1'] : [],
-            meta: { runId, runLink: `https://console.apify.com/view/runs/${runId}`, actorId: 'tester/foo' },
-        });
-        await writeRepoFile(
-            'test-output.json',
-            JSON.stringify({
-                success: false,
-                testResults: [
-                    {
-                        name: 'test/platform/foo.test.ts',
-                        status: 'failed',
-                        assertionResults: [assertion('works', 'passed', 'run1'), assertion('fails', 'failed', 'run2')],
-                    },
-                ],
-            }),
-        );
+    it('test fails clearly where vitest is not installed', () => {
+        const { status, stdout, stderr } = runCli('test', '--all');
+        expect(status).toBe(1);
+        expect(stderr).toContain('vitest is not installed');
+        expect(stdout).toBe('');
+    });
 
-        const { status, stderr } = runCli('report-tests', '--report-file', 'test-output.json', '--dry-run');
-        expect(status, stderr).toBe(0);
-        expect(stderr).toContain('PASSED: 1, FAILED: 1');
-        expect(stderr).toContain('1) foo fails ... https://console.apify.com/view/runs/run2');
-        expect(stderr).toContain('Skipping slack notification');
+    it('notify needs the Slack token to post a failed report, even in a dry run', () => {
+        const report = {
+            version: 1,
+            success: false,
+            summary: { total: 1, passed: 0, failed: 1, skipped: 0 },
+            tests: [
+                {
+                    name: 'tester/foo: fails',
+                    file: 'test/platform/foo.test.ts',
+                    status: 'failed',
+                    durationMs: 1,
+                    failureMessages: ['AssertionError: expected 1 to be 2'],
+                    run: { actorId: 'tester/foo', runId: 'run2', runLink: 'https://console.apify.com/view/runs/run2' },
+                },
+            ],
+            errors: [],
+        };
+        const withChannel = runCliWithInput(JSON.stringify(report), 'notify', '--slack-channel', '#notif', '--dry-run');
+        expect(withChannel.status).toBe(1);
+        expect(withChannel.stderr).toContain('SLACK_TOKEN_TESTS_BOT not defined');
+
+        const withoutChannel = runCliWithInput(JSON.stringify(report), 'notify', '--dry-run');
+        expect(withoutChannel.status, withoutChannel.stderr).toBe(0);
+        expect(withoutChannel.stderr).toContain('Skipping notification');
     });
 });

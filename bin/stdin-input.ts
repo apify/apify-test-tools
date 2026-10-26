@@ -63,3 +63,53 @@ export const parseReleaseChanges = (raw: string) =>
         expected: 'the output of get-affected-actors',
         example: 'e.g. apify-test-tools get-affected-actors --since <sha> | apify-test-tools notify-release',
     });
+
+/**
+ * What `test` reads: the builds to test, as `build` and `build-from-local` print them. A dry-run plan is an object
+ * on purpose, so it is rejected here rather than tested as if it were built.
+ */
+const testBuildsSchema = z.array(
+    z.object({ buildId: z.string(), actorRawId: z.string(), buildNumber: z.string(), actorFullName: z.string() }),
+);
+
+const isDryRunPlan = (raw: string) => {
+    try {
+        return (JSON.parse(raw) as { dryRun?: unknown } | null)?.dryRun === true;
+    } catch {
+        // Not JSON at all, parseStdinJson says so
+        return false;
+    }
+};
+
+export const parseTestBuilds = (raw: string) => {
+    const example = 'e.g. ... | apify-test-tools build --version-number 0.99 | apify-test-tools test, or test --all';
+    if (isDryRunPlan(raw)) {
+        throw new Error(`The input on stdin is a dry-run plan, not builds, so there is nothing to test (${example}).`);
+    }
+    return parseStdinJson(raw, testBuildsSchema, { expected: 'the builds to test', example });
+};
+
+/** What `notify` reads: the report `test` prints. */
+const testRunSchema = z.object({ actorId: z.string(), runId: z.string(), runLink: z.string() });
+const testReportSchema = z.object({
+    version: z.literal(1),
+    success: z.boolean(),
+    summary: z.object({ total: z.number(), passed: z.number(), failed: z.number(), skipped: z.number() }),
+    tests: z.array(
+        z.object({
+            name: z.string(),
+            file: z.string(),
+            status: z.enum(['passed', 'failed', 'skipped']),
+            durationMs: z.number().nullable(),
+            failureMessages: z.array(z.string()),
+            run: testRunSchema.nullable(),
+        }),
+    ),
+    errors: z.array(z.string()),
+});
+
+export const parseTestReport = (raw: string) =>
+    parseStdinJson(raw, testReportSchema, {
+        expected: 'the output of test',
+        example: 'e.g. apify-test-tools test --all | apify-test-tools notify --slack-channel "#my-channel"',
+    });

@@ -10,7 +10,9 @@ import {
     ApifyBuilder,
     assertRepoUrlMatchesDefaultVersion,
     buildActors,
+    type BuildPlan,
     deleteOldBuilds,
+    executeBuildPlans,
     resolveDefaultVersion,
     runBuilds,
 } from '../../../bin/build.js';
@@ -264,5 +266,75 @@ describe('dry run', () => {
         await deleteOldBuilds([actorConfig], { dryRun: false });
         expect(buildClient).toHaveBeenCalledWith('old-build');
         expect(deleteBuild).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('executeBuildPlans', () => {
+    const makePlan = (
+        actorFullName: string,
+        builder: unknown,
+        upload = vi.fn(),
+    ): BuildPlan<{ actorFullName: string }> => ({
+        builder: builder as ApifyBuilder,
+        actorInfo: makeActorInfo(),
+        versionNumber: '0.99',
+        useCache: true,
+        summary: { actorFullName },
+        description: actorFullName,
+        toActorVersion: async () => {
+            upload();
+            return { versionNumber: '0.99', sourceType: ActorSourceType.GitRepo, gitRepoUrl: REPO_URL };
+        },
+    });
+    const makeBuilder = (actorFullName: string) => ({
+        createVersionAndBuild: vi.fn(async () => ({
+            buildId: `build-${actorFullName}`,
+            actorRawId: 'id',
+            buildNumber: '0.99.1',
+            actorFullName,
+        })),
+        waitForBuildToFinish: vi.fn(async () => ({})),
+    });
+
+    it('starts every build, waits for all of them and returns them sorted by Actor', async () => {
+        const [b, a] = [makeBuilder('owner/b'), makeBuilder('owner/a')];
+        const builds = await executeBuildPlans([makePlan('owner/b', b), makePlan('owner/a', a)], {
+            label: 'BUILDS',
+            dryRun: false,
+        });
+        expect(builds).toEqual([
+            expect.objectContaining({ actorFullName: 'owner/a' }),
+            expect.objectContaining({ actorFullName: 'owner/b' }),
+        ]);
+        expect(a.waitForBuildToFinish).toHaveBeenCalledWith('build-owner/a');
+        expect(b.waitForBuildToFinish).toHaveBeenCalledWith('build-owner/b');
+    });
+
+    it('fails when a build fails and does not summarize', async () => {
+        const builder = makeBuilder('owner/a');
+        builder.waitForBuildToFinish.mockRejectedValue(new Error('Build failed'));
+        await expect(
+            executeBuildPlans([makePlan('owner/a', builder)], { label: 'BUILDS', dryRun: false }),
+        ).rejects.toThrow('Build failed');
+    });
+
+    it('only reports the summaries in a dry run, without touching the platform', async () => {
+        const builder = makeBuilder('owner/a');
+        const upload = vi.fn();
+        const result = await executeBuildPlans([makePlan('owner/a', builder, upload)], {
+            label: 'BUILDS',
+            dryRun: true,
+        });
+        expect(result).toStrictEqual({ dryRun: true, builds: [{ actorFullName: 'owner/a' }] });
+        expect(upload).not.toHaveBeenCalled();
+        expect(builder.createVersionAndBuild).not.toHaveBeenCalled();
+    });
+
+    it('builds nothing for no plans, in the shape of the mode', async () => {
+        await expect(executeBuildPlans([], { label: 'BUILDS', dryRun: false })).resolves.toStrictEqual([]);
+        await expect(executeBuildPlans([], { label: 'BUILDS', dryRun: true })).resolves.toStrictEqual({
+            dryRun: true,
+            builds: [],
+        });
     });
 });

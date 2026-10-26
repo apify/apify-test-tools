@@ -112,22 +112,20 @@ const testOptions = {
 } as const satisfies Record<string, Options>;
 
 /**
- * Flags of `notify`. Each target is optional, so a caller picks where the notification goes. Some flags only fit one
- * kind of input; `notify` fails on the others rather than ignoring them.
+ * Flags of `notify`, one target per call: posting to more places is calling it again. Some flags only fit one kind
+ * of input; `notify` fails on the others rather than ignoring them.
  */
 const notifyOptions = {
     'slack-channel': {
         type: 'string',
-        array: true,
-        default: [] as string[],
-        describe:
-            'Slack channel for the whole notification (a test report, or a release with its commits and changed files), repeat it for more',
-    },
-    'slack-changelog-channel': {
-        type: 'string',
-        array: true,
-        default: [] as string[],
-        describe: 'Releases only: Slack channel for just the changelog additions, repeat it for more',
+        describe: 'Slack channel to post to',
+        // yargs collects a repeated flag into an array, which would reach Slack as one comma-joined channel
+        coerce: (value: string | string[]) => {
+            if (Array.isArray(value)) {
+                throw new Error('--slack-channel takes one channel, call notify once for each channel');
+            }
+            return value;
+        },
     },
     on: {
         choices: notifyOnChoices,
@@ -141,6 +139,11 @@ const notifyOptions = {
     'job-url': {
         type: 'string',
         describe: 'Tests only: where the message links to. Defaults to the GitHub Actions run',
+    },
+    'changelog-only': {
+        type: 'boolean',
+        default: false,
+        describe: 'Releases only: post just the changelog additions, not the commits and changed files',
     },
     'repo-url': {
         type: 'string',
@@ -237,16 +240,16 @@ await yargs()
     )
     .command(
         'notify',
-        'Tell the configured targets about a test run (the output of test) or a release (of get-affected-actors) on stdin',
+        'Tell the target about a test run (the output of test) or a release (of get-affected-actors) on stdin',
         (y) => y.options(notifyOptions).options(dryRunOptions),
         async (args) => {
             await notify({
                 input: parseNotifyInput(await readStdin()),
-                slackChannels: args.slackChannel,
-                slackChangelogChannels: args.slackChangelogChannel,
+                slackChannel: args.slackChannel,
                 on: args.on,
                 title: args.title,
                 jobUrl: args.jobUrl,
+                changelogOnly: args.changelogOnly,
                 repoUrl: args.repoUrl,
                 dryRun: args.dryRun,
             });

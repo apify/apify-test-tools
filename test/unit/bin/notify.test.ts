@@ -39,9 +39,9 @@ const reportOf = (tests: TestCaseReport[], errors: string[] = []): TestReport =>
 type NotifyOptions = Parameters<typeof notify>[0];
 
 const defaults = {
-    slackChannels: ['#notif'],
-    slackChangelogChannels: [],
+    slackChannel: '#notif',
     on: 'failure',
+    changelogOnly: false,
     dryRun: false,
 } satisfies Partial<NotifyOptions>;
 
@@ -58,7 +58,6 @@ const release = (overrides: Partial<ReleaseChanges> = {}): ReleaseChanges => ({
 const notifyRelease = async (changes: ReleaseChanges, overrides: Partial<NotifyOptions> = {}) =>
     notify({
         ...defaults,
-        slackChangelogChannels: ['#releases'],
         repoUrl: 'git@github.com:owner/repo',
         input: { kind: 'release', changes },
         ...overrides,
@@ -82,9 +81,9 @@ describe('notify about tests', () => {
     const failed = reportOf([testCase('ok'), failing('bad')]);
     const passed = reportOf([testCase('ok')]);
 
-    it('posts failures to every channel', async () => {
-        await notifyTests(failed, { slackChannels: ['#a', '#b'] });
-        expect(postMessage.mock.calls.map(([message]) => message.channel)).toStrictEqual(['#a', '#b']);
+    it('posts failures to the channel', async () => {
+        await notifyTests(failed, { slackChannel: '#a' });
+        expect(postMessage.mock.calls.map(([message]) => message.channel)).toStrictEqual(['#a']);
     });
 
     it('puts the failures after the first in the thread', async () => {
@@ -117,7 +116,7 @@ describe('notify about tests', () => {
 
     it('needs no token without a channel', async () => {
         vi.stubEnv(TESTS_TOKEN, '');
-        await notifyTests(failed, { slackChannels: [''] });
+        await notifyTests(failed, { slackChannel: '' });
         expect(WebClient).not.toHaveBeenCalled();
     });
 
@@ -139,8 +138,8 @@ describe('notify about tests', () => {
     });
 
     it('rejects the flags only a release uses', async () => {
-        await expect(notifyTests(failed, { slackChangelogChannels: ['#releases'], repoUrl: 'x' })).rejects.toThrow(
-            "--slack-changelog-channel, --repo-url can't be used with a test report",
+        await expect(notifyTests(failed, { changelogOnly: true, repoUrl: 'x' })).rejects.toThrow(
+            "--changelog-only, --repo-url can't be used with a test report",
         );
         expect(WebClient).not.toHaveBeenCalled();
     });
@@ -167,25 +166,32 @@ describe('notify about a release', () => {
 
     it('needs no token when no channel is passed', async () => {
         vi.stubEnv(RELEASES_TOKEN, '');
-        await notifyRelease(release(), { slackChannels: [], slackChangelogChannels: [] });
+        await notifyRelease(release(), { slackChannel: undefined });
         expect(WebClient).not.toHaveBeenCalled();
     });
 
-    it('posts the changelog and the full report to their channels', async () => {
-        await notifyRelease(release(), { slackChannels: ['#notif'], slackChangelogChannels: ['#releases', '#all'] });
-        expect(postMessage.mock.calls.map(([message]) => message.channel)).toStrictEqual([
-            '#releases',
-            '#all',
-            '#notif',
-        ]);
-        expect(postMessage.mock.calls[0][0].text).toContain('*Additions to the changelog*:\n\n- Fixed a bug');
-        expect(postMessage.mock.calls[0][0].text).not.toContain('Commit list');
-        expect(postMessage.mock.calls[2][0].text).toContain('*Commit list*:\n1. Commit message: fix: bug');
+    it('posts the full report: the changelog additions, the commits and the changed files', async () => {
+        await notifyRelease(release());
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        const { channel, text } = postMessage.mock.calls[0][0];
+        expect(channel).toBe('#notif');
+        expect(text).toContain('*Additions to the changelog*:\n\n- Fixed a bug');
+        expect(text).toContain('*Commit list*:\n1. Commit message: fix: bug');
+        expect(text).toContain('*Files changed*: `src/main.ts`');
     });
 
-    it('posts no changelog message when the changelog did not change', async () => {
-        await notifyRelease(release({ changelog: null }));
-        expect(postMessage.mock.calls.map(([message]) => message.channel)).toStrictEqual(['#notif']);
+    it('posts just the changelog additions with changelogOnly', async () => {
+        await notifyRelease(release(), { changelogOnly: true, slackChannel: '#releases' });
+        const { channel, text } = postMessage.mock.calls[0][0];
+        expect(channel).toBe('#releases');
+        expect(text).toContain('*Additions to the changelog*:\n\n- Fixed a bug');
+        expect(text).not.toContain('Commit list');
+    });
+
+    it('posts nothing with changelogOnly when the changelog did not change, but still checks the token', async () => {
+        await notifyRelease(release({ changelog: null }), { changelogOnly: true, dryRun: true });
+        expect(authTest).toHaveBeenCalledTimes(1);
+        expect(postMessage).not.toHaveBeenCalled();
     });
 
     it('announces nothing, and needs no token, when there are no new commits', async () => {
@@ -200,7 +206,7 @@ describe('notify about a release', () => {
             release({
                 commits: [commit('Old<old@example.com>', 'fix: older'), commit('New<new@example.com>', 'feat: newer')],
             }),
-            { repoUrl: 'git@github.com:owner/my-repo', slackChangelogChannels: [] },
+            { repoUrl: 'git@github.com:owner/my-repo' },
         );
         expect(postMessage).toHaveBeenCalledWith({
             channel: '#notif',

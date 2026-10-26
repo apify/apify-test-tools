@@ -191,7 +191,13 @@ describe('CLI bundle', () => {
 
     it('notify announces no release, and needs no token, when there are no new commits', () => {
         const affected = runCli('get-affected-actors', '--since', headSha).stdout;
-        const { status, stderr } = runCliWithInput(affected, 'notify', '--slack-changelog-channel', '#releases');
+        const { status, stderr } = runCliWithInput(
+            affected,
+            'notify',
+            '--changelog-only',
+            '--slack-channel',
+            '#releases',
+        );
         expect(status, stderr).toBe(0);
         expect(stderr).toContain('No new commits, so there is no release to announce');
     });
@@ -200,7 +206,7 @@ describe('CLI bundle', () => {
         const affected = runCli('get-affected-actors', '--since', baseSha).stdout;
         const { status, stderr } = runCliWithInput(affected, 'notify', '--dry-run');
         expect(status, stderr).toBe(0);
-        expect(stderr).toContain('Skipping notification, no --slack-channel or --slack-changelog-channel passed');
+        expect(stderr).toContain('Skipping notification, no --slack-channel passed');
     });
 
     it('test fails clearly where vitest is not installed', () => {

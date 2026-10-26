@@ -9,21 +9,20 @@ import type { TestCaseReport, TestReport } from './test-report.js';
 export const notifyOnChoices = ['failure', 'always'] as const;
 type NotifyOn = (typeof notifyOnChoices)[number];
 
-/** One message, and the channels it goes to. A notification can tell different audiences different things. */
 interface Message {
-    channels: string[];
     text: string;
     /** Posted in the message's thread, so a long list keeps the channel readable */
     details: string[];
 }
 
 /**
- * A place notifications go. Each target checks its credentials when it is created, before we know whether there is
- * anything to send, so a broken token shows up on a green run (and in dry runs) rather than on the day tests fail.
- * Slack is the only one for now; another (e.g. email) is one more factory next to `createSlackTarget`.
+ * A place a notification goes, one per `notify` call: a caller with more places calls `notify` once for each. A
+ * target checks its credentials when it is created, before we know whether there is anything to send, so a broken
+ * token shows up on a green run (and in dry runs) rather than on the day tests fail. Slack is the only one for now;
+ * another (e.g. email) is one more factory next to `createSlackTarget`.
  */
 interface NotificationTarget {
-    send(messages: Message[]): Promise<void>;
+    send(message: Message): Promise<void>;
 }
 
 const TESTS_SLACK_TOKEN_ENV_VAR = 'SLACK_TOKEN_TESTS_BOT';
@@ -31,38 +30,45 @@ const RELEASES_SLACK_TOKEN_ENV_VAR = 'SLACK_TOKEN_RELEASES_BOT';
 
 interface NotifyOptions {
     input: NotifyInput;
-    /** Tests: the report. Releases: the commits and changed files, for the developers */
-    slackChannels: string[];
-    /** Releases only: the changelog additions, for everyone else */
-    slackChangelogChannels: string[];
+    slackChannel?: string;
     /** Tests only */
     on: NotifyOn;
     /** Tests only, defaults to the GitHub workflow name, see githubRunContext */
     title?: string;
     /** Tests only, defaults to the GitHub Actions run, see githubRunContext */
     jobUrl?: string;
+    /** Releases only: just the changelog additions, for the broader public, instead of the full report */
+    changelogOnly: boolean;
     /** Releases only, names the release. Defaults to the `origin` remote, see resolveRepoUrl */
     repoUrl?: string;
     dryRun: boolean;
 }
 
-/** Tells the targets about what is on stdin: a test run (the output of `test`) or a release (of `get-affected-actors`). */
+/** Tells the target about what is on stdin: a test run (the output of `test`) or a release (of `get-affected-actors`). */
 export const notify = async (options: NotifyOptions) => {
     assertFlagsFitInput(options);
-    const slackChannels = options.slackChannels.filter(Boolean);
-    const slackChangelogChannels = options.slackChangelogChannels.filter(Boolean);
-    if (options.input.kind === 'tests') {
-        await notifyTestReport({ ...options, report: options.input.report, slackChannels });
+    const { input, slackChannel, dryRun } = options;
+    const tokenEnvVar = input.kind === 'tests' ? TESTS_SLACK_TOKEN_ENV_VAR : RELEASES_SLACK_TOKEN_ENV_VAR;
+    // A target is created only once we know a message may go out, so a release with no commits needs no token
+    const createTarget = async () => {
+        if (!slackChannel) {
+            logger.info('Skipping notification, no --slack-channel passed');
+            return null;
+        }
+        return createSlackTarget(tokenEnvVar, slackChannel, dryRun);
+    };
+    if (input.kind === 'tests') {
+        await notifyTestReport({ ...options, report: input.report, createTarget });
     } else {
-        await notifyRelease({ ...options, changes: options.input.changes, slackChannels, slackChangelogChannels });
+        await notifyRelease({ ...options, changes: input.changes, createTarget });
     }
 };
 
 /** A flag the input has no use for would be dropped silently, so it fails instead: the caller meant something by it. */
-const assertFlagsFitInput = ({ input, slackChangelogChannels, on, title, jobUrl, repoUrl }: NotifyOptions) => {
+const assertFlagsFitInput = ({ input, on, title, jobUrl, changelogOnly, repoUrl }: NotifyOptions) => {
     const misfits =
         input.kind === 'tests'
-            ? [slackChangelogChannels.length > 0 && '--slack-changelog-channel', repoUrl && '--repo-url']
+            ? [changelogOnly && '--changelog-only', repoUrl && '--repo-url']
             : [on !== 'failure' && '--on', title && '--title', jobUrl && '--job-url'];
     const passed = misfits.filter(Boolean);
     if (passed.length > 0) {
@@ -86,43 +92,41 @@ export const githubRunContext = (env: NodeJS.ProcessEnv = process.env) => {
     };
 };
 
+type CreateTarget = () => Promise<NotificationTarget | null>;
+
 /** How a test run went: by default only when it failed, with `on: 'always'` always. */
 const notifyTestReport = async ({
     report,
     on,
-    slackChannels,
     title,
     jobUrl,
-    dryRun,
-}: Pick<NotifyOptions, 'on' | 'slackChannels' | 'title' | 'jobUrl' | 'dryRun'> & { report: TestReport }) => {
-    if (slackChannels.length === 0) {
-        logger.info('Skipping notification, no --slack-channel passed');
-        return;
-    }
-    const slack = await createSlackTarget(TESTS_SLACK_TOKEN_ENV_VAR, dryRun);
+    createTarget,
+}: Pick<NotifyOptions, 'on' | 'title' | 'jobUrl'> & { report: TestReport; createTarget: CreateTarget }) => {
+    const target = await createTarget();
+    if (!target) return;
     if (report.success && on === 'failure') {
         logger.info('The tests passed, so there is nothing to notify about (pass --on always to notify anyway)');
         return;
     }
 
     const defaults = githubRunContext();
-    const notification = { report, title: title ?? defaults.title ?? 'Tests', jobUrl: jobUrl ?? defaults.jobUrl };
-    await slack.send([{ channels: slackChannels, ...formatTestMessage(notification) }]);
+    await target.send(
+        formatTestMessage({ report, title: title ?? defaults.title ?? 'Tests', jobUrl: jobUrl ?? defaults.jobUrl }),
+    );
 };
 
 /**
- * What a release changed: the changelog additions to the changelog channels, and the commits and changed files to
- * the others. Posts nothing when there are no commits, which means there is nothing new to release.
+ * What a release changed: by default the full report for devs and project managers, its changelog additions,
+ * commits and changed files; with `changelogOnly` just the changelog additions, for the broader public who only
+ * care about public facing changes. Posts nothing when there are no commits, which means there is nothing new to
+ * release.
  */
 const notifyRelease = async ({
     changes: { commits, changedFiles, changelog },
-    slackChannels,
-    slackChangelogChannels,
+    changelogOnly,
     repoUrl,
-    dryRun,
-}: Pick<NotifyOptions, 'slackChannels' | 'slackChangelogChannels' | 'repoUrl' | 'dryRun'> & {
-    changes: ReleaseChanges;
-}) => {
+    createTarget,
+}: Pick<NotifyOptions, 'changelogOnly' | 'repoUrl'> & { changes: ReleaseChanges; createTarget: CreateTarget }) => {
     if (commits.length === 0) {
         logger.info('No new commits, so there is no release to announce');
         return;
@@ -130,52 +134,45 @@ const notifyRelease = async ({
     if (!changelog) {
         logger.warn('No new changelog entries found, did you forget to update it?');
     }
-    if (slackChannels.length === 0 && slackChangelogChannels.length === 0) {
-        logger.info('Skipping notification, no --slack-channel or --slack-changelog-channel passed');
+    const target = await createTarget();
+    if (!target) return;
+    if (changelogOnly && !changelog) {
+        logger.info('No changelog additions, so there is nothing to post with --changelog-only');
         return;
     }
-    const slack = await createSlackTarget(RELEASES_SLACK_TOKEN_ENV_VAR, dryRun);
 
     const repository = getRepoName((await resolveRepoUrl(repoUrl)).repoUrl);
     // The newest commit, same as the pushed head commit
     const { author } = commits[commits.length - 1];
-    let summary = `*${repository}* – New release (by ${displayName(author)}):\n\n`;
-    // The changelog is for the broader public, who only care about public facing changes
-    if (changelog && slackChangelogChannels.length > 0) summary += `*Additions to the changelog*:\n\n${changelog}\n`;
-
-    const commitList = commits
-        .map(
-            ({ author: commitAuthor, message }, index) =>
-                `${index + 1}. Commit message: ${message}\n\tAuthor: ${displayName(commitAuthor)}.`,
-        )
-        .join('\n');
-    const changedFilesList = `*Files changed*: ${changedFiles.map((file) => `\`${file}\``).join(', ')}`;
-
-    await slack.send([
-        ...(changelog ? [{ channels: slackChangelogChannels, text: summary, details: [] }] : []),
-        // The full report is for devs and project managers, who need the details too
-        {
-            channels: slackChannels,
-            text: `${summary}\n*Commit list*:\n${commitList}\n\n${changedFilesList}`,
-            details: [],
-        },
-    ]);
+    let text = `*${repository}* – New release (by ${displayName(author)}):\n\n`;
+    if (changelog) text += `*Additions to the changelog*:\n\n${changelog}\n`;
+    if (!changelogOnly) {
+        const commitList = commits
+            .map(
+                ({ author: commitAuthor, message }, index) =>
+                    `${index + 1}. Commit message: ${message}\n\tAuthor: ${displayName(commitAuthor)}.`,
+            )
+            .join('\n');
+        const changedFilesList = `*Files changed*: ${changedFiles.map((file) => `\`${file}\``).join(', ')}`;
+        text += `\n*Commit list*:\n${commitList}\n\n${changedFilesList}`;
+    }
+    await target.send({ text, details: [] });
 };
 
 // Git authors come as "Name<email>", Slack only needs the name
 const displayName = (author: string) => author.replace(/\s*<[^>]*>$/, '');
 
-const createSlackTarget = async (tokenEnvVar: string, dryRun: boolean): Promise<NotificationTarget> => {
+const createSlackTarget = async (
+    tokenEnvVar: string,
+    channel: string,
+    dryRun: boolean,
+): Promise<NotificationTarget> => {
     const slack = await getSlackClient(tokenEnvVar, dryRun);
     return {
-        async send(messages) {
-            for (const { channels, text, details } of messages) {
-                for (const channel of channels) {
-                    logger.info(`${sendingLabel(dryRun)} slack message to channel ${channel}:\n${text}`);
-                    if (details.length > 0) logger.info(`\tin its thread:\n\t${details.join('\n\t')}`);
-                    if (!dryRun) await sendSlackMessage(slack, channel, text, details);
-                }
-            }
+        async send({ text, details }) {
+            logger.info(`${sendingLabel(dryRun)} slack message to channel ${channel}:\n${text}`);
+            if (details.length > 0) logger.info(`\tin its thread:\n\t${details.join('\n\t')}`);
+            if (!dryRun) await sendSlackMessage(slack, channel, text, details);
         },
     };
 };

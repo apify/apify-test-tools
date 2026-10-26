@@ -819,34 +819,35 @@ anyway, so `notify` still hears about the failure.
 
 ### Notifying (`notify`)
 
-`notify` tells the targets you pass about what it reads on stdin: a test run, as [`test`](#running-tests-test)
-reports it, or a release, as [`get-affected-actors`](#finding-affected-actors-get-affected-actors) reports it. It
-tells the two apart by their fields, so either can be piped in as it is. Slack is the only target for now.
+`notify` tells one target about what it reads on stdin: a test run, as [`test`](#running-tests-test) reports it,
+or a release, as [`get-affected-actors`](#finding-affected-actors-get-affected-actors) reports it. It tells the two
+apart by their fields, so either can be piped in as it is. Slack is the only target for now. To post to more
+places, call it once for each.
 
 ```bash
 # A test run: posts only when the tests failed, the outcome and the first failure, linked to its run,
 # with the other failures in the message's thread
-npx apify-test-tools notify --slack-channel '#notif-my-repo' --slack-channel '#my-team' < test-report.json
+npx apify-test-tools notify --slack-channel '#notif-my-repo' < test-report.json
+npx apify-test-tools notify --slack-channel '#my-team' < test-report.json
 
 # Or straight from test. With `set -o pipefail` (`shell: bash` in GitHub Actions), failed tests still fail the pipe
 npx apify-test-tools test --all | npx apify-test-tools notify --slack-channel '#notif-my-repo'
 
 # A release, see Releasing Actors below
-npx apify-test-tools get-affected-actors --since <sha> \
-  | npx apify-test-tools notify --slack-changelog-channel '#releases' --slack-channel '#notif-my-repo'
+npx apify-test-tools get-affected-actors --since <sha> | npx apify-test-tools notify --slack-channel '#notif-my-repo'
 ```
 
-| Flag                        | Input   | Default                  | Meaning                                                                                                                          |
-| --------------------------- | ------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `--slack-channel`           | both    |                          | Slack channel for the whole notification: the test report, or the release with its commits and changed files. Repeat it for more |
-| `--slack-changelog-channel` | release |                          | Slack channel for just the release's changelog additions. Repeat it for more                                                     |
-| `--on`                      | tests   | `failure`                | `failure` posts only when the tests failed, `always` on every run                                                                |
-| `--title`                   | tests   | the GitHub workflow name | What the message calls the run                                                                                                   |
-| `--job-url`                 | tests   | the GitHub Actions run   | Where the message links to                                                                                                       |
-| `--repo-url`                | release | the `origin` remote      | The repository the release is named after                                                                                        |
+| Flag               | Input   | Default                  | Meaning                                                                  |
+| ------------------ | ------- | ------------------------ | ------------------------------------------------------------------------ |
+| `--slack-channel`  | both    |                          | Slack channel to post to                                                 |
+| `--on`             | tests   | `failure`                | `failure` posts only when the tests failed, `always` on every run        |
+| `--title`          | tests   | the GitHub workflow name | What the message calls the run                                           |
+| `--job-url`        | tests   | the GitHub Actions run   | Where the message links to                                               |
+| `--changelog-only` | release | `false`                  | Post just the changelog additions, without the commits and changed files |
+| `--repo-url`       | release | the `origin` remote      | The repository the release is named after                                |
 
-A flag the input has no use for, e.g. `--slack-changelog-channel` with a test report, is an error rather than
-ignored. Test notifications need `SLACK_TOKEN_TESTS_BOT`, release ones `SLACK_TOKEN_RELEASES_BOT`.
+A flag the input has no use for, e.g. `--changelog-only` with a test report, is an error rather than ignored. Test
+notifications need `SLACK_TOKEN_TESTS_BOT`, release ones `SLACK_TOKEN_RELEASES_BOT`.
 
 Without a target, `notify` posts nothing and needs no token. With one, it checks the token on every run, also when
 there is nothing to post, so a broken token shows up on a green run rather than on the day tests fail. A release
@@ -863,13 +864,16 @@ npx apify-test-tools get-affected-actors --since <sha> > affected.json
 jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json \
   | npx apify-test-tools build --version-number default --dry-run
 
-npx apify-test-tools notify --slack-changelog-channel "#releases" --dry-run < affected.json
+# The changelog for everyone, the full report for the developers
+npx apify-test-tools notify --changelog-only --slack-channel "#releases" --dry-run < affected.json
+npx apify-test-tools notify --slack-channel "#notif-my-repo" --dry-run < affected.json
 ```
 
-[`notify`](#notifying-notify) reads the output of `get-affected-actors` on stdin. It posts the changelog additions to
-`--slack-changelog-channel` and the commits and changed files to `--slack-channel`, and posts nothing when
-there are no new commits. It names the release after the `origin` remote (or `--repo-url`) and the author of the
-newest commit, and needs `SLACK_TOKEN_RELEASES_BOT`.
+[`notify`](#notifying-notify) reads the output of `get-affected-actors` on stdin. By default it posts the full
+report: the changelog additions, the commits and the changed files. With `--changelog-only` it posts just the
+changelog additions, and nothing when the changelog didn't change. Either way it posts nothing when there are no new
+commits. It names the release after the `origin` remote (or `--repo-url`) and the author of the newest commit, and
+needs `SLACK_TOKEN_RELEASES_BOT`.
 
 #### The last released commit (`--since`)
 

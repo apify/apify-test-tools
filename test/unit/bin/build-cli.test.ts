@@ -46,6 +46,12 @@ describe('build and notify CLI', () => {
         expect(result.stderr).toContain('Missing required argument: version-number');
     });
 
+    it('notify takes one channel per call', () => {
+        const result = run(['notify', '--slack-channel', '#a', '--slack-channel', '#b'], '{}');
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('--slack-channel takes one channel, call notify once for each channel');
+    });
+
     it('notify announces no release when there are no new commits', () => {
         const document = { commits: [], changedFiles: [], changelog: null, functionallyChangedActors: [] };
         const result = run(['notify', '--slack-channel', '#notif'], JSON.stringify(document));

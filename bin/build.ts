@@ -5,13 +5,6 @@ import { getCurrentBranch, normalizeRepoUrl, resolveRepoUrl } from './git.js';
 import { logger } from './logger.js';
 import type { ActorConfig, BuildData, DryRunPlan } from './types.js';
 
-type BuildPrActorOptions = {
-    versionNumber: string;
-    gitRepoUrl: string;
-    actorConfig: ActorConfig;
-    actorInfo: ApifyClientTypes.Actor;
-};
-
 // Fixed version number used to build from local source files, since there is no real version to track.
 export const LOCAL_SOURCE_VERSION_NUMBER = '0.98';
 // Stands for each Actor's default version: the one its default build tag points to
@@ -98,15 +91,10 @@ export class ApifyBuilder {
         return actorInfo;
     };
 
-    getDefaultVersionAndTag = async () => resolveDefaultVersion(this.actorFullName, await this.getActorInfo());
-
     // Mirrors `apify push`: stores the zip in the Actor's `actor-<id>-source` KV store and returns a signed
     // record URL the builder can download without a token.
-    uploadSourceZip = async (versionNumber: string, zip: Buffer): Promise<string> => {
-        const actorInfo = await this.apifyClient.actor(this.actorFullName).get();
-        if (!actorInfo) throw new Error(`No actor named '${this.actorFullName}' was found on the platform.`);
-
-        const store = await this.apifyClient.keyValueStores().getOrCreate(`actor-${actorInfo.id}-source`);
+    uploadSourceZip = async (actorId: string, versionNumber: string, zip: Buffer): Promise<string> => {
+        const store = await this.apifyClient.keyValueStores().getOrCreate(`actor-${actorId}-source`);
         const storeClient = this.apifyClient.keyValueStore(store.id);
         const key = `version-${versionNumber}.zip`;
         await storeClient.setRecord({ key, value: zip as never, contentType: 'application/zip' });
@@ -116,15 +104,13 @@ export class ApifyBuilder {
         return url.toString();
     };
 
-    // Pass actorInfo when the caller already fetched it, to save an API call
     createVersionAndBuild = async (
         versionNumber: string,
         actorVersion: ApifyClientTypes.ActorVersion,
         useCache: boolean,
-        actorInfo?: ApifyClientTypes.Actor,
+        { versions }: ApifyClientTypes.Actor,
     ): Promise<BuildData> => {
         const actorClient = this.apifyClient.actor(this.actorFullName);
-        const { versions } = actorInfo ?? (await this.getActorInfo());
 
         // Prepare version
         const versionMissing = !versions.find((version) => version.versionNumber === versionNumber);
@@ -272,50 +258,71 @@ export class ApifyBuilder {
     }
 }
 
-export const waitAndSummarizeBuilds = async (
-    startedBuilds: BuildData[],
-    buildersMap: Map<string, ApifyBuilder>,
-    label: string,
-): Promise<BuildData[]> => {
+/**
+ * One Actor build with everything read and checked and nothing written yet. Each way of building (from Git, from
+ * local files) only prepares plans; `executeBuildPlans` is the single place that starts, awaits and summarizes them,
+ * so a dry run reports exactly what the real run would start.
+ */
+export interface BuildPlan<Summary extends { actorFullName: string }> {
+    builder: ApifyBuilder;
+    actorInfo: ApifyClientTypes.Actor;
+    versionNumber: string;
+    useCache: boolean;
+    /** What a dry run reports as JSON for this build */
+    summary: Summary;
+    /** What a dry run logs for this build */
+    description: string;
+    /** The version to create or update. Runs for real builds only, since it may write (e.g. upload the sources). */
+    toActorVersion: () => Promise<ApifyClientTypes.ActorVersion>;
+}
+
+/** Fetches the Actor once, for the checks and for the plan's build. Fails early on a missing token or Actor. */
+export const loadActor = async (actorConfig: ActorConfig) => {
+    const builder = ApifyBuilder.fromActorConfig(actorConfig);
+    return { builder, actorInfo: await builder.getActorInfo() };
+};
+
+/**
+ * Starts the planned builds, waits for all of them and fails if any fails. Used by every command that builds.
+ * A dry run starts nothing and returns the plans' summaries instead, in a shape that can't pass for real builds.
+ */
+export const executeBuildPlans = async <Summary extends { actorFullName: string }>(
+    plans: BuildPlan<Summary>[],
+    { label, dryRun }: { label: string; dryRun: boolean },
+): Promise<BuildData[] | DryRunPlan<Summary>> => {
+    if (dryRun) {
+        logger.info(`[DRY RUN] Would build (${label}):`);
+        for (const { description } of plans) {
+            logger.info(`  ${description}`);
+        }
+        return { dryRun: true, builds: plans.map(({ summary }) => summary) };
+    }
+
+    logger.info('=========================================');
+    logger.info(`STARTED ${label}:`);
+    const started = await Promise.all(
+        plans.map(async ({ builder, actorInfo, versionNumber, useCache, toActorVersion }) => ({
+            builder,
+            build: await builder.createVersionAndBuild(versionNumber, await toActorVersion(), useCache, actorInfo),
+        })),
+    );
+
     logger.info('=========================================');
     logger.info(`FINISHED ${label}:`);
-    await Promise.all(
-        startedBuilds.map(async (buildData) => {
-            const builder = buildersMap.get(buildData.actorFullName)!;
-            await builder.waitForBuildToFinish(buildData.buildId);
-        }),
-    );
+    await Promise.all(started.map(async ({ builder, build }) => builder.waitForBuildToFinish(build.buildId)));
 
     logger.info('=========================================');
     logger.info('SUMMARY:');
-    for (const buildData of startedBuilds.sort((a, b) => a.actorFullName.localeCompare(b.actorFullName))) {
-        logger.info(`[${buildData.actorFullName}]: ${buildData.buildNumber}`);
+    const builds = started.map(({ build }) => build).sort((a, b) => a.actorFullName.localeCompare(b.actorFullName));
+    for (const { actorFullName, buildNumber } of builds) {
+        logger.info(`[${actorFullName}]: ${buildNumber}`);
     }
     logger.info('=========================================');
 
-    return startedBuilds;
+    return builds;
 };
 
-export const runAndSummarizeBuilds = async (
-    actorConfigs: ActorConfig[],
-    label: string,
-    buildOneActor: (actorConfig: ActorConfig, builder: ApifyBuilder) => Promise<BuildData>,
-): Promise<BuildData[]> => {
-    const buildersByActorFullName = new Map<string, ApifyBuilder>(
-        actorConfigs.map((actorConfig) => [actorConfig.actorFullName, ApifyBuilder.fromActorConfig(actorConfig)]),
-    );
-    logger.info('=========================================');
-    logger.info(`STARTED ${label}:`);
-    const startedBuilds = await Promise.all(
-        actorConfigs.map(async (actorConfig) =>
-            buildOneActor(actorConfig, buildersByActorFullName.get(actorConfig.actorFullName)!),
-        ),
-    );
-
-    return waitAndSummarizeBuilds(startedBuilds, buildersByActorFullName, label);
-};
-
-type GitBuildPlan = {
+type GitBuildSummary = {
     actorFullName: string;
     versionNumber: string;
     gitRepoUrl: string;
@@ -339,26 +346,26 @@ export const runBuilds = async ({
     actorConfigs,
     versionNumber,
     dryRun,
-}: RunBuildsOptions): Promise<BuildData[] | DryRunPlan<GitBuildPlan>> => {
-    // Fetched once per Actor and reused for the checks, the version numbers and the build itself
-    const buildConfigs: BuildPrActorOptions[] = await Promise.all(
-        actorConfigs.map(async (actorConfig) => {
-            const actorInfo = await ApifyBuilder.fromActorConfig(actorConfig).getActorInfo();
+}: RunBuildsOptions): Promise<BuildData[] | DryRunPlan<GitBuildSummary>> => {
+    const plans = await Promise.all(
+        actorConfigs.map(async (actorConfig): Promise<BuildPlan<GitBuildSummary>> => {
+            const { actorFullName } = actorConfig;
+            const { builder, actorInfo } = await loadActor(actorConfig);
             const { defaultVersionNumber, defaultBuildTag, defaultVersion } = resolveDefaultVersion(
-                actorConfig.actorFullName,
+                actorFullName,
                 actorInfo,
             );
             // Builds keep the tags their version gives them, so a default version without the default build tag
             // would build fine but leave users on the previous build
             if (versionNumber === DEFAULT_VERSION_KEYWORD && defaultVersion?.buildTag !== defaultBuildTag) {
                 logger.warn(
-                    `[${actorConfig.actorFullName}] Default version ${defaultVersionNumber} has build tag ` +
+                    `[${actorFullName}] Default version ${defaultVersionNumber} has build tag ` +
                         `"${defaultVersion?.buildTag ?? 'none'}", not "${defaultBuildTag}", so users keep running the previous build. ` +
                         'Set the build tag of the version on the platform to change that.',
                 );
             }
             if (shouldVerifyRepoUrl) {
-                assertRepoUrlMatchesDefaultVersion(actorConfig.actorFullName, defaultVersion, repoUrl);
+                assertRepoUrlMatchesDefaultVersion(actorFullName, defaultVersion, repoUrl);
             }
 
             // Depending on if these are miniactors or standaloneActors
@@ -366,44 +373,27 @@ export const runBuilds = async ({
             if (!actorConfig.folder.isRoot()) {
                 gitRepoUrl = `${gitRepoUrl}:${actorConfig.folder}`;
             }
+            const targetVersionNumber =
+                versionNumber === DEFAULT_VERSION_KEYWORD ? defaultVersionNumber : versionNumber;
             return {
-                actorConfig,
+                builder,
                 actorInfo,
-                gitRepoUrl,
-                versionNumber: versionNumber === DEFAULT_VERSION_KEYWORD ? defaultVersionNumber : versionNumber,
+                versionNumber: targetVersionNumber,
+                // Always with the Docker cache: CI always asked for it, and a clean build can still be started on the platform
+                useCache: true,
+                summary: { actorFullName, versionNumber: targetVersionNumber, gitRepoUrl },
+                description: `${actorFullName} (${targetVersionNumber}) from ${gitRepoUrl}`,
+                // No buildTag: the version keeps the one it has, so its build gets the tag the version already gives it
+                toActorVersion: async () => ({
+                    versionNumber: targetVersionNumber,
+                    gitRepoUrl,
+                    sourceType: ActorSourceType.GitRepo,
+                }),
             };
         }),
     );
 
-    // Everything above only reads, so a dry run has checked what the real run would, short of writing
-    if (dryRun) {
-        logger.info('[DRY RUN] Would build:');
-        const builds = buildConfigs.map((buildConfig) => ({
-            actorFullName: buildConfig.actorConfig.actorFullName,
-            versionNumber: buildConfig.versionNumber,
-            gitRepoUrl: buildConfig.gitRepoUrl,
-        }));
-        for (const build of builds) {
-            logger.info(`  ${build.actorFullName} (${build.versionNumber}) from ${build.gitRepoUrl}`);
-        }
-        return { dryRun: true, builds };
-    }
-
-    const buildConfigsByActorFullName = new Map(
-        buildConfigs.map((buildConfig) => [buildConfig.actorConfig.actorFullName, buildConfig]),
-    );
-
-    return runAndSummarizeBuilds(actorConfigs, 'BUILDS', async (actorConfig, builder) => {
-        const buildConfig = buildConfigsByActorFullName.get(actorConfig.actorFullName)!;
-        // No buildTag: the version keeps the one it has, so its build gets the tag the version already gives it
-        const actorVersion: ApifyClientTypes.ActorVersion = {
-            versionNumber: buildConfig.versionNumber,
-            gitRepoUrl: buildConfig.gitRepoUrl,
-            sourceType: ActorSourceType.GitRepo,
-        };
-        // Always with the Docker cache: CI always asked for it, and a clean build can still be started on the platform
-        return builder.createVersionAndBuild(buildConfig.versionNumber, actorVersion, true, buildConfig.actorInfo);
-    });
+    return executeBuildPlans(plans, { label: 'BUILDS', dryRun });
 };
 
 type BuildActorsOptions = Omit<RunBuildsOptions, 'repoUrl' | 'shouldVerifyRepoUrl' | 'branch'> & {

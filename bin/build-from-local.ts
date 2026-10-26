@@ -3,10 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 import AdmZip from 'adm-zip';
-import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType } from 'apify-client';
 
-import { ApifyBuilder, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
+import { type BuildPlan, executeBuildPlans, loadActor, LOCAL_SOURCE_VERSION_NUMBER } from './build.js';
 import { loadDockerIgnore } from './dockerignore.js';
 import { logger } from './logger.js';
 import { isPathWithinScope } from './path-utils.js';
@@ -179,7 +178,7 @@ export const rewriteActorJsonPaths = async (
     await fs.writeFile(path.join(newActorDir, 'actor.json'), JSON.stringify(rewritten, null, 4));
 };
 
-type LocalBuildPlan = {
+type LocalBuildSummary = {
     actorFullName: string;
     versionNumber: string;
     folder: string;
@@ -193,52 +192,41 @@ export const runBuildsFromLocal = async ({
 }: {
     actorConfigs: ActorConfig[];
     dryRun: boolean;
-}): Promise<BuildData[] | DryRunPlan<LocalBuildPlan>> => {
-    // Read-only preparation shared with the real build, so a dry run fails on a missing token, an unknown
+}): Promise<BuildData[] | DryRunPlan<LocalBuildSummary>> => {
+    // Everything but the upload is prepared for a dry run too, so it fails on a missing token, an unknown
     // Actor or unreadable sources just like the build would
-    const preparedBuilds = await Promise.all(
-        actorConfigs.map(async (actorConfig) => {
-            const actorInfo = await ApifyBuilder.fromActorConfig(actorConfig).getActorInfo();
+    const plans = await Promise.all(
+        actorConfigs.map(async (actorConfig): Promise<BuildPlan<LocalBuildSummary>> => {
+            const { builder, actorInfo } = await loadActor(actorConfig);
             // Zipped and uploaded like `apify push` does, since inline SOURCE_FILES are capped at ~9 MB.
             const zip = new AdmZip();
             const sourceFiles = await collectSourceFiles(actorConfig);
             for (const { name, content } of sourceFiles) {
                 zip.addFile(name, content);
             }
-            return { actorConfig, actorInfo, fileCount: sourceFiles.length, zipBuffer: zip.toBuffer() };
+            const zipBuffer = zip.toBuffer();
+            const { actorFullName, folder } = actorConfig;
+            return {
+                builder,
+                actorInfo,
+                versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
+                useCache: false,
+                summary: {
+                    actorFullName,
+                    versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
+                    folder: folder.path,
+                    fileCount: sourceFiles.length,
+                    zipSizeBytes: zipBuffer.length,
+                },
+                description: `${actorFullName} (${folder}): ${sourceFiles.length} files, ${zipBuffer.length} bytes zipped`,
+                toActorVersion: async () => ({
+                    versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
+                    tarballUrl: await builder.uploadSourceZip(actorInfo.id, LOCAL_SOURCE_VERSION_NUMBER, zipBuffer),
+                    sourceType: ActorSourceType.Tarball,
+                }),
+            };
         }),
     );
 
-    if (dryRun) {
-        logger.info('[DRY RUN] Would build from local source:');
-        for (const { actorConfig, fileCount, zipBuffer } of preparedBuilds) {
-            logger.info(
-                `  ${actorConfig.actorFullName} (${actorConfig.folder}): ${fileCount} files, ${zipBuffer.length} bytes zipped`,
-            );
-        }
-        return {
-            dryRun: true,
-            builds: preparedBuilds.map(({ actorConfig, fileCount, zipBuffer }) => ({
-                actorFullName: actorConfig.actorFullName,
-                versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
-                folder: actorConfig.folder.path,
-                fileCount,
-                zipSizeBytes: zipBuffer.length,
-            })),
-        };
-    }
-
-    const preparedByActorFullName = new Map(
-        preparedBuilds.map((prepared) => [prepared.actorConfig.actorFullName, prepared]),
-    );
-
-    return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {
-        const { actorInfo, zipBuffer } = preparedByActorFullName.get(actorConfig.actorFullName)!;
-        const actorVersion: ApifyClientTypes.ActorVersion = {
-            versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
-            tarballUrl: await builder.uploadSourceZip(LOCAL_SOURCE_VERSION_NUMBER, zipBuffer),
-            sourceType: ActorSourceType.Tarball,
-        };
-        return builder.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false, actorInfo);
-    });
+    return executeBuildPlans(plans, { label: 'LOCAL BUILDS', dryRun });
 };

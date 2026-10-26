@@ -1,6 +1,6 @@
 # Apify Test Tools
 
-Build, test and release Apify Actors from a Git repository. The package has three parts:
+Build, test and release Apify Actors from a Git repository or local source code. The package has three parts:
 
 1. **A vitest library** for writing platform tests that run your Actors on Apify and check the results:
 

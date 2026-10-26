@@ -779,14 +779,15 @@ error, as with `build`. `--all` reads no stdin and runs the tests of every Actor
 is what `RUN_ALL_PLATFORM_TESTS=1` did. Both only come from these flags: `test` drops `ACTOR_BUILDS` and
 `RUN_ALL_PLATFORM_TESTS` from its own environment.
 
-| Argument / flag        | Default         | Meaning                                                                |
-| ---------------------- | --------------- | ---------------------------------------------------------------------- |
-| `[filters..]`          | `test/platform` | Test files to run, as vitest filters                                   |
-| `--all`                | `false`         | Test every Actor's default build instead of reading builds on stdin    |
-| `--max-concurrency`    | `20`            | Tests run at once in a file (vitest `maxConcurrency`)                  |
-| `--max-workers`        | `100`           | Test files run at once (vitest `maxWorkers`), with file parallelism on |
-| `--vitest-output-file` |                 | Also keep vitest's own JSON report there, e.g. to upload it            |
-| after `--`             |                 | Passed to vitest as they are                                           |
+It always runs vitest with `--maxConcurrency=20 --fileParallelism --maxWorkers=100`, since platform tests mostly
+wait on Actor runs rather than the CPU, and with its JSON reporter for the report.
+
+| Argument / flag        | Default         | Meaning                                                             |
+| ---------------------- | --------------- | ------------------------------------------------------------------- |
+| `[filters..]`          | `test/platform` | Test files to run, as vitest filters                                |
+| `--all`                | `false`         | Test every Actor's default build instead of reading builds on stdin |
+| `--vitest-output-file` |                 | Also keep vitest's own JSON report there, e.g. to upload it         |
+| after `--`             |                 | Passed to vitest as they are                                        |
 
 Vitest's own output goes to stderr, followed by a summary that lists every test with the link to its run. Stdout
 gets only the report:

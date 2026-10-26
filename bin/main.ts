@@ -108,8 +108,6 @@ const testOptions = {
         default: false,
         describe: "Test every Actor's default build instead of reading builds on stdin, as the scheduled tests do",
     },
-    'max-concurrency': { type: 'number', default: 20, describe: 'Tests run at once in a file (vitest maxConcurrency)' },
-    'max-workers': { type: 'number', default: 100, describe: 'Test files run at once (vitest maxWorkers)' },
     'vitest-output-file': { type: 'string', describe: "Also keep vitest's own JSON report there, e.g. to upload it" },
 } as const satisfies Record<string, Options>;
 
@@ -229,8 +227,6 @@ await yargs()
             const report = await runTests({
                 filters: args.filters,
                 builds: args.all ? null : parseTestBuilds(await readStdin()),
-                maxConcurrency: args.maxConcurrency,
-                maxWorkers: args.maxWorkers,
                 vitestOutputFile: args.vitestOutputFile,
                 vitestArgs: ((args['--'] as (string | number)[] | undefined) ?? []).map(String),
             });

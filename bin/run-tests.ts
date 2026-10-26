@@ -32,8 +32,6 @@ interface RunTestsOptions {
     filters: string[];
     /** The builds to test, from `build`. Null runs the tests of every Actor against its default build. */
     builds: BuildData[] | null;
-    maxConcurrency: number;
-    maxWorkers: number;
     /** Keeps vitest's own JSON report there, e.g. to upload it */
     vitestOutputFile?: string;
     /** Passed to vitest as they are, after the ones we set */
@@ -49,8 +47,6 @@ interface RunTestsOptions {
 export const runTests = async ({
     filters,
     builds,
-    maxConcurrency,
-    maxWorkers,
     vitestOutputFile,
     vitestArgs,
     cwd = process.cwd(),
@@ -84,9 +80,10 @@ export const runTests = async ({
         '--reporter=default',
         '--reporter=json',
         `--outputFile.json=${outputFile}`,
-        `--maxConcurrency=${maxConcurrency}`,
+        // Platform tests mostly wait on Actor runs, not on the CPU, so they run far more at once than vitest's defaults
+        '--maxConcurrency=20',
         '--fileParallelism',
-        `--maxWorkers=${maxWorkers}`,
+        '--maxWorkers=100',
         ...vitestArgs,
     ];
     logger.debug(`Running vitest: ${args.join(' ')}`);

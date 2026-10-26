@@ -2,14 +2,13 @@ import type { MockInstance } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-    getBranchOnlyChangedFiles,
+    findCommitSha,
     getChangedFiles,
     getChangedFilesBetween,
     getCommits,
     getCommitsBetween,
     getCurrentBranch,
     getRepoName,
-    hasMergeFromTarget,
     normalizeRepoUrl,
     parseBaseCommit,
     resolveCommitSha,
@@ -166,124 +165,6 @@ describe('getChangedFiles', () => {
 
         // Assert
         expect(changedFiles).toStrictEqual([]);
-    });
-});
-
-describe('hasMergeFromTarget', () => {
-    const sourceBranch = 'feature-branch';
-    const targetBranch = 'main';
-    const mergeSha = 'f'.repeat(40);
-    const branchParentSha = 'b'.repeat(40);
-    const targetParentSha = 't'.repeat(40);
-    const differentMergeBase = '0'.repeat(40);
-
-    let gitCommandSpy: MockInstance;
-
-    beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'runGitCommand');
-    });
-
-    it('should return false when there are no merge commits on the branch', async () => {
-        gitCommandSpy.mockImplementation(async (args: string[]) => {
-            if (args.includes('--merges')) return '';
-            return '';
-        });
-
-        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).resolves.toBe(false);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            ['log', '--merges', '--pretty=format:%H', `${targetBranch}..${sourceBranch}`],
-            { operation: 'find merge commits on the source branch that are absent from the target branch' },
-        );
-    });
-
-    it('should return true when a merge commit has a parent reachable from targetBranch', async () => {
-        gitCommandSpy.mockImplementation(async (args: string[]) => {
-            if (args.includes('--merges')) return mergeSha;
-            if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
-            if (args[0] === 'merge-base' && args[1] === branchParentSha) return differentMergeBase;
-            if (args[0] === 'merge-base' && args[1] === targetParentSha) return targetParentSha;
-            return '';
-        });
-
-        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).resolves.toBe(true);
-        expect(gitCommandSpy).toHaveBeenCalledWith(['merge-base', targetParentSha, targetBranch], {
-            operation: 'check whether a merge parent is reachable from the target branch',
-        });
-    });
-
-    it('should return false when the merge commit parent is not reachable from targetBranch (unrelated branch merge)', async () => {
-        const unrelatedSha = 'e'.repeat(40);
-        gitCommandSpy.mockImplementation(async (args: string[]) => {
-            if (args.includes('--merges')) return mergeSha;
-            if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${unrelatedSha}`;
-            // merge-base returns something other than the parent — not an ancestor
-            if (args[0] === 'merge-base') return differentMergeBase;
-            return '';
-        });
-
-        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).resolves.toBe(false);
-    });
-
-    it('continues after merge-base reports unrelated histories', async () => {
-        gitCommandSpy.mockImplementation(async (args: string[]) => {
-            if (args.includes('--merges')) return mergeSha;
-            if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
-            if (args[0] === 'merge-base' && args[1] === branchParentSha) {
-                throw new Utils.GitCommandError(args, Object.assign(new Error('no common ancestor'), { code: 1 }));
-            }
-            if (args[0] === 'merge-base' && args[1] === targetParentSha) return targetParentSha;
-            return '';
-        });
-
-        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).resolves.toBe(true);
-    });
-
-    it('propagates unexpected Git failures', async () => {
-        gitCommandSpy.mockImplementation(
-            async (args: string[], options?: Parameters<typeof Utils.runGitCommand>[1]) => {
-                if (args.includes('--merges')) return mergeSha;
-                if (args.includes('--pretty=format:%P')) return `${branchParentSha} ${targetParentSha}`;
-                throw new Utils.GitCommandError(
-                    args,
-                    Object.assign(new Error('Git failed'), { code: 128 }),
-                    options?.operation,
-                );
-            },
-        );
-
-        await expect(hasMergeFromTarget(sourceBranch, targetBranch)).rejects.toThrow(
-            'Failed to check whether a merge parent is reachable from the target branch.\n' +
-                'Command: git "merge-base"',
-        );
-    });
-});
-
-describe('getBranchOnlyChangedFiles', () => {
-    const sourceBranch = 'feature-branch';
-    const targetBranch = 'main';
-
-    let gitCommandSpy: MockInstance;
-
-    beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'runGitCommand');
-    });
-
-    it('should return files touched by non-merge commits', async () => {
-        gitCommandSpy.mockResolvedValue('README.md\n\nactors/foo_bar/src/main.ts\n');
-
-        const result = await getBranchOnlyChangedFiles(sourceBranch, targetBranch);
-
-        expect(result).toStrictEqual(['README.md', 'actors/foo_bar/src/main.ts']);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            ['log', '--no-merges', '--name-only', '--pretty=format:', `${targetBranch}..${sourceBranch}`],
-            { operation: 'list files changed by non-merge commits on the source branch' },
-        );
-    });
-
-    it('should return empty array when there are no non-merge commits', async () => {
-        gitCommandSpy.mockResolvedValue('');
-
-        await expect(getBranchOnlyChangedFiles(sourceBranch, targetBranch)).resolves.toStrictEqual([]);
     });
 });
 
@@ -506,6 +387,22 @@ describe('getCommitsBetween', () => {
         });
     });
 });
+describe('empty commit ranges', () => {
+    // Real git on this repository's own history: HEAD..HEAD has no commits
+    beforeEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('getCommitsBetween returns no commits', async () => {
+        await expect(getCommitsBetween('HEAD', 'HEAD')).resolves.toStrictEqual([]);
+    });
+
+    it('getCommits fails clearly, since the commands built on it need at least one commit', async () => {
+        await expect(getCommits({ sourceBranch: 'HEAD', targetBranch: 'HEAD' })).rejects.toThrow(
+            'HEAD has no commits that are not on HEAD.',
+        );
+    });
+});
 
 describe('getChangedFilesBetween', () => {
     it('diffs the two endpoints directly', async () => {
@@ -529,5 +426,25 @@ describe('resolveCommitSha', () => {
         expect(spy).toHaveBeenCalledWith(['rev-parse', '--verify', 'origin/feature^{commit}'], {
             operation: 'resolve origin/feature to a commit',
         });
+    });
+});
+
+describe('findCommitSha', () => {
+    // Real git on this repository's own history, since what matters is how git answers
+    beforeEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('resolves a ref in the local history to its commit', async () => {
+        await expect(findCommitSha('HEAD')).resolves.toMatch(/^[0-9a-f]{40}$/);
+    });
+
+    it('returns undefined for a commit missing from the local history', async () => {
+        await expect(findCommitSha('d'.repeat(40))).resolves.toBeUndefined();
+    });
+
+    it('rethrows other git failures', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockRejectedValue(new Error('not a git repository'));
+        await expect(findCommitSha('HEAD')).rejects.toThrow('not a git repository');
     });
 });

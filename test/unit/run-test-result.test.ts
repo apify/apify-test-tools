@@ -20,14 +20,14 @@ const makeClient = ({ items = [] as unknown[], records = {} as Record<string, un
 
 describe('RunTestResult', () => {
     it('downloads the dataset in pages, so a large one never exceeds one response', async () => {
-        const items = Array.from({ length: 12_000 }, (_, i) => ({ i }));
+        const items = Array.from({ length: 12_500 }, (_, i) => ({ i }));
         const { client, listItems } = makeClient({ items });
 
         const dataset = await new RunTestResult(client, run).getDataset();
 
         expect(dataset.items).toEqual(items);
         expect(listItems.mock.calls.map(([{ offset }]) => offset)).toEqual([
-            0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10_000, 11_000,
+            0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10_000, 11_000, 12_000,
         ]);
     });
 

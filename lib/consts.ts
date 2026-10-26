@@ -15,7 +15,7 @@ export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
 /**
  * Both the test runs and the vitest test specs should finish in this time - 1 hour
  */
-export const DEFAULT_TEST_RUN_DURATION_MS = 60 * 60 * 1000; // 1 hour
+const DEFAULT_TEST_RUN_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
 // Prevent orphaned runs - timeout the Actor 1 minute before the test does so everything is logged correctly.
 //      - Otherwise the run link URL can get lost.

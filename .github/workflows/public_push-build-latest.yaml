@@ -26,7 +26,7 @@ jobs:
                   npm-token: ${{ secrets.NPM_TOKEN }}
 
             # --since is the last commit that is already released: the push's "before" commit.
-            # Everything after it up to HEAD gets released. See the "Releasing Actors" section of the README.
+            # Everything after it up to HEAD gets released. See the "Releasing Actors" section of docs/cli.md.
             # Needs no tokens, it only reads git and apify-test-tools.config.json.
             - name: Find changes since the last release
               run: |

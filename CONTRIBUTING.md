@@ -86,7 +86,7 @@ The action's "Nothing to release" guard resolves to this tag and no longer fires
 release fails at `npm publish` instead of erroring cleanly.
 
 Consumers pin `@workflows-v0`, not `@master`. See
-[Versioning and releases](./README.md#versioning-and-releases) in the README for how the tag and the
+[Versioning and releases](./docs/workflows.md#versioning-and-releases) in the workflow docs for how the tag and the
 npm release relate — the short version:
 
 - the workflows and the CLI ship together on every master push, through the tag; no npm release needed

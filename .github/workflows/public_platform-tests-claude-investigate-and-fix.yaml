@@ -39,6 +39,11 @@ on:
                 type: string
                 default: sonnet
                 description: Claude model to use for investigation and fix
+            effort:
+                required: false
+                type: string
+                default: ''
+                description: Claude effort level (low, medium, high, xhigh, max) to use for investigation and fix. Uses the Claude Code default when empty.
             max_flakiness_runs:
                 required: false
                 type: number
@@ -115,6 +120,7 @@ jobs:
                   claude_args: |
                       --mcp-config '{"mcpServers":{"apify":{"type":"http","url":"https://mcp.apify.com/?tools=get-actor-run,get-actor-run-log,get-dataset-list,get-dataset,get-dataset-items,get-key-value-store-list,get-key-value-store,get-key-value-store-keys,get-key-value-store-record","headers":{"Authorization":"Bearer ${TESTER_APIFY_TOKEN}"}}}}'
                       --model ${{ inputs.model }}
+                      ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
                       --dangerously-skip-permissions
 
             - name: Upload Claude output (for debugging)
@@ -190,6 +196,7 @@ jobs:
                   prompt: 'Open a pull request to address GitHub issue #${{ needs.investigate.outputs.issue_number }}. Use `gh issue view ${{ needs.investigate.outputs.issue_number }}` to read the issue details first, then implement the fix and create a PR.'
                   claude_args: |
                       --model ${{ inputs.model }}
+                      ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
                       --dangerously-skip-permissions
 
             - name: Upload Claude output (for debugging)

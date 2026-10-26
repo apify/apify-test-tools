@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 - [**breaking**] Revamp get-affected-actors to be a core logic command ([#190](https://github.com/apify/apify-test-tools/pull/190)) ([ea5f244](https://github.com/apify/apify-test-tools/commit/ea5f244cfd42bf3fa9ffd38cd2ad499dde2e83f8)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - [**breaking**] Add logic-less build command and use command chaining in workflows ([#193](https://github.com/apify/apify-test-tools/pull/193)) ([e5b0b86](https://github.com/apify/apify-test-tools/commit/e5b0b86ee06fca51d4be0ddc81b0a4a469d31603)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - **get-affected-actors:** Three-dot diff, narrowed per Actor with --since ([#204](https://github.com/apify/apify-test-tools/pull/204)) ([fa9a0e7](https://github.com/apify/apify-test-tools/commit/fa9a0e7518764dd4722ec9ecbf67b2a26a5a062e)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- Add effort input to Claude investigate-and-fix workflow ([#221](https://github.com/apify/apify-test-tools/pull/221)) ([c2ac078](https://github.com/apify/apify-test-tools/commit/c2ac078aec9ef02337af0e5c06db1b947b6c969b)) by [@foxt451](https://github.com/foxt451)
+- **ci:** Support pnpm ([#214](https://github.com/apify/apify-test-tools/pull/214)) ([ee7d734](https://github.com/apify/apify-test-tools/commit/ee7d7340564c5b8657a8a1f0cf920d67b40ae013)) by [@ruocco-l](https://github.com/ruocco-l)
 
 ### 🐛 Bug Fixes
 

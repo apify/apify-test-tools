@@ -5,6 +5,10 @@ import { GitCommandError, runGitCommand } from './utils.js';
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
 
+// Lists the changed paths. With rename detection (on by default) a moved file is listed only under its new path,
+// so the Actor whose context it left wouldn't count as changed. --no-renames lists it as deleted and added instead.
+const LIST_CHANGED_PATHS = ['--name-only', '--no-renames'];
+
 /**
  * Gets the list of changed files between the given commits (inclusive), so it diffs from the parent of the oldest.
  */
@@ -25,7 +29,7 @@ export const getChangedFiles = async (commits: Commit[]) => {
  * merged branch can predate fromRef, and its changes are already in fromRef.
  */
 export const getChangedFilesBetween = async (fromRef: string, toRef: string) => {
-    const changedFilesString = await runGitCommand(['diff', '--name-only', `${fromRef}..${toRef}`], {
+    const changedFilesString = await runGitCommand(['diff', ...LIST_CHANGED_PATHS, `${fromRef}..${toRef}`], {
         operation: 'get the list of changed files between commits',
     });
 

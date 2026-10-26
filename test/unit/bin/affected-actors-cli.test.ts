@@ -174,6 +174,14 @@ describe('get-affected-actors CLI on real git histories', () => {
         });
     });
 
+    it('counts a moved file for both the Actor it left and the one it joined', async () => {
+        git('mv', 'actors/a/main.ts', 'actors/c/moved.ts');
+        git('commit', '-q', '-m', 'refactor: move a file from a to c');
+
+        // With rename detection, git would list only the new path, and A would look unchanged
+        expect(getAffectedActors('--base', 'main')).toStrictEqual({ functional: ['a', 'c'], cosmetic: [] });
+    });
+
     it('checks the whole branch on a rerun or when --since is not in the history', async () => {
         await commit('feat(a): validated change', 'actors/a/main.ts');
         const head = await commit('docs(a): readme', 'actors/a/README.md');

@@ -80,22 +80,52 @@ Each Actor in the config must have a `.actor/actor.json` file. The `dockerContex
 the build context boundary — this is what the tool uses to decide which files can affect the Actor's build (see
 [Change detection](docs/cli.md#change-detection)).
 
+This example has two Actors that share the code at the repo root, and one standalone Actor with its own code:
+
 ```
 my-repo
 ├── apify-test-tools.config.json
+├── Dockerfile                      <- shared by web-scraper and email-sender
+├── package.json
+├── src/                            <- shared by web-scraper and email-sender
 ├── actors
 │   ├── web-scraper
-│   │   ├── .actor
-│   │   │   └── actor.json
-│   │   └── src/
+│   │   └── .actor
+│   │       └── actor.json          <- points to the repo root
 │   └── email-sender
+│       └── .actor
+│           └── actor.json          <- points to the repo root
+├── standalone-actors
+│   └── orchestrator
 │       ├── .actor
-│       │   └── actor.json
+│       │   └── actor.json          <- default context: its own folder
+│       ├── Dockerfile
+│       ├── package.json
 │       └── src/
 └── test
     └── platform
-        └── web-scraper.test.ts
+        ├── web-scraper.test.ts
+        ├── email-sender.test.ts
+        └── orchestrator
+            └── orchestrator.test.ts
 ```
+
+The Actors that share code point their `dockerfile` and `dockerContextDir` at the repo root. Both paths are relative
+to the `.actor` folder:
+
+```json
+{
+    "actorSpecification": 1,
+    "name": "web-scraper",
+    "version": "0.1",
+    "dockerfile": "../../../Dockerfile",
+    "dockerContextDir": "../../.."
+}
+```
+
+A change to the shared `src/` then builds and tests both of them, while a change in `standalone-actors/orchestrator`
+counts only for the orchestrator, even though it lies inside the others' context. The orchestrator leaves
+`dockerContextDir` out, so its context is its own folder.
 
 For a single-Actor repo, set `"folder": "."` in the config and place `.actor/actor.json` at the repo root.
 
@@ -123,23 +153,25 @@ Actors:
             "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
             "actors": [
                 { "folder": "actors/web-scraper", "actorFullName": "myteam/web-scraper" },
+                { "folder": "actors/email-sender", "actorFullName": "myteam/email-sender" },
                 {
-                    "folder": "actors/email-sender",
-                    "actorFullName": "myteam/email-sender",
-                    "overrideActorContext": ["actors/email-sender", "packages/mailer"]
+                    "folder": "standalone-actors/orchestrator",
+                    "actorFullName": "myteam/orchestrator",
+                    "overrideActorContext": ["standalone-actors/orchestrator", "test/platform/orchestrator"]
                 }
             ]
-        },
-        "partner": {
-            "tokenEnvVar": "APIFY_TOKEN_PARTNER",
-            "actors": [{ "folder": "actors/partner-crawler", "actorFullName": "partner/crawler" }]
         }
     }
 }
 ```
 
-The group key (`myteam`, `partner` above) is only a label for readability; it doesn't need to match any folder or
-username. Each group needs a `tokenEnvVar` and at least one Actor.
+The group key (`myteam` above) is only a label for readability; it doesn't need to match any folder or username. Each
+group needs a `tokenEnvVar` and at least one Actor. Add another group for Actors that need a different token, e.g.
+Actors owned by another account.
+
+The orchestrator sets `overrideActorContext` because its tests live outside its own folder: without it, a change to
+only `test/platform/orchestrator` wouldn't build and test it. The other two already have the whole repo, tests
+included, as their context.
 
 | Field                  | Where          | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ---------------------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -148,9 +180,8 @@ username. Each group needs a `tokenEnvVar` and at least one Actor.
 | `tokenEnvVar`          | group or Actor | yes      | Name of the environment variable holding the Apify API token that builds the group's Actors. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                   |
 | `overrideActorContext` | group or Actor | no       | Array of paths (relative to repo root) that define which files are relevant to the Actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an Actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The Actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
 
-A value set on an Actor replaces the group's for that Actor only. Values are replaced, not merged: in the example
-above, if the `myteam` group also set `overrideActorContext`, `myteam/email-sender` would still get only
-`["actors/email-sender", "packages/mailer"]`.
+A value set on an Actor replaces the group's for that Actor only. Values are replaced, not merged: if the `myteam`
+group also set `overrideActorContext`, the orchestrator would still get only the two paths it lists.
 
 No two Actors may share a `folder`, and no two entries may point at the same `actorFullName`.
 

@@ -13,12 +13,9 @@
 // through as literal argv entries.
 
 import { spawnSync } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
 
-// Resolved against the working directory, matching how apify-test-tools' own readConfigFile
-// locates it.
-const CONFIG_FILE_NAME = 'apify-test-tools.config.json';
+import { CONFIG_FILE_NAME, readConfigFileContents } from '../bin/utils/config/load-config.js';
+import { parseConfigFile } from '../bin/utils/config/parser.js';
 
 function fail(message: string): never {
     console.error(message);
@@ -47,40 +44,14 @@ if (!isRecord(secretsMap)) {
     fail('ALL_SECRETS must be a JSON object of secret names and values.');
 }
 
-const configPath = path.resolve(process.cwd(), CONFIG_FILE_NAME);
-let config: unknown;
+let actorConfigs: ReturnType<typeof parseConfigFile>;
 try {
-    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    actorConfigs = parseConfigFile(await readConfigFileContents());
 } catch (error) {
-    fail(`Cannot read "${configPath}": ${error instanceof Error ? error.message : String(error)}`);
+    fail(`Cannot read "${CONFIG_FILE_NAME}": ${error instanceof Error ? error.message : String(error)}`);
 }
 
-const configObject = config;
-if (!isRecord(configObject) || !Array.isArray(configObject.actors)) {
-    fail(`"${configPath}" must have an "actors" array at the top level.`);
-}
-
-const tokenNames: string[] = [];
-const entriesWithoutToken: unknown[] = [];
-
-const actors: unknown[] = configObject.actors;
-for (const [index, actor] of actors.entries()) {
-    const tokenEnvVar = isRecord(actor) ? actor.tokenEnvVar : undefined;
-    if (typeof tokenEnvVar !== 'string' || tokenEnvVar === '') {
-        entriesWithoutToken.push((isRecord(actor) ? actor.actorFullName : undefined) ?? `entry at index ${index}`);
-        continue;
-    }
-    if (!tokenNames.includes(tokenEnvVar)) tokenNames.push(tokenEnvVar);
-}
-
-tokenNames.sort();
-
-if (entriesWithoutToken.length > 0) {
-    console.error(
-        `Warning: no "tokenEnvVar" in ${CONFIG_FILE_NAME} for: ${entriesWithoutToken.join(', ')}. ` +
-            `Building those Actors will fail.`,
-    );
-}
+const tokenNames = [...new Set(actorConfigs.map(({ tokenEnvVar }) => tokenEnvVar))].sort();
 
 // Declared but absent is a warning, not an error. A repo can carry an Actor whose token isn't
 // configured and still build fine as long as that Actor never changes, and apify-test-tools raises

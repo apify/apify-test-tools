@@ -61,9 +61,11 @@ export const checkRun = async <PpeEvent extends string>(
 ): Promise<Check[]> => {
     const options = { ...TO_FINISH_WITH_OPTIONS, ...userOptions };
 
-    const [runInfo, datasetItemCount, stats, log] = await Promise.all([
+    // The dataset's item count lags the run by 10-20 seconds, so counting the downloaded items is the only way to
+    // be in sync. Don't swap it for the count from the dataset info.
+    const [runInfo, { items }, stats, log] = await Promise.all([
         run.getRunInfo(),
-        run.getDatasetItemCount(),
+        run.getDataset(),
         run.getStatistics(),
         run.getLog(),
     ]);
@@ -74,7 +76,7 @@ export const checkRun = async <PpeEvent extends string>(
 
     return [
         { name: 'status', pass: run.status === options.status, actual: run.status, expected: options.status },
-        ...intervalCheck('datasetItemCount', datasetItemCount, options.datasetItemCount),
+        ...intervalCheck('datasetItemCount', items.length, options.datasetItemCount),
         ...intervalCheck('duration', runInfo.stats.durationMillis, options.duration),
         ...intervalCheck('failedRequests', stats?.requestsFailed, options.failedRequests),
         ...intervalCheck('requestsRetries', stats?.requestsRetries, options.requestsRetries),

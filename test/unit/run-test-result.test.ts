@@ -41,12 +41,4 @@ describe('RunTestResult', () => {
         expect(items[24_999]).toBe(24_999);
         expect(listItems).toHaveBeenCalledTimes(3);
     });
-
-    it('counts dataset items without downloading them', async () => {
-        const listItems = vi.fn(async () => ({ total: 123, items: [{}] }));
-        const client = { dataset: () => ({ listItems }) } as unknown as ApifyClient;
-
-        expect(await new RunTestResult(client, run).getDatasetItemCount()).toBe(123);
-        expect(listItems).toHaveBeenCalledWith({ limit: 1 });
-    });
 });

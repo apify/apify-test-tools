@@ -51,15 +51,6 @@ export class RunTestResult {
 
     getDataset = async <T>(): Promise<Dataset<T>> => ({ items: (await this.datasetItems()) as T[] });
 
-    /**
-     * Number of items in the default dataset. Unlike `getDataset()` it downloads nothing, so it is safe for any
-     * dataset size.
-     */
-    getDatasetItemCount = async (): Promise<number> => {
-        const { total } = await this.apifyClient.dataset(this.run.defaultDatasetId).listItems({ limit: 1 });
-        return total;
-    };
-
     getKeyValueStoreClient = (): KeyValueStoreClient => {
         return this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
     };

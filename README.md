@@ -513,9 +513,6 @@ testActor(actorId, 'check dataset items', async ({ expect, run }) => {
     const log = await runResult.getLog();
     expect(log).toContain('Crawl finished');
 
-    // Count items without downloading them (`getDataset()` pages through large datasets, but still holds them all)
-    const itemCount = await runResult.getDatasetItemCount();
-
     // Access crawler statistics
     const stats = await runResult.getStatistics();
     expect(stats?.requestsFinished).toBeGreaterThan(0);

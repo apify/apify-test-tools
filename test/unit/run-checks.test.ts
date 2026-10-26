@@ -10,7 +10,7 @@ const fakeRun = (overrides: { status?: string; log?: string; stats?: object; cha
             stats: { durationMillis: 5_000 },
             chargedEventCounts: overrides.chargedEventCounts,
         }),
-        getDatasetItemCount: async () => 10,
+        getDataset: async () => ({ items: new Array(10) }),
         getStatistics: async () => ({
             requestsFailed: 0,
             requestsRetries: 1,

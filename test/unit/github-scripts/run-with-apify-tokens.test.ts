@@ -24,7 +24,7 @@ const PRINT_ENV = `console.log(JSON.stringify({
     TOKEN_TWO: process.env.TOKEN_TWO,
     TOKEN_THREE: process.env.TOKEN_THREE,
     NPM_TOKEN: process.env.NPM_TOKEN,
-    ALL_SECRETS: process.env.ALL_SECRETS,
+    WORKFLOW_SECRETS: process.env.WORKFLOW_SECRETS,
 }))`;
 
 let cwd: string;
@@ -34,7 +34,7 @@ const run = (workflowSecrets: Record<string, string>) => {
     const result = spawnSync(process.execPath, [SCRIPT, process.execPath, '-e', PRINT_ENV], {
         cwd,
         encoding: 'utf8',
-        env: { PATH: process.env.PATH, ALL_SECRETS: JSON.stringify(workflowSecrets) },
+        env: { PATH: process.env.PATH, WORKFLOW_SECRETS: JSON.stringify(workflowSecrets) },
     });
     return { ...result, env: result.status === 0 ? JSON.parse(result.stdout) : undefined };
 };
@@ -49,7 +49,7 @@ describe('run-with-apify-tokens.mjs', () => {
         await rm(cwd, { recursive: true, force: true });
     });
 
-    it('passes on top-level secrets, as `secrets: inherit` sends them', () => {
+    it('passes on inherited secrets, as `secrets: inherit` sends them', () => {
         const { status, stderr, env } = run({
             TOKEN_ONE: 'one',
             TOKEN_TWO: 'two',
@@ -60,38 +60,42 @@ describe('run-with-apify-tokens.mjs', () => {
         expect(env).toStrictEqual({ TOKEN_ONE: 'one', TOKEN_TWO: 'two', TOKEN_THREE: 'three' });
     });
 
-    it('unpacks the tokens from the ALL_SECRETS secret', () => {
+    it('unpacks the tokens from the CONFIG_SECRETS secret', () => {
         const { status, stderr, env } = run({
-            ALL_SECRETS: JSON.stringify({ TOKEN_ONE: 'one', TOKEN_TWO: 'two', TOKEN_THREE: 'three', NPM_TOKEN: 'npm' }),
-            github_token: 'gh',
-        });
-        expect(status, stderr).toBe(0);
-        expect(env).toStrictEqual({ TOKEN_ONE: 'one', TOKEN_TWO: 'two', TOKEN_THREE: 'three' });
-    });
-
-    it('unpacks the tokens from the APIFY_ACTOR_TOKENS secret', () => {
-        const { status, stderr, env } = run({
-            APIFY_ACTOR_TOKENS: JSON.stringify({ TOKEN_ONE: 'one', TOKEN_TWO: 'two', TOKEN_THREE: 'three' }),
+            CONFIG_SECRETS: JSON.stringify({ TOKEN_ONE: 'one', TOKEN_TWO: 'two', TOKEN_THREE: 'three' }),
             NPM_TOKEN: 'npm',
         });
         expect(status, stderr).toBe(0);
         expect(env).toStrictEqual({ TOKEN_ONE: 'one', TOKEN_TWO: 'two', TOKEN_THREE: 'three' });
     });
 
-    it('prefers APIFY_ACTOR_TOKENS, then secrets passed by name, then ALL_SECRETS', () => {
+    it('passes on only the config names when CONFIG_SECRETS holds every secret of the caller', () => {
         const { status, stderr, env } = run({
-            APIFY_ACTOR_TOKENS: JSON.stringify({ TOKEN_ONE: 'from-map' }),
-            TOKEN_ONE: 'by-name',
-            TOKEN_TWO: 'by-name',
-            ALL_SECRETS: JSON.stringify({ TOKEN_ONE: 'from-all', TOKEN_TWO: 'from-all', TOKEN_THREE: 'from-all' }),
+            CONFIG_SECRETS: JSON.stringify({
+                TOKEN_ONE: 'one',
+                TOKEN_TWO: 'two',
+                TOKEN_THREE: 'three',
+                NPM_TOKEN: 'npm',
+                github_token: 'gh',
+            }),
         });
         expect(status, stderr).toBe(0);
-        expect(env).toStrictEqual({ TOKEN_ONE: 'from-map', TOKEN_TWO: 'by-name', TOKEN_THREE: 'from-all' });
+        expect(env).toStrictEqual({ TOKEN_ONE: 'one', TOKEN_TWO: 'two', TOKEN_THREE: 'three' });
+    });
+
+    it('prefers CONFIG_SECRETS over an inherited secret of the same name', () => {
+        const { status, stderr, env } = run({
+            CONFIG_SECRETS: JSON.stringify({ TOKEN_ONE: 'from-config-secrets' }),
+            TOKEN_ONE: 'inherited',
+            TOKEN_TWO: 'inherited',
+        });
+        expect(status, stderr).toBe(0);
+        expect(env).toStrictEqual({ TOKEN_ONE: 'from-config-secrets', TOKEN_TWO: 'inherited' });
     });
 
     it('warns about a token the config declares but nothing passes, and runs anyway', () => {
         const { status, stderr, env } = run({
-            APIFY_ACTOR_TOKENS: JSON.stringify({ TOKEN_ONE: 'one', TOKEN_TWO: 'two' }),
+            CONFIG_SECRETS: JSON.stringify({ TOKEN_ONE: 'one', TOKEN_TWO: 'two' }),
         });
         expect(status, stderr).toBe(0);
         expect(stderr).toContain('declares TOKEN_THREE, but no such secret was passed');
@@ -99,20 +103,13 @@ describe('run-with-apify-tokens.mjs', () => {
     });
 
     it.each([
-        ['is not JSON', 'apify_api_xyzzy', 'The APIFY_ACTOR_TOKENS secret is not valid JSON.'],
-        ['is a JSON string', '"apify_api_xyzzy"', 'The APIFY_ACTOR_TOKENS secret must be a JSON object.'],
-        ['is a JSON array', '["apify_api_xyzzy"]', 'The APIFY_ACTOR_TOKENS secret must be a JSON object.'],
-    ])('fails without printing the value when APIFY_ACTOR_TOKENS %s', (_, packed, message) => {
-        const { status, stdout, stderr } = run({ APIFY_ACTOR_TOKENS: packed });
+        ['is not JSON', 'apify_api_xyzzy', 'The CONFIG_SECRETS secret is not valid JSON.'],
+        ['is a JSON string', '"apify_api_xyzzy"', 'The CONFIG_SECRETS secret must be a JSON object.'],
+        ['is a JSON array', '["apify_api_xyzzy"]', 'The CONFIG_SECRETS secret must be a JSON object.'],
+    ])('fails without printing the value when CONFIG_SECRETS %s', (_, packed, message) => {
+        const { status, stdout, stderr } = run({ CONFIG_SECRETS: packed });
         expect(status).toBe(1);
         expect(stderr).toContain(message);
-        expect(stdout + stderr).not.toContain('xyzzy');
-    });
-
-    it('fails without printing the value when ALL_SECRETS is not JSON', () => {
-        const { status, stdout, stderr } = run({ ALL_SECRETS: '{"TOKEN_ONE": apify_api_xyzzy}' });
-        expect(status).toBe(1);
-        expect(stderr).toContain('The ALL_SECRETS secret is not valid JSON.');
         expect(stdout + stderr).not.toContain('xyzzy');
     });
 });

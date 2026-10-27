@@ -8,8 +8,9 @@ on:
                 type: string
                 default: ''
                 required: false
-        # Every secret is optional and can be passed three ways, see the Secrets section of the README:
-        # by name, inside ALL_SECRETS, or with `secrets: inherit` from a repo in the apify org.
+        # Every secret is optional. The ones this workflow reads are declared by name. The secrets that
+        # apify-test-tools.config.json names (e.g. each Actor's `tokenEnvVar`) differ per repo, so they
+        # come packed in CONFIG_SECRETS. See the Secrets section of the README.
         secrets:
             NPM_TOKEN:
                 required: false
@@ -17,12 +18,12 @@ on:
             SLACK_TOKEN_RELEASES_BOT:
                 required: false
                 description: Slack token for announcing releases.
-            APIFY_ACTOR_TOKENS:
+            CONFIG_SECRETS:
                 required: false
-                description: JSON object of Actor token name -> token, the names being the `tokenEnvVar` values in apify-test-tools.config.json.
-            ALL_SECRETS:
-                required: false
-                description: The caller's whole secrets map as `toJSON(secrets)`, for callers that would rather not list secrets one by one. Secrets passed by name take precedence.
+                description: >-
+                    JSON object of the secrets apify-test-tools.config.json names, secret name -> value.
+                    Today that is each Actor's `tokenEnvVar`. Passing `toJSON(secrets)` works too, only
+                    the names the config declares are used.
 
 jobs:
     pushBuildLatest:
@@ -38,9 +39,8 @@ jobs:
               # For testing, you have to temporarily change the branch
               uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
               with:
-                  npm-token: ${{ secrets.NPM_TOKEN || fromJSON(secrets.ALL_SECRETS || '{}').NPM_TOKEN }}
-                  all-secrets: ${{ secrets.ALL_SECRETS }}
-                  apify-actor-tokens: ${{ secrets.APIFY_ACTOR_TOKENS }}
+                  npm-token: ${{ secrets.NPM_TOKEN }}
+                  config-secrets: ${{ secrets.CONFIG_SECRETS }}
 
             # --since is the last commit that is already released: the push's "before" commit.
             # Everything after it up to HEAD gets released. See the "Releasing Actors" section of the README.
@@ -58,7 +58,7 @@ jobs:
               # bash rather than the default shell, for pipefail
               shell: bash
               env:
-                  ALL_SECRETS: ${{ toJSON(secrets) }}
+                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
               run: |
                   jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json \
                     | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
@@ -67,13 +67,13 @@ jobs:
             # Skips the announcement when the push brought no new commits
             - name: Announce the release on Slack
               env:
-                  SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT || fromJSON(secrets.ALL_SECRETS || '{}').SLACK_TOKEN_RELEASES_BOT }}
+                  SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
               run: |
                   apify-test-tools notify-release --release-slack-channel "#delivery-public-actors" --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" < affected.json
 
             - name: Delete old builds
               env:
-                  ALL_SECRETS: ${{ toJSON(secrets) }}
+                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
               run: |
                   node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
                     apify-test-tools delete-old-builds

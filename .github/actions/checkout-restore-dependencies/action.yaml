@@ -8,15 +8,10 @@ inputs:
             generated .npmrc references), and only on the dependency install steps, so it
             never reaches the build or test steps. Use a read-only token.
         required: false
-    all-secrets:
+    config-secrets:
         description: >-
-            The ALL_SECRETS workflow secret, if the caller passed one. Every value inside it is
-            registered as a mask, see the "Mask packed secrets" step.
-        required: false
-    apify-actor-tokens:
-        description: >-
-            The APIFY_ACTOR_TOKENS workflow secret, if the caller passed one. Every value inside it
-            is registered as a mask, see the "Mask packed secrets" step.
+            The CONFIG_SECRETS workflow secret, if the caller passed one. Every value inside it is
+            registered as a mask, see .github/scripts/mask-config-secrets.sh.
         required: false
 
 outputs:
@@ -34,14 +29,13 @@ outputs:
 runs:
     using: 'composite'
     steps:
-        # Runs before anything can use a packed token, see the script for why.
-        - name: Mask packed secrets
-          if: inputs.all-secrets != '' || inputs.apify-actor-tokens != ''
+        # Runs before anything can use a packed secret, see the script for why.
+        - name: Mask config secrets
+          if: inputs.config-secrets != ''
           shell: bash
           env:
-              ALL_SECRETS: ${{ inputs.all-secrets }}
-              APIFY_ACTOR_TOKENS: ${{ inputs.apify-actor-tokens }}
-          run: bash "${{ github.action_path }}/../../scripts/mask-packed-secrets.sh"
+              CONFIG_SECRETS: ${{ inputs.config-secrets }}
+          run: bash "${{ github.action_path }}/../../scripts/mask-config-secrets.sh"
 
         - name: Checkout Repository
           uses: actions/checkout@v5

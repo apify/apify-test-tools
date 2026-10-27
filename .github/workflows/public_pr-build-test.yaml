@@ -12,8 +12,9 @@ on:
                 type: string
                 default: ''
                 required: false
-        # Every secret is optional and can be passed three ways, see the Secrets section of the README:
-        # by name, inside ALL_SECRETS, or with `secrets: inherit` from a repo in the apify org.
+        # Every secret is optional. The ones this workflow reads are declared by name. The secrets that
+        # apify-test-tools.config.json names (e.g. each Actor's `tokenEnvVar`) differ per repo, so they
+        # come packed in CONFIG_SECRETS. See the Secrets section of the README.
         secrets:
             NPM_TOKEN:
                 required: false
@@ -21,12 +22,12 @@ on:
             TESTER_APIFY_TOKEN:
                 required: false
                 description: Apify token the platform tests run Actors with.
-            APIFY_ACTOR_TOKENS:
+            CONFIG_SECRETS:
                 required: false
-                description: JSON object of Actor token name -> token, the names being the `tokenEnvVar` values in apify-test-tools.config.json.
-            ALL_SECRETS:
-                required: false
-                description: The caller's whole secrets map as `toJSON(secrets)`, for callers that would rather not list secrets one by one. Secrets passed by name take precedence.
+                description: >-
+                    JSON object of the secrets apify-test-tools.config.json names, secret name -> value.
+                    Today that is each Actor's `tokenEnvVar`. Passing `toJSON(secrets)` works too, only
+                    the names the config declares are used.
 
 concurrency:
     group: ${{ github.workflow }}-${{ github.ref }}
@@ -43,9 +44,8 @@ jobs:
               uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
               with:
                   # Some repos use private npm packages, they need to pass NPM_TOKEN secret to this workflow
-                  npm-token: ${{ secrets.NPM_TOKEN || fromJSON(secrets.ALL_SECRETS || '{}').NPM_TOKEN }}
-                  all-secrets: ${{ secrets.ALL_SECRETS }}
-                  apify-actor-tokens: ${{ secrets.APIFY_ACTOR_TOKENS }}
+                  npm-token: ${{ secrets.NPM_TOKEN }}
+                  config-secrets: ${{ secrets.CONFIG_SECRETS }}
 
             - name: Pick last validated commit from cache
               id: base_commit
@@ -86,7 +86,7 @@ jobs:
               # bash rather than the default shell, for pipefail
               shell: bash
               env:
-                  ALL_SECRETS: ${{ toJSON(secrets) }}
+                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
               run: |
                   actor_builds=$(jq '{ actors: .functionallyChangedActors }' affected.json \
@@ -97,7 +97,7 @@ jobs:
             - name: Test
               env:
                   ACTOR_BUILDS: ${{ steps.build.outputs.actor_builds }}
-                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN || fromJSON(secrets.ALL_SECRETS || '{}').TESTER_APIFY_TOKEN }}
+                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
               run: npx vitest ./test/platform/${{ inputs.test-files-glob }} --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100
 
             # NOTE: This is an optimization that if we did functional changes and later only cosmetic changes (e.g. dev readme), we will compare changes files only for the last commit. This must run after tests because we want to cache the latest commit only if the tests are successful
@@ -118,8 +118,7 @@ jobs:
               # For testing, you have to temporarily change the branch
               uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
               with:
-                  npm-token: ${{ secrets.NPM_TOKEN || fromJSON(secrets.ALL_SECRETS || '{}').NPM_TOKEN }}
-                  all-secrets: ${{ secrets.ALL_SECRETS }}
+                  npm-token: ${{ secrets.NPM_TOKEN }}
 
             - name: TypeScript
               # Some repos require custom build checks, so we check if the `build-check` script exists and run it if

@@ -34,23 +34,14 @@ outputs:
 runs:
     using: 'composite'
     steps:
-        # The runner masks a secret by its exact value, so a token packed inside a JSON secret is
-        # only masked as part of that whole blob. Once a step takes the token out, it would print
-        # in clear. Registering each value on its own, before any step can use one, closes that.
-        # Multi-line values are registered line by line, the way the runner registers secrets.
+        # Runs before anything can use a packed token, see the script for why.
         - name: Mask packed secrets
           if: inputs.all-secrets != '' || inputs.apify-actor-tokens != ''
           shell: bash
           env:
               ALL_SECRETS: ${{ inputs.all-secrets }}
               APIFY_ACTOR_TOKENS: ${{ inputs.apify-actor-tokens }}
-          run: |
-              for name in ALL_SECRETS APIFY_ACTOR_TOKENS; do
-                  [ -n "${!name}" ] || continue
-                  # jq's errors can quote the input, so they are dropped for our own message
-                  jq -r 'to_entries[] | .value | strings | split("\n")[] | select(. != "") | "::add-mask::" + .' <<< "${!name}" 2>/dev/null \
-                    || { echo "::error::The $name secret must be a JSON object."; exit 1; }
-              done
+          run: bash "${{ github.action_path }}/../../scripts/mask-packed-secrets.sh"
 
         - name: Checkout Repository
           uses: actions/checkout@v5

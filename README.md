@@ -159,6 +159,8 @@ Reference them at the `@workflows-v0` major tag, never at `@master` — see
 [Versioning and releases](#versioning-and-releases).
 
 There should be 4 GH workflow files in `.github/workflows`, plus an optional fifth for Claude reviews.
+The examples pass each secret by name, which works from any repo. See [Secrets](#secrets) for what
+each one is for and for the shorter alternatives.
 
 ### `platform-tests-core.yaml`
 
@@ -176,7 +178,11 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             subtest: core
-        secrets: inherit
+        secrets:
+            # Only needed if the repo installs private npm packages
+            NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
 ```
 
 ### `platform-tests-daily.yaml`
@@ -193,7 +199,10 @@ on:
 jobs:
     platformTestsDaily:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
 ```
 
 ### `pr-build-devel-test.yaml`
@@ -208,7 +217,15 @@ on:
 jobs:
     buildDevelAndTest:
         uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+            # One entry per `tokenEnvVar` in apify-test-tools.config.json
+            APIFY_ACTOR_TOKENS: |
+                {
+                    "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
+                    "APIFY_TOKEN_PARTNER": "${{ secrets.APIFY_TOKEN_PARTNER }}"
+                }
 ```
 
 ### `release-latest.yaml`
@@ -223,7 +240,15 @@ on:
 jobs:
     buildLatest:
         uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+            SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
+            # One entry per `tokenEnvVar` in apify-test-tools.config.json
+            APIFY_ACTOR_TOKENS: |
+                {
+                    "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
+                    "APIFY_TOKEN_PARTNER": "${{ secrets.APIFY_TOKEN_PARTNER }}"
+                }
 ```
 
 This workflow runs one step per command: `get-affected-actors --since ${{ github.event.before }}`, then
@@ -245,7 +270,8 @@ on:
 jobs:
     review:
         uses: apify/apify-test-tools/.github/workflows/public_review.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
 The review instructions live in `.github/review-prompt.md` in this repo and are fetched at run time,
@@ -255,8 +281,41 @@ it at a branch only to test a prompt change.
 
 ### Secrets
 
-Callers pass `secrets: inherit`. The workflows do not turn every inherited secret into job-wide
-environment variables, so a secret is only visible to the step that needs it:
+There are three ways to pass secrets to the build and test workflows. All three can be mixed, and a
+secret passed by name wins over the same name inside `ALL_SECRETS`.
+
+1. **By name, with the Actor tokens in `APIFY_ACTOR_TOKENS`.** What the examples above show, and the
+   recommended way. It works from any repo, and you see exactly what leaves yours. A reusable
+   workflow only accepts the secrets it declares, and it can't declare the Actor tokens because each
+   repo names its own in `tokenEnvVar`. So they go in one JSON object instead, with one entry per
+   `tokenEnvVar` in `apify-test-tools.config.json`. A name the config declares but the object leaves
+   out is reported as a warning in the build step.
+2. **Everything at once, as `ALL_SECRETS`.**
+
+    ```yaml
+    secrets:
+        ALL_SECRETS: ${{ toJSON(secrets) }}
+    ```
+
+    Also works from any repo, and you don't keep a list in sync with the config. The cost is that
+    every secret the repo can read, deploy keys and publish tokens included, goes to code at a tag
+    this repo moves. The workflows still pass on only the secrets in the table below, but you are
+    trusting them to.
+
+3. **`secrets: inherit`.** GitHub only allows it when the caller is in the same organization or
+   enterprise as this repo, so it works for repos in the `apify` org and nowhere else. Inside the
+   org it behaves like `ALL_SECRETS`.
+
+The Claude workflows (`public_review.yaml`, `public_claude.yaml`,
+`public_platform-tests-claude-investigate-and-fix.yaml`) take their few secrets by name, or through
+`secrets: inherit` in the `apify` org. They don't read `ALL_SECRETS`.
+
+Values that arrive inside `APIFY_ACTOR_TOKENS` or `ALL_SECRETS` are registered as masks one by one
+by the setup action, before anything uses them. The runner masks a secret by its exact value, so
+it would otherwise only recognise the whole JSON blob, not a single token taken out of it.
+
+The workflows do not turn the secrets they receive into job-wide environment variables, so a
+secret is only visible to the step that needs it:
 
 | Secret                                                                    | Reaches                                                                                                                                                                                                                      |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -269,7 +328,8 @@ The Actor tokens are the one set that cannot be listed in the workflow, because 
 own token via `tokenEnvVar` in `apify-test-tools.config.json`. Those steps pass
 `${{ toJSON(secrets) }}` as `ALL_SECRETS` and run the command through
 `.github/scripts/run-with-apify-tokens.mjs`, which reads that same config file to decide which
-secrets to pass on:
+secrets to pass on. It looks each token up in `APIFY_ACTOR_TOKENS` first, then among the secrets
+passed by name or inherited, then inside `ALL_SECRETS`:
 
 ```yaml
 - name: Build

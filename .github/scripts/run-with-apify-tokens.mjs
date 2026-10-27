@@ -9,6 +9,12 @@
 // repo holds) is left out, and ALL_SECRETS itself is dropped, so the blob never reaches the CLI or
 // anything under node_modules.
 //
+// The tokens are looked up in three places, one per way a caller can pass secrets, and the first
+// listed wins:
+// - the APIFY_ACTOR_TOKENS secret, a JSON object of token name -> token
+// - top-level secrets, which is where `secrets: inherit` puts them
+// - the ALL_SECRETS secret, a caller's whole `toJSON(secrets)` passed under one declared name
+//
 // The command runs without a shell, so branch names and other interpolated arguments are passed
 // through as literal argv entries.
 
@@ -31,12 +37,30 @@ if (!command) fail('Usage: run-with-apify-tokens.mjs <command> [args...]');
 const { ALL_SECRETS, ...baseEnv } = process.env;
 if (!ALL_SECRETS) fail('ALL_SECRETS is not set. Add `ALL_SECRETS: ${{ toJSON(secrets) }}` to the step env.');
 
-let secrets;
+let workflowSecrets;
 try {
-    secrets = JSON.parse(ALL_SECRETS);
+    workflowSecrets = JSON.parse(ALL_SECRETS);
 } catch (error) {
     fail(`ALL_SECRETS is not valid JSON: ${error.message}`);
 }
+
+// Never includes the parse error: Node quotes the input in it, and the input is a secret.
+const unpack = (name) => {
+    const packed = workflowSecrets[name];
+    if (!packed) return {};
+    let value;
+    try {
+        value = JSON.parse(packed);
+    } catch {
+        fail(`The ${name} secret is not valid JSON.`);
+    }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        fail(`The ${name} secret must be a JSON object.`);
+    }
+    return value;
+};
+
+const secrets = { ...unpack('ALL_SECRETS'), ...workflowSecrets, ...unpack('APIFY_ACTOR_TOKENS') };
 
 const configPath = path.resolve(process.cwd(), CONFIG_FILE_NAME);
 let config;
@@ -78,7 +102,8 @@ const missing = tokenNames.filter((name) => !(name in secrets));
 if (missing.length > 0) {
     console.error(
         `Warning: ${CONFIG_FILE_NAME} declares ${missing.join(', ')}, but no such secret was passed ` +
-            `to this workflow. Check the repository secrets if a build fails on a missing token.`,
+            `to this workflow, neither on its own nor inside APIFY_ACTOR_TOKENS or ALL_SECRETS. ` +
+            `Check the repository secrets and the workflow's \`secrets:\` if a build fails on a missing token.`,
     );
 }
 

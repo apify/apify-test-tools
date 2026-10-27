@@ -73,23 +73,19 @@ on:
             priority_prompt:
                 required: false
                 type: string
-                # The priority default thresholds below assume a run hitting the bug loses about 100% of its value when
-                # catastrophic, 50% when high, 20% when medium and 5% when low (these numbers are rather arbitrary). Times the
-                # revenue actually at risk, that's the expected monthly loss: Urgent from about 0.5% of the
-                # cluster's revenue, High from 0.1% and Normal from 0.02% (again rather arbitrary).
+                # The prio prompt here is purposefully vague; you can adjust it to
+                # use custom thresholds based on measured impact metrics.
                 default: |
                     After you create a new issue and before you write its issue number to $GITHUB_WORKSPACE/issue-number.txt, set its Priority field from the failure's impact and flakiness:
 
-                    1. Take the revenue actually at risk over the past month as a % of the cluster's revenue, as the `assess-impact` skill describes it.
-                    2. Pick the priority by the relative severity and that %:
-                        - Catastrophic: Urgent from 0.5%, High from 0.1%, Normal from 0.01%, Low below.
-                        - High: Urgent from 2%, High from 0.5%, Normal from 0.1%, Low below.
-                        - Medium: High from 2%, Normal from 0.5%, Low below.
-                        - Low: Normal from 2%, Low below.
-                        - Invisible to the user or Test: Low.
+                    To do so, exercise your best judgement. Issues marked with higher priority will be reacted to first.
+                    Here are guidelines:
+                    - Determine priority based on combined severity and revenue actually at risk: a less severe bug can outrank a more severe one if much more revenue is actually at risk, and vice versa.
+                    - If it helps you, you can base your assessment off priorities of already existing bugs in the repo.
+                    - Invisible to the user or Test severity always receives lowest priority.
 
                     Priority is an organization-level issue field. If the revenue actually at risk can't be determined, e.g. the Impact section says "Cannot be determined", leave Priority unset, unless the relative severity is Invisible to the user or Test.
-                description: Prompt given to Claude for setting a new issue's Priority field from its impact and flakiness. Override to customize the priority matrix, e.g. its revenue thresholds.
+                description: Prompt given to Claude for setting a new issue's Priority field from its impact and flakiness. Override to customize how priority is judged, e.g. to set revenue thresholds.
         secrets:
             ANTHROPIC_API_KEY:
                 required: true

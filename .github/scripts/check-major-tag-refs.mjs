@@ -18,7 +18,7 @@ const TAG_SOURCE = '.github/workflows/_move_major_tag.yaml';
 const REVIEW_WORKFLOW = '.github/workflows/public_review.yaml';
 
 // Every place a ref into this repo can appear: live `uses:`, commented examples, README snippets.
-const SEARCH_PATHS = ['.github', 'README.md', 'CONTRIBUTING.md'];
+const SEARCH_PATHS = ['.github', 'README.md', 'CONTRIBUTING.md', 'docs'];
 
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 

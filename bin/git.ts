@@ -225,7 +225,7 @@ const ZERO_SHA_REGEX = /^0{40}$/;
 export const resolveReleaseBaseCommit = async (baseCommit: string, head = 'HEAD'): Promise<string> => {
     const sha = parseBaseCommit(baseCommit);
     if (!sha) {
-        throw new Error('A base commit is required for release. See the README section "Releasing Actors".');
+        throw new Error('A base commit is required for release. See the "Releasing Actors" section of docs/cli.md.');
     }
     if (ZERO_SHA_REGEX.test(sha)) {
         throw new Error(

@@ -33,7 +33,7 @@ const findOverlappingContextPaths = (contextPaths: RelativeDir[]): [RelativeDir,
 // #region stages
 
 /** Stage 1 — the config file as a plain object, or a failure phrased for whoever wrote it. */
-const readConfigFileContents = async (): Promise<Record<string, unknown>> => {
+export const readConfigFileContents = async (): Promise<Record<string, unknown>> => {
     let configFile: ExistingFile;
     try {
         configFile = new ExistingFile(CONFIG_FILE_NAME);

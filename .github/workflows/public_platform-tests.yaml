@@ -18,13 +18,13 @@ on:
                 type: string
                 default: ''
                 required: false
-        # Every secret is optional. See the Secrets section of the README.
+        # Only TESTER_APIFY_TOKEN is required, every test needs it. See the Secrets section of the README.
         secrets:
             NPM_TOKEN:
                 required: false
                 description: Read-only token for installing private npm packages.
             TESTER_APIFY_TOKEN:
-                required: false
+                required: true
                 description: Apify token the platform tests run Actors with.
             SLACK_TOKEN_TESTS_BOT:
                 required: false
@@ -41,6 +41,18 @@ jobs:
               uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
               with:
                   npm-token: ${{ secrets.NPM_TOKEN }}
+
+            # Fails here with a clear message rather than deep in vitest. `required: true` alone doesn't
+            # catch it: a caller can list the secret while the repo doesn't have it, and PRs from forks
+            # never get secrets.
+            - name: Check TESTER_APIFY_TOKEN
+              env:
+                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+              run: |
+                  if [ -z "$TESTER_APIFY_TOKEN" ]; then
+                      echo "::error::TESTER_APIFY_TOKEN is empty. Pass it in the secrets: block of the job that calls this workflow."
+                      exit 1
+                  fi
 
             - name: Test
               env:

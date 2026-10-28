@@ -10,7 +10,7 @@ on:
                 required: false
         # Every secret is optional. The ones this workflow reads are declared by name. The secrets that
         # apify-test-tools.config.json names (e.g. each Actor's `tokenEnvVar`) differ per repo, so they
-        # come packed in CONFIG_SECRETS. See the Secrets section of the README.
+        # come packed in CONFIG_SECRETS. See the Secrets section of docs/workflows.md.
         secrets:
             NPM_TOKEN:
                 required: false
@@ -43,7 +43,7 @@ jobs:
                   config-secrets: ${{ secrets.CONFIG_SECRETS }}
 
             # --since is the last commit that is already released: the push's "before" commit.
-            # Everything after it up to HEAD gets released. See the "Releasing Actors" section of the README.
+            # Everything after it up to HEAD gets released. See the "Releasing Actors" section of docs/cli.md.
             # Needs no tokens, it only reads git and apify-test-tools.config.json.
             - name: Find changes since the last release
               run: |

@@ -18,7 +18,7 @@ on:
                 type: string
                 default: ''
                 required: false
-        # Only TESTER_APIFY_TOKEN is required, every test needs it. See the Secrets section of the README.
+        # Only TESTER_APIFY_TOKEN is required, every test needs it. See the Secrets section of docs/workflows.md.
         secrets:
             NPM_TOKEN:
                 required: false

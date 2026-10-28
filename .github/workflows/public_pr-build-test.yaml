@@ -14,7 +14,7 @@ on:
                 required: false
         # Every secret is optional. The ones this workflow reads are declared by name. The secrets that
         # apify-test-tools.config.json names (e.g. each Actor's `tokenEnvVar`) differ per repo, so they
-        # come packed in CONFIG_SECRETS. See the Secrets section of the README.
+        # come packed in CONFIG_SECRETS. See the Secrets section of docs/workflows.md.
         secrets:
             NPM_TOKEN:
                 required: false

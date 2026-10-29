@@ -162,7 +162,7 @@ jobs:
                   MAX_FLAKINESS_RUNS: ${{ inputs.max_flakiness_runs }}
               with:
                   prompt: |
-                      The failing E2E platform test ran in workflow run ${{ github.run_id }} of this repo.
+                      The failing E2E platform test ran in workflow run 40182380043 of this repo.
 
                       ${{ inputs.investigate_prompt }}
 
@@ -170,7 +170,7 @@ jobs:
                   github_token: ${{ secrets.GITHUB_TOKEN }}
                   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
                   plugin_marketplaces: |
-                      https://github.com/apify/apify-test-tools.git
+                      https://github.com/apify/apify-test-tools.git#tmp-impact-test.git
                       ${{ steps.agent-skills-internal.outcome == 'success' && format('{0}/.agent-skills-internal', github.workspace) || '' }}
                   plugins: |
                       platform-tests-investigate-and-fix@apify-test-tools
@@ -239,7 +239,7 @@ jobs:
 
     fix:
         needs: investigate
-        if: needs.investigate.outputs.issue_number != ''
+        if: false
         runs-on: ubuntu-latest
         permissions:
             contents: write

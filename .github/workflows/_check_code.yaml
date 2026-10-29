@@ -36,9 +36,9 @@ jobs:
               uses: actions/setup-node@v6
               with:
                   node-version: 24
-            # `uses:` takes no expressions, so the major tag is repeated in every ref into this repo.
-            # Missing one during a bump is silent while both tags exist: the new workflows quietly
-            # run the old composite action.
+            # The major tag is repeated in every usage example and docs snippet, and the workflows must
+            # load the composite action with `$/`. A hardcoded ref there is silent: callers pinned to
+            # another commit quietly run that ref's action and CLI.
             - name: Check refs match MAJOR_TAG
               run: node .github/scripts/check-major-tag-refs.mjs
 

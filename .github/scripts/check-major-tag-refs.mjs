@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 // Fails if any reference to this repo's own reusable workflows or composite actions points at a
-// different tag than MAJOR_TAG in _move_major_tag.yaml.
+// different tag than MAJOR_TAG in _move_major_tag.yaml, or if a workflow loads this repo's composite
+// action by name instead of with `$/`.
 //
-// `uses:` cannot take an expression ("You cannot use contexts or expressions in this keyword"), so
-// the tag consumers pin is repeated literally in every self-reference, in the commented examples,
-// and in the README snippets people copy. Bumping the major means editing all of them by hand.
+// The tag consumers pin is repeated literally in the commented examples and in the README and docs
+// snippets people copy. Bumping the major means editing all of them by hand.
 //
-// Missing one is quiet in the worst case: right after a bump both the old and new tags exist, so a
-// workflow called at the new tag happily pulls the composite action from the old one and runs a
-// stale version of it. Nothing fails, the behaviour is just wrong.
+// Inside this repo the workflows load the composite action with `uses: $/...`, which resolves to the
+// commit the workflow was called at. A `uses: apify/apify-test-tools/...@<ref>` instead runs the
+// action and CLI from that ref whatever the caller pinned, so a caller on an older SHA or on a branch
+// quietly gets a mismatched CLI. Nothing fails, the behaviour is just wrong.
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const TAG_SOURCE = '.github/workflows/_move_major_tag.yaml';
-const REVIEW_WORKFLOW = '.github/workflows/public_review.yaml';
 
 // Every place a ref into this repo can appear: live `uses:`, commented examples, README snippets.
 const SEARCH_PATHS = ['.github', 'README.md', 'CONTRIBUTING.md', 'docs'];
@@ -53,20 +53,24 @@ for (const file of SEARCH_PATHS.flatMap(walk)) {
         });
 }
 
-// review.yaml fetches its prompt from this repo by ref rather than by `uses:`, so it drifts the
-// same way: released workflows would read instructions from some other commit.
-const promptRef = read(REVIEW_WORKFLOW).match(/prompt-ref:\s*\n\s*default:\s*(\S+)/)?.[1];
-if (!promptRef) {
-    problems.push(`${REVIEW_WORKFLOW}: could not read the prompt-ref default.`);
-} else if (promptRef !== expected) {
-    problems.push(`${REVIEW_WORKFLOW}: prompt-ref default is ${promptRef} — expected ${expected}`);
+// Live `uses:` lines in this repo's own workflows and actions must load it with `$/`. Commented
+// lines are usage examples for callers and are checked against MAJOR_TAG above.
+const LIVE_SELF_USES = /^\s*(?:-\s+)?uses:\s*['"]?apify\/apify-test-tools\//;
+for (const file of ['.github/workflows', '.github/actions'].flatMap(walk)) {
+    read(file)
+        .split('\n')
+        .forEach((line, i) => {
+            if (LIVE_SELF_USES.test(line)) {
+                problems.push(`${file}:${i + 1}: ${line.trim()} — load this repo with \`uses: $/<path>\` instead`);
+            }
+        });
 }
 
 if (problems.length > 0) {
-    console.error(`MAJOR_TAG is ${expected}, but these disagree:\n`);
+    console.error(`These references to this repo need fixing (MAJOR_TAG is ${expected}):\n`);
     for (const problem of problems) console.error(`  ${problem}`);
     console.error(`\nUpdate them, or change MAJOR_TAG in ${TAG_SOURCE}.`);
     process.exit(1);
 }
 
-console.log(`All references to this repo point at @${expected}.`);
+console.log(`All references to this repo point at @${expected}, and the workflows load it with $/.`);

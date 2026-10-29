@@ -183,7 +183,9 @@ jobs:
             actions: read
         steps:
             - name: Setup repository and dependencies
-              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
+              # `$/` loads the action from this repo at the commit this workflow was called at, so a caller
+              # pinned to a SHA or a branch gets that commit's action and CLI, not whatever the major tag is on.
+              uses: $/.github/actions/checkout-restore-dependencies
               with:
                   npm-token: ${{ secrets.NPM_TOKEN }}
 

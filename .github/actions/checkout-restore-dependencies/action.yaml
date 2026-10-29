@@ -8,6 +8,11 @@ inputs:
             generated .npmrc references), and only on the dependency install steps, so it
             never reaches the build or test steps. Use a read-only token.
         required: false
+    config-secrets:
+        description: >-
+            The CONFIG_SECRETS workflow secret, if the caller passed one. Every value inside it is
+            registered as a mask, see .github/scripts/mask-config-secrets.sh.
+        required: false
 
 outputs:
     scripts-path:
@@ -24,6 +29,14 @@ outputs:
 runs:
     using: 'composite'
     steps:
+        # Runs before anything can use a packed secret, see the script for why.
+        - name: Mask config secrets
+          if: inputs.config-secrets != ''
+          shell: bash
+          env:
+              CONFIG_SECRETS: ${{ inputs.config-secrets }}
+          run: bash "${{ github.action_path }}/../../scripts/mask-config-secrets.sh"
+
         - name: Checkout Repository
           uses: actions/checkout@v5
           with:

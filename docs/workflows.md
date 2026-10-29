@@ -61,10 +61,11 @@ Validates a pull request. It runs two jobs in parallel.
 In a repo whose Actors aren't written in JavaScript or TypeScript, define the `build-check`, `lint` and `test`
 scripts, e.g. to run your language's own checks: without them, the TypeScript, Lint and Test checks fail.
 
-| Input                 | Type    | Default | Description                                                                  |
-| --------------------- | ------- | ------- | ---------------------------------------------------------------------------- |
-| `skip-platform-tests` | boolean | `false` | Skip the `platformTest` job and run the static checks only                   |
-| `test-files-glob`     | string  | `''`    | Which tests to run, relative to `test/platform`. Empty runs everything in it |
+| Input                      | Type    | Default | Description                                                                                                              |
+| -------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `skip-platform-tests`      | boolean | `false` | Skip the `platformTest` job and run the static checks only                                                               |
+| `test-files-glob`          | string  | `''`    | Which tests to run, relative to `test/platform`. Empty runs everything in it                                             |
+| `require-env-vars-in-sync` | boolean | `true`  | Fail the build unless the env var names of `0.99` match the default version's, see [Env var check](cli.md#env-var-check) |
 
 Secrets: `TESTER_APIFY_TOKEN`, the Actor tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`. With
 `skip-platform-tests`, only `NPM_TOKEN`.

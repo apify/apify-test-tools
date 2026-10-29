@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import {
     ApifyBuilder,
+    assertEnvVarsMatchDefaultVersion,
     assertRepoUrlMatchesDefaultVersion,
     buildActors,
     deleteOldBuilds,
@@ -153,6 +154,54 @@ describe('buildActors', () => {
     });
 });
 
+describe('assertEnvVarsMatchDefaultVersion', () => {
+    const makeVersion = (versionNumber: string, names: string[]): ApifyClientTypes.ActorVersion => ({
+        versionNumber,
+        sourceType: ActorSourceType.GitRepo,
+        gitRepoUrl: REPO_URL,
+        envVars: names.map((name) => ({ name, isSecret: true })),
+    });
+    const makeActorInfoWithEnvVars = (defaultNames: string[], testNames?: string[]) =>
+        makeActorInfo({
+            versions: [makeVersion('0.1', defaultNames), ...(testNames ? [makeVersion('0.99', testNames)] : [])],
+        });
+    const check = (actorInfo: ApifyClientTypes.Actor, versionNumber = '0.99') =>
+        assertEnvVarsMatchDefaultVersion(
+            ACTOR,
+            actorInfo,
+            resolveDefaultVersion(ACTOR, actorInfo).defaultVersion,
+            versionNumber,
+        );
+
+    it('should pass when the names match in any order, whatever the values', () => {
+        expect(() => check(makeActorInfoWithEnvVars(['A', 'B'], ['B', 'A']))).not.toThrow();
+    });
+
+    it('should pass for the default version itself', () => {
+        expect(() => check(makeActorInfoWithEnvVars(['A']), '0.1')).not.toThrow();
+    });
+
+    it('should pass when neither version has env vars', () => {
+        expect(() => check(makeActorInfo())).not.toThrow();
+    });
+
+    it('should list the missing and extra names', () => {
+        expect(() => check(makeActorInfoWithEnvVars(['A', 'B'], ['B', 'C']))).toThrow(
+            'Env vars of version 0.99 are out of sync with default version 0.1 (missing A; extra C)',
+        );
+    });
+
+    it('should ask to create the version when it does not exist yet', () => {
+        expect(() => check(makeActorInfoWithEnvVars(['A']))).toThrow("Version 0.99 doesn't exist yet");
+    });
+
+    it('should throw when the default version no longer exists', () => {
+        expect(() => assertEnvVarsMatchDefaultVersion(ACTOR, makeActorInfo(), undefined, '0.99')).toThrow(
+            'no longer exists',
+        );
+    });
+});
+
 describe('dry run', () => {
     const TOKEN_ENV_VAR = 'APIFY_TOKEN_OWNER';
     const originalCwd = process.cwd();
@@ -187,11 +236,14 @@ describe('dry run', () => {
     const createVersion = vi.fn();
     const buildClient = vi.fn(() => ({ delete: deleteBuild }));
 
+    let actorInfo: ApifyClientTypes.Actor;
+
     beforeEach(() => {
         vi.stubEnv(TOKEN_ENV_VAR, 'token');
+        actorInfo = makeActorInfo();
         const fakeClient = {
             actor: () => ({
-                get: async () => makeActorInfo(),
+                get: async () => actorInfo,
                 // Old enough to be deleted, and not the default build 0.1.5
                 builds: () => ({
                     list: async () => ({ items: [{ id: 'old-build', buildNumber: '0.0.1', startedAt: new Date(0) }] }),
@@ -212,7 +264,7 @@ describe('dry run', () => {
         vi.clearAllMocks();
     });
 
-    const runDryBuilds = async () =>
+    const runDryBuilds = async (requireEnvVarsInSync = false) =>
         runBuilds({
             actorConfigs: [actorConfig],
             repoUrl: REPO_URL,
@@ -220,6 +272,7 @@ describe('dry run', () => {
             branch: 'feature',
             dryRun: true,
             versionNumber: '0.99',
+            requireEnvVarsInSync,
         });
 
     it('should return a build plan without creating versions or builds', async () => {
@@ -253,6 +306,29 @@ describe('dry run', () => {
                 versionNumber: '0.99',
             }),
         ).rejects.toThrow('Repository mismatch');
+    });
+
+    describe('with the default version holding an env var the test version lacks', () => {
+        beforeEach(() => {
+            actorInfo = makeActorInfo({
+                versions: [
+                    {
+                        versionNumber: '0.1',
+                        sourceType: ActorSourceType.GitRepo,
+                        gitRepoUrl: REPO_URL,
+                        envVars: [{ name: 'API_KEY', isSecret: true }],
+                    },
+                ],
+            });
+        });
+
+        it('should still check the env vars when asked to', async () => {
+            await expect(runDryBuilds(true)).rejects.toThrow('missing API_KEY');
+        });
+
+        it('should not check the env vars unless asked to', async () => {
+            await expect(runDryBuilds()).resolves.toMatchObject({ dryRun: true });
+        });
     });
 
     it('should not delete old builds', async () => {

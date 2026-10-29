@@ -170,11 +170,12 @@ builds nothing and prints `[]`. Empty or invalid input is an error, so a failed 
 into a successful run that built nothing. In GitHub Actions, give such a step `shell: bash` so the pipe also fails on
 its own (the default shell has no `pipefail`).
 
-| Flag               | Default             | Meaning                                                                                                                |
-| ------------------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `--version-number` | required            | Version to build, like `0.99`, or `default` for each Actor's default version (the one its default build tag points to) |
-| `--repo-url`       | the `origin` remote | Repository to build from, see [Repository check](#repository-check)                                                    |
-| `--dry-run`        | `false`             | See [Dry runs](#dry-runs---dry-run)                                                                                    |
+| Flag                         | Default             | Meaning                                                                                                                |
+| ---------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--version-number`           | required            | Version to build, like `0.99`, or `default` for each Actor's default version (the one its default build tag points to) |
+| `--repo-url`                 | the `origin` remote | Repository to build from, see [Repository check](#repository-check)                                                    |
+| `--require-env-vars-in-sync` | `false`             | Fail unless the built version's env var names match the default version's, see [Env var check](#env-var-check)         |
+| `--dry-run`                  | `false`             | See [Dry runs](#dry-runs---dry-run)                                                                                    |
 
 The output is the build array the vitest library reads from `ACTOR_BUILDS`:
 
@@ -196,6 +197,19 @@ or if the default version isn't built from a Git repository. The URL form doesn'
 
 To build from a different repository on purpose, e.g. when moving an Actor, pass `--repo-url`. That skips the check.
 
+### Env var check
+
+Tests should run the Actor with the same env vars users run it with. Pass `--require-env-vars-in-sync` to `build` or
+`build-from-local` to compare the env vars of the version they build (e.g. `0.99`, or `0.98` for `build-from-local`)
+with those of the default version, and fail if a name is missing or extra. Only names are compared, since the API
+doesn't return secret values. A version that doesn't exist yet counts as having no env vars, so if the default
+version has any, create the test version on the platform with the same env vars first. A dry run checks the env vars
+too.
+
+The CLI leaves it off by default, so a one-off build, e.g. of a debug branch, isn't held up by it.
+[`public_pr-build-test.yaml`](workflows.md#public_pr-build-testyaml) turns it on by default; set its
+`require-env-vars-in-sync` input to `false` to turn it off.
+
 ## Build from local source (`build-from-local`)
 
 Builds Actors directly from your local files, with no push needed: the sources are zipped into the Actor's
@@ -206,11 +220,12 @@ Builds Actors directly from your local files, with no push needed: the sources a
 APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build-from-local --actors john.doe/my-actor
 ```
 
-| Flag        | Default | Meaning                                                                         |
-| ----------- | ------- | ------------------------------------------------------------------------------- |
-| `--actors`  | all     | Only build these Actors. Point vitest at their tests only, for quicker feedback |
-| `--ignore`  | none    | Never build these Actors                                                        |
-| `--dry-run` | `false` | Check the token, the Actor and the zipped sources without uploading or building |
+| Flag                         | Default | Meaning                                                                                                  |
+| ---------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
+| `--actors`                   | all     | Only build these Actors. Point vitest at their tests only, for quicker feedback                          |
+| `--ignore`                   | none    | Never build these Actors                                                                                 |
+| `--require-env-vars-in-sync` | `false` | Fail unless the env var names of `0.98` match the default version's, see [Env var check](#env-var-check) |
+| `--dry-run`                  | `false` | Check the token, the Actor and the zipped sources without uploading or building                          |
 
 ## Releasing Actors
 

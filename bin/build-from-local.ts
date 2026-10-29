@@ -6,7 +6,13 @@ import AdmZip from 'adm-zip';
 import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType } from 'apify-client';
 
-import { ApifyBuilder, LOCAL_SOURCE_VERSION_NUMBER, runAndSummarizeBuilds } from './build.js';
+import {
+    ApifyBuilder,
+    assertEnvVarsMatchDefaultVersion,
+    LOCAL_SOURCE_VERSION_NUMBER,
+    resolveDefaultVersion,
+    runAndSummarizeBuilds,
+} from './build.js';
 import { loadDockerIgnore } from './dockerignore.js';
 import { logger } from './logger.js';
 import { isPathWithinScope } from './path-utils.js';
@@ -190,15 +196,27 @@ type LocalBuildPlan = {
 export const runBuildsFromLocal = async ({
     actorConfigs,
     dryRun,
+    requireEnvVarsInSync = false,
 }: {
     actorConfigs: ActorConfig[];
     dryRun: boolean;
+    // See assertEnvVarsMatchDefaultVersion
+    requireEnvVarsInSync?: boolean;
 }): Promise<BuildData[] | DryRunPlan<LocalBuildPlan>> => {
     // Read-only preparation shared with the real build, so a dry run fails on a missing token, an unknown
     // Actor or unreadable sources just like the build would
     const preparedBuilds = await Promise.all(
         actorConfigs.map(async (actorConfig) => {
             const actorInfo = await ApifyBuilder.fromActorConfig(actorConfig).getActorInfo();
+            if (requireEnvVarsInSync) {
+                const { defaultVersion } = resolveDefaultVersion(actorConfig.actorFullName, actorInfo);
+                assertEnvVarsMatchDefaultVersion(
+                    actorConfig.actorFullName,
+                    actorInfo,
+                    defaultVersion,
+                    LOCAL_SOURCE_VERSION_NUMBER,
+                );
+            }
             // Zipped and uploaded like `apify push` does, since inline SOURCE_FILES are capped at ~9 MB.
             const zip = new AdmZip();
             const sourceFiles = await collectSourceFiles(actorConfig);

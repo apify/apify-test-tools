@@ -4,13 +4,18 @@ import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { _privates, parseConfigFile } from '../../../../../bin/utils/config/parser.js';
-import { CONFIG_FILE_STRATEGY } from '../../../../../bin/utils/config/structures/base.js';
+import { _privates, parseConfigFile, parseResolvedConfigFile } from '../../../../../bin/utils/config/parser.js';
+import { CONFIG_FILE_STRATEGY, type ResolvedActorConfig } from '../../../../../bin/utils/config/structures/base.js';
 import { GROUPED_PARSER } from '../../../../../bin/utils/config/structures/grouped.js';
 import { LEGACY_PARSER } from '../../../../../bin/utils/config/structures/legacy.js';
 import { ExistingDir, RelativeDir } from '../../../../../bin/utils/path/repo-relative.js';
 
-const { selectStrategy, verifyConfiguration } = _privates;
+const { selectStrategy, initializePaths, verifyConfiguration: verifyInitializedConfiguration } = _privates;
+const verifyConfiguration = (body: ResolvedActorConfig[]) => {
+    const initialized = initializePaths(body);
+    verifyInitializedConfiguration(initialized, body);
+    return initialized;
+};
 
 let repoDir: string;
 const originalCwd = process.cwd();
@@ -150,6 +155,19 @@ describe('verifyConfiguration', () => {
 });
 
 describe('parseConfigFile', () => {
+    it('shares strategy resolution with parsing that does not initialize paths', () => {
+        const body = { actors: [actor({ folder: 'missing-actor-dir', overrideActorContext: ['../outside'] })] };
+        expect(parseResolvedConfigFile(body)).toEqual([
+            {
+                actorFullName: 'myteam/shopify',
+                folder: 'missing-actor-dir',
+                tokenEnvVar: 'APIFY_TOKEN',
+                overrideActorContext: ['../outside'],
+            },
+        ]);
+        expect(() => parseConfigFile(body)).toThrow();
+    });
+
     it('validates and normalizes paths after resolving the config', () => {
         const [parsed] = parseConfigFile({ actors: [actor({ folder: './bin/', overrideActorContext: ['test/'] })] });
         expect(parsed.folder).toBeInstanceOf(ExistingDir);

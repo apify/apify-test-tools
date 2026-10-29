@@ -14,8 +14,7 @@
 
 import { spawnSync } from 'node:child_process';
 
-import { CONFIG_FILE_NAME, readConfigFileContents } from '../bin/utils/config/load-config.js';
-import { parseConfigFile } from '../bin/utils/config/parser.js';
+import { CONFIG_FILE_NAME, readBaseConfigFile } from '../bin/utils/config/load-config.js';
 
 function fail(message: string): never {
     console.error(message);
@@ -44,9 +43,9 @@ if (!isRecord(secretsMap)) {
     fail('ALL_SECRETS must be a JSON object of secret names and values.');
 }
 
-let actorConfigs: ReturnType<typeof parseConfigFile>;
+let actorConfigs: Awaited<ReturnType<typeof readBaseConfigFile>>;
 try {
-    actorConfigs = parseConfigFile(await readConfigFileContents());
+    actorConfigs = await readBaseConfigFile();
 } catch (error) {
     fail(`Cannot read "${CONFIG_FILE_NAME}": ${error instanceof Error ? error.message : String(error)}`);
 }

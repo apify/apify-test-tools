@@ -47,8 +47,8 @@ const ValidatedConfigSchema = z.array(
     }),
 );
 
-/** Normalize and validate paths, then check collisions using their final spelling. */
-function verifyConfiguration(body: ResolvedActorConfig[]): ValidatedActorConfig[] {
+/** Normalize and initialize paths, including checking that actor folders exist. */
+function initializePaths(body: ResolvedActorConfig[]): ValidatedActorConfig[] {
     const normalized = body.map((entry) => ({
         ...entry,
         folder: normalizeFolder(entry.folder),
@@ -56,14 +56,18 @@ function verifyConfiguration(body: ResolvedActorConfig[]): ValidatedActorConfig[
     }));
     const parsed = ValidatedConfigSchema.safeParse(normalized);
     if (!parsed.success) throw new Error(z.prettifyError(parsed.error));
+    return parsed.data;
+}
 
+/** Check rules that involve more than one Actor, using initialized paths for comparisons. */
+function verifyConfiguration(body: ValidatedActorConfig[], resolved: ResolvedActorConfig[]): void {
     const seenFolders = new Set<string>();
     const seenActorFullNames = new Set<string>();
     const errors: string[] = [];
-    for (const [index, entry] of parsed.data.entries()) {
+    for (const [index, entry] of body.entries()) {
         // TODO: drop folder uniqueness (this requires several changes on other places)
         if (seenFolders.has(entry.folder.path)) {
-            errors.push(`Duplicate folder "${body[index].folder}". Each actor must have a unique folder.`);
+            errors.push(`Duplicate folder "${resolved[index].folder}". Each actor must have a unique folder.`);
         } else {
             seenFolders.add(entry.folder.path);
         }
@@ -76,19 +80,24 @@ function verifyConfiguration(body: ResolvedActorConfig[]): ValidatedActorConfig[
     }
 
     if (errors.length > 0) throw new Error(errors.join('\n'));
-    return parsed.data;
 }
 
 // eslint-disable-next-line no-underscore-dangle
 export const _privates = {
     selectStrategy,
+    initializePaths,
     verifyConfiguration,
 };
 
-export function parseConfigFile(body: Record<string, unknown>): ValidatedActorConfig[] {
+export function parseResolvedConfigFile(body: Record<string, unknown>): ResolvedActorConfig[] {
     const { mode, ...rest } = body;
     const strategy = selectStrategy({ mode });
+    return strategy.parse(rest);
+}
 
-    const resolved = strategy.parse(rest);
-    return verifyConfiguration(resolved);
+export function parseConfigFile(body: Record<string, unknown>): ValidatedActorConfig[] {
+    const resolved = parseResolvedConfigFile(body);
+    const initialized = initializePaths(resolved);
+    verifyConfiguration(initialized, resolved);
+    return initialized;
 }

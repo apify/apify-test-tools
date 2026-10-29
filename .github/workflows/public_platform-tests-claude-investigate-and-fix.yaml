@@ -164,6 +164,8 @@ jobs:
                   prompt: |
                       The failing E2E platform test ran in workflow run 40182380043 of this repo.
 
+                      This is a test of this workflow: treat the failure as not covered by any existing issue, and create a new one.
+
                       ${{ inputs.investigate_prompt }}
 
                       ${{ inputs.priority_prompt }}

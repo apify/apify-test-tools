@@ -1,15 +1,12 @@
-import { execFileSync, spawnSync } from 'node:child_process';
-import { chmod, mkdtemp, rm } from 'node:fs/promises';
-import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
-const compilerPath = fileURLToPath(new URL('../../../node_modules/typescript/bin/tsc', import.meta.url));
+import { compileCli } from './compiled-cli.js';
+
 let cliPath: string;
-let buildDir: string | undefined;
+let cleanup: (() => Promise<void>) | undefined;
 
 const run = (command: string[], input: string, env: NodeJS.ProcessEnv = process.env) =>
     spawnSync(cliPath, command, { encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'], env });
@@ -17,14 +14,11 @@ const runBuild = (input: string, args: string[] = ['--version-number', '0.99']) 
 
 describe('build and notify-release CLI', () => {
     beforeAll(async () => {
-        buildDir = await mkdtemp(path.join(projectRoot, '.cli-test-'));
-        execFileSync(process.execPath, [compilerPath, '--outDir', buildDir], { cwd: projectRoot });
-        cliPath = path.join(buildDir, 'bin/main.js');
-        await chmod(cliPath, 0o755);
+        ({ cliPath, cleanup } = await compileCli());
     });
 
     afterAll(async () => {
-        if (buildDir) await rm(buildDir, { recursive: true, force: true });
+        await cleanup?.();
     });
 
     it('builds nothing for an empty list and prints an empty build list', () => {

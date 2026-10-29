@@ -104,7 +104,6 @@ The reusable workflows load the composite action with `uses: $/.github/actions/c
 [self-repository syntax](https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/):
 it resolves to this repo at the commit the workflow was called at. A hardcoded tag would hand a caller pinned to an
 older SHA, or to a branch, the action and CLI from the tag instead of from the commit they asked for.
-`check-major-tag-refs.mjs` fails the build if a `uses:` in this repo names it directly.
 
 `public_review` is the odd one out: it fetches `.github/review-prompt.md` over HTTP at run time, because a
 reusable workflow runs with the caller's repo checked out and never gets its own. With `prompt-ref` left empty it
@@ -143,7 +142,7 @@ freezes where it is and keeps working, CLI included, since the bundle is part of
 The tag tracks the **workflows'** contract, not the npm package version. They move independently on purpose, so
 `@workflows-v0` is expected to stay `@workflows-v0` after the package reaches 1.0 — bump it when a workflow breaks
 its callers, not when the package does. The usage examples in the workflows, README and docs repeat the tag
-literally; `check-major-tag-refs.mjs` fails the build if `MAJOR_TAG` and those refs disagree.
+literally, so update them by hand when you bump it.
 
 ## Testing workflow changes
 

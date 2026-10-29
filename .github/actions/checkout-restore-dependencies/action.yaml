@@ -49,7 +49,24 @@ runs:
           shell: bash
           run: echo "path=$(cd "${{ github.action_path }}/../../scripts" && pwd)" >> "$GITHUB_OUTPUT"
 
+        # A repo is on pnpm when it has a pnpm-lock.yaml and no package-lock.json.
+        - name: Detect package manager
+          id: package-manager
+          shell: bash
+          run: |
+              if [ -f pnpm-lock.yaml ] && [ ! -f package-lock.json ]; then
+                  echo "name=pnpm" >> "$GITHUB_OUTPUT"
+              else
+                  echo "name=npm" >> "$GITHUB_OUTPUT"
+              fi
+
+        # Takes the pnpm version from the `packageManager` field of the repo's package.json.
+        - name: Install pnpm
+          if: steps.package-manager.outputs.name == 'pnpm'
+          uses: pnpm/action-setup@v6
+
         - name: Cache dependencies npm
+          if: steps.package-manager.outputs.name == 'npm'
           id: check-dependencies-cache
           uses: actions/cache@v5
           with:
@@ -57,16 +74,39 @@ runs:
               key: modules-npm-${{ hashFiles('package-lock.json') }}
 
         - name: install npm dependencies
-          if: steps.check-dependencies-cache.outputs.cache-hit != 'true'
+          if: steps.package-manager.outputs.name == 'npm' && steps.check-dependencies-cache.outputs.cache-hit != 'true'
           shell: bash
           env:
               NPM_TOKEN: ${{ inputs.npm-token }}
               NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
           run: npm ci
 
+        # Caching node_modules would miss each workspace package's own node_modules, so we cache the
+        # store and always install; with a warm store that only links files.
+        - name: Resolve pnpm store path
+          if: steps.package-manager.outputs.name == 'pnpm'
+          id: pnpm-store
+          shell: bash
+          run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+        - name: Cache pnpm store
+          if: steps.package-manager.outputs.name == 'pnpm'
+          uses: actions/cache@v5
+          with:
+              path: ${{ steps.pnpm-store.outputs.path }}
+              key: pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+
+        - name: install pnpm dependencies
+          if: steps.package-manager.outputs.name == 'pnpm'
+          shell: bash
+          env:
+              NPM_TOKEN: ${{ inputs.npm-token }}
+              NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
+          run: pnpm install --frozen-lockfile
+
         # The CLI the workflows call ships with this action as one bundled file (npm run bundle), so
-        # nothing is installed for it. The repo's node_modules stays exactly what package-lock.json
-        # says, and its tests import the lib from the version they locked.
+        # nothing is installed for it. The repo's node_modules stays exactly what its lockfile says,
+        # and its tests import the lib from the version they locked.
         # Steps call `apify-test-tools` without npx: npx would pick the repo's own copy in node_modules/.bin first.
         - name: Put apify-test-tools CLI on PATH
           shell: bash

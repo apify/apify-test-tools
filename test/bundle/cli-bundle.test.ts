@@ -34,10 +34,17 @@ const writeRepoFile = async (file: string, content: string) => {
     await writeFile(path.join(repoDir, file), content);
 };
 
-const runCli = (...args: string[]) => {
-    const result = spawnSync(process.execPath, [bundlePath, ...args], { cwd: repoDir, env: cliEnv, encoding: 'utf8' });
+const runCliWithInput = (input: string, ...args: string[]) => {
+    const result = spawnSync(process.execPath, [bundlePath, ...args], {
+        cwd: repoDir,
+        env: cliEnv,
+        encoding: 'utf8',
+        input,
+    });
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 };
+
+const runCli = (...args: string[]) => runCliWithInput('', ...args);
 
 const gitRange = ['--source-branch', 'feature', '--target-branch', 'main'];
 
@@ -91,7 +98,7 @@ describe('CLI bundle', () => {
             'get-affected-actors',
             'report-tests',
             'build',
-            'release',
+            'notify-release',
             'build-from-local',
             'delete-old-builds',
         ]) {
@@ -130,33 +137,69 @@ describe('CLI bundle', () => {
     });
 
     it('get-affected-actors returns only the Actor whose files changed', () => {
-        const { status, stdout, stderr } = runCli('get-affected-actors', ...gitRange);
+        // `feature` is checked out, and the range always ends at HEAD
+        const { status, stdout, stderr } = runCli('get-affected-actors', '--base', 'main');
         expect(status, stderr).toBe(0);
-        expect(JSON.parse(stdout)).toMatchObject([{ actorFullName: 'tester/foo', folder: 'actors/foo' }]);
+        expect(JSON.parse(stdout)).toMatchObject({
+            version: 1,
+            head: headSha,
+            functionallyChangedActors: [{ actorFullName: 'tester/foo' }],
+            // The root README isn't in tester/bar's folder, so it doesn't count for it
+            cosmeticallyChangedActors: [],
+        });
     });
 
     it('build --dry-run with nothing to build needs no token', () => {
-        const { status, stdout, stderr } = runCli('build', ...gitRange, '--actors', 'tester/bar', '--dry-run');
+        const { status, stdout, stderr } = runCliWithInput(
+            JSON.stringify({ actors: [] }),
+            'build',
+            '--version-number',
+            '0.99',
+            '--dry-run',
+        );
         expect(status, stderr).toBe(0);
         expect(JSON.parse(stdout)).toEqual({ dryRun: true, builds: [] });
     });
 
     it('build --dry-run fails cleanly when the Actor token is missing', () => {
-        const { status, stderr } = runCli('build', ...gitRange, '--dry-run');
+        const { status, stderr } = runCliWithInput(
+            JSON.stringify({ actors: [{ actorFullName: 'tester/foo' }] }),
+            'build',
+            '--version-number',
+            '0.99',
+            '--dry-run',
+        );
         expect(status).toBe(1);
         expect(stderr).toContain('Env var FOO_TOKEN is not set (needed for actor "tester/foo")');
     });
 
-    it('release --dry-run stops when HEAD is the base commit', () => {
-        const { status, stderr } = runCli('release', '--base-commit', headSha, '--dry-run');
-        expect(status, stderr).toBe(0);
-        expect(stderr).toContain(`HEAD is the base commit ${headSha}, there is nothing new to release`);
+    it('build fails on empty input instead of building nothing', () => {
+        const { status, stderr } = runCli('build', '--version-number', '0.99', '--dry-run');
+        expect(status).toBe(1);
+        expect(stderr).toContain('got nothing');
     });
 
-    it('release --dry-run with nothing to build skips Slack without a token', () => {
-        const { status, stderr } = runCli('release', '--base-commit', baseSha, '--actors', 'tester/bar', '--dry-run');
+    it('get-affected-actors --since HEAD reports nothing', () => {
+        const { status, stdout, stderr } = runCli('get-affected-actors', '--since', headSha);
         expect(status, stderr).toBe(0);
-        expect(stderr).toContain('{"dryRun":true,"builds":[]}');
+        expect(JSON.parse(stdout)).toMatchObject({
+            commits: [],
+            functionallyChangedActors: [],
+            cosmeticallyChangedActors: [],
+        });
+    });
+
+    it('notify-release announces nothing, and needs no token, when there are no new commits', () => {
+        const affected = runCli('get-affected-actors', '--since', headSha).stdout;
+        const { status, stderr } = runCliWithInput(affected, 'notify-release', '--release-slack-channel', '#releases');
+        expect(status, stderr).toBe(0);
+        expect(stderr).toContain('No new commits, so there is no release to announce');
+    });
+
+    it('notify-release skips Slack without a channel', () => {
+        const affected = runCli('get-affected-actors', '--since', baseSha).stdout;
+        const { status, stderr } = runCliWithInput(affected, 'notify-release', '--dry-run');
+        expect(status, stderr).toBe(0);
         expect(stderr).toContain('Skipping slack notification');
     });
 

@@ -53,6 +53,26 @@ export const describe = (name: string, fn?: SuiteFactory<object>, options: Actor
 };
 
 /**
+ * Registers a vitest test for an Actor, which only runs when that Actor was built (or for the scheduled runs).
+ * `body` gets the test context with the soft `expect` and the full test name.
+ */
+const defineActorTest = (
+    actorId: string,
+    testName: string,
+    testOptions: ActorTestOptions | undefined,
+    body: (context: TestContext, name: string) => Promise<void>,
+) => {
+    const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
+    const name = `${actorId}: ${testName}`;
+    // `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
+    // tests against - without it, every test would be filtered out as an actor we didn't build.
+    const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorId);
+    vitestTest.runIf(shouldRun)(name, options, async (context) => {
+        await body({ ...context, expect: extendExpect(context.expect) }, name);
+    });
+};
+
+/**
  * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
  */
 export const testActor = <T>(
@@ -61,19 +81,8 @@ export const testActor = <T>(
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
-
-    const name = `${actorId}: ${testName}`;
-    // `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
-    // tests against - without it, every test would be filtered out as an actor we didn't build.
-    const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorId);
-    vitestTest.runIf(shouldRun)(name, options, async <TYPE extends TestContext>(context: TYPE) => {
-        const { expect, ...rest } = context;
-        await fn({
-            expect: extendExpect(expect),
-            run: createStartRunFn(actorId, context),
-            ...rest,
-        });
+    defineActorTest(actorId, testName, testOptions, async (context) => {
+        await fn({ ...context, run: createStartRunFn(actorId, context) });
     });
 };
 
@@ -82,8 +91,7 @@ export const testActor = <T>(
  * `callStandby` function, which calls the task's `standbyUrl`.
  *
  * Using task is just current shortcoming of standby feature but ideally we would use Actor directly
- */
-/**
+ *
  * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -93,24 +101,12 @@ export const testStandbyActor = <I = any, O = any>(
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
-
-    const name = `${actorId}: ${testName}`;
-    // `RUN_ALL_PLATFORM_TESTS` is needed for the scheduled tests, which have no `ACTOR_BUILDS` to match the
-    // tests against - without it, every test would be filtered out as an actor we didn't build.
-    const shouldRun = !!RUN_ALL_PLATFORM_TESTS || config.has(actorId);
-
-    vitestTest.runIf(shouldRun)(name, options, async <T extends TestContext>(context: T) => {
+    defineActorTest(actorId, testName, testOptions, async (context, name) => {
         const standbyTask = await createStandbyTask(actorId, config.get(actorId)?.buildNumber);
-        const { expect, ...rest } = context;
 
         // NOTE: we wrap `fn` in try/finally so cleanup (deleting the task) always runs afterwards
         try {
-            await fn({
-                expect: extendExpect(expect),
-                callStandby: createStartStandbyFn(standbyTask, context, name),
-                ...rest,
-            });
+            await fn({ ...context, callStandby: createStartStandbyFn(standbyTask, context, name) });
         } finally {
             const { taskId } = standbyTask;
             // we want to delete the task at the end of the test

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
 
 import { getChangedActors } from '../../bin/diff-changes.js';
-import type { ActorConfig, Commit } from '../../bin/types.js';
+import type { ActorConfig } from '../../bin/types.js';
 import { ExistingDir, ExistingFile, RelativeDir, RelativeFile } from '../../bin/utils/path/repo-relative.js';
 
 const originalCwd = process.cwd();
@@ -41,6 +41,16 @@ const actorConfig = (
     };
 };
 
+// What a PR (functional changes only) or a release (isLatest, all changes) builds, in config order
+const changedActorsFor = async ({
+    isLatest = false,
+    ...options
+}: Parameters<typeof getChangedActors>[0] & { isLatest?: boolean }): Promise<ActorConfig[]> => {
+    const { functional, cosmetic } = await getChangedActors(options);
+    const changed = isLatest ? [...functional, ...cosmetic] : functional;
+    return options.actorConfigs.filter((config) => changed.includes(config));
+};
+
 describe('Should build and test parser', () => {
     // From https://github.com/apify-store/testing-repo-for-github-actions
     const ACTOR_CONFIGS: ActorConfig[] = [
@@ -62,19 +72,16 @@ describe('Should build and test parser', () => {
         ),
     ];
 
-    const commits: Commit[] = [
-        { sha: 'Commit1', author: '', date: '', message: '' },
-        { sha: 'Commit3', author: '', date: '', message: '' },
-    ];
+    const range = { fromRef: 'Commit0', toRef: 'Commit3' };
 
     test('Ignores dev-only readme', async () => {
         const FILES = ['README.md', 'code/README.md', 'shared/README.md'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual([]);
@@ -83,11 +90,11 @@ describe('Should build and test parser', () => {
     test('Ignores other ignored files and folders', async () => {
         const FILES = ['.vscode/settings.json', '.gitignore', '.husky/pre-commit', '.eslintrc', '.editorconfig'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual([]);
@@ -96,11 +103,11 @@ describe('Should build and test parser', () => {
     test('.actor/ changes trigger builds for broad-context actors', async () => {
         const FILES = ['.actor/actor.json'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -109,19 +116,19 @@ describe('Should build and test parser', () => {
     test('Configured changelog is cosmetic for every actor, only on latest', async () => {
         const FILES = ['CHANGELOG.md'];
 
-        const actorsChangedNotLatest = await getChangedActors({
+        const actorsChangedNotLatest = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
         expect(actorsChangedNotLatest).toEqual([]);
 
-        const actorsChangedLatest = await getChangedActors({
+        const actorsChangedLatest = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
         expect(actorsChangedLatest).toEqual(ACTOR_CONFIGS);
     });
@@ -129,11 +136,11 @@ describe('Should build and test parser', () => {
     test('A changelog nested inside one actor own folder is excluded for sibling actors', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/CHANGELOG.md'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -142,11 +149,11 @@ describe('Should build and test parser', () => {
     test('Code updated, tests broad-context actors', async () => {
         const FILES = ['code/src/main.ts', 'package.json'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -158,11 +165,11 @@ describe('Should build and test parser', () => {
             'standalone-actors/lukaskrivka_test-standalone/Dockerfile',
         ];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0], ACTOR_CONFIGS[2]]);
@@ -171,11 +178,11 @@ describe('Should build and test parser', () => {
     test('src/main.ts updated', async () => {
         const FILES = ['src/main.ts'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -188,11 +195,11 @@ describe('Should build and test parser', () => {
             'standalone-actors/lukaskrivka_test-standalone/Dockerfile',
         ];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS);
@@ -204,11 +211,11 @@ describe('Should build and test parser', () => {
             'standalone-actors/lukaskrivka_test-standalone/README.md',
         ];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual([]);
@@ -217,11 +224,11 @@ describe('Should build and test parser', () => {
     test('Actor JSON changes in PR context trigger tests', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -230,11 +237,11 @@ describe('Should build and test parser', () => {
     test('Actor JSON changes in latest context trigger builds', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: true,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -243,11 +250,11 @@ describe('Should build and test parser', () => {
     test('JSON file with functional changes triggers tests', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/.actor/actor.json'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[0]]);
@@ -259,11 +266,11 @@ describe('Should build and test parser', () => {
             'actors/lukaskrivka_testing-github-integration-2/.actor/input_schema.json',
         ];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
@@ -272,11 +279,11 @@ describe('Should build and test parser', () => {
     test('Narrow-context actor JSON change in PR context triggers tests', async () => {
         const FILES = ['standalone-actors/lukaskrivka_test-standalone/.actor/actor.json'];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual([ACTOR_CONFIGS[2]]);
@@ -331,11 +338,11 @@ describe('Should build and test parser', () => {
             ),
         ];
 
-        const actorsChanged = await getChangedActors({
+        const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS_GOOGLE_MAPS,
             isLatest: false,
             filepathsChanged: FILES,
-            commits,
+            range,
         });
 
         expect(actorsChanged).toEqual(ACTOR_CONFIGS_GOOGLE_MAPS.slice(0, 8));

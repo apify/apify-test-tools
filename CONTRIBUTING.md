@@ -94,9 +94,12 @@ npm release relate — the short version:
 - the CLI runs from `.github/cli/apify-test-tools.mjs`, a bundle the pre-commit hook rebuilds with
   `npm run bundle`. If you commit with `--no-verify`, run it yourself: the `CLI bundle` check fails
   on a stale bundle, and a stale bundle would hold the tag.
-- `npm test` covers the bundle without network (`test/bundle/`). `npm run test:e2e` runs it against two
+- `npm test` covers the bundle without network (`test/bundle/`). `npm run test:e2e` runs it against
   dummy Actors in an isolated sandbox account (`test/e2e/`) and skips itself unless
   `E2E_TEST_APIFY_TOKEN_DBYPODOIHUZABNQTR` is set. CI passes that secret only to the `E2E tests` job.
+  The git `build` and release pipeline tests clone
+  [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions) and
+  use its `e2e/base` and `e2e/feature` branches as fixtures, so never rebase or delete those.
 
 `npm run lint` and `actionlint` (via the `Code checks` workflow) both gate master, so run them before
 pushing workflow changes.

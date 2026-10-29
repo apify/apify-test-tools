@@ -12,6 +12,27 @@ on:
                 type: string
                 default: ''
                 required: false
+            # Fail the build unless the env var names of version 0.99 match the default version's
+            require-env-vars-in-sync:
+                type: boolean
+                default: true
+                required: false
+        # Every secret is optional. The ones this workflow reads are declared by name. The secrets that
+        # apify-test-tools.config.json names (e.g. each Actor's `tokenEnvVar`) differ per repo, so they
+        # come packed in CONFIG_SECRETS. See the Secrets section of docs/workflows.md.
+        secrets:
+            NPM_TOKEN:
+                required: false
+                description: Read-only token for installing private npm packages.
+            TESTER_APIFY_TOKEN:
+                required: false
+                description: Apify token the platform tests run Actors with.
+            CONFIG_SECRETS:
+                required: false
+                description: >-
+                    JSON object of the secrets apify-test-tools.config.json names, secret name -> value.
+                    Today that is each Actor's `tokenEnvVar`. Passing `toJSON(secrets)` works too, only
+                    the names the config declares are used.
 
 concurrency:
     group: ${{ github.workflow }}-${{ github.ref }}
@@ -30,6 +51,19 @@ jobs:
               with:
                   # Some repos use private npm packages, they need to pass NPM_TOKEN secret to this workflow
                   npm-token: ${{ secrets.NPM_TOKEN }}
+                  config-secrets: ${{ secrets.CONFIG_SECRETS }}
+
+            # Fails here with a clear message rather than deep in vitest. `required: true` alone doesn't
+            # catch it: a caller can list the secret while the repo doesn't have it, and PRs from forks
+            # never get secrets.
+            - name: Check TESTER_APIFY_TOKEN
+              env:
+                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+              run: |
+                  if [ -z "$TESTER_APIFY_TOKEN" ]; then
+                      echo "::error::TESTER_APIFY_TOKEN is empty. Pass it in the secrets: block of the job that calls this workflow."
+                      exit 1
+                  fi
 
             - name: Pick last validated commit from cache
               id: base_commit
@@ -70,11 +104,13 @@ jobs:
               # bash rather than the default shell, for pipefail
               shell: bash
               env:
-                  ALL_SECRETS: ${{ toJSON(secrets) }}
+                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
+                  REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
               run: |
                   actor_builds=$(jq '{ actors: .functionallyChangedActors }' affected.json \
-                    | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99)
+                    | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99 \
+                        --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC")
                   echo "actor_builds=$actor_builds" | tee -a "$GITHUB_OUTPUT"
 
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.

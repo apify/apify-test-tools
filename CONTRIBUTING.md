@@ -154,29 +154,35 @@ mistake that would otherwise ship silently during a bump.
 The public side of this is the [Secrets](./docs/workflows.md#secrets) table.
 
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its own token via
-`tokenEnvVar` in `apify-test-tools.config.json`. Those steps pass `${{ toJSON(secrets) }}` as `ALL_SECRETS` and run
-the command through `.github/scripts/run-with-apify-tokens.mjs`, which reads that same config file to decide which
-secrets to pass on:
+`tokenEnvVar` in `apify-test-tools.config.json`, and a reusable workflow only accepts secrets it declares by name.
+Callers pack them into the `CONFIG_SECRETS` secret. Those steps pass `${{ toJSON(secrets) }}` as `WORKFLOW_SECRETS`
+and run the command through `.github/scripts/run-with-apify-tokens.mjs`, which reads that same config file to decide
+which secrets to pass on. It looks each one up in `CONFIG_SECRETS` first, then among the secrets `secrets: inherit`
+brought:
 
 ```yaml
 - name: Build
   shell: bash
   env:
-      ALL_SECRETS: ${{ toJSON(secrets) }}
+      WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
   run: |
       jq '{ actors: .functionallyChangedActors }' affected.json \
         | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
           apify-test-tools build --version-number 0.99
 ```
 
-The wrapper passes only the tokens the config declares and drops `ALL_SECRETS`, so neither the CLI nor anything under
-`node_modules` sees the blob. Nothing is written to `$GITHUB_ENV`, so the tokens stay inside that one command rather
-than leaking into later steps. Reading the same file `apify-test-tools` reads means the two can't drift, and a secret
-that merely looks like an Actor token is not passed just because of its name.
+The wrapper passes only the tokens the config declares and drops `WORKFLOW_SECRETS`, so neither the CLI nor anything
+under `node_modules` sees the blob. Nothing is written to `$GITHUB_ENV`, so the tokens stay inside that one command
+rather than leaking into later steps. Reading the same file `apify-test-tools` reads means the two can't drift, and a
+secret that merely looks like an Actor token is not passed just because of its name.
 
 A token the config declares but the repo hasn't set is a warning, not a failure: a repo can carry an Actor whose
 token isn't configured and still build fine as long as that Actor never changes, and `apify-test-tools` raises a
 precise error naming the Actor at the point it actually needs the token.
+
+The runner masks a secret by its exact value, so it only knows `CONFIG_SECRETS` as a whole blob. The setup action
+runs `.github/scripts/mask-config-secrets.sh` first, which registers each value inside it with `::add-mask::`, so a
+token taken out of the blob is masked too.
 
 `scripts-path` comes from the setup action (give the step `id: setup`) and points at this repo's `.github/scripts/`
 directory inside the runner's action checkout, so workflows can run these helpers without checking this repo out

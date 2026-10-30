@@ -23,13 +23,17 @@ name: 'Platform tests: Claude failure investigation and fix'
 #         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
 #         with:
 #             subtest: core
-#         secrets: inherit
+#         secrets:
+#             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+#             SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
 #
 #     handle-failure:
 #         needs: platformTestsCore
 #         if: ${{ failure() }}
 #         uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v0
-#         secrets: inherit
+#         secrets:
+#             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+#             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
 
 on:
     workflow_call:
@@ -183,7 +187,9 @@ jobs:
             actions: read
         steps:
             - name: Setup repository and dependencies
-              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
+              # `$/` loads the action from this repo at the commit this workflow was called at, so a caller
+              # pinned to a SHA or a branch gets that commit's action and CLI, not whatever the major tag is on.
+              uses: $/.github/actions/checkout-restore-dependencies
               with:
                   npm-token: ${{ secrets.NPM_TOKEN }}
 

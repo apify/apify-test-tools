@@ -289,5 +289,21 @@ describe('build-from-local helpers', () => {
             // Only the read-only lookup ran: builders for uploads and builds are created after the dry-run cutoff
             expect(fromActorConfig).toHaveBeenCalledTimes(1);
         });
+
+        it('fails before zipping anything when asked to require env vars in sync and they are not', async () => {
+            vi.spyOn(ApifyBuilder, 'fromActorConfig').mockReturnValue({
+                getActorInfo: async () => ({
+                    defaultRunOptions: { build: 'latest' },
+                    taggedBuilds: { latest: { buildNumber: '0.1.5' } },
+                    versions: [{ versionNumber: '0.1', sourceType: 'GIT_REPO', envVars: [{ name: 'API_KEY' }] }],
+                }),
+            } as unknown as ApifyBuilder);
+            // Only the name matters, the check runs before the sources are read
+            const actorConfig = { actorFullName: 'owner/actor' } as unknown as ActorConfig;
+
+            await expect(
+                runBuildsFromLocal({ actorConfigs: [actorConfig], dryRun: true, requireEnvVarsInSync: true }),
+            ).rejects.toThrow('Env vars of version 0.98 are out of sync with default version 0.1 (missing API_KEY)');
+        });
     });
 });

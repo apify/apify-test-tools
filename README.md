@@ -27,7 +27,11 @@ Build, test and release Apify Actors from a Git repository or local source code.
     jobs:
         buildDevelAndTest:
             uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
-            secrets: inherit
+            secrets:
+                TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+                # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
+                CONFIG_SECRETS: |
+                    { "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}" }
     ```
 
 Most repos only need the library and the workflows: the workflows call the CLI for you. Use the CLI directly only to
@@ -221,7 +225,14 @@ on:
 jobs:
     buildDevelAndTest:
         uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+            # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
+            CONFIG_SECRETS: |
+                {
+                    "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
+                    "APIFY_TOKEN_PARTNER": "${{ secrets.APIFY_TOKEN_PARTNER }}"
+                }
 ```
 
 ### `release-latest.yaml`
@@ -236,7 +247,14 @@ on:
 jobs:
     buildLatest:
         uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
+            # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
+            CONFIG_SECRETS: |
+                {
+                    "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
+                    "APIFY_TOKEN_PARTNER": "${{ secrets.APIFY_TOKEN_PARTNER }}"
+                }
 ```
 
 ### Scheduled tests (optional)
@@ -255,7 +273,9 @@ on:
 jobs:
     platformTestsDaily:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
 ```
 
 and a few critical tests, kept in e.g. `test/platform/hourly`, every hour:
@@ -274,12 +294,15 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: hourly
-        secrets: inherit
+        secrets:
+            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
 ```
 
 ### Secrets
 
-Callers pass `secrets: inherit`, so set these as repository or organization secrets:
+Set these as repository or organization secrets and pass them in each job's `secrets:` block, as in the examples
+above. The Actor tokens go packed in one JSON object, `CONFIG_SECRETS`, because their names differ per repo:
 
 | Secret                                                                    | Needed for                                                       |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
@@ -289,7 +312,8 @@ Callers pass `secrets: inherit`, so set these as repository or organization secr
 | `SLACK_TOKEN_TESTS_BOT`                                                   | reporting scheduled test results to Slack                        |
 | `NPM_TOKEN`                                                               | optional, installing private npm packages. Use a read-only token |
 
-Each secret only reaches the step that needs it. See [Secrets](docs/workflows.md#secrets).
+Repos in the `apify` org can pass `secrets: inherit` instead. Each secret only reaches the step that needs it. See
+[Secrets](docs/workflows.md#secrets) for both, and for passing `CONFIG_SECRETS` without listing the tokens.
 
 ## Writing tests
 

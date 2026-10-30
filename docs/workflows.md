@@ -1,8 +1,8 @@
 # Workflow API
 
 Ready-made GitHub Actions workflows built on the [CLI](cli.md) and the [vitest library](lib.md). They are the
-`public_`-prefixed files in this repo's `.github/workflows`. Call them from a job with `uses:` and pass
-`secrets: inherit`:
+`public_`-prefixed files in this repo's `.github/workflows`. Call them from a job with `uses:` and pass the secrets
+the workflow lists, see [Secrets](#secrets):
 
 ```yaml
 jobs:
@@ -10,7 +10,8 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/<workflow>.yaml@workflows-v0
         with:
             # inputs, if any
-        secrets: inherit
+        secrets:
+            # the secrets the workflow lists
 ```
 
 Always reference them at the `@workflows-v0` major tag, never at `@master` — see [Versioning](#versioning).
@@ -60,12 +61,14 @@ Validates a pull request. It runs two jobs in parallel.
 In a repo whose Actors aren't written in JavaScript or TypeScript, define the `build-check`, `lint` and `test`
 scripts, e.g. to run your language's own checks: without them, the TypeScript, Lint and Test checks fail.
 
-| Input                 | Type    | Default | Description                                                                  |
-| --------------------- | ------- | ------- | ---------------------------------------------------------------------------- |
-| `skip-platform-tests` | boolean | `false` | Skip the `platformTest` job and run the static checks only                   |
-| `test-files-glob`     | string  | `''`    | Which tests to run, relative to `test/platform`. Empty runs everything in it |
+| Input                      | Type    | Default | Description                                                                                                              |
+| -------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `skip-platform-tests`      | boolean | `false` | Skip the `platformTest` job and run the static checks only                                                               |
+| `test-files-glob`          | string  | `''`    | Which tests to run, relative to `test/platform`. Empty runs everything in it                                             |
+| `require-env-vars-in-sync` | boolean | `true`  | Fail the build unless the env var names of `0.99` match the default version's, see [Env var check](cli.md#env-var-check) |
 
-Secrets: the Actor tokens, `TESTER_APIFY_TOKEN`, and optionally `NPM_TOKEN`.
+Secrets: `TESTER_APIFY_TOKEN`, the Actor tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`. With
+`skip-platform-tests`, only `NPM_TOKEN`.
 
 A new push to the same PR cancels the run in progress.
 
@@ -79,7 +82,14 @@ on:
 jobs:
     buildDevelAndTest:
         uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+            # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
+            CONFIG_SECRETS: |
+                {
+                    "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
+                    "APIFY_TOKEN_PARTNER": "${{ secrets.APIFY_TOKEN_PARTNER }}"
+                }
 ```
 
 ## `public_push-build-latest.yaml`
@@ -101,7 +111,7 @@ Releases the Actors a push changed. Skipped when the head commit message contain
 | ---------------------- | ------ | ------- | ------------------------------------------------------------- |
 | `report-slack-channel` | string | `''`    | Slack channel for the report. Empty uses `#notif-<repo-name>` |
 
-Secrets: the Actor tokens, `SLACK_TOKEN_RELEASES_BOT`, and optionally `NPM_TOKEN`.
+Secrets: `SLACK_TOKEN_RELEASES_BOT`, the Actor tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`.
 
 A failed release isn't retried by the next push: that push's "before" commit is the failed one's head, so its changes
 are skipped. Re-run the failed workflow run, or release the Actors manually.
@@ -116,7 +126,14 @@ on:
 jobs:
     buildLatest:
         uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
+            # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
+            CONFIG_SECRETS: |
+                {
+                    "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
+                    "APIFY_TOKEN_PARTNER": "${{ secrets.APIFY_TOKEN_PARTNER }}"
+                }
 ```
 
 ## `public_platform-tests.yaml`
@@ -132,7 +149,7 @@ vitest's own JSON report are uploaded as the `vitest-results` artifact. Runs onl
 | `subtest`              | string | `''`    | Deprecated, use `test-files-glob`                                            |
 | `report-slack-channel` | string | `''`    | Slack channel for the results. Empty uses `#notif-<repo-name>`               |
 
-Secrets: `TESTER_APIFY_TOKEN`, `SLACK_TOKEN_TESTS_BOT`, and optionally `NPM_TOKEN`.
+Secrets: `TESTER_APIFY_TOKEN` (required), `SLACK_TOKEN_TESTS_BOT`, and optionally `NPM_TOKEN`.
 
 How often to run which tests is up to you. For example, every test once a day:
 
@@ -148,7 +165,9 @@ on:
 jobs:
     platformTestsDaily:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
 ```
 
 and a few critical tests, kept in e.g. `test/platform/hourly`, every hour:
@@ -167,7 +186,9 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: hourly
-        secrets: inherit
+        secrets:
+            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
 ```
 
 ## `public_review.yaml`
@@ -179,7 +200,7 @@ that label is on. The trigger label is removed once the review finishes, so re-a
 | ---------------- | ------ | ------------------- | --------------------------------------------------------------------------------------------- |
 | `label`          | string | `Ask claude review` | Label that triggers a review                                                                  |
 | `reviewed-label` | string | `claude reviewed`   | Label added after a successful review and never removed. Set to `''` to disable               |
-| `prompt-ref`     | string | `workflows-v0`      | Ref of this repo to fetch the review instructions from. Override only to test a prompt change |
+| `prompt-ref`     | string | `''`                | Ref of this repo to fetch the review instructions from. Override only to test a prompt change |
 | `model`          | string | `sonnet`            | Claude Code model (`best`, `sonnet`, `opus`, `haiku`, `sonnet[1m]`, `opus[1m]`, `opusplan`)   |
 
 Secrets: `ANTHROPIC_API_KEY`.
@@ -194,12 +215,13 @@ on:
 jobs:
     review:
         uses: apify/apify-test-tools/.github/workflows/public_review.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
 The review instructions live in `.github/review-prompt.md` in this repo and are fetched at run time, because a
-reusable workflow doesn't get its own repo checked out. `prompt-ref` defaults to `workflows-v0`, so the
-instructions match the workflow you're calling — point it at a branch only to test a prompt change.
+reusable workflow doesn't get its own repo checked out. When `prompt-ref` is empty they come from the same commit as
+the workflow you're calling — point it at a branch only to test a prompt change.
 
 ## `public_claude.yaml`
 
@@ -230,7 +252,8 @@ on:
 jobs:
     claude:
         uses: apify/apify-test-tools/.github/workflows/public_claude.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
 ## `public_platform-tests-claude-investigate-and-fix.yaml`
@@ -261,19 +284,56 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: hourly
-        secrets: inherit
+        secrets:
+            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
 
     handle-failure:
         needs: platformTestsHourly
         if: ${{ failure() }}
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v0
-        secrets: inherit
+        secrets:
+            ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
 ```
 
 ## Secrets
 
-Callers pass `secrets: inherit`. The workflows do not turn every inherited secret into job-wide environment
-variables, so a secret is only visible to the step that needs it:
+The workflows take two kinds of secrets:
+
+- **Secrets a workflow always reads**, like `TESTER_APIFY_TOKEN` for the tests or `NPM_TOKEN` for installing private
+  packages. Each workflow declares these, and you pass them by name.
+- **Secrets your `apify-test-tools.config.json` names**, today each Actor's `tokenEnvVar`. Their names differ per
+  repo, and a reusable workflow only accepts secrets it declares by name, so they go packed in one JSON object,
+  `CONFIG_SECRETS`, with one entry per name the config uses. A name the config declares but the object leaves out
+  is reported as a warning in the build step.
+
+The examples above show both. If you'd rather not keep `CONFIG_SECRETS` in sync with the config, you can pass all of
+the repo's secrets in it:
+
+```yaml
+secrets:
+    TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+    CONFIG_SECRETS: ${{ toJSON(secrets) }}
+```
+
+Only the names the config declares are used. The cost is that every secret the repo can read, deploy keys and publish
+tokens included, goes to code at a tag this repo moves, and you are trusting it to use only those.
+
+Repos in the `apify` org can keep using `secrets: inherit`, which GitHub only allows when the caller is in the same
+organization or enterprise as this repo. The config's secrets are then looked up among the inherited ones whenever
+`CONFIG_SECRETS` doesn't have them.
+
+`required` on a reusable workflow's secret only checks that the caller lists it, not that it has a value: the repo
+may not have the secret, and PRs from forks never get secrets. The test workflows check that `TESTER_APIFY_TOKEN` is
+not empty before doing anything else, and fail with a message saying so.
+
+Values that arrive inside `CONFIG_SECRETS` are registered as masks one by one before anything uses them. The runner
+masks a secret by its exact value, so it would otherwise only recognise the whole JSON blob, not a single token taken
+out of it.
+
+The workflows do not turn the secrets they receive into job-wide environment variables, so a secret is only visible
+to the step that needs it:
 
 | Secret                                                                    | Reaches                                                                                                                                                                                                                    |
 | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -302,6 +362,9 @@ The workflows and the vitest library ship separately:
 
 The workflows bring their own copy of the CLI, so they don't use or change the `apify-test-tools` version in your
 `node_modules`, and your tests keep the library version you locked.
+
+Whatever ref you call a workflow at, it runs the setup action and the CLI from that same commit. Pinning a commit SHA
+or pointing at a branch of this repo therefore gets you that commit's workflows as a whole.
 
 `@workflows-v0` always points at the latest workflows, so fixes and new features reach you without any change on your
 side. Changes that would break callers go to a new tag (`@workflows-v1`), and `@workflows-v0` keeps working, so you

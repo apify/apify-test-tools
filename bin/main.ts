@@ -101,6 +101,15 @@ const buildOptions = {
     },
 } as const satisfies Record<string, Options>;
 
+/** For the commands that build a version other than the default one, see assertEnvVarsMatchDefaultVersion. */
+const envVarsSyncOptions = {
+    'require-env-vars-in-sync': {
+        type: 'boolean',
+        default: false,
+        describe: "Fail unless the built version's env var names match the default version's",
+    },
+} as const satisfies Record<string, Options>;
+
 /** Flags of `test`, which runs the repository's vitest on the builds piped in from `build`. */
 const testOptions = {
     all: {
@@ -258,7 +267,7 @@ await yargs()
     .command(
         'build',
         'Build the Actors listed on stdin, as {"actors": [{"actorFullName": ...}]}, from the checked-out branch',
-        (y) => y.options(buildOptions).options(repoUrlOptions).options(dryRunOptions),
+        (y) => y.options(buildOptions).options(repoUrlOptions).options(envVarsSyncOptions).options(dryRunOptions),
         async (args) => {
             const input = parseBuildInput(await readStdin());
             const names = input.actors.map(({ actorFullName }) => actorFullName);
@@ -269,6 +278,7 @@ await yargs()
                 versionNumber: args.versionNumber,
                 repoUrl: args.repoUrl,
                 dryRun: args.dryRun,
+                requireEnvVarsInSync: args.requireEnvVarsInSync,
             });
             writeJson(builds);
         },
@@ -276,10 +286,10 @@ await yargs()
     .command(
         'build-from-local',
         '',
-        (y) => y.options(actorSelectionOptions).options(dryRunOptions),
-        async ({ actors, ignore, dryRun }) => {
+        (y) => y.options(actorSelectionOptions).options(envVarsSyncOptions).options(dryRunOptions),
+        async ({ actors, ignore, dryRun, requireEnvVarsInSync }) => {
             const actorConfigs = await readConfigFile({ actors, ignore });
-            const builds = await runBuildsFromLocal({ actorConfigs, dryRun });
+            const builds = await runBuildsFromLocal({ actorConfigs, dryRun, requireEnvVarsInSync });
             writeJson(builds);
         },
     )

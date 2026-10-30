@@ -101,10 +101,16 @@ Consumers pin `@workflows-v0`, not `@master`. See [Versioning and releases](#ver
 `npm run lint` and `actionlint` (via the `Code checks` workflow) both gate master, so run them before
 pushing workflow changes.
 
+The reusable workflows load the composite action with `uses: $/.github/actions/checkout-restore-dependencies`, never
+`apify/apify-test-tools/...@workflows-v0`. `$/` is the
+[self-repository syntax](https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/):
+it resolves to this repo at the commit the workflow was called at. A hardcoded tag would hand a caller pinned to an
+older SHA, or to a branch, the action and CLI from the tag instead of from the commit they asked for.
+
 `public_review` is the odd one out: it fetches `.github/review-prompt.md` over HTTP at run time, because a
-reusable workflow runs with the caller's repo checked out and never gets its own. Its `prompt-ref`
-input defaults to `workflows-v0` so the instructions come from the same release as the workflow — leaving it
-at `master` would run released workflows against unreleased instructions.
+reusable workflow runs with the caller's repo checked out and never gets its own. With `prompt-ref` left empty it
+fetches from `job.workflow_repository` at `job.workflow_sha`, the commit the workflow itself came from, so the
+instructions always match the workflow.
 
 ## Versioning and releases
 
@@ -137,17 +143,15 @@ freezes where it is and keeps working, CLI included, since the bundle is part of
 
 The tag tracks the **workflows'** contract, not the npm package version. They move independently on purpose, so
 `@workflows-v0` is expected to stay `@workflows-v0` after the package reaches 1.0 — bump it when a workflow breaks
-its callers, not when the package does. Because `uses:` cannot take an expression, every ref into this repo repeats
-the tag literally; `check-major-tag-refs.mjs` fails the build if `MAJOR_TAG` and those refs disagree, which is the
-mistake that would otherwise ship silently during a bump.
+its callers, not when the package does. The usage examples in the workflows, README and docs repeat the tag
+literally, so update them by hand when you bump it.
 
 ## Testing workflow changes
 
 - Point [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions) at your
-  branch (`uses: ...@your-branch`). It has real attached Actors and tests. The branch carries its own CLI bundle, so
-  one branch tests the workflows and the CLI together.
-- To change the composite action itself, repoint the `uses:` refs inside the reusable workflows at your branch as
-  well, and change them back before merging.
+  branch (`uses: ...@your-branch`). It has real attached Actors and tests. The workflows load the composite action
+  with `$/` and the branch carries its own CLI bundle, so one branch tests the workflows, the action and the CLI
+  together, with nothing to repoint.
 - Make sure the shell code actually works on your laptop first.
 - After merging, watch the workflow on a real project before moving on.
 
@@ -156,29 +160,35 @@ mistake that would otherwise ship silently during a bump.
 The public side of this is the [Secrets](./docs/workflows.md#secrets) table.
 
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its own token via
-`tokenEnvVar` in `apify-test-tools.config.json`. Those steps pass `${{ toJSON(secrets) }}` as `ALL_SECRETS` and run
-the command through `.github/scripts/run-with-apify-tokens.mjs`, which reads that same config file to decide which
-secrets to pass on:
+`tokenEnvVar` in `apify-test-tools.config.json`, and a reusable workflow only accepts secrets it declares by name.
+Callers pack them into the `CONFIG_SECRETS` secret. Those steps pass `${{ toJSON(secrets) }}` as `WORKFLOW_SECRETS`
+and run the command through `.github/scripts/run-with-apify-tokens.mjs`, which reads that same config file to decide
+which secrets to pass on. It looks each one up in `CONFIG_SECRETS` first, then among the secrets `secrets: inherit`
+brought:
 
 ```yaml
 - name: Build
   shell: bash
   env:
-      ALL_SECRETS: ${{ toJSON(secrets) }}
+      WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
   run: |
       jq '{ actors: .functionallyChangedActors }' affected.json \
         | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
           apify-test-tools build --version-number 0.99
 ```
 
-The wrapper passes only the tokens the config declares and drops `ALL_SECRETS`, so neither the CLI nor anything under
-`node_modules` sees the blob. Nothing is written to `$GITHUB_ENV`, so the tokens stay inside that one command rather
-than leaking into later steps. Reading the same file `apify-test-tools` reads means the two can't drift, and a secret
-that merely looks like an Actor token is not passed just because of its name.
+The wrapper passes only the tokens the config declares and drops `WORKFLOW_SECRETS`, so neither the CLI nor anything
+under `node_modules` sees the blob. Nothing is written to `$GITHUB_ENV`, so the tokens stay inside that one command
+rather than leaking into later steps. Reading the same file `apify-test-tools` reads means the two can't drift, and a
+secret that merely looks like an Actor token is not passed just because of its name.
 
 A token the config declares but the repo hasn't set is a warning, not a failure: a repo can carry an Actor whose
 token isn't configured and still build fine as long as that Actor never changes, and `apify-test-tools` raises a
 precise error naming the Actor at the point it actually needs the token.
+
+The runner masks a secret by its exact value, so it only knows `CONFIG_SECRETS` as a whole blob. The setup action
+runs `.github/scripts/mask-config-secrets.sh` first, which registers each value inside it with `::add-mask::`, so a
+token taken out of the blob is masked too.
 
 `scripts-path` comes from the setup action (give the step `id: setup`) and points at this repo's `.github/scripts/`
 directory inside the runner's action checkout, so workflows can run these helpers without checking this repo out
@@ -187,7 +197,7 @@ again. The caller's workspace holds the caller's repo, not this one.
 Two tidier-looking alternatives don't work, so don't reach for them:
 
 - **Exporting to `$GITHUB_ENV`** would let the steps call the CLI directly with no wrapper, but `$GITHUB_ENV`
-  applies to every later step in the job. In `pr-build-test` the vitest step runs after the build, so it would
+  applies to every later step in the job. In `pr-build-test` the test step runs after the build, so it would
   inherit Actor tokens it has no use for.
 - **Returning the tokens as a step output** would be scoped correctly, but the runner refuses to set an output whose
   value contains a registered secret. It logs `Skip output <name> since it may contain secret` and leaves the output

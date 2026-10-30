@@ -3,7 +3,7 @@ name: Build latest and report to slack
 on:
     workflow_call:
         inputs:
-            # Defaults to #notif-<repo-name> when empty, matching the previous behavior.
+            # Defaults to #notif-<repo-name> when empty.
             report-slack-channel:
                 type: string
                 default: ''

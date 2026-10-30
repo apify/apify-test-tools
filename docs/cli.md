@@ -67,9 +67,8 @@ changed files. For each changed file, for each Actor:
 4. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it
    matched (e.g. a standalone Actor's own `.eslintrc` is checked as just `.eslintrc`, not the full
    repo-root-relative path), then checked against repo-level dev file patterns (`.vscode/`, `.gitignore`, `.husky/`,
-   `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`). There's no hardcoded special-casing for legacy
-   `code/`/`shared/` layouts — repos that need those directories treated as top-level must list them explicitly in
-   `overrideActorContext`.
+   `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`). Directories like `code/` or `shared/`
+   get no special treatment: to treat them as top-level, list them in `overrideActorContext`.
 5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the Actor's `dockerContextDir`,
    matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior.
    Test files are the exception: `get-affected-actors --test-files-glob <glob>` (relative to the repo root) skips
@@ -291,9 +290,8 @@ npx apify-test-tools test --all test/platform/core > test-report.json
 
 The input is the JSON array `build` and `build-from-local` print. A dry-run plan, empty or invalid input is an
 error, as with `build`. So is a missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the
-run would pass having tested nothing. `--all` reads no stdin and runs the tests of every Actor against its default build, which
-is what `RUN_ALL_PLATFORM_TESTS=1` did. Both only come from these flags: `test` drops `ACTOR_BUILDS` and
-`RUN_ALL_PLATFORM_TESTS` from its own environment.
+run would pass having tested nothing. `--all` reads no stdin and runs the tests of every Actor against its default build. `test` sets `ACTOR_BUILDS` and
+`RUN_ALL_PLATFORM_TESTS` for vitest from its input and flags, and ignores them in its own environment.
 
 It runs vitest with `--maxConcurrency=20 --fileParallelism --maxWorkers=100`, since platform tests mostly wait on
 Actor runs rather than the CPU, and with its JSON reporter for the report. It takes no other vitest options; for
@@ -441,8 +439,9 @@ Then run the tests against the builds with [`test`](#running-tests-test), as oft
 TESTER_APIFY_TOKEN=apify_api_yyy npx apify-test-tools test < builds.json
 ```
 
-## Legacy git commands
+## Git range commands
 
 `get-commits`, `get-latest-commit` and `get-changed-files` print the commits, the newest commit, or the changed files
-on `--source-branch` since it diverged from `--target-branch` (optionally only after `--base-commit`). They predate
-`get-affected-actors`, which reports the same data, and are kept for older workflows.
+on `--source-branch` since it diverged from `--target-branch` (optionally only after `--base-commit`).
+[`get-affected-actors`](#finding-affected-actors-get-affected-actors) reports the same data together with the
+affected Actors, so prefer it.

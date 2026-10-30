@@ -13,7 +13,7 @@ on:
                 type: string
                 default: ''
                 required: false
-            # Defaults to #notif-<repo-name> when empty, matching the previous behavior.
+            # Defaults to #notif-<repo-name> when empty.
             report-slack-channel:
                 type: string
                 default: ''

@@ -508,7 +508,7 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('does not special-case code/ and shared/ prefixes anymore — must be declared via overrideActorContext', async () => {
+    it('does not special-case code/ and shared/ prefixes — they must be declared via overrideActorContext', async () => {
         const result = await changedActorsFor({
             filepathsChanged: ['code/some/code.ts'],
             actorConfigs: [miniActor],

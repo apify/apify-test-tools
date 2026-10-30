@@ -86,7 +86,7 @@ renaming one is a breaking change that needs a major tag bump, not a tidy-up.
 The tag is not semver, so `git-cliff` would abort on it. It is skipped only because
 `apify/actions`' cliff.toml sets `tag_pattern = "v[0-9]+\."` — a release failing with
 `Semver error: unexpected character` means that pattern changed, not that anything here is wrong.
-The action's "Nothing to release" guard resolves to this tag and no longer fires, so an empty stable
+The action's "Nothing to release" guard resolves to this tag and never fires, so an empty stable
 release fails at `npm publish` instead of erroring cleanly.
 
 Consumers pin `@workflows-v0`, not `@master`. See [Versioning and releases](#versioning-and-releases) below.

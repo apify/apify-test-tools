@@ -243,7 +243,7 @@ export class ApifyBuilder {
 
         const actorInfo = await this.getActorInfo();
 
-        // 'devel' used to be hardcoded for testing version 0.99, once we get rid of this tag everywhere, we can remove this code
+        // A build tagged 'devel' is kept for DEFAULT_DAYS_BACK_DEVEL only. Remove this once no Actor has the tag
         const taggedDevelBuildNumber: string | undefined = actorInfo.taggedBuilds!.devel?.buildNumber;
 
         const allTags = Object.keys(actorInfo.taggedBuilds ?? {});

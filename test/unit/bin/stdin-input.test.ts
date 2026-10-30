@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseBuildInput, parseReleaseChanges } from '../../../bin/stdin-input.js';
+import { parseBuildInput, parseNotifyInput, parseTestBuilds } from '../../../bin/stdin-input.js';
 
 describe('parseBuildInput', () => {
     it('reads the Actors', () => {
@@ -33,8 +33,38 @@ describe('parseBuildInput', () => {
     });
 });
 
-describe('parseReleaseChanges', () => {
+describe('parseTestBuilds', () => {
+    const build = { buildId: 'b', actorRawId: 'r', buildNumber: '0.99.1', actorFullName: 'owner/a' };
+
+    it('reads the output of build', () => {
+        expect(parseTestBuilds(JSON.stringify([build]))).toStrictEqual([build]);
+        expect(parseTestBuilds('[]')).toStrictEqual([]);
+    });
+
+    it('rejects a dry-run plan, which built nothing', () => {
+        expect(() => parseTestBuilds(JSON.stringify({ dryRun: true, builds: [build] }))).toThrow('is a dry-run plan');
+    });
+
+    it('rejects empty input and input that is not builds', () => {
+        expect(() => parseTestBuilds('')).toThrow('Expected the builds to test as JSON on stdin, got nothing');
+        expect(() => parseTestBuilds('{"actors":[]}')).toThrow('is not the builds to test');
+        expect(() => parseTestBuilds('{oops')).toThrow('not valid JSON');
+    });
+});
+
+describe('parseNotifyInput', () => {
     const commit = { sha: '1'.repeat(40), author: 'Dev<dev@example.com>', date: 'Date', message: 'feat: foo' };
+    const report = {
+        version: 1,
+        success: true,
+        summary: { total: 0, passed: 0, failed: 0, skipped: 0 },
+        tests: [],
+        errors: [],
+    };
+
+    it('reads the output of test', () => {
+        expect(parseNotifyInput(JSON.stringify(report))).toStrictEqual({ kind: 'tests', report });
+    });
 
     it('reads what changed from a get-affected-actors document, ignoring the rest', () => {
         const document = {
@@ -47,15 +77,27 @@ describe('parseReleaseChanges', () => {
             functionallyChangedActors: [{ actorFullName: 'owner/a' }],
             cosmeticallyChangedActors: [],
         };
-        expect(parseReleaseChanges(JSON.stringify(document))).toStrictEqual({
-            commits: [commit],
-            changedFiles: ['src/main.ts'],
-            changelog: '- Added foo',
+        expect(parseNotifyInput(JSON.stringify(document))).toStrictEqual({
+            kind: 'release',
+            changes: { commits: [commit], changelog: '- Added foo' },
         });
     });
 
-    it('rejects empty input and input that is not a get-affected-actors document', () => {
-        expect(() => parseReleaseChanges('')).toThrow('got nothing');
-        expect(() => parseReleaseChanges('{"actors":[]}')).toThrow('not the output of get-affected-actors');
+    it('rejects empty input, which is what a failed command earlier in a pipe leaves behind', () => {
+        expect(() => parseNotifyInput('')).toThrow(
+            'Expected the output of test or get-affected-actors as JSON on stdin, got nothing',
+        );
+    });
+
+    it('rejects input that is neither, e.g. raw vitest JSON or builds', () => {
+        expect(() => parseNotifyInput('{"success":true,"testResults":[]}')).toThrow(
+            'is not the output of test or get-affected-actors',
+        );
+        expect(() => parseNotifyInput('[]')).toThrow('is not the output of test or get-affected-actors');
+    });
+
+    it('says which document it took a malformed input for', () => {
+        expect(() => parseNotifyInput('{"tests":[]}')).toThrow('is not the output of test (');
+        expect(() => parseNotifyInput('{"commits":[]}')).toThrow('is not the output of get-affected-actors (');
     });
 });

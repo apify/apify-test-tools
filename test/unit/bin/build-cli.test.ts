@@ -12,7 +12,7 @@ const run = (command: string[], input: string, env: NodeJS.ProcessEnv = process.
     spawnSync(cliPath, command, { encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'], env });
 const runBuild = (input: string, args: string[] = ['--version-number', '0.99']) => run(['build', ...args], input);
 
-describe('build and notify-release CLI', () => {
+describe('build and notify CLI', () => {
     beforeAll(async () => {
         ({ cliPath, cleanup } = await compileCli());
     });
@@ -46,9 +46,15 @@ describe('build and notify-release CLI', () => {
         expect(result.stderr).toContain('Missing required argument: version-number');
     });
 
-    it('notify-release announces nothing when there are no new commits', () => {
+    it('notify takes one channel per call', () => {
+        const result = run(['notify', '--slack-channel', '#a', '--slack-channel', '#b'], '{}');
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('--slack-channel takes one channel, call notify once for each channel');
+    });
+
+    it('notify announces no release when there are no new commits', () => {
         const document = { commits: [], changedFiles: [], changelog: null, functionallyChangedActors: [] };
-        const result = run(['notify-release'], JSON.stringify(document));
+        const result = run(['notify', '--slack-channel', '#notif'], JSON.stringify(document));
         expect(result.status, result.stderr).toBe(0);
         expect(result.stderr).toContain('No new commits, so there is no release to announce');
     });

@@ -106,8 +106,8 @@ describe.runIf(token)('CLI bundle building a real repository', { timeout: 2 * 60
         expect(await versionSource('0.0')).toBe(BUILD_SOURCE);
 
         // Without a channel the announcement is skipped, so it needs no Slack token
-        const notify = await runCliWithInput(affected.stdout, 'notify-release');
+        const notify = await runCliWithInput(affected.stdout, 'notify');
         expect(notify.status, notify.stderr).toBe(0);
-        expect(notify.stderr).toContain('Skipping slack notification');
+        expect(notify.stderr).toContain('Skipping notification');
     });
 });

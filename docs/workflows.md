@@ -42,8 +42,8 @@ Validates a pull request. It runs two jobs in parallel.
    `.dockerignore` lists them.
 2. Builds the functionally changed Actors into the test version `0.99` with [`build`](cli.md#building-actors-build).
    Cosmetic-only changes (README, CHANGELOG, schema formatting) need no tests, so they're not built.
-3. Runs `npx vitest ./test/platform/<test-files-glob>` with those builds in `ACTOR_BUILDS`, so only the tests of
-   the built Actors run.
+3. Runs [`test`](cli.md#running-tests-test) on `./test/platform/<test-files-glob>` with those builds, so only the
+   tests of the built Actors run. Failing tests are annotated on the PR.
 4. On success, caches the tested commit as the "last validated commit". The next push to the PR then only builds
    and tests the Actors that changed since it (see `--since` in
    [`get-affected-actors`](cli.md#finding-affected-actors-get-affected-actors)).
@@ -101,8 +101,8 @@ Releases the Actors a push changed. Skipped when the head commit message contain
    [Releasing Actors](cli.md#releasing-actors) for how the released range is determined.
 2. `build --version-number default` builds both the functionally and the cosmetically changed Actors into their
    default version, the one users run.
-3. `notify-release` posts the changelog additions to `#delivery-public-actors`, and the commits and changed files to
-   the report channel. It posts nothing when the push brought no new commits.
+3. [`notify`](cli.md#notifying-notify) posts the release (its changelog additions and its commits, linked to
+   GitHub) to the report channel. It posts nothing when the push brought no new commits.
 4. `delete-old-builds` deletes old builds of every Actor in the config (see
    [`delete-old-builds`](cli.md#deleting-old-builds-delete-old-builds)).
 
@@ -110,7 +110,7 @@ Releases the Actors a push changed. Skipped when the head commit message contain
 | ---------------------- | ------ | ------- | ------------------------------------------------------------- |
 | `report-slack-channel` | string | `''`    | Slack channel for the report. Empty uses `#notif-<repo-name>` |
 
-Secrets: `SLACK_TOKEN_RELEASES_BOT`, the Actor tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`.
+Secrets: `SLACK_BOT_TOKEN`, the Actor tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`.
 
 A failed release isn't retried by the next push: that push's "before" commit is the failed one's head, so its changes
 are skipped. Re-run the failed workflow run, or release the Actors manually.
@@ -126,7 +126,7 @@ jobs:
     buildLatest:
         uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
         secrets:
-            SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
+            SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
             # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
             CONFIG_SECRETS: |
                 {
@@ -137,10 +137,11 @@ jobs:
 
 ## `public_platform-tests.yaml`
 
-Runs the platform tests against the Actors' current default builds, with `RUN_ALL_PLATFORM_TESTS=1` so every test
-runs, not only those of built Actors. It then reports the results to Slack with
-[`report-tests`](cli.md#reporting-test-results-report-tests) and uploads the vitest JSON report as the
-`vitest-results` artifact. Runs only on `master` or `main`.
+Runs the platform tests against the Actors' current default builds with [`test --all`](cli.md#running-tests-test), so
+every test runs, not only those of built Actors. A separate step then posts failures to Slack with
+[`notify`](cli.md#notifying-notify), named after the calling workflow and linking to the run, so the Slack token never
+reaches the tests. Both the report of `test` and
+vitest's own JSON report are uploaded as the `vitest-results` artifact. Runs only on `master` or `main`.
 
 | Input                  | Type   | Default | Description                                                                  |
 | ---------------------- | ------ | ------- | ---------------------------------------------------------------------------- |
@@ -148,7 +149,7 @@ runs, not only those of built Actors. It then reports the results to Slack with
 | `subtest`              | string | `''`    | Deprecated, use `test-files-glob`                                            |
 | `report-slack-channel` | string | `''`    | Slack channel for the results. Empty uses `#notif-<repo-name>`               |
 
-Secrets: `TESTER_APIFY_TOKEN` (required), `SLACK_TOKEN_TESTS_BOT`, and optionally `NPM_TOKEN`.
+Secrets: `TESTER_APIFY_TOKEN` (required), `SLACK_BOT_TOKEN`, and optionally `NPM_TOKEN`.
 
 How often to run which tests is up to you. For example, every test once a day:
 
@@ -166,7 +167,7 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
+            SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 ```
 
 and a few critical tests, kept in e.g. `test/platform/hourly`, every hour:
@@ -187,7 +188,7 @@ jobs:
             test-files-glob: hourly
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
+            SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 ```
 
 ## `public_review.yaml`
@@ -285,7 +286,7 @@ jobs:
             test-files-glob: hourly
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
+            SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 
     handle-failure:
         needs: platformTestsHourly
@@ -334,13 +335,13 @@ out of it.
 The workflows do not turn the secrets they receive into job-wide environment variables, so a secret is only visible
 to the step that needs it:
 
-| Secret                                                                    | Reaches                                                                                                                                                                                                                      |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NPM_TOKEN`                                                               | dependency install steps only, as both `NPM_TOKEN` and `NODE_AUTH_TOKEN`. Use a read-only token: npm granular tokens can be read-only, classic automation tokens can publish.                                                |
-| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the build and `delete-old-builds` steps only                                                                                                                                                                                 |
-| `TESTER_APIFY_TOKEN`                                                      | the vitest step, and the Claude investigation step: the Apify MCP server's bearer token for reading the failing run, its log and its storages, and Claude's token for re-running it to measure how often the failure happens |
-| `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and announcement steps only                                                                                                                                                                                    |
-| `ANTHROPIC_API_KEY`                                                       | the Claude steps of the Claude workflows only                                                                                                                                                                                |
+| Secret                                                                    | Reaches                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NPM_TOKEN`                                                               | dependency install steps only, as both `NPM_TOKEN` and `NODE_AUTH_TOKEN`. Use a read-only token: npm granular tokens can be read-only, classic automation tokens can publish.                                              |
+| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the build and `delete-old-builds` steps only                                                                                                                                                                               |
+| `TESTER_APIFY_TOKEN`                                                      | the test step, and the Claude investigation step: the Apify MCP server's bearer token for reading the failing run, its log and its storages, and Claude's token for re-running it to measure how often the failure happens |
+| `SLACK_BOT_TOKEN`                                                         | the `notify` steps only                                                                                                                                                                                                    |
+| `ANTHROPIC_API_KEY`                                                       | the Claude steps of the Claude workflows only                                                                                                                                                                              |
 
 The Actor tokens reach the build only for the Actors your config declares: a secret that merely looks like an Actor
 token is not passed on. A token the config declares but the repo hasn't set is a warning, not a failure: a repo can

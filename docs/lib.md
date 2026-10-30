@@ -255,17 +255,18 @@ RUN_ALL_PLATFORM_TESTS=1 TESTER_APIFY_TOKEN=<token> npx vitest --run test/platfo
 
 **Against builds of your changes.** Build the Actors with the CLI, either from local files with
 [`build-from-local`](cli.md#build-from-local-source-build-from-local) or from a pushed branch with
-[`build`](cli.md#building-actors-build), and pass the output as `ACTOR_BUILDS`:
+[`build`](cli.md#building-actors-build), and pass the output to [`test`](cli.md#running-tests-test):
 
 ```bash
-BUILDS=$(APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build-from-local --actors john.doe/my-actor)
+APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build-from-local --actors john.doe/my-actor > builds.json
 
-ACTOR_BUILDS="$BUILDS" \
-TESTER_APIFY_TOKEN=<token> \
-  npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
+TESTER_APIFY_TOKEN=<token> npx apify-test-tools test < builds.json
 ```
+
+`test` passes the builds to vitest as `ACTOR_BUILDS`, so plain vitest works too:
+`ACTOR_BUILDS="$(cat builds.json)" TESTER_APIFY_TOKEN=<token> npx vitest run test/platform`.
 
 You can change the tests and re-run them against the same builds.
 
-`TESTER_APIFY_TOKEN` can be the token of any account with enough memory for the runs. To run only some tests, point vitest at a specific file instead of `test/platform`, or filter
-by name with `-t`. See [Running locally](cli.md#running-locally) for the full flow.
+`TESTER_APIFY_TOKEN` can be the token of any account with enough memory for the runs. To run only some tests, pass a specific file instead of `test/platform`, or filter by
+name with vitest's `-t <name>` when running vitest directly. See [Running locally](cli.md#running-locally) for the full flow.

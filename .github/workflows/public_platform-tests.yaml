@@ -13,7 +13,7 @@ on:
                 type: string
                 default: ''
                 required: false
-            # Defaults to #notif-<repo-name> when empty, matching the previous behavior.
+            # Defaults to #notif-<repo-name> when empty.
             report-slack-channel:
                 type: string
                 default: ''
@@ -26,7 +26,7 @@ on:
             TESTER_APIFY_TOKEN:
                 required: true
                 description: Apify token the platform tests run Actors with.
-            SLACK_TOKEN_TESTS_BOT:
+            SLACK_BOT_TOKEN:
                 required: false
                 description: Slack token for reporting test results.
 
@@ -55,32 +55,42 @@ jobs:
                       exit 1
                   fi
 
+            # Runs the repo's test code and its whole import graph, so it gets the tester token only.
+            # Fails on failing tests, but writes the report anyway for the notification below.
             - name: Test
+              id: test
               env:
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-                  SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
               run: |
-                  set +e
-                  export RUN_ALL_PLATFORM_TESTS=1
-                  npx vitest ./test/platform/${{ inputs.test-files-glob || inputs.subtest }} \
-                    --run \
-                    --reporter=default \
-                    --reporter=json \
-                    --outputFile=./test-output.json \
-                    --maxConcurrency 20 \
-                    --fileParallelism=true \
-                    --maxWorkers 100
-                  return_code=$?
-                  apify-test-tools report-tests \
-                    --report-file ./test-output.json \
-                    --workflow-name "${{ github.workflow }}" \
-                    --job-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-                    --report-slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}"
-                  exit $return_code
+                  apify-test-tools test --all ./test/platform/${{ inputs.test-files-glob || inputs.subtest }} \
+                    --reporter github-actions --vitest-output-file ./test-output.json > test-report.json
 
-            - name: Upload Vitest JSON artifact
+            # Posts only when the tests failed, but checks the Slack token on every run. Runs whenever the tests
+            # did, also after a failure, but not when the token check stopped the job before them.
+            - name: Notify
+              if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
+              env:
+                  SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+                  # Passed through the environment, so a quote in the workflow name can't break the command
+                  WORKFLOW_NAME: ${{ github.workflow }}
+                  JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+              run: |
+                  # Empty when `test` itself failed before running vitest, its error is in the Test step
+                  if [ ! -s test-report.json ]; then
+                      echo "No test report, so there is nothing to notify about"
+                      exit 0
+                  fi
+                  apify-test-tools notify \
+                    --slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" \
+                    --title "$WORKFLOW_NAME" \
+                    --job-url "$JOB_URL" \
+                    < test-report.json
+
+            - name: Upload test reports
               uses: actions/upload-artifact@v6
               if: always()
               with:
                   name: vitest-results
-                  path: ./test-output.json
+                  path: |
+                      ./test-output.json
+                      ./test-report.json

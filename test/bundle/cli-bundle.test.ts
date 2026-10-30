@@ -96,9 +96,9 @@ describe('CLI bundle', () => {
             'get-changed-files',
             'get-actor-configs',
             'get-affected-actors',
-            'report-tests',
+            'test [filters..]',
+            'notify',
             'build',
-            'notify-release',
             'build-from-local',
             'delete-old-builds',
         ]) {
@@ -189,47 +189,50 @@ describe('CLI bundle', () => {
         });
     });
 
-    it('notify-release announces nothing, and needs no token, when there are no new commits', () => {
+    it('notify announces no release, and needs no token, when there are no new commits', () => {
         const affected = runCli('get-affected-actors', '--since', headSha).stdout;
-        const { status, stderr } = runCliWithInput(affected, 'notify-release', '--release-slack-channel', '#releases');
+        const { status, stderr } = runCliWithInput(affected, 'notify', '--slack-channel', '#releases');
         expect(status, stderr).toBe(0);
         expect(stderr).toContain('No new commits, so there is no release to announce');
     });
 
-    it('notify-release skips Slack without a channel', () => {
+    it('notify skips a release without a channel', () => {
         const affected = runCli('get-affected-actors', '--since', baseSha).stdout;
-        const { status, stderr } = runCliWithInput(affected, 'notify-release', '--dry-run');
+        const { status, stderr } = runCliWithInput(affected, 'notify', '--dry-run');
         expect(status, stderr).toBe(0);
-        expect(stderr).toContain('Skipping slack notification');
+        expect(stderr).toContain('Skipping notification, no --slack-channel passed');
     });
 
-    it('report-tests summarizes a vitest JSON report', async () => {
-        const assertion = (title: string, status: 'passed' | 'failed', runId: string) => ({
-            ancestorTitles: [],
-            fullName: `foo ${title}`,
-            title,
-            status,
-            failureMessages: status === 'failed' ? ['AssertionError: expected 1 to be 2\n    at foo.test.ts:1:1'] : [],
-            meta: { runId, runLink: `https://console.apify.com/view/runs/${runId}`, actorId: 'tester/foo' },
-        });
-        await writeRepoFile(
-            'test-output.json',
-            JSON.stringify({
-                success: false,
-                testResults: [
-                    {
-                        name: 'test/platform/foo.test.ts',
-                        status: 'failed',
-                        assertionResults: [assertion('works', 'passed', 'run1'), assertion('fails', 'failed', 'run2')],
-                    },
-                ],
-            }),
-        );
+    it('test fails without TESTER_APIFY_TOKEN instead of passing with every test skipped', () => {
+        const { status, stdout, stderr } = runCli('test', '--all');
+        expect(status).toBe(1);
+        expect(stderr).toContain('TESTER_APIFY_TOKEN is not set');
+        expect(stdout).toBe('');
+    });
 
-        const { status, stderr } = runCli('report-tests', '--report-file', 'test-output.json', '--dry-run');
-        expect(status, stderr).toBe(0);
-        expect(stderr).toContain('PASSED: 1, FAILED: 1');
-        expect(stderr).toContain('1) foo fails ... https://console.apify.com/view/runs/run2');
-        expect(stderr).toContain('Skipping slack notification');
+    it('notify needs the Slack token to post a failed report, even in a dry run', () => {
+        const report = {
+            version: 1,
+            success: false,
+            summary: { total: 1, passed: 0, failed: 1, skipped: 0 },
+            tests: [
+                {
+                    name: 'tester/foo: fails',
+                    file: 'test/platform/foo.test.ts',
+                    status: 'failed',
+                    durationMs: 1,
+                    failureMessages: ['AssertionError: expected 1 to be 2'],
+                    run: { actorId: 'tester/foo', runId: 'run2', runLink: 'https://console.apify.com/view/runs/run2' },
+                },
+            ],
+            errors: [],
+        };
+        const withChannel = runCliWithInput(JSON.stringify(report), 'notify', '--slack-channel', '#notif', '--dry-run');
+        expect(withChannel.status).toBe(1);
+        expect(withChannel.stderr).toContain('SLACK_BOT_TOKEN not defined');
+
+        const withoutChannel = runCliWithInput(JSON.stringify(report), 'notify', '--dry-run');
+        expect(withoutChannel.status, withoutChannel.stderr).toBe(0);
+        expect(withoutChannel.stderr).toContain('Skipping notification');
     });
 });

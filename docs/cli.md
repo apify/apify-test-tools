@@ -10,15 +10,15 @@ npx apify-test-tools <command> [flags]
 Run every command from the root of the Actor repository; it reads `apify-test-tools.config.json` from there.
 Results are written to stdout as JSON, diagnostics to stderr, so commands can be piped into each other and into `jq`.
 
-| Command                                                               | Does                                                        | Needs                      |
-| --------------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------- |
-| [`get-affected-actors`](#finding-affected-actors-get-affected-actors) | Lists the Actors changed in a commit range                  | git only                   |
-| [`build`](#building-actors-build)                                     | Builds the Actors given on stdin from the pushed branch     | Actor tokens               |
-| [`build-from-local`](#build-from-local-source-build-from-local)       | Builds Actors from local files                              | Actor tokens               |
-| [`notify-release`](#announcing-a-release-notify-release)              | Announces a release on Slack                                | `SLACK_TOKEN_RELEASES_BOT` |
-| [`report-tests`](#reporting-test-results-report-tests)                | Summarizes a vitest JSON report and posts failures to Slack | `SLACK_TOKEN_TESTS_BOT`    |
-| [`delete-old-builds`](#deleting-old-builds-delete-old-builds)         | Deletes old builds of the Actors                            | Actor tokens               |
-| [`get-actor-configs`](#listing-actors-get-actor-configs)              | Prints the resolved config                                  | nothing                    |
+| Command                                                               | Does                                                    | Needs                |
+| --------------------------------------------------------------------- | ------------------------------------------------------- | -------------------- |
+| [`get-affected-actors`](#finding-affected-actors-get-affected-actors) | Lists the Actors changed in a commit range              | git only             |
+| [`build`](#building-actors-build)                                     | Builds the Actors given on stdin from the pushed branch | Actor tokens         |
+| [`build-from-local`](#build-from-local-source-build-from-local)       | Builds Actors from local files                          | Actor tokens         |
+| [`test`](#running-tests-test)                                         | Runs the platform tests on the builds given on stdin    | `TESTER_APIFY_TOKEN` |
+| [`notify`](#notifying-notify)                                         | Posts a test report or a release to Slack               | a Slack token        |
+| [`delete-old-builds`](#deleting-old-builds-delete-old-builds)         | Deletes old builds of the Actors                        | Actor tokens         |
+| [`get-actor-configs`](#listing-actors-get-actor-configs)              | Prints the resolved config                              | nothing              |
 
 "Actor tokens" are the environment variables named by each Actor's `tokenEnvVar` in the config. A command only needs
 the tokens of the Actors it touches.
@@ -37,8 +37,8 @@ name is an error rather than silently selecting nothing.
 
 ## Dry runs (`--dry-run`)
 
-Every command that changes something (`build`, `build-from-local`, `notify-release`, `delete-old-builds`,
-`report-tests`) takes `--dry-run`. A dry run:
+Every command that changes something (`build`, `build-from-local`, `notify`, `delete-old-builds`) takes
+`--dry-run`. A dry run:
 
 - **Changes nothing.** No versions or builds are created, nothing is uploaded or deleted, and no Slack message is
   posted.
@@ -67,9 +67,8 @@ changed files. For each changed file, for each Actor:
 4. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it
    matched (e.g. a standalone Actor's own `.eslintrc` is checked as just `.eslintrc`, not the full
    repo-root-relative path), then checked against repo-level dev file patterns (`.vscode/`, `.gitignore`, `.husky/`,
-   `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`). There's no hardcoded special-casing for legacy
-   `code/`/`shared/` layouts — repos that need those directories treated as top-level must list them explicitly in
-   `overrideActorContext`.
+   `.eslintrc`, `eslint.config.mjs`, `.prettierrc`, `.editorconfig`). Directories like `code/` or `shared/`
+   get no special treatment: to treat them as top-level, list them in `overrideActorContext`.
 5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the Actor's `dockerContextDir`,
    matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior.
    Test files are the exception: `get-affected-actors --test-files-glob <glob>` (relative to the repo root) skips
@@ -238,8 +237,10 @@ npx apify-test-tools get-affected-actors --since <sha> > affected.json
 jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json \
   | npx apify-test-tools build --version-number default --dry-run
 
-npx apify-test-tools notify-release --release-slack-channel "#releases" --dry-run < affected.json
+npx apify-test-tools notify --slack-channel "#notif-my-repo" --dry-run < affected.json
 ```
+
+[`notify`](#notifying-notify) says what it posts for a release.
 
 ### The last released commit (`--since`)
 
@@ -273,38 +274,115 @@ Actors are reported; it never forces a build, so on its own it doesn't get past 
 A failed release isn't retried by the next push: that push's base commit is the failed one's head, so its changes
 are skipped. Re-run the failed workflow run, or release the Actors manually.
 
-## Announcing a release (`notify-release`)
+## Running tests (`test`)
 
-`notify-release` reads the output of `get-affected-actors` on stdin. It posts the changelog additions to
-`--release-slack-channel` and the commits and changed files to `--report-slack-channel`, and posts nothing when there
-are no new commits. It names the release after the `origin` remote (or `--repo-url`) and the author of the newest
-commit, and needs `SLACK_TOKEN_RELEASES_BOT`.
-
-| Flag                      | Meaning                                                |
-| ------------------------- | ------------------------------------------------------ |
-| `--release-slack-channel` | Channel for the changelog additions only               |
-| `--report-slack-channel`  | Channel for the full report: commits and changed files |
-| `--repo-url`              | Repository to name the release after                   |
-| `--dry-run`               | See [Dry runs](#dry-runs---dry-run)                    |
-
-## Reporting test results (`report-tests`)
-
-Reads a vitest JSON report (`--reporter=json --outputFile=<file>`), logs the passed and failed tests with their run
-links, and posts the failures to Slack. Without `--report-slack-channel` it only logs; with it,
-`SLACK_TOKEN_TESTS_BOT` must be set, even when no test failed.
+`test` runs the repository's own vitest (the version in its `node_modules`, so the tests keep the lib version
+the repository locked) on the builds it is given on stdin, and prints a report of the run for
+[`notify`](#notifying-notify).
 
 ```bash
-npx vitest --run --reporter=default --reporter=json --outputFile=./test-output.json test/platform
-npx apify-test-tools report-tests --report-file ./test-output.json --report-slack-channel "#my-channel"
+# A PR: test what was just built
+... | npx apify-test-tools build --version-number 0.99 | npx apify-test-tools test > test-report.json
+
+# Scheduled tests: every Actor's default build, nothing on stdin
+npx apify-test-tools test --all test/platform/core > test-report.json
 ```
 
-| Flag                     | Default  | Meaning                                       |
-| ------------------------ | -------- | --------------------------------------------- |
-| `--report-file`          | required | Path to the vitest JSON report                |
-| `--report-slack-channel` |          | Channel to post the failures to               |
-| `--job-url`              |          | Link to the CI job, included in the message   |
-| `--workflow-name`        |          | Name of the workflow, included in the message |
-| `--dry-run`              | `false`  | See [Dry runs](#dry-runs---dry-run)           |
+The input is the JSON array `build` and `build-from-local` print. A dry-run plan, empty or invalid input is an
+error, as with `build`. So is a missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the
+run would pass having tested nothing. `--all` reads no stdin and runs the tests of every Actor against its default build. `test` sets `ACTOR_BUILDS` and
+`RUN_ALL_PLATFORM_TESTS` for vitest from its input and flags, and ignores them in its own environment.
+
+It runs vitest with `--maxConcurrency=20 --fileParallelism --maxWorkers=100`, since platform tests mostly wait on
+Actor runs rather than the CPU, and with the default reporter plus the JSON one the report is read from. These
+replace any `reporters` in the repository's vitest config; add more with `--reporter`, e.g. `github-actions` to
+annotate the failing tests in a GitHub Actions run. It takes no other vitest options; for those, e.g. `-t` to run one
+test by name, run vitest directly with the builds in `ACTOR_BUILDS` (see
+[Running tests locally](lib.md#running-tests-locally)).
+
+| Argument / flag        | Default         | Meaning                                                             |
+| ---------------------- | --------------- | ------------------------------------------------------------------- |
+| `[filters..]`          | `test/platform` | Test files to run, as vitest filters                                |
+| `--all`                | `false`         | Test every Actor's default build instead of reading builds on stdin |
+| `--vitest-output-file` |                 | Also keep vitest's own JSON report there, e.g. to upload it         |
+| `--reporter`           |                 | Vitest reporter to add, e.g. `github-actions`. Repeat it for more   |
+
+Vitest's own output goes to stderr, followed by a summary that lists every test with the link to its run. Stdout
+gets only the report:
+
+```json
+{
+    "version": 1,
+    "success": false,
+    "summary": { "total": 3, "passed": 1, "failed": 1, "skipped": 1 },
+    "tests": [
+        {
+            "name": "john.doe/my-actor: finishes",
+            "file": "test/platform/my-actor.test.ts",
+            "status": "failed",
+            "durationMs": 61234,
+            "failureMessages": ["AssertionError: expected 'FAILED' to be 'SUCCEEDED'"],
+            "run": { "actorId": "john.doe/my-actor", "runId": "…", "runLink": "https://console.apify.com/view/runs/…" }
+        }
+    ],
+    "errors": ["test/platform/other.test.ts: Cannot find package 'foo'"]
+}
+```
+
+`failureMessages` keeps the first line of each failure; diffs and stack traces are in the vitest output. `run` is
+`null` for a test that started no run. `errors` lists what failed outside of any test: a test file that failed to
+load, or vitest exiting without a report. `test` exits with 1 whenever `success` is false, and prints the report
+anyway, so `notify` still hears about the failure.
+
+## Notifying (`notify`)
+
+`notify` tells one target about what it reads on stdin: a test run, as [`test`](#running-tests-test) reports it,
+or a release, as [`get-affected-actors`](#finding-affected-actors-get-affected-actors) reports it. It tells the two
+apart by their fields, so either can be piped in as it is. Slack is the only target for now. To post to more
+places, call it once for each.
+
+```bash
+# A test run: posts only when the tests failed, the failure counts and the first failure, linked to its run,
+# with the other failures in the message's thread
+npx apify-test-tools notify --slack-channel '#notif-my-repo' < test-report.json
+npx apify-test-tools notify --slack-channel '#my-team' < test-report.json
+
+# Or straight from test. With `set -o pipefail` (`shell: bash` in GitHub Actions), failed tests still fail the pipe
+npx apify-test-tools test --all | npx apify-test-tools notify --slack-channel '#notif-my-repo'
+
+# A release, see Releasing Actors
+npx apify-test-tools get-affected-actors --since <sha> | npx apify-test-tools notify --slack-channel '#notif-my-repo'
+```
+
+| Flag              | Input   | Default             | Meaning                                                           |
+| ----------------- | ------- | ------------------- | ----------------------------------------------------------------- |
+| `--slack-channel` | both    |                     | Slack channel to post to                                          |
+| `--on`            | tests   | `failure`           | `failure` posts only when the tests failed, `always` on every run |
+| `--title`         | tests   | `-`                 | What the message calls the run, e.g. the CI workflow name         |
+| `--job-url`       | tests   |                     | Link to the CI job, included in the message                       |
+| `--repo-url`      | release | the `origin` remote | The repository the release is named after and its commits link to |
+
+A flag the input has no use for, e.g. `--repo-url` with a test report, is an error rather than ignored. Both kinds
+of notification post with `SLACK_BOT_TOKEN`.
+
+Without a target, `notify` posts nothing and needs no token. With one, it checks the token on every run, also when
+there is nothing to post, so a broken token shows up on a green run rather than on the day tests fail. A release
+with no new commits is the exception: there is nothing to announce, so it needs no token either.
+
+For a release, `notify` posts the changelog additions, then the commits, oldest first. Each commit is its title (cut
+at 200 characters) linked to its page on GitHub, and its author. A merge commit or a squash merge is one commit; a
+rebase merge lists every commit it brought. A repository hosted elsewhere gets the titles without links. The release
+is named after the `origin` remote (or `--repo-url`) and the author of the newest commit. Nothing is posted when there
+are no new commits:
+
+```text
+*my-repo* – New release (by Jane Doe):
+
+- Fixed pagination on the search page
+
+*Commits*:
+1. <https://github.com/my-org/my-repo/commit/1a2b3c…|fix: pagination on the search page> – Jane Doe
+```
 
 ## Deleting old builds (`delete-old-builds`)
 
@@ -332,8 +410,8 @@ To test changed Actor source, you need builds of it. The quickest way is
 [`build-from-local`](#build-from-local-source-build-from-local), which needs no push:
 
 ```bash
-BUILDS=$(APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
-    npx apify-test-tools build-from-local --actors john.doe/my-actor)
+APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
+    npx apify-test-tools build-from-local --actors john.doe/my-actor > builds.json
 ```
 
 To build from git, like CI does:
@@ -345,9 +423,9 @@ To build from git, like CI does:
 5. Run tests against those builds. You can change tests and run on the same builds.
 
 ```bash
-BUILDS=$(npx apify-test-tools get-affected-actors --base origin/master --test-files-glob 'test/platform/**' \
+npx apify-test-tools get-affected-actors --base origin/master --test-files-glob 'test/platform/**' \
     | jq '{ actors: .functionallyChangedActors }' \
-    | APIFY_TOKEN_JOHN_DOE=apify_api_xxx npx apify-test-tools build --version-number 0.99)
+    | APIFY_TOKEN_JOHN_DOE=apify_api_xxx npx apify-test-tools build --version-number 0.99 > builds.json
 ```
 
 Run it with your dummy branch checked out: it builds the Actors that branch changed functionally, from the branch as
@@ -358,16 +436,15 @@ Actors in `ACTOR_BUILDS`, so pass `--test-files-glob` to count test changes even
 If you want to test against existing builds instead, skip the build and write the build array by hand, only for the
 Actors you need to test.
 
-Then run the tests against the builds:
+Then run the tests against the builds with [`test`](#running-tests-test), as often as you like:
 
 ```bash
-ACTOR_BUILDS="$BUILDS" \
-TESTER_APIFY_TOKEN=apify_api_yyy \
-  npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
+TESTER_APIFY_TOKEN=apify_api_yyy npx apify-test-tools test < builds.json
 ```
 
-## Legacy git commands
+## Git range commands
 
 `get-commits`, `get-latest-commit` and `get-changed-files` print the commits, the newest commit, or the changed files
-on `--source-branch` since it diverged from `--target-branch` (optionally only after `--base-commit`). They predate
-`get-affected-actors`, which reports the same data, and are kept for older workflows.
+on `--source-branch` since it diverged from `--target-branch` (optionally only after `--base-commit`).
+[`get-affected-actors`](#finding-affected-actors-get-affected-actors) reports the same data together with the
+affected Actors, so prefer it.

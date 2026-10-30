@@ -100,7 +100,6 @@ jobs:
             # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
             # The library never sees secrets it doesn't need
             - name: Build
-              id: build
               # bash rather than the default shell, for pipefail
               shell: bash
               env:
@@ -108,17 +107,19 @@ jobs:
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
               run: |
-                  actor_builds=$(jq '{ actors: .functionallyChangedActors }' affected.json \
+                  jq '{ actors: .functionallyChangedActors }' affected.json \
                     | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99 \
-                        --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC")
-                  echo "actor_builds=$actor_builds" | tee -a "$GITHUB_OUTPUT"
+                        --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC" \
+                    | tee builds.json
 
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.
             - name: Test
               env:
-                  ACTOR_BUILDS: ${{ steps.build.outputs.actor_builds }}
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-              run: npx vitest ./test/platform/${{ inputs.test-files-glob }} --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100
+              # The github-actions reporter annotates the PR with the failing tests
+              run: |
+                  apify-test-tools test ./test/platform/${{ inputs.test-files-glob }} --reporter github-actions \
+                    < builds.json > test-report.json
 
             # NOTE: This is an optimization that if we did functional changes and later only cosmetic changes (e.g. dev readme), we will compare changes files only for the last commit. This must run after tests because we want to cache the latest commit only if the tests are successful
             - name: Store last validated commit to cache

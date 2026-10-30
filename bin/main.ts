@@ -11,10 +11,10 @@ import { buildActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds } from './build.j
 import { runBuildsFromLocal } from './build-from-local.js';
 import { getChangedFiles, getCommits } from './git.js';
 import { logger, logLevels } from './logger.js';
+import { notify, notifyOnChoices } from './notify.js';
 import { writeJson } from './output.js';
-import { notifyToSlack } from './slack.js';
-import { parseBuildInput, parseReleaseChanges, readStdin } from './stdin-input.js';
-import { reportTestResults } from './test-report.js';
+import { runTests } from './run-tests.js';
+import { parseBuildInput, parseNotifyInput, parseTestBuilds, readStdin } from './stdin-input.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
 /**
@@ -110,10 +110,56 @@ const envVarsSyncOptions = {
     },
 } as const satisfies Record<string, Options>;
 
-/** Where `notify-release` posts the release. */
-const releaseSlackOptions = {
-    'report-slack-channel': { type: 'string', describe: 'Channel for the full report: commits and changed files' },
-    'release-slack-channel': { type: 'string', describe: 'Channel for the changelog additions only' },
+/** Flags of `test`, which runs the repository's vitest on the builds piped in from `build`. */
+const testOptions = {
+    all: {
+        type: 'boolean',
+        default: false,
+        describe: "Test every Actor's default build instead of reading builds on stdin, as the scheduled tests do",
+    },
+    'vitest-output-file': { type: 'string', describe: "Also keep vitest's own JSON report there, e.g. to upload it" },
+    reporter: {
+        type: 'string',
+        describe: 'Vitest reporter to add to the default one, e.g. github-actions. Repeat it for more',
+        // Not `array: true`: an array option would also take the test files that follow it. A repeated flag still
+        // comes as an array, a single one as a string.
+        coerce: (value: string | string[] | undefined) => (value === undefined ? [] : [value].flat()),
+    },
+} as const satisfies Record<string, Options>;
+
+/**
+ * Flags of `notify`, one target per call: posting to more places is calling it again. Some flags only fit one kind
+ * of input; `notify` fails on the others rather than ignoring them.
+ */
+const notifyOptions = {
+    'slack-channel': {
+        type: 'string',
+        describe: 'Slack channel to post to',
+        // yargs collects a repeated flag into an array, which would reach Slack as one comma-joined channel
+        coerce: (value: string | string[]) => {
+            if (Array.isArray(value)) {
+                throw new Error('--slack-channel takes one channel, call notify once for each channel');
+            }
+            return value;
+        },
+    },
+    on: {
+        choices: notifyOnChoices,
+        default: 'failure' as const,
+        describe: 'Tests only: notify only when tests fail, or always',
+    },
+    title: {
+        type: 'string',
+        describe: 'Tests only: what the message calls the run, e.g. the CI workflow name',
+    },
+    'job-url': {
+        type: 'string',
+        describe: 'Tests only: link to the CI job, included in the message',
+    },
+    'repo-url': {
+        type: 'string',
+        describe: 'Releases only: the repository the release is named after. Defaults to the origin remote',
+    },
 } as const satisfies Record<string, Options>;
 
 /** Global flags, available to every command. */
@@ -178,17 +224,43 @@ await yargs()
         },
     )
     .command(
-        'report-tests',
-        '',
+        'test [filters..]',
+        'Run the tests on the builds listed on stdin (the output of build), and print a report for notify',
         (y) =>
             y
-                .options(dryRunOptions)
-                .option('report-file', { type: 'string', demandOption: true })
-                .option('report-slack-channel', { type: 'string' })
-                .option('job-url', { type: 'string' })
-                .option('workflow-name', { type: 'string' }),
+                .positional('filters', {
+                    type: 'string',
+                    array: true,
+                    default: ['test/platform'],
+                    describe: 'Test files to run, as vitest filters',
+                })
+                .options(testOptions),
         async (args) => {
-            await reportTestResults(args);
+            const report = await runTests({
+                filters: args.filters,
+                builds: args.all ? null : parseTestBuilds(await readStdin()),
+                vitestOutputFile: args.vitestOutputFile,
+                reporters: args.reporter,
+            });
+            writeJson(report);
+            // The report is printed either way, so `notify` later in the pipe still hears about the failure
+            if (!report.success) process.exitCode = 1;
+        },
+    )
+    .command(
+        'notify',
+        'Tell the target about a test run (the output of test) or a release (of get-affected-actors) on stdin',
+        (y) => y.options(notifyOptions).options(dryRunOptions),
+        async (args) => {
+            await notify({
+                input: parseNotifyInput(await readStdin()),
+                slackChannel: args.slackChannel,
+                on: args.on,
+                title: args.title,
+                jobUrl: args.jobUrl,
+                repoUrl: args.repoUrl,
+                dryRun: args.dryRun,
+            });
         },
     )
     .command(
@@ -208,23 +280,6 @@ await yargs()
                 requireEnvVarsInSync: args.requireEnvVarsInSync,
             });
             writeJson(builds);
-        },
-    )
-    .command(
-        'notify-release',
-        'Announce a release on Slack, from the get-affected-actors output on stdin',
-        (y) => y.options(releaseSlackOptions).options(repoUrlOptions).options(dryRunOptions),
-        async (args) => {
-            const { commits, changedFiles, changelog } = parseReleaseChanges(await readStdin());
-            await notifyToSlack({
-                commits,
-                changedFiles,
-                changelog,
-                repoUrl: args.repoUrl,
-                dryRun: args.dryRun,
-                reportSlackChannel: args.reportSlackChannel,
-                releaseSlackChannel: args.releaseSlackChannel,
-            });
         },
     )
     .command(

@@ -43,7 +43,7 @@ Validates a pull request. It runs two jobs in parallel.
 2. Builds the functionally changed Actors into the test version `0.99` with [`build`](cli.md#building-actors-build).
    Cosmetic-only changes (README, CHANGELOG, schema formatting) need no tests, so they're not built.
 3. Runs [`test`](cli.md#running-tests-test) on `./test/platform/<test-files-glob>` with those builds, so only the
-   tests of the built Actors run.
+   tests of the built Actors run. Failing tests are annotated on the PR.
 4. On success, caches the tested commit as the "last validated commit". The next push to the PR then only builds
    and tests the Actors that changed since it (see `--since` in
    [`get-affected-actors`](cli.md#finding-affected-actors-get-affected-actors)).

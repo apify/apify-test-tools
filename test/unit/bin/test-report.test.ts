@@ -30,7 +30,7 @@ describe('toTestReport', () => {
                             fullName: 'owner/a: fails',
                             status: 'failed',
                             duration: 3,
-                            // The same failure twice (e.g. a retry) is reported once
+                            // Every failure counts, also the same one twice (e.g. a retry)
                             failureMessages: ['AssertionError: boom\n    at a.test.ts:1:1', 'AssertionError: boom\n'],
                             meta: {},
                         },
@@ -58,7 +58,7 @@ describe('toTestReport', () => {
                     file: 'test/platform/a.test.ts',
                     status: 'failed',
                     durationMs: 3,
-                    failureMessages: ['AssertionError: boom'],
+                    failureMessages: ['AssertionError: boom', 'AssertionError: boom'],
                     run: null,
                 },
                 {

@@ -94,7 +94,7 @@ const notifyTestReport = async ({
         return;
     }
 
-    await target.send(formatTestMessage({ report, title: title ?? 'Tests', jobUrl }));
+    await target.send(formatTestMessage({ report, title: title ?? '-', jobUrl }));
 };
 
 /**
@@ -161,10 +161,10 @@ const createSlackTarget = async (
 // Slack reads these as markup, so they have to be escaped wherever text comes from the tests
 const escapeSlack = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-const formatFailure = ({ name, failureMessages, run }: TestCaseReport) => {
+/** One line per failure message, linked to the run that failed, if the test started one. */
+const formatFailures = ({ failureMessages, run }: TestCaseReport) => {
     const link = run ? ` --- <${run.runLink}|${escapeSlack(run.actorId)}>` : '';
-    const messages = failureMessages.length > 0 ? failureMessages : ['Failed without a message'];
-    return messages.map((message) => `*${escapeSlack(name)}*: ${escapeSlack(message)}${link}`);
+    return failureMessages.map((message) => `${escapeSlack(message)}${link}`);
 };
 
 /**
@@ -180,25 +180,19 @@ export const formatTestMessage = ({
     title: string;
     jobUrl?: string;
 }) => {
-    const { passed, failed, skipped } = report.summary;
-    const ran = passed + failed;
-    const failures = [
-        ...report.tests.filter(({ status }) => status === 'failed').flatMap(formatFailure),
-        ...report.errors.map((error) => `*Error*: ${escapeSlack(error)}`),
-    ];
-
-    let outcome: string;
-    if (failed > 0) {
-        outcome = `${failed} of ${ran} tests failed.`;
-    } else if (!report.success) {
-        outcome = 'the tests failed to run.';
-    } else {
-        outcome = ran > 0 ? `all ${ran} tests passed.` : `no tests ran (${skipped} skipped).`;
-    }
-    if (report.errors.length > 0 && failed > 0) outcome += ` ${report.errors.length} error(s) outside of tests.`;
+    const { total, failed, passed } = report.summary;
+    const failedAssertions = report.tests.filter(({ status }) => status === 'failed').flatMap(formatFailures);
+    const failures = [...failedAssertions, ...report.errors.map((error) => `Error: ${escapeSlack(error)}`)];
     const jobLink = jobUrl ? ` Check <${jobUrl}|the job>.` : '';
 
-    let text = `\`${escapeSlack(title)}\`: ${outcome}${jobLink}`;
+    let text = `\`${escapeSlack(title)}\``;
+    if (report.success) {
+        text += `: all ${passed} tests passed.${jobLink}`;
+        return { text, details: [] };
+    }
+    text += `: has ${failedAssertions.length} failed assertions. Failing test suites: ${failed}/${total}.`;
+    if (report.errors.length > 0) text += ` Errors outside of tests: ${report.errors.length}.`;
+    text += jobLink;
     if (failures.length > 0) text += `\n\n${failures[0]}`;
     return { text, details: failures.slice(1).map((failure) => `• ${failure}`) };
 };

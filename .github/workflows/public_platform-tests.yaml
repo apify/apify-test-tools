@@ -58,21 +58,28 @@ jobs:
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.
             # Fails on failing tests, but writes the report anyway for the notification below.
             - name: Test
+              id: test
               env:
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
               run: |
                   apify-test-tools test --all ./test/platform/${{ inputs.test-files-glob || inputs.subtest }} \
-                    --vitest-output-file ./test-output.json > test-report.json
+                    --reporter github-actions --vitest-output-file ./test-output.json > test-report.json
 
-            # Posts only when the tests failed, but checks the Slack token on every run
+            # Posts only when the tests failed, but checks the Slack token on every run. Runs whenever the tests
+            # did, also after a failure, but not when the token check stopped the job before them.
             - name: Notify
-              if: ${{ !cancelled() }}
+              if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
               env:
                   SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
                   # Passed through the environment, so a quote in the workflow name can't break the command
                   WORKFLOW_NAME: ${{ github.workflow }}
                   JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
               run: |
+                  # Empty when `test` itself failed before running vitest, its error is in the Test step
+                  if [ ! -s test-report.json ]; then
+                      echo "No test report, so there is nothing to notify about"
+                      exit 0
+                  fi
                   apify-test-tools notify \
                     --slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" \
                     --title "$WORKFLOW_NAME" \

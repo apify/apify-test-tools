@@ -76,6 +76,24 @@ test('owner/a: fails', () => {
         expect(JSON.parse(result.stdout)).toMatchObject({ success: false, summary: { passed: 1, failed: 1 } });
     });
 
+    it('adds the reporters it is given to the default and JSON ones, also before the test files', () => {
+        const result = run([
+            '--log-level',
+            'debug',
+            'test',
+            '--all',
+            '--reporter',
+            'dot',
+            '--reporter',
+            'verbose',
+            'test/platform',
+        ]);
+        expect(result.stderr).toMatch(
+            /Running vitest: \S+ run test\/platform --reporter=default --reporter=json --reporter=dot --reporter=verbose /,
+        );
+        expect(JSON.parse(result.stdout)).toMatchObject({ summary: { passed: 1, failed: 1 } });
+    });
+
     it('fails without TESTER_APIFY_TOKEN instead of passing with every test skipped', () => {
         const result = run(['test'], JSON.stringify([build]), repoDir, { ...env, TESTER_APIFY_TOKEN: '' });
         expect(result.status).toBe(1);

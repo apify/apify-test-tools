@@ -294,8 +294,10 @@ run would pass having tested nothing. `--all` reads no stdin and runs the tests 
 `RUN_ALL_PLATFORM_TESTS` for vitest from its input and flags, and ignores them in its own environment.
 
 It runs vitest with `--maxConcurrency=20 --fileParallelism --maxWorkers=100`, since platform tests mostly wait on
-Actor runs rather than the CPU, and with its JSON reporter for the report. It takes no other vitest options; for
-those, e.g. `-t` to run one test by name, run vitest directly with the builds in `ACTOR_BUILDS` (see
+Actor runs rather than the CPU, and with the default reporter plus the JSON one the report is read from. These
+replace any `reporters` in the repository's vitest config; add more with `--reporter`, e.g. `github-actions` to
+annotate the failing tests in a GitHub Actions run. It takes no other vitest options; for those, e.g. `-t` to run one
+test by name, run vitest directly with the builds in `ACTOR_BUILDS` (see
 [Running tests locally](lib.md#running-tests-locally)).
 
 | Argument / flag        | Default         | Meaning                                                             |
@@ -303,6 +305,7 @@ those, e.g. `-t` to run one test by name, run vitest directly with the builds in
 | `[filters..]`          | `test/platform` | Test files to run, as vitest filters                                |
 | `--all`                | `false`         | Test every Actor's default build instead of reading builds on stdin |
 | `--vitest-output-file` |                 | Also keep vitest's own JSON report there, e.g. to upload it         |
+| `--reporter`           |                 | Vitest reporter to add, e.g. `github-actions`. Repeat it for more   |
 
 Vitest's own output goes to stderr, followed by a summary that lists every test with the link to its run. Stdout
 gets only the report:
@@ -339,7 +342,7 @@ apart by their fields, so either can be piped in as it is. Slack is the only tar
 places, call it once for each.
 
 ```bash
-# A test run: posts only when the tests failed, the outcome and the first failure, linked to its run,
+# A test run: posts only when the tests failed, the failure counts and the first failure, linked to its run,
 # with the other failures in the message's thread
 npx apify-test-tools notify --slack-channel '#notif-my-repo' < test-report.json
 npx apify-test-tools notify --slack-channel '#my-team' < test-report.json
@@ -355,7 +358,7 @@ npx apify-test-tools get-affected-actors --since <sha> | npx apify-test-tools no
 | ----------------- | ------- | ------------------- | ----------------------------------------------------------------- |
 | `--slack-channel` | both    |                     | Slack channel to post to                                          |
 | `--on`            | tests   | `failure`           | `failure` posts only when the tests failed, `always` on every run |
-| `--title`         | tests   | `Tests`             | What the message calls the run, e.g. the CI workflow name         |
+| `--title`         | tests   | `-`                 | What the message calls the run, e.g. the CI workflow name         |
 | `--job-url`       | tests   |                     | Link to the CI job, included in the message                       |
 | `--repo-url`      | release | the `origin` remote | The repository the release is named after and its commits link to |
 

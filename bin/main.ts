@@ -118,6 +118,13 @@ const testOptions = {
         describe: "Test every Actor's default build instead of reading builds on stdin, as the scheduled tests do",
     },
     'vitest-output-file': { type: 'string', describe: "Also keep vitest's own JSON report there, e.g. to upload it" },
+    reporter: {
+        type: 'string',
+        describe: 'Vitest reporter to add to the default one, e.g. github-actions. Repeat it for more',
+        // Not `array: true`: an array option would also take the test files that follow it. A repeated flag still
+        // comes as an array, a single one as a string.
+        coerce: (value: string | string[] | undefined) => (value === undefined ? [] : [value].flat()),
+    },
 } as const satisfies Record<string, Options>;
 
 /**
@@ -233,6 +240,7 @@ await yargs()
                 filters: args.filters,
                 builds: args.all ? null : parseTestBuilds(await readStdin()),
                 vitestOutputFile: args.vitestOutputFile,
+                reporters: args.reporter,
             });
             writeJson(report);
             // The report is printed either way, so `notify` later in the pipe still hears about the failure

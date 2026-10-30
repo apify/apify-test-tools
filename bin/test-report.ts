@@ -18,7 +18,7 @@ export interface TestCaseReport {
     file: string;
     status: TestStatus;
     durationMs: number | null;
-    /** The first line of each distinct failure, the rest (diffs, stack traces) is in the vitest output */
+    /** The first line of each failure, the rest (diffs, stack traces) is in the vitest output */
     failureMessages: string[];
     /** Null for tests that didn't start a run: skipped ones, standby tests, or ones that failed before the run */
     run: TestRun | null;
@@ -61,7 +61,7 @@ export interface VitestJsonReport {
     testResults: VitestFileResult[];
 }
 
-const firstLine = (text: string) => text.split('\n')[0].trim();
+const firstLine = (text: string) => text.split('\n')[0];
 
 const toRun = (meta: Partial<TestRun> | undefined): TestRun | null => {
     const { actorId, runId, runLink } = meta ?? {};
@@ -93,7 +93,7 @@ export const toTestReport = (
                 file: relativeFile,
                 status,
                 durationMs: assertion.duration != null ? Math.round(assertion.duration) : null,
-                failureMessages: [...new Set((assertion.failureMessages ?? []).map(firstLine))],
+                failureMessages: (assertion.failureMessages ?? []).map(firstLine),
                 run: toRun(assertion.meta),
             });
         }

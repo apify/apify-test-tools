@@ -34,6 +34,8 @@ interface RunTestsOptions {
     builds: BuildData[] | null;
     /** Keeps vitest's own JSON report there, e.g. to upload it */
     vitestOutputFile?: string;
+    /** Vitest reporters to add to the default one and the JSON one the report is read from, e.g. `github-actions` */
+    reporters?: string[];
     cwd?: string;
 }
 
@@ -46,6 +48,7 @@ export const runTests = async ({
     filters,
     builds,
     vitestOutputFile,
+    reporters = [],
     cwd = process.cwd(),
 }: RunTestsOptions): Promise<TestReport> => {
     // Without it the lib skips every platform test, and a run that tested nothing would pass
@@ -77,6 +80,7 @@ export const runTests = async ({
         ...filters,
         '--reporter=default',
         '--reporter=json',
+        ...reporters.map((reporter) => `--reporter=${reporter}`),
         `--outputFile.json=${outputFile}`,
         // Platform tests mostly wait on Actor runs, not on the CPU, so they run far more at once than vitest's defaults
         '--maxConcurrency=20',

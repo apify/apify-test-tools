@@ -126,7 +126,7 @@ describe('notify about tests', () => {
     it('names the run and links the job as the caller passes them', async () => {
         await notifyTests(failed, { title: 'Platform tests - Core', jobUrl: 'https://ci.example.com/jobs/42' });
         expect(postMessage.mock.calls[0][0].text).toContain(
-            '`Platform tests - Core`: 1 of 2 tests failed. Check <https://ci.example.com/jobs/42|the job>.',
+            '`Platform tests - Core`: has 1 failed assertions. Failing test suites: 1/2. Check <https://ci.example.com/jobs/42|the job>.',
         );
     });
 
@@ -136,7 +136,9 @@ describe('notify about tests', () => {
         vi.stubEnv('GITHUB_REPOSITORY', 'owner/repo');
         vi.stubEnv('GITHUB_RUN_ID', '42');
         await notifyTests(failed, { title: undefined });
-        expect(postMessage.mock.calls[0][0].text).toMatch(/^`Tests`: 1 of 2 tests failed\.\n/);
+        expect(postMessage.mock.calls[0][0].text).toMatch(
+            /^`-`: has 1 failed assertions\. Failing test suites: 1\/2\.\n/,
+        );
     });
 
     it('rejects the flags only a release uses', async () => {
@@ -257,24 +259,36 @@ describe('formatReleaseMessage', () => {
 });
 
 describe('formatTestMessage', () => {
-    it('leads with the outcome and the first failure, linked to its run', () => {
+    it('leads with the counts and the first failure, linked to its run, and threads the rest', () => {
+        const twice = testCase('owner/a: twice', { status: 'failed', failureMessages: ['Error: one', 'Error: two'] });
+        const skipped = testCase('owner/a: skipped', { status: 'skipped', run: null });
         const { text, details } = formatTestMessage({
-            report: reportOf([testCase('ok'), failing('owner/a: fails'), failing('owner/a: also')]),
+            report: reportOf([testCase('ok'), failing('owner/a: fails'), twice, skipped]),
             title: 'Tests',
             jobUrl: 'https://job',
         });
+        // Every failure message counts as an assertion, every test (skipped too) in the total
         expect(text).toBe(
-            '`Tests`: 2 of 3 tests failed. Check <https://job|the job>.\n\n' +
-                '*owner/a: fails*: AssertionError: boom --- <https://console.apify.com/view/runs/owner/a: fails|owner/a>',
+            '`Tests`: has 3 failed assertions. Failing test suites: 2/4. Check <https://job|the job>.\n\n' +
+                'AssertionError: boom --- <https://console.apify.com/view/runs/owner/a: fails|owner/a>',
         );
         expect(details).toStrictEqual([
-            '• *owner/a: also*: AssertionError: boom --- <https://console.apify.com/view/runs/owner/a: also|owner/a>',
+            '• Error: one --- <https://console.apify.com/view/runs/owner/a: twice|owner/a>',
+            '• Error: two --- <https://console.apify.com/view/runs/owner/a: twice|owner/a>',
         ]);
+    });
+
+    it('links nothing for a failure that started no run', () => {
+        const report = reportOf([testCase('standby', { status: 'failed', failureMessages: ['Error: x'], run: null })]);
+        expect(formatTestMessage({ report, title: 'T' }).text).toMatch(/\n\nError: x$/);
     });
 
     it('reports errors outside of tests, e.g. a test file that failed to load', () => {
         const { text } = formatTestMessage({ report: reportOf([], ['b.test.ts: Cannot find package']), title: 'T' });
-        expect(text).toBe('`T`: the tests failed to run.\n\n*Error*: b.test.ts: Cannot find package');
+        expect(text).toBe(
+            '`T`: has 0 failed assertions. Failing test suites: 0/0. Errors outside of tests: 1.\n\n' +
+                'Error: b.test.ts: Cannot find package',
+        );
     });
 
     it('escapes what Slack would read as markup', () => {

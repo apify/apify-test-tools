@@ -64,6 +64,10 @@ const notifyRelease = async (changes: ReleaseChanges, overrides: Partial<NotifyO
     });
 
 beforeEach(() => {
+    // The defaults come from these, and GitHub Actions sets them, so CI would see links the tests don't expect
+    for (const name of ['GITHUB_WORKFLOW', 'GITHUB_SERVER_URL', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID']) {
+        vi.stubEnv(name, '');
+    }
     vi.stubEnv(TESTS_TOKEN, 'token');
     vi.stubEnv(RELEASES_TOKEN, 'token');
     postMessage.mockResolvedValue({ ts: '1.1' });

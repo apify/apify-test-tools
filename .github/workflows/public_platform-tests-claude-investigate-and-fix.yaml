@@ -86,6 +86,7 @@ on:
                     To do so, exercise your best judgement. Issues marked with higher priority will be reacted to first.
                     Here are guidelines:
                     - Determine priority based on combined severity and revenue actually at risk: a less severe bug can outrank a more severe one if much more revenue is actually at risk, and vice versa.
+                    - If the Impact section considers the bug from several points of view, each in its own sub-section, base the priority on the most impactful one.
                     - If it helps you, you can base your assessment off priorities of already existing bugs in the repo.
                     - Invisible to the user or Test severity always receives lowest priority.
 

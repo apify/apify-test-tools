@@ -1,6 +1,6 @@
 ---
 name: measure-flakiness
-description: Re-runs the failing Actor run many times in parallel to measure how often the failure happens. Use only when you are about to create a new issue for a failing platform test and its failure rate is not already obvious.
+description: Re-runs the failing Actor run many times in parallel to measure how often the failure happens. Use only when you are about to create a new issue for a failing platform test and its flakiness rate is not already obvious.
 ---
 
 # Measure flakiness

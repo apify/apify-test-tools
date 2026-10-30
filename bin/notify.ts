@@ -1,6 +1,6 @@
 import process from 'node:process';
 
-import { getRepoName, resolveRepoUrl } from './git.js';
+import { getCommitUrl, getRepoName, resolveRepoUrl } from './git.js';
 import { logger } from './logger.js';
 import { getSlackClient, sendingLabel, sendSlackMessage } from './slack.js';
 import type { NotifyInput, ReleaseChanges } from './stdin-input.js';
@@ -25,8 +25,10 @@ interface NotificationTarget {
     send(message: Message): Promise<void>;
 }
 
-const TESTS_SLACK_TOKEN_ENV_VAR = 'SLACK_TOKEN_TESTS_BOT';
-const RELEASES_SLACK_TOKEN_ENV_VAR = 'SLACK_TOKEN_RELEASES_BOT';
+const SLACK_TOKEN_ENV_VAR = 'SLACK_BOT_TOKEN';
+
+// Long enough for any sensible commit title, short enough that one runaway title doesn't swamp the message
+const MAX_COMMIT_TITLE_LENGTH = 200;
 
 interface NotifyOptions {
     input: NotifyInput;
@@ -37,8 +39,6 @@ interface NotifyOptions {
     title?: string;
     /** Tests only, defaults to the GitHub Actions run, see githubRunContext */
     jobUrl?: string;
-    /** Releases only: just the changelog additions, for the broader public, instead of the full report */
-    changelogOnly: boolean;
     /** Releases only, names the release. Defaults to the `origin` remote, see resolveRepoUrl */
     repoUrl?: string;
     dryRun: boolean;
@@ -48,14 +48,13 @@ interface NotifyOptions {
 export const notify = async (options: NotifyOptions) => {
     assertFlagsFitInput(options);
     const { input, slackChannel, dryRun } = options;
-    const tokenEnvVar = input.kind === 'tests' ? TESTS_SLACK_TOKEN_ENV_VAR : RELEASES_SLACK_TOKEN_ENV_VAR;
     // A target is created only once we know a message may go out, so a release with no commits needs no token
     const createTarget = async () => {
         if (!slackChannel) {
             logger.info('Skipping notification, no --slack-channel passed');
             return null;
         }
-        return createSlackTarget(tokenEnvVar, slackChannel, dryRun);
+        return createSlackTarget(SLACK_TOKEN_ENV_VAR, slackChannel, dryRun);
     };
     if (input.kind === 'tests') {
         await notifyTestReport({ ...options, report: input.report, createTarget });
@@ -65,10 +64,10 @@ export const notify = async (options: NotifyOptions) => {
 };
 
 /** A flag the input has no use for would be dropped silently, so it fails instead: the caller meant something by it. */
-const assertFlagsFitInput = ({ input, on, title, jobUrl, changelogOnly, repoUrl }: NotifyOptions) => {
+const assertFlagsFitInput = ({ input, on, title, jobUrl, repoUrl }: NotifyOptions) => {
     const misfits =
         input.kind === 'tests'
-            ? [changelogOnly && '--changelog-only', repoUrl && '--repo-url']
+            ? [repoUrl && '--repo-url']
             : [on !== 'failure' && '--on', title && '--title', jobUrl && '--job-url'];
     const passed = misfits.filter(Boolean);
     if (passed.length > 0) {
@@ -116,17 +115,14 @@ const notifyTestReport = async ({
 };
 
 /**
- * What a release changed: by default the full report for devs and project managers, its changelog additions,
- * commits and changed files; with `changelogOnly` just the changelog additions, for the broader public who only
- * care about public facing changes. Posts nothing when there are no commits, which means there is nothing new to
- * release.
+ * What a release changed: its changelog additions, then its commits, each linked to its commit page. Posts nothing
+ * when there are no commits, which means there is nothing new to release.
  */
 const notifyRelease = async ({
-    changes: { commits, changedFiles, changelog },
-    changelogOnly,
+    changes: { commits, changelog },
     repoUrl,
     createTarget,
-}: Pick<NotifyOptions, 'changelogOnly' | 'repoUrl'> & { changes: ReleaseChanges; createTarget: CreateTarget }) => {
+}: Pick<NotifyOptions, 'repoUrl'> & { changes: ReleaseChanges; createTarget: CreateTarget }) => {
     if (commits.length === 0) {
         logger.info('No new commits, so there is no release to announce');
         return;
@@ -136,27 +132,29 @@ const notifyRelease = async ({
     }
     const target = await createTarget();
     if (!target) return;
-    if (changelogOnly && !changelog) {
-        logger.info('No changelog additions, so there is nothing to post with --changelog-only');
-        return;
-    }
 
-    const repository = getRepoName((await resolveRepoUrl(repoUrl)).repoUrl);
-    // The newest commit, same as the pushed head commit
+    const resolvedRepoUrl = (await resolveRepoUrl(repoUrl)).repoUrl;
+    await target.send({ text: formatReleaseMessage({ commits, changelog }, resolvedRepoUrl), details: [] });
+};
+
+/** The release, named after the repository and the author of its newest commit, the pushed head. */
+export const formatReleaseMessage = ({ commits, changelog }: ReleaseChanges, repoUrl: string) => {
     const { author } = commits[commits.length - 1];
-    let text = `*${repository}* – New release (by ${displayName(author)}):\n\n`;
-    if (changelog) text += `*Additions to the changelog*:\n\n${changelog}\n`;
-    if (!changelogOnly) {
-        const commitList = commits
-            .map(
-                ({ author: commitAuthor, message }, index) =>
-                    `${index + 1}. Commit message: ${message}\n\tAuthor: ${displayName(commitAuthor)}.`,
-            )
-            .join('\n');
-        const changedFilesList = `*Files changed*: ${changedFiles.map((file) => `\`${file}\``).join(', ')}`;
-        text += `\n*Commit list*:\n${commitList}\n\n${changedFilesList}`;
-    }
-    await target.send({ text, details: [] });
+    let text = `*${getRepoName(repoUrl)}* – New release (by ${displayName(author)}):\n\n`;
+    if (changelog) text += `${changelog.trim()}\n\n`;
+    text += '*Commits*:\n';
+    text += commits
+        .map(({ sha, author: commitAuthor, message }, index) => {
+            const title =
+                message.length > MAX_COMMIT_TITLE_LENGTH
+                    ? `${message.slice(0, MAX_COMMIT_TITLE_LENGTH - 1)}…`
+                    : message;
+            const url = getCommitUrl(repoUrl, sha);
+            const linked = url ? `<${url}|${escapeSlack(title)}>` : escapeSlack(title);
+            return `${index + 1}. ${linked} – ${displayName(commitAuthor)}`;
+        })
+        .join('\n');
+    return text;
 };
 
 // Git authors come as "Name<email>", Slack only needs the name

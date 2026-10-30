@@ -238,8 +238,6 @@ npx apify-test-tools get-affected-actors --since <sha> > affected.json
 jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json \
   | npx apify-test-tools build --version-number default --dry-run
 
-# The changelog for everyone, the full report for the developers
-npx apify-test-tools notify --changelog-only --slack-channel "#releases" --dry-run < affected.json
 npx apify-test-tools notify --slack-channel "#notif-my-repo" --dry-run < affected.json
 ```
 
@@ -357,26 +355,35 @@ npx apify-test-tools test --all | npx apify-test-tools notify --slack-channel '#
 npx apify-test-tools get-affected-actors --since <sha> | npx apify-test-tools notify --slack-channel '#notif-my-repo'
 ```
 
-| Flag               | Input   | Default                  | Meaning                                                                  |
-| ------------------ | ------- | ------------------------ | ------------------------------------------------------------------------ |
-| `--slack-channel`  | both    |                          | Slack channel to post to                                                 |
-| `--on`             | tests   | `failure`                | `failure` posts only when the tests failed, `always` on every run        |
-| `--title`          | tests   | the GitHub workflow name | What the message calls the run                                           |
-| `--job-url`        | tests   | the GitHub Actions run   | Where the message links to                                               |
-| `--changelog-only` | release | `false`                  | Post just the changelog additions, without the commits and changed files |
-| `--repo-url`       | release | the `origin` remote      | The repository the release is named after                                |
+| Flag              | Input   | Default                  | Meaning                                                           |
+| ----------------- | ------- | ------------------------ | ----------------------------------------------------------------- |
+| `--slack-channel` | both    |                          | Slack channel to post to                                          |
+| `--on`            | tests   | `failure`                | `failure` posts only when the tests failed, `always` on every run |
+| `--title`         | tests   | the GitHub workflow name | What the message calls the run                                    |
+| `--job-url`       | tests   | the GitHub Actions run   | Where the message links to                                        |
+| `--repo-url`      | release | the `origin` remote      | The repository the release is named after and its commits link to |
 
-A flag the input has no use for, e.g. `--changelog-only` with a test report, is an error rather than ignored. Test
-notifications need `SLACK_TOKEN_TESTS_BOT`, release ones `SLACK_TOKEN_RELEASES_BOT`.
+A flag the input has no use for, e.g. `--repo-url` with a test report, is an error rather than ignored. Both kinds
+of notification post with `SLACK_BOT_TOKEN`.
 
 Without a target, `notify` posts nothing and needs no token. With one, it checks the token on every run, also when
 there is nothing to post, so a broken token shows up on a green run rather than on the day tests fail. A release
 with no new commits is the exception: there is nothing to announce, so it needs no token either.
 
-`notify` reads the output of `get-affected-actors` too. By default it posts the full report of a release: the
-changelog additions, the commits and the changed files. With `--changelog-only` it posts just the changelog
-additions, and nothing when the changelog didn't change. Either way it posts nothing when there are no new commits.
-It names the release after the `origin` remote (or `--repo-url`) and the author of the newest commit.
+For a release, `notify` posts the changelog additions, then the commits, oldest first. Each commit is its title (cut
+at 200 characters) linked to its page on GitHub, and its author. A merge commit or a squash merge is one commit; a
+rebase merge lists every commit it brought. A repository hosted elsewhere gets the titles without links. The release
+is named after the `origin` remote (or `--repo-url`) and the author of the newest commit. Nothing is posted when there
+are no new commits:
+
+```text
+*my-repo* – New release (by Jane Doe):
+
+- Fixed pagination on the search page
+
+*Commits*:
+1. <https://github.com/my-org/my-repo/commit/1a2b3c…|fix: pagination on the search page> – Jane Doe
+```
 
 ## Deleting old builds (`delete-old-builds`)
 

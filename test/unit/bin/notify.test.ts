@@ -1,14 +1,14 @@
 import { WebClient } from '@slack/web-api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { formatTestMessage, githubRunContext, notify } from '../../../bin/notify.js';
+import { formatReleaseMessage, formatTestMessage, githubRunContext, notify } from '../../../bin/notify.js';
 import type { ReleaseChanges } from '../../../bin/stdin-input.js';
 import type { TestCaseReport, TestReport } from '../../../bin/test-report.js';
 
 vi.mock('@slack/web-api', () => ({ WebClient: vi.fn() }));
 
-const TESTS_TOKEN = 'SLACK_TOKEN_TESTS_BOT';
-const RELEASES_TOKEN = 'SLACK_TOKEN_RELEASES_BOT';
+// One token for both test reports and releases
+const TOKEN = 'SLACK_BOT_TOKEN';
 const postMessage = vi.fn();
 const authTest = vi.fn();
 
@@ -41,7 +41,6 @@ type NotifyOptions = Parameters<typeof notify>[0];
 const defaults = {
     slackChannel: '#notif',
     on: 'failure',
-    changelogOnly: false,
     dryRun: false,
 } satisfies Partial<NotifyOptions>;
 
@@ -49,7 +48,6 @@ const notifyTests = async (report: TestReport, overrides: Partial<NotifyOptions>
     notify({ ...defaults, title: 'Platform tests', input: { kind: 'tests', report }, ...overrides });
 
 const release = (overrides: Partial<ReleaseChanges> = {}): ReleaseChanges => ({
-    changedFiles: ['src/main.ts'],
     changelog: '- Fixed a bug',
     commits: [{ sha: '1', author: 'Test<test@example.com>', date: '', message: 'fix: bug' }],
     ...overrides,
@@ -68,8 +66,7 @@ beforeEach(() => {
     for (const name of ['GITHUB_WORKFLOW', 'GITHUB_SERVER_URL', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID']) {
         vi.stubEnv(name, '');
     }
-    vi.stubEnv(TESTS_TOKEN, 'token');
-    vi.stubEnv(RELEASES_TOKEN, 'token');
+    vi.stubEnv(TOKEN, 'token');
     postMessage.mockResolvedValue({ ts: '1.1' });
     vi.mocked(WebClient).mockImplementation(function () {
         return { chat: { postMessage }, auth: { test: authTest } };
@@ -104,10 +101,10 @@ describe('notify about tests', () => {
     });
 
     it('posts nothing when the tests passed, but still checks the token', async () => {
-        vi.stubEnv(TESTS_TOKEN, '');
-        await expect(notifyTests(passed)).rejects.toThrow(`${TESTS_TOKEN} not defined`);
+        vi.stubEnv(TOKEN, '');
+        await expect(notifyTests(passed)).rejects.toThrow(`${TOKEN} not defined`);
 
-        vi.stubEnv(TESTS_TOKEN, 'token');
+        vi.stubEnv(TOKEN, 'token');
         await notifyTests(passed);
         expect(WebClient).toHaveBeenCalled();
         expect(postMessage).not.toHaveBeenCalled();
@@ -119,7 +116,7 @@ describe('notify about tests', () => {
     });
 
     it('needs no token without a channel', async () => {
-        vi.stubEnv(TESTS_TOKEN, '');
+        vi.stubEnv(TOKEN, '');
         await notifyTests(failed, { slackChannel: '' });
         expect(WebClient).not.toHaveBeenCalled();
     });
@@ -142,64 +139,49 @@ describe('notify about tests', () => {
     });
 
     it('rejects the flags only a release uses', async () => {
-        await expect(notifyTests(failed, { changelogOnly: true, repoUrl: 'x' })).rejects.toThrow(
-            "--changelog-only, --repo-url can't be used with a test report",
+        await expect(notifyTests(failed, { repoUrl: 'x' })).rejects.toThrow(
+            "--repo-url can't be used with a test report",
         );
         expect(WebClient).not.toHaveBeenCalled();
     });
 });
 
 describe('notify about a release', () => {
-    it('verifies the releases token but posts nothing in a dry run', async () => {
+    it('verifies the token but posts nothing in a dry run', async () => {
         await notifyRelease(release(), { dryRun: true });
         expect(authTest).toHaveBeenCalledTimes(1);
         expect(postMessage).not.toHaveBeenCalled();
     });
 
     it('still requires the token in a dry run', async () => {
-        vi.stubEnv(RELEASES_TOKEN, '');
-        await expect(notifyRelease(release(), { dryRun: true })).rejects.toThrow(`${RELEASES_TOKEN} not defined`);
+        vi.stubEnv(TOKEN, '');
+        await expect(notifyRelease(release(), { dryRun: true })).rejects.toThrow(`${TOKEN} not defined`);
     });
 
     it('fails a dry run when Slack rejects the token', async () => {
         authTest.mockRejectedValueOnce(new Error('An API error occurred: invalid_auth'));
-        await expect(notifyRelease(release(), { dryRun: true })).rejects.toThrow(
-            `${RELEASES_TOKEN} was rejected by Slack`,
-        );
+        await expect(notifyRelease(release(), { dryRun: true })).rejects.toThrow(`${TOKEN} was rejected by Slack`);
     });
 
     it('needs no token when no channel is passed', async () => {
-        vi.stubEnv(RELEASES_TOKEN, '');
+        vi.stubEnv(TOKEN, '');
         await notifyRelease(release(), { slackChannel: undefined });
         expect(WebClient).not.toHaveBeenCalled();
     });
 
-    it('posts the full report: the changelog additions, the commits and the changed files', async () => {
+    it('posts the changelog additions and the commits, linked to their commit pages', async () => {
         await notifyRelease(release());
         expect(postMessage).toHaveBeenCalledTimes(1);
-        const { channel, text } = postMessage.mock.calls[0][0];
-        expect(channel).toBe('#notif');
-        expect(text).toContain('*Additions to the changelog*:\n\n- Fixed a bug');
-        expect(text).toContain('*Commit list*:\n1. Commit message: fix: bug');
-        expect(text).toContain('*Files changed*: `src/main.ts`');
-    });
-
-    it('posts just the changelog additions with changelogOnly', async () => {
-        await notifyRelease(release(), { changelogOnly: true, slackChannel: '#releases' });
-        const { channel, text } = postMessage.mock.calls[0][0];
-        expect(channel).toBe('#releases');
-        expect(text).toContain('*Additions to the changelog*:\n\n- Fixed a bug');
-        expect(text).not.toContain('Commit list');
-    });
-
-    it('posts nothing with changelogOnly when the changelog did not change, but still checks the token', async () => {
-        await notifyRelease(release({ changelog: null }), { changelogOnly: true, dryRun: true });
-        expect(authTest).toHaveBeenCalledTimes(1);
-        expect(postMessage).not.toHaveBeenCalled();
+        expect(postMessage.mock.calls[0][0]).toStrictEqual({
+            channel: '#notif',
+            text:
+                '*repo* – New release (by Test):\n\n- Fixed a bug\n\n*Commits*:\n' +
+                '1. <https://github.com/owner/repo/commit/1|fix: bug> – Test',
+        });
     });
 
     it('announces nothing, and needs no token, when there are no new commits', async () => {
-        vi.stubEnv(RELEASES_TOKEN, '');
+        vi.stubEnv(TOKEN, '');
         await notifyRelease(release({ commits: [] }));
         expect(WebClient).not.toHaveBeenCalled();
     });
@@ -222,6 +204,54 @@ describe('notify about a release', () => {
         await expect(notifyRelease(release(), { on: 'always', title: 'T', jobUrl: 'https://job' })).rejects.toThrow(
             "--on, --title, --job-url can't be used with a release",
         );
+    });
+});
+
+describe('formatReleaseMessage', () => {
+    const commit = (sha: string, message: string, author = 'Dev<dev@example.com>') => ({
+        sha,
+        author,
+        date: '',
+        message,
+    });
+
+    it('lists every commit of a rebase merge, oldest first, and leaves out an empty changelog', () => {
+        const text = formatReleaseMessage(
+            {
+                commits: [commit('a1', 'feat: one'), commit('b2', 'fix: two', 'Last<last@example.com>')],
+                changelog: null,
+            },
+            'https://github.com/owner/repo.git',
+        );
+        expect(text).toBe(
+            '*repo* – New release (by Last):\n\n*Commits*:\n' +
+                '1. <https://github.com/owner/repo/commit/a1|feat: one> – Dev\n' +
+                '2. <https://github.com/owner/repo/commit/b2|fix: two> – Last',
+        );
+    });
+
+    it('caps a commit title at 200 characters', () => {
+        const text = formatReleaseMessage(
+            { commits: [commit('a1', 'x'.repeat(300))], changelog: null },
+            'git@github.com:o/r',
+        );
+        expect(text).toContain(`|${'x'.repeat(199)}…>`);
+    });
+
+    it('escapes what Slack would read as markup, so a title cannot break its link', () => {
+        const text = formatReleaseMessage(
+            { commits: [commit('a1', 'fix: <div> & co')], changelog: null },
+            'git@github.com:o/r',
+        );
+        expect(text).toContain('|fix: &lt;div&gt; &amp; co>');
+    });
+
+    it('links nothing on a host other than GitHub', () => {
+        const text = formatReleaseMessage(
+            { commits: [commit('a1', 'fix: bug')], changelog: null },
+            'git@gitlab.com:o/r.git',
+        );
+        expect(text).toContain('1. fix: bug – Dev');
     });
 });
 

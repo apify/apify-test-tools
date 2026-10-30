@@ -106,7 +106,6 @@ const testReportSchema = z.object({
 /** The parts of a get-affected-actors document that describe what a release changed. Other fields are ignored. */
 const releaseChangesSchema = z.object({
     commits: z.array(z.object({ sha: z.string(), author: z.string(), date: z.string(), message: z.string() })),
-    changedFiles: z.array(z.string()),
     changelog: z.string().nullable(),
 });
 

@@ -149,11 +149,6 @@ const notifyOptions = {
         type: 'string',
         describe: 'Tests only: where the message links to. Defaults to the GitHub Actions run',
     },
-    'changelog-only': {
-        type: 'boolean',
-        default: false,
-        describe: 'Releases only: post just the changelog additions, not the commits and changed files',
-    },
     'repo-url': {
         type: 'string',
         describe: 'Releases only: the repository the release is named after. Defaults to the origin remote',
@@ -258,7 +253,6 @@ await yargs()
                 on: args.on,
                 title: args.title,
                 jobUrl: args.jobUrl,
-                changelogOnly: args.changelogOnly,
                 repoUrl: args.repoUrl,
                 dryRun: args.dryRun,
             });

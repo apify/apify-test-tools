@@ -191,13 +191,7 @@ describe('CLI bundle', () => {
 
     it('notify announces no release, and needs no token, when there are no new commits', () => {
         const affected = runCli('get-affected-actors', '--since', headSha).stdout;
-        const { status, stderr } = runCliWithInput(
-            affected,
-            'notify',
-            '--changelog-only',
-            '--slack-channel',
-            '#releases',
-        );
+        const { status, stderr } = runCliWithInput(affected, 'notify', '--slack-channel', '#releases');
         expect(status, stderr).toBe(0);
         expect(stderr).toContain('No new commits, so there is no release to announce');
     });
@@ -235,7 +229,7 @@ describe('CLI bundle', () => {
         };
         const withChannel = runCliWithInput(JSON.stringify(report), 'notify', '--slack-channel', '#notif', '--dry-run');
         expect(withChannel.status).toBe(1);
-        expect(withChannel.stderr).toContain('SLACK_TOKEN_TESTS_BOT not defined');
+        expect(withChannel.stderr).toContain('SLACK_BOT_TOKEN not defined');
 
         const withoutChannel = runCliWithInput(JSON.stringify(report), 'notify', '--dry-run');
         expect(withoutChannel.status, withoutChannel.stderr).toBe(0);

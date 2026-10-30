@@ -15,7 +15,7 @@ on:
             NPM_TOKEN:
                 required: false
                 description: Read-only token for installing private npm packages.
-            SLACK_TOKEN_RELEASES_BOT:
+            SLACK_BOT_TOKEN:
                 required: false
                 description: Slack token for announcing releases.
             CONFIG_SECRETS:
@@ -68,9 +68,8 @@ jobs:
             # Skips the announcement when the push brought no new commits
             - name: Announce the release on Slack
               env:
-                  SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
+                  SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
               run: |
-                  apify-test-tools notify --changelog-only --slack-channel "#delivery-public-actors" < affected.json
                   apify-test-tools notify \
                     --slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" \
                     < affected.json

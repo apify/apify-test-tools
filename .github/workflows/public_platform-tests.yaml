@@ -26,7 +26,7 @@ on:
             TESTER_APIFY_TOKEN:
                 required: true
                 description: Apify token the platform tests run Actors with.
-            SLACK_TOKEN_TESTS_BOT:
+            SLACK_BOT_TOKEN:
                 required: false
                 description: Slack token for reporting test results.
 
@@ -68,7 +68,7 @@ jobs:
             - name: Notify
               if: ${{ !cancelled() }}
               env:
-                  SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
+                  SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
               run: |
                   apify-test-tools notify \
                     --slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" \

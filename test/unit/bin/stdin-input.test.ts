@@ -79,7 +79,7 @@ describe('parseNotifyInput', () => {
         };
         expect(parseNotifyInput(JSON.stringify(document))).toStrictEqual({
             kind: 'release',
-            changes: { commits: [commit], changedFiles: ['src/main.ts'], changelog: '- Added foo' },
+            changes: { commits: [commit], changelog: '- Added foo' },
         });
     });
 

@@ -248,7 +248,7 @@ jobs:
     buildLatest:
         uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
         secrets:
-            SLACK_TOKEN_RELEASES_BOT: ${{ secrets.SLACK_TOKEN_RELEASES_BOT }}
+            SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
             # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
             CONFIG_SECRETS: |
                 {
@@ -275,7 +275,7 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
+            SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 ```
 
 and a few critical tests, kept in e.g. `test/platform/hourly`, every hour:
@@ -296,7 +296,7 @@ jobs:
             test-files-glob: hourly
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-            SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
+            SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 ```
 
 ### Secrets
@@ -304,13 +304,12 @@ jobs:
 Set these as repository or organization secrets and pass them in each job's `secrets:` block, as in the examples
 above. The Actor tokens go packed in one JSON object, `CONFIG_SECRETS`, because their names differ per repo:
 
-| Secret                                                                    | Needed for                                                       |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | building Actors and deleting their old builds                    |
-| `TESTER_APIFY_TOKEN`                                                      | running the platform tests                                       |
-| `SLACK_TOKEN_RELEASES_BOT`                                                | announcing releases on Slack                                     |
-| `SLACK_TOKEN_TESTS_BOT`                                                   | reporting scheduled test results to Slack                        |
-| `NPM_TOKEN`                                                               | optional, installing private npm packages. Use a read-only token |
+| Secret                                                                    | Needed for                                                        |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | building Actors and deleting their old builds                     |
+| `TESTER_APIFY_TOKEN`                                                      | running the platform tests                                        |
+| `SLACK_BOT_TOKEN`                                                         | announcing releases and reporting scheduled test results to Slack |
+| `NPM_TOKEN`                                                               | optional, installing private npm packages. Use a read-only token  |
 
 Repos in the `apify` org can pass `secrets: inherit` instead. Each secret only reaches the step that needs it. See
 [Secrets](docs/workflows.md#secrets) for both, and for passing `CONFIG_SECRETS` without listing the tokens.

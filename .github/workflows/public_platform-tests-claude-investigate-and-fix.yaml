@@ -23,13 +23,17 @@ name: 'Platform tests: Claude failure investigation and fix'
 #         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
 #         with:
 #             subtest: core
-#         secrets: inherit
+#         secrets:
+#             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+#             SLACK_TOKEN_TESTS_BOT: ${{ secrets.SLACK_TOKEN_TESTS_BOT }}
 #
 #     handle-failure:
 #         needs: platformTestsCore
 #         if: ${{ failure() }}
 #         uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v0
-#         secrets: inherit
+#         secrets:
+#             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+#             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
 
 on:
     workflow_call:
@@ -39,6 +43,11 @@ on:
                 type: string
                 default: sonnet
                 description: Claude model to use for investigation and fix
+            effort:
+                required: false
+                type: string
+                default: ''
+                description: Claude effort level (low, medium, high, xhigh, max) to use for investigation and fix. Uses the Claude Code default when empty.
             max_flakiness_runs:
                 required: false
                 type: number
@@ -182,6 +191,7 @@ jobs:
                       --mcp-config '{"mcpServers":{"apify":{"type":"http","url":"https://mcp.apify.com/?tools=get-actor-run,get-actor-run-log,get-dataset-list,get-dataset,get-dataset-items,get-key-value-store-list,get-key-value-store,get-key-value-store-keys,get-key-value-store-record","headers":{"Authorization":"Bearer ${TESTER_APIFY_TOKEN}"}},"redash":{"type":"stdio","command":"${{ runner.temp }}/redash-mcp/node_modules/.bin/redash-mcp","env":{"REDASH_URL":"https://charts.apify.com/","REDASH_API_KEY":"${REDASH_API_KEY}"}}}}'
                       --disallowedTools mcp__redash__create_query,mcp__redash__update_query,mcp__redash__update_query_parameters,mcp__redash__archive_query,mcp__redash__fork_query,mcp__redash__add_query_favorite,mcp__redash__remove_query_favorite,mcp__redash__create_visualization,mcp__redash__update_visualization,mcp__redash__update_chart_visualization,mcp__redash__delete_visualization,mcp__redash__create_dashboard,mcp__redash__update_dashboard,mcp__redash__update_dashboard_parameters,mcp__redash__archive_dashboard,mcp__redash__fork_dashboard,mcp__redash__share_dashboard,mcp__redash__unshare_dashboard,mcp__redash__add_dashboard_favorite,mcp__redash__remove_dashboard_favorite,mcp__redash__create_alert,mcp__redash__update_alert,mcp__redash__delete_alert,mcp__redash__mute_alert,mcp__redash__add_alert_subscription,mcp__redash__remove_alert_subscription,mcp__redash__create_widget,mcp__redash__update_widget,mcp__redash__update_widget_layout,mcp__redash__update_dashboard_layout,mcp__redash__update_widget_parameter_mappings,mcp__redash__delete_widget,mcp__redash__create_query_snippet,mcp__redash__update_query_snippet,mcp__redash__delete_query_snippet
                       --model ${{ inputs.model }}
+                      ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
                       --dangerously-skip-permissions
 
             - name: Upload Claude output (for debugging)
@@ -244,7 +254,9 @@ jobs:
             actions: read
         steps:
             - name: Setup repository and dependencies
-              uses: apify/apify-test-tools/.github/actions/checkout-restore-dependencies@workflows-v0
+              # `$/` loads the action from this repo at the commit this workflow was called at, so a caller
+              # pinned to a SHA or a branch gets that commit's action and CLI, not whatever the major tag is on.
+              uses: $/.github/actions/checkout-restore-dependencies
               with:
                   npm-token: ${{ secrets.NPM_TOKEN }}
 
@@ -257,6 +269,7 @@ jobs:
                   prompt: 'Open a pull request to address GitHub issue #${{ needs.investigate.outputs.issue_number }}. Use `gh issue view ${{ needs.investigate.outputs.issue_number }}` to read the issue details first, then implement the fix and create a PR.'
                   claude_args: |
                       --model ${{ inputs.model }}
+                      ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
                       --dangerously-skip-permissions
 
             - name: Upload Claude output (for debugging)

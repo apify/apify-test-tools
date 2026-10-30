@@ -1,22 +1,21 @@
 import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType, ApifyClient } from 'apify-client';
 
-import { normalizeRepoUrl } from './git.js';
+import { getCurrentBranch, normalizeRepoUrl, resolveRepoUrl } from './git.js';
 import { logger } from './logger.js';
 import type { ActorConfig, BuildData, DryRunPlan } from './types.js';
 
 type BuildPrActorOptions = {
-    buildTag?: string;
     versionNumber: string;
     gitRepoUrl: string;
     actorConfig: ActorConfig;
     actorInfo: ApifyClientTypes.Actor;
-    useDockerCache: boolean;
 };
 
 // Fixed version number used to build from local source files, since there is no real version to track.
 export const LOCAL_SOURCE_VERSION_NUMBER = '0.98';
-const DEFAULT_TEST_VERSION_NUMBER = '0.99';
+// Stands for each Actor's default version: the one its default build tag points to
+export const DEFAULT_VERSION_KEYWORD = 'default';
 
 // Shown whenever an Actor isn't set up the way CI builds need it
 const ACTOR_SETUP_REQUIREMENT =
@@ -81,6 +80,44 @@ export const assertRepoUrlMatchesDefaultVersion = (
                 `or pass --repo-url to build from a different repository on purpose.`,
         );
     }
+};
+
+const getEnvVarNames = (version: ApifyClientTypes.ActorVersion | undefined): string[] =>
+    (version?.envVars ?? []).map(({ name }) => name).filter((name): name is string => !!name);
+
+/**
+ * Guards against testing an Actor with different env vars than users run it with, e.g. a variable added to
+ * the default version but not to the test version, which would make the tests pass or fail for the wrong
+ * reason. Only names are compared because the API doesn't return secret values.
+ */
+export const assertEnvVarsMatchDefaultVersion = (
+    actorFullName: string,
+    actorInfo: ApifyClientTypes.Actor,
+    defaultVersion: ApifyClientTypes.ActorVersion | undefined,
+    versionNumber: string,
+) => {
+    if (!defaultVersion) {
+        throw new Error(
+            `[${actorFullName}] The version of the default build no longer exists. ${ACTOR_SETUP_REQUIREMENT}`,
+        );
+    }
+    const version = actorInfo.versions.find((v) => v.versionNumber === versionNumber);
+    const defaultNames = getEnvVarNames(defaultVersion);
+    const names = getEnvVarNames(version);
+    const missing = defaultNames.filter((name) => !names.includes(name));
+    const extra = names.filter((name) => !defaultNames.includes(name));
+    if (missing.length === 0 && extra.length === 0) return;
+
+    const differences = [
+        missing.length > 0 ? `missing ${missing.join(', ')}` : undefined,
+        extra.length > 0 ? `extra ${extra.join(', ')}` : undefined,
+    ].filter(Boolean);
+    throw new Error(
+        `[${actorFullName}] Env vars of version ${versionNumber} are out of sync with default version ` +
+            `${defaultVersion.versionNumber} (${differences.join('; ')}). ` +
+            `${version ? '' : `Version ${versionNumber} doesn't exist yet, so create it on the platform first. `}` +
+            `Add or remove the env vars in version ${versionNumber} so their names match the default version's.`,
+    );
 };
 
 export class ApifyBuilder {
@@ -319,20 +356,20 @@ export const runAndSummarizeBuilds = async (
 type GitBuildPlan = {
     actorFullName: string;
     versionNumber: string;
-    buildTag?: string;
     gitRepoUrl: string;
-    useDockerCache: boolean;
 };
 
 type RunBuildsOptions = {
     actorConfigs: ActorConfig[];
-    isLatest?: boolean;
+    // A version number like "0.99", or DEFAULT_VERSION_KEYWORD for each Actor's default version
+    versionNumber: string;
     repoUrl: string;
     // False when the repo URL was passed explicitly, see assertRepoUrlMatchesDefaultVersion
     shouldVerifyRepoUrl: boolean;
     branch: string;
     dryRun: boolean;
-    useDockerCache: boolean;
+    // See assertEnvVarsMatchDefaultVersion
+    requireEnvVarsInSync?: boolean;
 };
 
 export const runBuilds = async ({
@@ -340,9 +377,9 @@ export const runBuilds = async ({
     shouldVerifyRepoUrl,
     branch,
     actorConfigs,
-    isLatest = false,
+    versionNumber,
     dryRun,
-    useDockerCache,
+    requireEnvVarsInSync = false,
 }: RunBuildsOptions): Promise<BuildData[] | DryRunPlan<GitBuildPlan>> => {
     // Fetched once per Actor and reused for the checks, the version numbers and the build itself
     const buildConfigs: BuildPrActorOptions[] = await Promise.all(
@@ -352,8 +389,27 @@ export const runBuilds = async ({
                 actorConfig.actorFullName,
                 actorInfo,
             );
+            // Builds keep the tags their version gives them, so a default version without the default build tag
+            // would build fine but leave users on the previous build
+            if (versionNumber === DEFAULT_VERSION_KEYWORD && defaultVersion?.buildTag !== defaultBuildTag) {
+                logger.warn(
+                    `[${actorConfig.actorFullName}] Default version ${defaultVersionNumber} has build tag ` +
+                        `"${defaultVersion?.buildTag ?? 'none'}", not "${defaultBuildTag}", so users keep running the previous build. ` +
+                        'Set the build tag of the version on the platform to change that.',
+                );
+            }
             if (shouldVerifyRepoUrl) {
                 assertRepoUrlMatchesDefaultVersion(actorConfig.actorFullName, defaultVersion, repoUrl);
+            }
+            const targetVersionNumber =
+                versionNumber === DEFAULT_VERSION_KEYWORD ? defaultVersionNumber : versionNumber;
+            if (requireEnvVarsInSync) {
+                assertEnvVarsMatchDefaultVersion(
+                    actorConfig.actorFullName,
+                    actorInfo,
+                    defaultVersion,
+                    targetVersionNumber,
+                );
             }
 
             // Depending on if these are miniactors or standaloneActors
@@ -365,9 +421,7 @@ export const runBuilds = async ({
                 actorConfig,
                 actorInfo,
                 gitRepoUrl,
-                versionNumber: isLatest ? defaultVersionNumber : DEFAULT_TEST_VERSION_NUMBER,
-                buildTag: isLatest ? defaultBuildTag : undefined,
-                useDockerCache,
+                versionNumber: targetVersionNumber,
             };
         }),
     );
@@ -375,21 +429,15 @@ export const runBuilds = async ({
     // Everything above only reads, so a dry run has checked what the real run would, short of writing
     if (dryRun) {
         logger.info('[DRY RUN] Would build:');
-        for (const { actorConfig, versionNumber, gitRepoUrl } of buildConfigs) {
-            logger.info(`  ${actorConfig.actorFullName} (${versionNumber}) from ${gitRepoUrl}`);
+        const builds = buildConfigs.map((buildConfig) => ({
+            actorFullName: buildConfig.actorConfig.actorFullName,
+            versionNumber: buildConfig.versionNumber,
+            gitRepoUrl: buildConfig.gitRepoUrl,
+        }));
+        for (const build of builds) {
+            logger.info(`  ${build.actorFullName} (${build.versionNumber}) from ${build.gitRepoUrl}`);
         }
-        return {
-            dryRun: true,
-            builds: buildConfigs.map(
-                ({ actorConfig, versionNumber, buildTag, gitRepoUrl, useDockerCache: useCache }) => ({
-                    actorFullName: actorConfig.actorFullName,
-                    versionNumber,
-                    buildTag,
-                    gitRepoUrl,
-                    useDockerCache: useCache,
-                }),
-            ),
-        };
+        return { dryRun: true, builds };
     }
 
     const buildConfigsByActorFullName = new Map(
@@ -397,20 +445,38 @@ export const runBuilds = async ({
     );
 
     return runAndSummarizeBuilds(actorConfigs, 'BUILDS', async (actorConfig, builder) => {
-        const {
-            actorInfo,
-            buildTag,
-            versionNumber,
-            gitRepoUrl,
-            useDockerCache: useCache,
-        } = buildConfigsByActorFullName.get(actorConfig.actorFullName)!;
+        const buildConfig = buildConfigsByActorFullName.get(actorConfig.actorFullName)!;
+        // No buildTag: the version keeps the one it has, so its build gets the tag the version already gives it
         const actorVersion: ApifyClientTypes.ActorVersion = {
-            buildTag,
-            versionNumber,
-            gitRepoUrl,
+            versionNumber: buildConfig.versionNumber,
+            gitRepoUrl: buildConfig.gitRepoUrl,
             sourceType: ActorSourceType.GitRepo,
         };
-        return builder.createVersionAndBuild(versionNumber, actorVersion, useCache, actorInfo);
+        // Always with the Docker cache: CI always asked for it, and a clean build can still be started on the platform
+        return builder.createVersionAndBuild(buildConfig.versionNumber, actorVersion, true, buildConfig.actorInfo);
+    });
+};
+
+type BuildActorsOptions = Omit<RunBuildsOptions, 'repoUrl' | 'shouldVerifyRepoUrl' | 'branch'> & {
+    // Defaults to the `origin` remote, see resolveRepoUrl
+    repoUrl?: string;
+};
+
+/**
+ * Builds exactly the given Actors from the checked-out Git branch, as it is on the remote. Fails on a detached HEAD,
+ * where there is no branch to build. Used by `build` and the commands built on top of it.
+ */
+export const buildActors = async ({ actorConfigs, repoUrl, ...options }: BuildActorsOptions) => {
+    if (actorConfigs.length === 0) {
+        logger.info('No Actors to build');
+        // Still the dry-run shape in a dry run, so it can't pass for a real (empty) result
+        return options.dryRun ? { dryRun: true as const, builds: [] } : [];
+    }
+    return runBuilds({
+        ...options,
+        ...(await resolveRepoUrl(repoUrl)),
+        actorConfigs,
+        branch: await getCurrentBranch(),
     });
 };
 

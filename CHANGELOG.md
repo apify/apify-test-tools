@@ -8,11 +8,24 @@ All notable changes to this project will be documented in this file.
 ### 🚀 Features
 
 - **ci:** Ship the workflows&#x27; CLI as a bundle in the action instead of installing it ([#200](https://github.com/apify/apify-test-tools/pull/200)) ([a0ef975](https://github.com/apify/apify-test-tools/commit/a0ef9756123a30a8210590b080a2a289c6a9c17c)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- [**breaking**] Revamp get-affected-actors to be a core logic command ([#190](https://github.com/apify/apify-test-tools/pull/190)) ([ea5f244](https://github.com/apify/apify-test-tools/commit/ea5f244cfd42bf3fa9ffd38cd2ad499dde2e83f8)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- [**breaking**] Add logic-less build command and use command chaining in workflows ([#193](https://github.com/apify/apify-test-tools/pull/193)) ([e5b0b86](https://github.com/apify/apify-test-tools/commit/e5b0b86ee06fca51d4be0ddc81b0a4a469d31603)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- **get-affected-actors:** Three-dot diff, narrowed per Actor with --since ([#204](https://github.com/apify/apify-test-tools/pull/204)) ([fa9a0e7](https://github.com/apify/apify-test-tools/commit/fa9a0e7518764dd4722ec9ecbf67b2a26a5a062e)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- Add effort input to Claude investigate-and-fix workflow ([#221](https://github.com/apify/apify-test-tools/pull/221)) ([c2ac078](https://github.com/apify/apify-test-tools/commit/c2ac078aec9ef02337af0e5c06db1b947b6c969b)) by [@foxt451](https://github.com/foxt451)
+- **ci:** Support pnpm ([#214](https://github.com/apify/apify-test-tools/pull/214)) ([ee7d734](https://github.com/apify/apify-test-tools/commit/ee7d7340564c5b8657a8a1f0cf920d67b40ae013)) by [@ruocco-l](https://github.com/ruocco-l)
+- Support flexible secret passing methods in workflows ([#225](https://github.com/apify/apify-test-tools/pull/225)) ([22f7e80](https://github.com/apify/apify-test-tools/commit/22f7e807ca3949656c15b79f848a192d71b15946)) by [@metalwarrior665](https://github.com/metalwarrior665), closes [#205](https://github.com/apify/apify-test-tools/issues/205)
+- [**breaking**] Require env vars of test versions in sync with the default version ([#217](https://github.com/apify/apify-test-tools/pull/217)) ([a2481dd](https://github.com/apify/apify-test-tools/commit/a2481ddf09004308cb54e49b783c8b21a25dcbe4)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 ### 🐛 Bug Fixes
 
 - **toBeObject:** Reject null ([#191](https://github.com/apify/apify-test-tools/pull/191)) ([6bdae49](https://github.com/apify/apify-test-tools/commit/6bdae4905756e0ae8dd6146942e6fc04dbead48e)) by [@JuanGalilea](https://github.com/JuanGalilea), closes [#88](https://github.com/apify/apify-test-tools/issues/88)
 - Build and test on test-only changes even when .dockerignore lists the tests ([#177](https://github.com/apify/apify-test-tools/pull/177)) ([5cb1b5a](https://github.com/apify/apify-test-tools/commit/5cb1b5ab5f6f43ec279f9624b402e73d55a5974a)) by [@artogahr](https://github.com/artogahr), closes [#145](https://github.com/apify/apify-test-tools/issues/145)
+- **git:** List both paths of moved files when detecting changes ([#215](https://github.com/apify/apify-test-tools/pull/215)) ([44ba565](https://github.com/apify/apify-test-tools/commit/44ba565242c1ac3daea281a648acb28712bb4363)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- **workflows:** Load setup action and review prompt from the called commit ([#226](https://github.com/apify/apify-test-tools/pull/226)) ([7524711](https://github.com/apify/apify-test-tools/commit/752471135d4d147f6f6492a26c08af388d7ccf72)) by [@metalwarrior665](https://github.com/metalwarrior665)
+
+### 🚜 Refactor
+
+- [**breaking**] Remove build-for-test and release composite commands ([#203](https://github.com/apify/apify-test-tools/pull/203)) ([85efc54](https://github.com/apify/apify-test-tools/commit/85efc54697e98208c827c4f450906e00eebcd9ca)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 
 <!-- git-cliff-unreleased-end -->

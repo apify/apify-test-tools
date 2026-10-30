@@ -10,3 +10,14 @@ paths:
         ignore:
             - 'input "display_report" is not defined in action "anthropics/claude-code-action@v1"'
             - 'property "conclusion" is not defined in object type'
+
+    # actionlint (v1.7.11, and v1.7.12 too) predates two newer GitHub features these workflows rely on:
+    # - `uses: $/path`, the self-repository syntax: this repo at the commit the workflow runs at.
+    #   actionlint only knows `./path`, `docker://` and `owner/repo@ref`, so it reports the ref as missing.
+    #   https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/
+    # - `job.workflow_repository` and `job.workflow_sha`, the reusable workflow's own repo and commit.
+    #   https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#job-context
+    .github/workflows/public_*.yaml:
+        ignore:
+            - 'specifying action "\$/[^"]*" in invalid format because ref is missing'
+            - 'property "workflow_(repository|sha)" is not defined in object type'

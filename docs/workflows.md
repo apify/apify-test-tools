@@ -199,7 +199,7 @@ that label is on. The trigger label is removed once the review finishes, so re-a
 | ---------------- | ------ | ------------------- | --------------------------------------------------------------------------------------------- |
 | `label`          | string | `Ask claude review` | Label that triggers a review                                                                  |
 | `reviewed-label` | string | `claude reviewed`   | Label added after a successful review and never removed. Set to `''` to disable               |
-| `prompt-ref`     | string | `workflows-v0`      | Ref of this repo to fetch the review instructions from. Override only to test a prompt change |
+| `prompt-ref`     | string | `''`                | Ref of this repo to fetch the review instructions from. Override only to test a prompt change |
 | `model`          | string | `sonnet`            | Claude Code model (`best`, `sonnet`, `opus`, `haiku`, `sonnet[1m]`, `opus[1m]`, `opusplan`)   |
 
 Secrets: `ANTHROPIC_API_KEY`.
@@ -219,8 +219,8 @@ jobs:
 ```
 
 The review instructions live in `.github/review-prompt.md` in this repo and are fetched at run time, because a
-reusable workflow doesn't get its own repo checked out. `prompt-ref` defaults to `workflows-v0`, so the
-instructions match the workflow you're calling — point it at a branch only to test a prompt change.
+reusable workflow doesn't get its own repo checked out. When `prompt-ref` is empty they come from the same commit as
+the workflow you're calling — point it at a branch only to test a prompt change.
 
 ## `public_claude.yaml`
 
@@ -361,6 +361,9 @@ The workflows and the vitest library ship separately:
 
 The workflows bring their own copy of the CLI, so they don't use or change the `apify-test-tools` version in your
 `node_modules`, and your tests keep the library version you locked.
+
+Whatever ref you call a workflow at, it runs the setup action and the CLI from that same commit. Pinning a commit SHA
+or pointing at a branch of this repo therefore gets you that commit's workflows as a whole.
 
 `@workflows-v0` always points at the latest workflows, so fixes and new features reach you without any change on your
 side. Changes that would break callers go to a new tag (`@workflows-v1`), and `@workflows-v0` keeps working, so you

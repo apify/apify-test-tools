@@ -14,12 +14,12 @@ on:
                 description: Label added after a successful review and never removed. Set to an empty string to disable.
                 required: false
             prompt-ref:
-                default: workflows-v0
+                default: ''
                 type: string
                 description: >-
                     Ref of this repository to fetch the review instructions from. Defaults to the
-                    major tag, matching the ref consumers call this workflow at. Override it only to
-                    test a prompt change from a branch.
+                    commit this workflow was called at, so the instructions always match it. Override
+                    it only to test a prompt change from a branch.
                 required: false
             model:
                 default: sonnet
@@ -55,10 +55,11 @@ jobs:
                   # head_ref must be used for pull_request but for push and schedule events we have to use ref to get the branch name
                   ref: ${{ github.head_ref || github.ref }}
 
+            # job.workflow_* is this reusable workflow's own repo and commit; the github context is the caller's.
             - name: 'Fetch review instructions'
               run: |
                   curl -sfL \
-                    "https://raw.githubusercontent.com/apify/apify-test-tools/${{ inputs.prompt-ref }}/.github/review-prompt.md" \
+                    "https://raw.githubusercontent.com/${{ job.workflow_repository }}/${{ inputs.prompt-ref || job.workflow_sha }}/.github/review-prompt.md" \
                     -o "${{ github.workspace }}/.claude-review-prompt.md"
 
             - name: 'Review PR against guidelines'

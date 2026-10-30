@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - **toBeObject:** Reject null ([#191](https://github.com/apify/apify-test-tools/pull/191)) ([6bdae49](https://github.com/apify/apify-test-tools/commit/6bdae4905756e0ae8dd6146942e6fc04dbead48e)) by [@JuanGalilea](https://github.com/JuanGalilea), closes [#88](https://github.com/apify/apify-test-tools/issues/88)
 - Build and test on test-only changes even when .dockerignore lists the tests ([#177](https://github.com/apify/apify-test-tools/pull/177)) ([5cb1b5a](https://github.com/apify/apify-test-tools/commit/5cb1b5ab5f6f43ec279f9624b402e73d55a5974a)) by [@artogahr](https://github.com/artogahr), closes [#145](https://github.com/apify/apify-test-tools/issues/145)
 - **git:** List both paths of moved files when detecting changes ([#215](https://github.com/apify/apify-test-tools/pull/215)) ([44ba565](https://github.com/apify/apify-test-tools/commit/44ba565242c1ac3daea281a648acb28712bb4363)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- **workflows:** Load setup action and review prompt from the called commit ([#226](https://github.com/apify/apify-test-tools/pull/226)) ([7524711](https://github.com/apify/apify-test-tools/commit/752471135d4d147f6f6492a26c08af388d7ccf72)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 ### 🚜 Refactor
 

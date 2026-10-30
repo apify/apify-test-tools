@@ -4,6 +4,7 @@
 node_modules
 storage
 dist
+.cli-test-*/
 
 # Added by Apify CLI
 .venv

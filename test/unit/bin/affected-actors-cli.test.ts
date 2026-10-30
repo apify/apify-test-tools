@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
-import { afterEach, beforeEach, describe, expect, inject, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+
+import { compileCli } from './compiled-cli.js';
 
 // `get-affected-actors --base` on real git histories. Actors a and c share `src/`, b is standalone.
 // `main` is the base branch and `feature` the PR branch, checked out like in the PR workflow.
@@ -36,7 +38,8 @@ const gitEnv = {
     GIT_COMMITTER_EMAIL: 'tester@example.com',
 };
 
-const cliPath = inject('cliPath');
+let cliPath: string;
+let cleanup: (() => Promise<void>) | undefined;
 let repoDir: string;
 
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repoDir, env: gitEnv, encoding: 'utf8' }).trim();
@@ -80,6 +83,14 @@ const getAffectedActors = (...args: string[]) => {
 };
 
 describe('get-affected-actors CLI on real git histories', () => {
+    beforeAll(async () => {
+        ({ cliPath, cleanup } = await compileCli());
+    });
+
+    afterAll(async () => {
+        await cleanup?.();
+    });
+
     beforeEach(async () => {
         repoDir = await mkdtemp(path.join(os.tmpdir(), 'apify-affected-actors-'));
         git('init', '-q', '-b', 'main');

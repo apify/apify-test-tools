@@ -1,15 +1,26 @@
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
-import { describe, expect, inject, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-const cliPath = inject('cliPath');
+import { compileCli } from './compiled-cli.js';
+
+let cliPath: string;
+let cleanup: (() => Promise<void>) | undefined;
 
 const run = (command: string[], input: string, env: NodeJS.ProcessEnv = process.env) =>
     spawnSync(cliPath, command, { encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'], env });
 const runBuild = (input: string, args: string[] = ['--version-number', '0.99']) => run(['build', ...args], input);
 
 describe('build and notify-release CLI', () => {
+    beforeAll(async () => {
+        ({ cliPath, cleanup } = await compileCli());
+    });
+
+    afterAll(async () => {
+        await cleanup?.();
+    });
+
     it('builds nothing for an empty list and prints an empty build list', () => {
         const result = runBuild('{"actors":[]}');
         expect(result.status, result.stderr).toBe(0);

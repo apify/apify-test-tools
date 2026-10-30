@@ -15,11 +15,12 @@ let cliPath: string;
 let cleanup: (() => Promise<void>) | undefined;
 let repoDir: string;
 
-// Only what node needs, so the outer vitest's own variables don't reach the inner one
-const env = { PATH: process.env.PATH ?? '', HOME: os.tmpdir() };
+// Only what node needs, so the outer vitest's own variables don't reach the inner one. The fixture's tests never call
+// Apify, so any token does.
+const env = { PATH: process.env.PATH ?? '', HOME: os.tmpdir(), TESTER_APIFY_TOKEN: 'fake-token' };
 
-const run = (args: string[], input = '', cwd = repoDir) =>
-    spawnSync(cliPath, args, { cwd, encoding: 'utf8', input, env, stdio: ['pipe', 'pipe', 'pipe'] });
+const run = (args: string[], input = '', cwd = repoDir, runEnv: NodeJS.ProcessEnv = env) =>
+    spawnSync(cliPath, args, { cwd, encoding: 'utf8', input, env: runEnv, stdio: ['pipe', 'pipe', 'pipe'] });
 
 const build = { buildId: 'b1', actorRawId: 'raw1', buildNumber: '0.99.1', actorFullName: 'owner/a' };
 
@@ -73,6 +74,13 @@ test('owner/a: fails', () => {
         expect(result.status).toBe(1);
         expect(result.stderr).toContain('ENV - 1');
         expect(JSON.parse(result.stdout)).toMatchObject({ success: false, summary: { passed: 1, failed: 1 } });
+    });
+
+    it('fails without TESTER_APIFY_TOKEN instead of passing with every test skipped', () => {
+        const result = run(['test'], JSON.stringify([build]), repoDir, { ...env, TESTER_APIFY_TOKEN: '' });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('TESTER_APIFY_TOKEN is not set');
+        expect(result.stdout).toBe('');
     });
 
     it('fails on empty stdin instead of testing nothing', () => {

@@ -48,10 +48,11 @@ export const runTests = async ({
     vitestOutputFile,
     cwd = process.cwd(),
 }: RunTestsOptions): Promise<TestReport> => {
-    const vitestBin = await resolveVitestBin(cwd);
+    // Without it the lib skips every platform test, and a run that tested nothing would pass
     if (!process.env.TESTER_APIFY_TOKEN) {
-        logger.warn('TESTER_APIFY_TOKEN is not set, so the lib skips every platform test');
+        throw new Error('TESTER_APIFY_TOKEN is not set. The platform tests need it to run the Actors.');
     }
+    const vitestBin = await resolveVitestBin(cwd);
 
     const tempDir = vitestOutputFile ? null : await fs.mkdtemp(path.join(os.tmpdir(), 'apify-test-tools-'));
     const outputFile = path.resolve(cwd, vitestOutputFile ?? path.join(tempDir!, 'vitest-report.json'));

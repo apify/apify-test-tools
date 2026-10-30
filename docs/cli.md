@@ -290,7 +290,8 @@ npx apify-test-tools test --all test/platform/core > test-report.json
 ```
 
 The input is the JSON array `build` and `build-from-local` print. A dry-run plan, empty or invalid input is an
-error, as with `build`. `--all` reads no stdin and runs the tests of every Actor against its default build, which
+error, as with `build`. So is a missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the
+run would pass having tested nothing. `--all` reads no stdin and runs the tests of every Actor against its default build, which
 is what `RUN_ALL_PLATFORM_TESTS=1` did. Both only come from these flags: `test` drops `ACTOR_BUILDS` and
 `RUN_ALL_PLATFORM_TESTS` from its own environment.
 

@@ -203,10 +203,10 @@ describe('CLI bundle', () => {
         expect(stderr).toContain('Skipping notification, no --slack-channel passed');
     });
 
-    it('test fails clearly where vitest is not installed', () => {
+    it('test fails without TESTER_APIFY_TOKEN instead of passing with every test skipped', () => {
         const { status, stdout, stderr } = runCli('test', '--all');
         expect(status).toBe(1);
-        expect(stderr).toContain('vitest is not installed');
+        expect(stderr).toContain('TESTER_APIFY_TOKEN is not set');
         expect(stdout).toBe('');
     });
 

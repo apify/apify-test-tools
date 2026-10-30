@@ -57,6 +57,9 @@ test('owner/a: fails', () => {
         expect(result.status).toBe(1);
         expect(result.stderr).toContain(`ENV ${JSON.stringify([build])} -`);
         expect(result.stderr).toContain('1) owner/a: works ... https://console.apify.com/view/runs/run1');
+        // Vitest's own output still comes through, without the note about the temporary JSON report
+        expect(result.stderr).toContain('Test Files');
+        expect(result.stderr).not.toContain('JSON report written to');
         expect(JSON.parse(result.stdout)).toMatchObject({
             version: 1,
             success: false,

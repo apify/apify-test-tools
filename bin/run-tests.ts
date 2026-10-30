@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { createInterface } from 'node:readline';
 
 import { logger } from './logger.js';
 import { failedRunReport, logTestReport, type TestReport, toTestReport, type VitestJsonReport } from './test-report.js';
@@ -64,6 +65,8 @@ export const runTests = async ({
 
     // Stdin is the only source of builds, so whatever the caller's environment holds doesn't leak into the tests
     const env = { ...process.env };
+    // Vitest writes to a pipe, so it would drop colors that the terminal it ends up in shows
+    if (process.stderr.isTTY && env.FORCE_COLOR === undefined && env.NO_COLOR === undefined) env.FORCE_COLOR = '1';
     delete env.ACTOR_BUILDS;
     delete env.RUN_ALL_PLATFORM_TESTS;
     if (builds) {
@@ -113,8 +116,12 @@ export const runTests = async ({
 /** Resolves with vitest's exit code. Signals we get (a cancelled CI job) are passed on, so vitest can clean up. */
 const spawnVitest = async (args: string[], { cwd, env }: { cwd: string; env: NodeJS.ProcessEnv }) =>
     new Promise<number>((resolve, reject) => {
-        // Vitest's stdout goes to our stderr: stdout is reserved for the report
-        const child = spawn(process.execPath, args, { cwd, env, stdio: ['ignore', 2, 2] });
+        // Vitest's stdout goes to our stderr: stdout is reserved for the report. It is piped through us rather than
+        // handed over, to leave out the JSON reporter's note about the temporary file it wrote.
+        const child = spawn(process.execPath, args, { cwd, env, stdio: ['ignore', 'pipe', 2] });
+        createInterface({ input: child.stdout!, crlfDelay: Infinity }).on('line', (line) => {
+            if (!line.startsWith('JSON report written to ')) process.stderr.write(`${line}\n`);
+        });
         const forward = (signal: NodeJS.Signals) => child.kill(signal);
         process.on('SIGINT', forward);
         process.on('SIGTERM', forward);

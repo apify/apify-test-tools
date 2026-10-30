@@ -287,9 +287,6 @@ the repository locked) on the builds it is given on stdin, and prints a report o
 
 # Scheduled tests: every Actor's default build, nothing on stdin
 npx apify-test-tools test --all test/platform/core > test-report.json
-
-# Extra vitest flags go after --
-npx apify-test-tools test --all -- -t 'finishes'
 ```
 
 The input is the JSON array `build` and `build-from-local` print. A dry-run plan, empty or invalid input is an
@@ -298,15 +295,15 @@ is what `RUN_ALL_PLATFORM_TESTS=1` did. Both only come from these flags: `test` 
 `RUN_ALL_PLATFORM_TESTS` from its own environment.
 
 It runs vitest with `--maxConcurrency=20 --fileParallelism --maxWorkers=100`, since platform tests mostly wait on
-Actor runs rather than the CPU, and with its JSON reporter for the report. Passing one of those options after `--`
-replaces ours, e.g. `-- --maxConcurrency 5` to debug a flaky test.
+Actor runs rather than the CPU, and with its JSON reporter for the report. It takes no other vitest options; for
+those, e.g. `-t` to run one test by name, run vitest directly with the builds in `ACTOR_BUILDS` (see
+[Running tests locally](lib.md#running-tests-locally)).
 
 | Argument / flag        | Default         | Meaning                                                             |
 | ---------------------- | --------------- | ------------------------------------------------------------------- |
 | `[filters..]`          | `test/platform` | Test files to run, as vitest filters                                |
 | `--all`                | `false`         | Test every Actor's default build instead of reading builds on stdin |
 | `--vitest-output-file` |                 | Also keep vitest's own JSON report there, e.g. to upload it         |
-| after `--`             |                 | Passed to vitest as they are                                        |
 
 Vitest's own output goes to stderr, followed by a summary that lists every test with the link to its run. Stdout
 gets only the report:
@@ -355,13 +352,13 @@ npx apify-test-tools test --all | npx apify-test-tools notify --slack-channel '#
 npx apify-test-tools get-affected-actors --since <sha> | npx apify-test-tools notify --slack-channel '#notif-my-repo'
 ```
 
-| Flag              | Input   | Default                  | Meaning                                                           |
-| ----------------- | ------- | ------------------------ | ----------------------------------------------------------------- |
-| `--slack-channel` | both    |                          | Slack channel to post to                                          |
-| `--on`            | tests   | `failure`                | `failure` posts only when the tests failed, `always` on every run |
-| `--title`         | tests   | the GitHub workflow name | What the message calls the run                                    |
-| `--job-url`       | tests   | the GitHub Actions run   | Where the message links to                                        |
-| `--repo-url`      | release | the `origin` remote      | The repository the release is named after and its commits link to |
+| Flag              | Input   | Default             | Meaning                                                           |
+| ----------------- | ------- | ------------------- | ----------------------------------------------------------------- |
+| `--slack-channel` | both    |                     | Slack channel to post to                                          |
+| `--on`            | tests   | `failure`           | `failure` posts only when the tests failed, `always` on every run |
+| `--title`         | tests   | `Tests`             | What the message calls the run, e.g. the CI workflow name         |
+| `--job-url`       | tests   |                     | Link to the CI job, included in the message                       |
+| `--repo-url`      | release | the `origin` remote | The repository the release is named after and its commits link to |
 
 A flag the input has no use for, e.g. `--repo-url` with a test report, is an error rather than ignored. Both kinds
 of notification post with `SLACK_BOT_TOKEN`.

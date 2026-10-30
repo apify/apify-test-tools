@@ -69,17 +69,10 @@ test('owner/a: fails', () => {
     });
 
     it('tests every Actor with --all, without reading stdin', () => {
-        const result = run(['test', '--all', '--', '-t', 'works']);
-        expect(result.status, result.stderr).toBe(0);
+        const result = run(['test', '--all']);
+        expect(result.status).toBe(1);
         expect(result.stderr).toContain('ENV - 1');
-        expect(JSON.parse(result.stdout)).toMatchObject({ success: true, summary: { passed: 1, skipped: 1 } });
-    });
-
-    it('lets a vitest flag after -- replace the one test sets, which vitest would reject twice', () => {
-        const result = run(['--log-level', 'debug', 'test', '--all', '--', '--maxConcurrency', '3', '-t', 'works']);
-        expect(result.status, result.stderr).toBe(0);
-        expect(result.stderr).toMatch(/Running vitest: .* --maxWorkers=100 --maxConcurrency 3 -t works/);
-        expect(result.stderr).not.toContain('--maxConcurrency=20');
+        expect(JSON.parse(result.stdout)).toMatchObject({ success: false, summary: { passed: 1, failed: 1 } });
     });
 
     it('fails on empty stdin instead of testing nothing', () => {

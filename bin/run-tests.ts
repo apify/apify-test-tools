@@ -27,15 +27,6 @@ const resolveVitestBin = async (cwd: string): Promise<string> => {
     }
 };
 
-/** Platform tests mostly wait on Actor runs, not on the CPU, so they run far more at once than vitest's defaults. */
-const PARALLELISM_ARGS = ['--maxConcurrency=20', '--fileParallelism', '--maxWorkers=100'];
-
-/** Whether `args` set the option of `arg` themselves; vitest rejects an option given twice. */
-const overrides = (args: string[], arg: string) => {
-    const name = arg.replace(/^--/, '').split('=')[0];
-    return args.some((a) => [`--${name}`, `--no-${name}`].includes(a.split('=')[0]));
-};
-
 interface RunTestsOptions {
     /** Vitest file filters, e.g. `test/platform/core` */
     filters: string[];
@@ -43,8 +34,6 @@ interface RunTestsOptions {
     builds: BuildData[] | null;
     /** Keeps vitest's own JSON report there, e.g. to upload it */
     vitestOutputFile?: string;
-    /** Passed to vitest as they are, after the ones we set */
-    vitestArgs: string[];
     cwd?: string;
 }
 
@@ -57,7 +46,6 @@ export const runTests = async ({
     filters,
     builds,
     vitestOutputFile,
-    vitestArgs,
     cwd = process.cwd(),
 }: RunTestsOptions): Promise<TestReport> => {
     const vitestBin = await resolveVitestBin(cwd);
@@ -89,8 +77,10 @@ export const runTests = async ({
         '--reporter=default',
         '--reporter=json',
         `--outputFile.json=${outputFile}`,
-        ...PARALLELISM_ARGS.filter((arg) => !overrides(vitestArgs, arg)),
-        ...vitestArgs,
+        // Platform tests mostly wait on Actor runs, not on the CPU, so they run far more at once than vitest's defaults
+        '--maxConcurrency=20',
+        '--fileParallelism',
+        '--maxWorkers=100',
     ];
     logger.debug(`Running vitest: ${args.join(' ')}`);
 

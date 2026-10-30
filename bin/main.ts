@@ -143,11 +143,11 @@ const notifyOptions = {
     },
     title: {
         type: 'string',
-        describe: 'Tests only: what the message calls the run. Defaults to the GitHub workflow name',
+        describe: 'Tests only: what the message calls the run, e.g. the CI workflow name',
     },
     'job-url': {
         type: 'string',
-        describe: 'Tests only: where the message links to. Defaults to the GitHub Actions run',
+        describe: 'Tests only: link to the CI job, included in the message',
     },
     'repo-url': {
         type: 'string',
@@ -167,8 +167,6 @@ const globalOptions = {
 
 await yargs()
     .scriptName('public-actors-utils')
-    // Everything after `--` is kept apart, so `test` can pass it to vitest as it is
-    .parserConfiguration({ 'populate--': true })
     .options(globalOptions)
     .middleware(middlewares)
     .command(
@@ -227,7 +225,7 @@ await yargs()
                     type: 'string',
                     array: true,
                     default: ['test/platform'],
-                    describe: 'Test files to run, as vitest filters. Pass more vitest flags after --',
+                    describe: 'Test files to run, as vitest filters',
                 })
                 .options(testOptions),
         async (args) => {
@@ -235,7 +233,6 @@ await yargs()
                 filters: args.filters,
                 builds: args.all ? null : parseTestBuilds(await readStdin()),
                 vitestOutputFile: args.vitestOutputFile,
-                vitestArgs: ((args['--'] as (string | number)[] | undefined) ?? []).map(String),
             });
             writeJson(report);
             // The report is printed either way, so `notify` later in the pipe still hears about the failure

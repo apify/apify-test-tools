@@ -1,7 +1,7 @@
 import { WebClient } from '@slack/web-api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { formatReleaseMessage, formatTestMessage, githubRunContext, notify } from '../../../bin/notify.js';
+import { formatReleaseMessage, formatTestMessage, notify } from '../../../bin/notify.js';
 import type { ReleaseChanges } from '../../../bin/stdin-input.js';
 import type { TestCaseReport, TestReport } from '../../../bin/test-report.js';
 
@@ -62,10 +62,6 @@ const notifyRelease = async (changes: ReleaseChanges, overrides: Partial<NotifyO
     });
 
 beforeEach(() => {
-    // The defaults come from these, and GitHub Actions sets them, so CI would see links the tests don't expect
-    for (const name of ['GITHUB_WORKFLOW', 'GITHUB_SERVER_URL', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID']) {
-        vi.stubEnv(name, '');
-    }
     vi.stubEnv(TOKEN, 'token');
     postMessage.mockResolvedValue({ ts: '1.1' });
     vi.mocked(WebClient).mockImplementation(function () {
@@ -127,15 +123,20 @@ describe('notify about tests', () => {
         expect(postMessage).not.toHaveBeenCalled();
     });
 
-    it('defaults the title and the link to the GitHub Actions run', async () => {
+    it('names the run and links the job as the caller passes them', async () => {
+        await notifyTests(failed, { title: 'Platform tests - Core', jobUrl: 'https://ci.example.com/jobs/42' });
+        expect(postMessage.mock.calls[0][0].text).toContain(
+            '`Platform tests - Core`: 1 of 2 tests failed. Check <https://ci.example.com/jobs/42|the job>.',
+        );
+    });
+
+    it('reads nothing from the CI environment: without a title or a link, there are none', async () => {
         vi.stubEnv('GITHUB_WORKFLOW', 'Platform tests - Core');
         vi.stubEnv('GITHUB_SERVER_URL', 'https://github.com');
         vi.stubEnv('GITHUB_REPOSITORY', 'owner/repo');
         vi.stubEnv('GITHUB_RUN_ID', '42');
         await notifyTests(failed, { title: undefined });
-        expect(postMessage.mock.calls[0][0].text).toContain(
-            '`Platform tests - Core`: 1 of 2 tests failed. Check <https://github.com/owner/repo/actions/runs/42|the job>.',
-        );
+        expect(postMessage.mock.calls[0][0].text).toMatch(/^`Tests`: 1 of 2 tests failed\.\n/);
     });
 
     it('rejects the flags only a release uses', async () => {
@@ -279,11 +280,5 @@ describe('formatTestMessage', () => {
     it('escapes what Slack would read as markup', () => {
         const report = reportOf([failing('a', 'expected <div> & more')]);
         expect(formatTestMessage({ report, title: 'T' }).text).toContain('expected &lt;div&gt; &amp; more');
-    });
-});
-
-describe('githubRunContext', () => {
-    it('is empty outside of GitHub Actions', () => {
-        expect(githubRunContext({})).toStrictEqual({ title: undefined, jobUrl: undefined });
     });
 });

@@ -269,4 +269,4 @@ TESTER_APIFY_TOKEN=<token> npx apify-test-tools test < builds.json
 You can change the tests and re-run them against the same builds.
 
 `TESTER_APIFY_TOKEN` can be the token of any account with enough memory for the runs. To run only some tests, pass a specific file instead of `test/platform`, or filter by
-name with `-- -t <name>`. See [Running locally](cli.md#running-locally) for the full flow.
+name with vitest's `-t <name>` when running vitest directly. See [Running locally](cli.md#running-locally) for the full flow.

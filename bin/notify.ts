@@ -1,5 +1,3 @@
-import process from 'node:process';
-
 import { getCommitUrl, getRepoName, resolveRepoUrl } from './git.js';
 import { logger } from './logger.js';
 import { getSlackClient, sendingLabel, sendSlackMessage } from './slack.js';
@@ -35,9 +33,9 @@ interface NotifyOptions {
     slackChannel?: string;
     /** Tests only */
     on: NotifyOn;
-    /** Tests only, defaults to the GitHub workflow name, see githubRunContext */
+    /** Tests only: what the message calls the run, e.g. the CI workflow name */
     title?: string;
-    /** Tests only, defaults to the GitHub Actions run, see githubRunContext */
+    /** Tests only: link to the CI job, included in the message */
     jobUrl?: string;
     /** Releases only, names the release. Defaults to the `origin` remote, see resolveRepoUrl */
     repoUrl?: string;
@@ -79,18 +77,6 @@ const assertFlagsFitInput = ({ input, on, title, jobUrl, repoUrl }: NotifyOption
     }
 };
 
-/** Where a notification sent from GitHub Actions points by default: the workflow and the run it came from. */
-export const githubRunContext = (env: NodeJS.ProcessEnv = process.env) => {
-    const { GITHUB_WORKFLOW, GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID } = env;
-    return {
-        title: GITHUB_WORKFLOW || undefined,
-        jobUrl:
-            GITHUB_SERVER_URL && GITHUB_REPOSITORY && GITHUB_RUN_ID
-                ? `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`
-                : undefined,
-    };
-};
-
 type CreateTarget = () => Promise<NotificationTarget | null>;
 
 /** How a test run went: by default only when it failed, with `on: 'always'` always. */
@@ -108,10 +94,7 @@ const notifyTestReport = async ({
         return;
     }
 
-    const defaults = githubRunContext();
-    await target.send(
-        formatTestMessage({ report, title: title ?? defaults.title ?? 'Tests', jobUrl: jobUrl ?? defaults.jobUrl }),
-    );
+    await target.send(formatTestMessage({ report, title: title ?? 'Tests', jobUrl }));
 };
 
 /**

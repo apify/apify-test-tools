@@ -69,9 +69,14 @@ jobs:
               if: ${{ !cancelled() }}
               env:
                   SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+                  # Passed through the environment, so a quote in the workflow name can't break the command
+                  WORKFLOW_NAME: ${{ github.workflow }}
+                  JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
               run: |
                   apify-test-tools notify \
                     --slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" \
+                    --title "$WORKFLOW_NAME" \
+                    --job-url "$JOB_URL" \
                     < test-report.json
 
             - name: Upload test reports

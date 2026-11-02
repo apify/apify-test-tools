@@ -1,205 +1,17 @@
-import type { MockInstance } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     findCommitSha,
-    getChangedFiles,
     getChangedFilesBetween,
-    getCommits,
     getCommitsBetween,
     getCurrentBranch,
     getRepoName,
     normalizeRepoUrl,
-    parseBaseCommit,
     resolveCommitSha,
     resolveReleaseBaseCommit,
     resolveRepoUrl,
 } from '../../../bin/git.js';
 import * as Utils from '../../../bin/utils.js';
-
-describe('getCommits', () => {
-    const sourceBranch = 'feature-branch';
-    const targetBranch = 'main';
-
-    const sha1 = '1'.repeat(40);
-    const sha2 = '2'.repeat(40);
-    const sha3 = '3'.repeat(40);
-
-    const commit1 = `${sha1}»¦«Author1»¦«Date1»¦«First Change On Feature`;
-    const commit2 = `${sha2}»¦«Author1»¦«Date2»¦«Second Change On Feature`;
-    const commit3 = `${sha3}»¦«Author1»¦«Date3»¦«Third Change On Feature`;
-
-    let gitCommandSpy: MockInstance;
-
-    beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(`${commit3}\n${commit2}\n${commit1}`);
-    });
-
-    it('should return commits between source and target branches', async () => {
-        // Act
-        const commits = await getCommits({ sourceBranch, targetBranch });
-
-        // Assert
-        expect(commits).toStrictEqual([
-            { sha: sha1, author: 'Author1', date: 'Date1', message: 'First Change On Feature' },
-            { sha: sha2, author: 'Author1', date: 'Date2', message: 'Second Change On Feature' },
-            { sha: sha3, author: 'Author1', date: 'Date3', message: 'Third Change On Feature' },
-        ]);
-
-        expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            ['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', 'main..feature-branch'],
-            { operation: 'list commits reachable from the source ref but absent from the target ref' },
-        );
-    });
-
-    it('should return commits after the base commit if provided', async () => {
-        // Act
-        const commits = await getCommits({ sourceBranch, targetBranch, baseCommit: sha1 });
-
-        // Assert
-        expect(commits).toStrictEqual([
-            { sha: sha2, author: 'Author1', date: 'Date2', message: 'Second Change On Feature' },
-            { sha: sha3, author: 'Author1', date: 'Date3', message: 'Third Change On Feature' },
-        ]);
-
-        expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            ['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', 'main..feature-branch'],
-            { operation: 'list commits reachable from the source ref but absent from the target ref' },
-        );
-    });
-
-    it('should ignore the base commit and return all commits when it is the branch HEAD (rerun or force push)', async () => {
-        // Act
-        const commits = await getCommits({ sourceBranch, targetBranch, baseCommit: sha3 });
-
-        // Assert
-        expect(commits).toStrictEqual([
-            { sha: sha1, author: 'Author1', date: 'Date1', message: 'First Change On Feature' },
-            { sha: sha2, author: 'Author1', date: 'Date2', message: 'Second Change On Feature' },
-            { sha: sha3, author: 'Author1', date: 'Date3', message: 'Third Change On Feature' },
-        ]);
-    });
-
-    it('should return all commits if base commit is not found', async () => {
-        // Act
-        const commits = await getCommits({ sourceBranch, targetBranch, baseCommit: 'a'.repeat(40) });
-
-        // Assert
-        expect(commits).toStrictEqual([
-            { sha: sha1, author: 'Author1', date: 'Date1', message: 'First Change On Feature' },
-            { sha: sha2, author: 'Author1', date: 'Date2', message: 'Second Change On Feature' },
-            { sha: sha3, author: 'Author1', date: 'Date3', message: 'Third Change On Feature' },
-        ]);
-
-        expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            ['log', '--pretty=format:%H»¦«%aN<%aE>»¦«%aD»¦«%s', 'main..feature-branch'],
-            { operation: 'list commits reachable from the source ref but absent from the target ref' },
-        );
-    });
-});
-
-describe('getChangedFiles', () => {
-    let gitCommandSpy: MockInstance;
-
-    beforeEach(() => {
-        gitCommandSpy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('file1.txt\nfolder/file2.txt');
-    });
-
-    it('should return changed files between commits', async () => {
-        // Arrange
-        const firstSha = '1'.repeat(40);
-        const lastSha = '3'.repeat(40);
-        const commits = [
-            { sha: firstSha, author: '', date: '', message: '' },
-            { sha: lastSha, author: '', date: '', message: '' },
-        ];
-
-        // Act
-        const changedFiles = await getChangedFiles(commits);
-
-        // Assert
-        expect(changedFiles).toStrictEqual(['file1.txt', 'folder/file2.txt']);
-
-        expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(
-            ['diff', '--name-only', '--no-renames', `${firstSha}~..${lastSha}`],
-            {
-                operation: 'get the list of changed files between commits',
-            },
-        );
-    });
-
-    it('should throw without running git when the commit list is empty', async () => {
-        // Act & Assert
-        await expect(getChangedFiles([])).rejects.toThrow('Cannot get changed files: the commit list is empty');
-        expect(gitCommandSpy).not.toHaveBeenCalled();
-    });
-
-    it('should handle only one commit', async () => {
-        // Arrange
-        const onlySha = '1'.repeat(40);
-        const commits = [{ sha: onlySha, author: '', date: '', message: '' }];
-
-        // Act
-        const changedFiles = await getChangedFiles(commits);
-
-        // Assert
-        expect(changedFiles).toStrictEqual(['file1.txt', 'folder/file2.txt']);
-
-        expect(gitCommandSpy).toHaveBeenCalledTimes(1);
-        expect(gitCommandSpy).toHaveBeenCalledWith(['diff', '--name-only', '--no-renames', `${onlySha}~..${onlySha}`], {
-            operation: 'get the list of changed files between commits',
-        });
-    });
-
-    it('should return an empty list when the net diff is empty (e.g. a commit and its revert)', async () => {
-        // Arrange
-        gitCommandSpy.mockResolvedValue('');
-        const commits = [
-            { sha: '1'.repeat(40), author: '', date: '', message: '' },
-            { sha: '2'.repeat(40), author: '', date: '', message: '' },
-        ];
-
-        // Act
-        const changedFiles = await getChangedFiles(commits);
-
-        // Assert
-        expect(changedFiles).toStrictEqual([]);
-    });
-});
-
-const VALID_SHA = 'a'.repeat(40);
-const VALID_JSON = JSON.stringify({ sha: VALID_SHA, author: 'test', date: 'now', message: 'msg' });
-
-describe('parseBaseCommit', () => {
-    it('should return undefined for undefined input', () => {
-        expect(parseBaseCommit(undefined)).toBeUndefined();
-    });
-
-    it('should return undefined for empty string', () => {
-        expect(parseBaseCommit('')).toBeUndefined();
-    });
-
-    it('should accept a plain SHA string', () => {
-        expect(parseBaseCommit(VALID_SHA)).toBe(VALID_SHA);
-    });
-
-    it('should extract sha from a JSON commit object', () => {
-        expect(parseBaseCommit(VALID_JSON)).toBe(VALID_SHA);
-    });
-
-    it('should throw on an invalid SHA string', () => {
-        expect(() => parseBaseCommit('not-a-sha')).toThrow('Invalid base commit SHA');
-    });
-
-    it('should throw when JSON contains an invalid sha field', () => {
-        const badJson = JSON.stringify({ sha: 'bad', author: 'test', date: 'now', message: 'msg' });
-        expect(() => parseBaseCommit(badJson)).toThrow('Invalid base commit SHA');
-    });
-});
 
 describe('getCurrentBranch', () => {
     it('should return the checked-out branch', async () => {
@@ -279,7 +91,7 @@ describe('resolveReleaseBaseCommit', () => {
         });
         await expect(resolveReleaseBaseCommit(baseSha)).resolves.toBe(baseSha);
         expect(gitCommandSpy).toHaveBeenCalledWith(['rev-parse', '--verify', '--quiet', `${baseSha}^{commit}`], {
-            operation: 'verify the release base commit in local Git history',
+            operation: `look up ${baseSha} in local Git history`,
         });
         expect(gitCommandSpy).toHaveBeenCalledWith(['merge-base', baseSha, 'HEAD'], {
             operation: 'check whether the release base commit is an ancestor of HEAD',
@@ -348,11 +160,11 @@ describe('resolveReleaseBaseCommit', () => {
             new Utils.GitCommandError(
                 ['rev-parse', '--verify', '--quiet', `${baseSha}^{commit}`],
                 Object.assign(new Error('Git failed'), { code: 128 }),
-                'verify the release base commit in local Git history',
+                `look up ${baseSha} in local Git history`,
             ),
         );
         await expect(resolveReleaseBaseCommit(baseSha)).rejects.toThrow(
-            'Failed to verify the release base commit in local Git history.\n' +
+            `Failed to look up ${baseSha} in local Git history.\n` +
                 `Command: git "rev-parse" "--verify" "--quiet" "${baseSha}^{commit}"\nGit error: Git failed`,
         );
     });
@@ -398,12 +210,6 @@ describe('empty commit ranges', () => {
 
     it('getCommitsBetween returns no commits', async () => {
         await expect(getCommitsBetween('HEAD', 'HEAD')).resolves.toStrictEqual([]);
-    });
-
-    it('getCommits fails clearly, since the commands built on it need at least one commit', async () => {
-        await expect(getCommits({ sourceBranch: 'HEAD', targetBranch: 'HEAD' })).rejects.toThrow(
-            'HEAD has no commits that are not on HEAD.',
-        );
     });
 });
 

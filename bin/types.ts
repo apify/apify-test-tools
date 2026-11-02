@@ -1,15 +1,6 @@
 import type { ActorJsonPaths } from './utils/config/actor-json.js';
 import type { ExistingDir, RelativeDir } from './utils/path/repo-relative.js';
 
-export interface Config {
-    targetBranch: string;
-    sourceBranch: string;
-    baseCommit?: string;
-    actors: string[];
-    ignore: string[];
-    testFilesGlob?: string;
-}
-
 /** The changes from `fromRef` (excluded) to `toRef`, compared as trees like `git diff fromRef toRef`. */
 export interface GitRange {
     fromRef: string;

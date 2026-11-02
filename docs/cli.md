@@ -365,9 +365,3 @@ ACTOR_BUILDS="$BUILDS" \
 TESTER_APIFY_TOKEN=apify_api_yyy \
   npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
 ```
-
-## Legacy git commands
-
-`get-commits`, `get-latest-commit` and `get-changed-files` print the commits, the newest commit, or the changed files
-on `--source-branch` since it diverged from `--target-branch` (optionally only after `--base-commit`). They predate
-`get-affected-actors`, which reports the same data, and are kept for older workflows.

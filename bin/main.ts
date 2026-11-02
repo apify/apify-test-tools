@@ -9,7 +9,6 @@ import { hideBin } from 'yargs/helpers';
 import { getAffectedActors } from './affected-actors.js';
 import { buildActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
-import { getChangedFiles, getCommits } from './git.js';
 import { logger, logLevels } from './logger.js';
 import { writeJson } from './output.js';
 import { notifyToSlack } from './slack.js';
@@ -24,17 +23,10 @@ const middlewares = [(args: { logLevel: (typeof logLevels)[number] }) => logger.
 
 /*
  * Option groups shared across commands. Each is a plain object passed to `.options()`, so a command's
- * builder composes them by chaining (`y.options(gitRangeOptions).options(actorSelectionOptions)`)
+ * builder composes them by chaining (`y.options(affectedRangeOptions).options(actorSelectionOptions)`)
  * instead of nesting wrapper functions. `as const` keeps literals like `demandOption: true` so yargs
  * can infer non-optional types; `satisfies` validates the shape without widening it.
  */
-
-/** Commit range to inspect: everything on `source-branch` since it diverged from `target-branch`. */
-const gitRangeOptions = {
-    'target-branch': { type: 'string', demandOption: true },
-    'source-branch': { type: 'string', demandOption: true },
-    'base-commit': { type: 'string', demandOption: false },
-} as const satisfies Record<string, Options>;
 
 /**
  * Where to build the Actors from. Defaults to the `origin` remote, which is then checked against each
@@ -47,8 +39,7 @@ const repoUrlOptions = {
 /**
  * Actor-selection flags, applied to every command that reads the actor config so a caller can
  * narrow the set it operates on (e.g. two-stage releases: `--ignore X`, then `--actors X`).
- * Kept separate from `gitRangeOptions` so the read-only git commands don't advertise flags they ignore.
- */
+ *  */
 const actorSelectionOptions = {
     actors: { type: 'string', array: true, default: [] as string[] },
     ignore: { type: 'string', array: true, default: [] as string[] },
@@ -130,36 +121,6 @@ await yargs()
     .scriptName('public-actors-utils')
     .options(globalOptions)
     .middleware(middlewares)
-    .command(
-        'get-commits',
-        '',
-        (y) => y.options(gitRangeOptions),
-        async (args) => {
-            const commits = await getCommits(args);
-            writeJson(commits);
-        },
-    )
-    .command(
-        'get-latest-commit',
-        '',
-        (y) => y.options(gitRangeOptions),
-        async (args) => {
-            const commits = await getCommits(args);
-            if (commits.length > 0) {
-                writeJson(commits[commits.length - 1]);
-            }
-        },
-    )
-    .command(
-        'get-changed-files',
-        '',
-        (y) => y.options(gitRangeOptions),
-        async (args) => {
-            const commits = await getCommits(args);
-            const changedFiles = await getChangedFiles(commits);
-            writeJson(changedFiles);
-        },
-    )
     .command(
         'get-actor-configs',
         '',

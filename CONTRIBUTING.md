@@ -53,7 +53,7 @@ To work on the library, run the cli from the root of your testing repo:
 ```sh
 cd /path/to/testing-repo-for-github-actions
 npx tsx /path/to/apify-test-tools/bin/main.ts --help
-npx tsx /path/to/apify-test-tools/bin/main.ts get-commits --target-branch master --source-branch feat/testing-feature-branch
+npx tsx /path/to/apify-test-tools/bin/main.ts get-affected-actors --base master
 ```
 
 Or clone a test repo into `local-clone/` inside this repo and run `npm run start:dev -- <command>`.

@@ -1,5 +1,5 @@
 import { logger } from './logger.js';
-import type { Commit, Config } from './types.js';
+import type { Commit } from './types.js';
 import { GitCommandError, runGitCommand } from './utils.js';
 
 export const GIT_FORMAT_SEPARATOR = '»¦«';
@@ -8,19 +8,6 @@ const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR
 // Lists the changed paths. With rename detection (on by default) a moved file is listed only under its new path,
 // so the Actor whose context it left wouldn't count as changed. --no-renames lists it as deleted and added instead.
 const LIST_CHANGED_PATHS = ['--name-only', '--no-renames'];
-
-/**
- * Gets the list of changed files between the given commits (inclusive), so it diffs from the parent of the oldest.
- */
-export const getChangedFiles = async (commits: Commit[]) => {
-    // getCommits never returns an empty list (it throws on an empty range, and the rerun check returns all
-    // commits when the base commit is the branch HEAD), so this signals a programmer error
-    if (commits.length === 0) {
-        throw new Error('Cannot get changed files: the commit list is empty. This should never happen.');
-    }
-
-    return getChangedFilesBetween(`${commits[0].sha}~`, commits[commits.length - 1].sha);
-};
 
 /**
  * Files that differ between two commits, i.e. changed by the commits in the range (fromRef, toRef]. fromRef's own
@@ -56,29 +43,6 @@ export const findCommitSha = async (ref: string): Promise<string | undefined> =>
         throw error;
     });
 
-const SHA_REGEX = /^[0-9a-f]{40}$/i;
-
-/**
- *
- * @param shaOrCommit Supports both a SHA string or a Commit object in JSON format. Can be empty.
- * @returns The SHA string if valid, otherwise throws an error.
- */
-export const parseBaseCommit = (shaOrCommit: string | undefined): string | undefined => {
-    if (!shaOrCommit) return undefined;
-    let sha: string;
-    if (shaOrCommit.startsWith('{')) {
-        sha = (JSON.parse(shaOrCommit) as Commit).sha;
-    } else {
-        sha = shaOrCommit;
-    }
-    if (!SHA_REGEX.test(sha)) {
-        throw new Error(
-            `Invalid base commit SHA: "${sha}". It should be a 40-character hexadecimal string, instead got input: "${shaOrCommit}".`,
-        );
-    }
-    return sha;
-};
-
 /**
  * Commits reachable from toRef but not from fromRef, oldest first: the range (fromRef, toRef], so fromRef itself is
  * not included. To include it, pass its parent, `${sha}~`.
@@ -90,49 +54,6 @@ export const getCommitsBetween = async (fromRef: string, toRef: string): Promise
     // An empty range (e.g. `x..x`) prints nothing
     const commits = output.split('\n').filter(Boolean).map(parseCommit);
     commits.reverse();
-    return commits;
-};
-
-/**
- * Gets the commits between sourceBranch and targetBranch (exclusive).
- * - If baseCommit is provided, only returns commits after the baseCommit.
- */
-export const getCommits = async ({
-    sourceBranch,
-    targetBranch,
-    baseCommit,
-}: Pick<Config, 'sourceBranch' | 'targetBranch' | 'baseCommit'>): Promise<Commit[]> => {
-    const baseCommitSha = parseBaseCommit(baseCommit);
-    const commits = await getCommitsBetween(targetBranch, sourceBranch);
-    if (commits.length === 0) {
-        throw new Error(`${sourceBranch} has no commits that are not on ${targetBranch}.`);
-    }
-
-    // The last validated (base) commit being the branch HEAD means nothing new was pushed since the last
-    // validation — the dev reran the workflow (or force-pushed to the same state) to trigger a clean test
-    const headSha = commits[commits.length - 1]?.sha;
-    if (baseCommitSha !== undefined && baseCommitSha === headSha) {
-        logger.info(
-            `Detected rerun with the same commit that we already validated. This usually means the user wants to rerun the Action from scratch, ignoring last validated commit ${baseCommitSha} and returning all commits`,
-        );
-        logger.info(`Commits being returned: ${commits.map((c) => c.sha).join(', ')}`);
-        return commits;
-    }
-
-    const baseCommitIndex = commits.findIndex((commit) => commit.sha === baseCommitSha);
-
-    const hasBaseCommit = baseCommitIndex !== -1;
-    if (hasBaseCommit) {
-        const commitsUpToBaseCommit = commits.slice(baseCommitIndex + 1);
-        logger.info(
-            `Found base commit ${baseCommitSha} at index ${baseCommitIndex}, returning ${commitsUpToBaseCommit.length} commits after it`,
-        );
-        logger.info(`Commits being returned: ${commitsUpToBaseCommit.map((c) => c.sha).join(', ')}`);
-        return commitsUpToBaseCommit;
-    }
-
-    logger.info(`Base commit ${baseCommitSha} not found in the commit range, returning all ${commits.length} commits`);
-    logger.info(`Commits being returned: ${commits.map((c) => c.sha).join(', ')}`);
     return commits;
 };
 
@@ -214,6 +135,8 @@ export const getRepoName = (repoUrl: string): string => {
     return normalizeRepoUrl(repoUrl).split('/').pop()!;
 };
 
+const SHA_REGEX = /^[0-9a-f]{40}$/i;
+
 // Sent by e.g. GitHub as the "before" commit of a push that created the branch
 const ZERO_SHA_REGEX = /^0{40}$/;
 
@@ -223,31 +146,27 @@ const ZERO_SHA_REGEX = /^0{40}$/;
  * would rebuild the latest build of every Actor and post it to Slack, so every problem is an error.
  */
 export const resolveReleaseBaseCommit = async (baseCommit: string, head = 'HEAD'): Promise<string> => {
-    const sha = parseBaseCommit(baseCommit);
-    if (!sha) {
-        throw new Error('A base commit is required for release. See the "Releasing Actors" section of docs/cli.md.');
+    if (!SHA_REGEX.test(baseCommit)) {
+        throw new Error(
+            `Invalid base commit SHA: "${baseCommit}". It should be a 40-character hexadecimal string. ` +
+                'See the "Releasing Actors" section of docs/cli.md.',
+        );
     }
+    const sha = baseCommit;
     if (ZERO_SHA_REGEX.test(sha)) {
         throw new Error(
             `Base commit is ${sha}, which means the branch was just created and there is no previous release to diff against. ` +
                 `Rerun with the base commit set to the last commit before the changes you want to release.`,
         );
     }
-    // --quiet suppresses Git's error text for a missing commit, but Git still exits with code 1.
-    const verifiedSha = await runGitCommand(['rev-parse', '--verify', '--quiet', `${sha}^{commit}`], {
-        operation: 'verify the release base commit in local Git history',
-    }).catch((error: unknown) => {
-        if (error instanceof GitCommandError && error.exitCode === 1) return '';
-        throw error;
-    });
-    if (!verifiedSha) {
+    if (!(await findCommitSha(sha))) {
         throw new Error(
             `Base commit ${sha} is not in the local git history. Either the checkout is shallow ` +
                 `(fetch the full history, e.g. fetch-depth: 0 in actions/checkout) or the branch was force-pushed.`,
         );
     }
     // git merge-base A B outputs the common ancestor. If that equals A, then A is an ancestor of B.
-    const mergeBase = await runGitCommand(['merge-base', verifiedSha, head], {
+    const mergeBase = await runGitCommand(['merge-base', sha, head], {
         operation: `check whether the release base commit is an ancestor of ${head}`,
     }).catch((error: unknown) => {
         if (error instanceof GitCommandError && error.exitCode === 1) return '';

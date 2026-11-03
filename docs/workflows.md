@@ -268,14 +268,15 @@ Optional. Call it after a failed platform test job. It runs in two phases:
 Scheduled runs use a `GITHUB_TOKEN` that cannot trigger other workflows, so the fix phase is a direct job
 dependency rather than a label-triggered run of `public_claude.yaml`.
 
-| Input                | Type   | Default    | Description                                                                                              |
-| -------------------- | ------ | ---------- | -------------------------------------------------------------------------------------------------------- |
-| `model`              | string | `sonnet`   | Claude model for both phases                                                                             |
-| `effort`             | string | `''`       | Claude effort level (`low`, `medium`, `high`, `xhigh`, `max`). Empty uses the Claude Code default        |
-| `max_flakiness_runs` | number | `200`      | The most times Claude may re-run the failing Actor run to measure how often the failure happens          |
-| `investigate_prompt` | string | (built in) | Prompt for the investigation phase. Override to change how issues are investigated, titled and described |
+| Input                | Type   | Default    | Description                                                                                                                                              |
+| -------------------- | ------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`              | string | `sonnet`   | Claude model for both phases                                                                                                                             |
+| `effort`             | string | `''`       | Claude effort level (`low`, `medium`, `high`, `xhigh`, `max`). Empty uses the Claude Code default                                                        |
+| `max_flakiness_runs` | number | `200`      | The most times Claude may re-run the failing Actor run to measure how often the failure happens                                                          |
+| `investigate_prompt` | string | (built in) | Prompt for the investigation phase. Override to change how issues are investigated, titled and described                                                 |
+| `priority_prompt`    | string | (built in) | Prompt for setting a new issue's Priority field from its impact and flakiness. Override to change how priority is judged, e.g. to set revenue thresholds |
 
-Secrets: `ANTHROPIC_API_KEY`, `TESTER_APIFY_TOKEN`, and optionally `NPM_TOKEN`.
+Secrets: `ANTHROPIC_API_KEY`, `TESTER_APIFY_TOKEN`, and optionally `NPM_TOKEN`, `REDASH_API_KEY` and `AGENT_SKILLS_INTERNAL_GITHUB_TOKEN`.
 
 ```yaml
 jobs:
@@ -341,6 +342,8 @@ to the step that needs it:
 | `TESTER_APIFY_TOKEN`                                                      | the vitest step, and the Claude investigation step: the Apify MCP server's bearer token for reading the failing run, its log and its storages, and Claude's token for re-running it to measure how often the failure happens |
 | `SLACK_TOKEN_TESTS_BOT` / `SLACK_TOKEN_RELEASES_BOT`                      | the reporting and announcement steps only                                                                                                                                                                                    |
 | `ANTHROPIC_API_KEY`                                                       | the Claude steps of the Claude workflows only                                                                                                                                                                                |
+| `REDASH_API_KEY`                                                          | the Claude investigation step: the Redash MCP server's key for measuring the failure's impact from Snowflake. Optional                                                                                                       |
+| `AGENT_SKILLS_INTERNAL_GITHUB_TOKEN`                                      | the investigation job's checkout of `apify/agent-skills-internal` only, for the `redash-analyst` plugin. Optional                                                                                                            |
 
 The Actor tokens reach the build only for the Actors your config declares: a secret that merely looks like an Actor
 token is not passed on. A token the config declares but the repo hasn't set is a warning, not a failure: a repo can

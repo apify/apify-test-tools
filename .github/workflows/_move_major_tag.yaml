@@ -42,8 +42,8 @@ jobs:
             # it. Depending on a regex in another repo to keep releases working is not a dependency
             # worth having, and `v1` beside a package `v1.0.0` would be worse still.
             #
-            # `uses:` cannot take an expression, so every ref into this repo hardcodes this same tag;
-            # check-major-tag-refs.mjs fails the build if one of them drifts.
+            # The workflows load this repo with `$/`, so they never name the tag. Only the usage
+            # examples in the workflows, README and docs do: update them by hand when bumping it.
             MAJOR_TAG: workflows-v0
         steps:
             - name: Checkout repository

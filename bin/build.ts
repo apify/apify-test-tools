@@ -82,6 +82,44 @@ export const assertRepoUrlMatchesDefaultVersion = (
     }
 };
 
+const getEnvVarNames = (version: ApifyClientTypes.ActorVersion | undefined): string[] =>
+    (version?.envVars ?? []).map(({ name }) => name).filter((name): name is string => !!name);
+
+/**
+ * Guards against testing an Actor with different env vars than users run it with, e.g. a variable added to
+ * the default version but not to the test version, which would make the tests pass or fail for the wrong
+ * reason. Only names are compared because the API doesn't return secret values.
+ */
+export const assertEnvVarsMatchDefaultVersion = (
+    actorFullName: string,
+    actorInfo: ApifyClientTypes.Actor,
+    defaultVersion: ApifyClientTypes.ActorVersion | undefined,
+    versionNumber: string,
+) => {
+    if (!defaultVersion) {
+        throw new Error(
+            `[${actorFullName}] The version of the default build no longer exists. ${ACTOR_SETUP_REQUIREMENT}`,
+        );
+    }
+    const version = actorInfo.versions.find((v) => v.versionNumber === versionNumber);
+    const defaultNames = getEnvVarNames(defaultVersion);
+    const names = getEnvVarNames(version);
+    const missing = defaultNames.filter((name) => !names.includes(name));
+    const extra = names.filter((name) => !defaultNames.includes(name));
+    if (missing.length === 0 && extra.length === 0) return;
+
+    const differences = [
+        missing.length > 0 ? `missing ${missing.join(', ')}` : undefined,
+        extra.length > 0 ? `extra ${extra.join(', ')}` : undefined,
+    ].filter(Boolean);
+    throw new Error(
+        `[${actorFullName}] Env vars of version ${versionNumber} are out of sync with default version ` +
+            `${defaultVersion.versionNumber} (${differences.join('; ')}). ` +
+            `${version ? '' : `Version ${versionNumber} doesn't exist yet, so create it on the platform first. `}` +
+            `Add or remove the env vars in version ${versionNumber} so their names match the default version's.`,
+    );
+};
+
 export class ApifyBuilder {
     private constructor(
         private readonly apifyClient: ApifyClient,
@@ -330,6 +368,8 @@ type RunBuildsOptions = {
     shouldVerifyRepoUrl: boolean;
     branch: string;
     dryRun: boolean;
+    // See assertEnvVarsMatchDefaultVersion
+    requireEnvVarsInSync?: boolean;
 };
 
 export const runBuilds = async ({
@@ -339,6 +379,7 @@ export const runBuilds = async ({
     actorConfigs,
     versionNumber,
     dryRun,
+    requireEnvVarsInSync = false,
 }: RunBuildsOptions): Promise<BuildData[] | DryRunPlan<GitBuildPlan>> => {
     // Fetched once per Actor and reused for the checks, the version numbers and the build itself
     const buildConfigs: BuildPrActorOptions[] = await Promise.all(
@@ -360,6 +401,16 @@ export const runBuilds = async ({
             if (shouldVerifyRepoUrl) {
                 assertRepoUrlMatchesDefaultVersion(actorConfig.actorFullName, defaultVersion, repoUrl);
             }
+            const targetVersionNumber =
+                versionNumber === DEFAULT_VERSION_KEYWORD ? defaultVersionNumber : versionNumber;
+            if (requireEnvVarsInSync) {
+                assertEnvVarsMatchDefaultVersion(
+                    actorConfig.actorFullName,
+                    actorInfo,
+                    defaultVersion,
+                    targetVersionNumber,
+                );
+            }
 
             // Depending on if these are miniactors or standaloneActors
             let gitRepoUrl = `${repoUrl}#${branch}`;
@@ -370,7 +421,7 @@ export const runBuilds = async ({
                 actorConfig,
                 actorInfo,
                 gitRepoUrl,
-                versionNumber: versionNumber === DEFAULT_VERSION_KEYWORD ? defaultVersionNumber : versionNumber,
+                versionNumber: targetVersionNumber,
             };
         }),
     );

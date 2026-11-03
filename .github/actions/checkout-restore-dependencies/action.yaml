@@ -8,6 +8,11 @@ inputs:
             generated .npmrc references), and only on the dependency install steps, so it
             never reaches the build or test steps. Use a read-only token.
         required: false
+    config-secrets:
+        description: >-
+            The CONFIG_SECRETS workflow secret, if the caller passed one. Every value inside it is
+            registered as a mask, see .github/scripts/mask-config-secrets.sh.
+        required: false
 
 outputs:
     scripts-path:
@@ -18,12 +23,19 @@ outputs:
         value: ${{ steps.scripts-path.outputs.path }}
 
 # Sets common steps and ensure we use cached node_modules
-# To test a change here, repoint the `uses:` refs in the reusable workflows at your branch, and
-# change them back before merging. Consumers track the `workflows-v0` tag, which moves on every
-# push to master.
+# The reusable workflows load this with `uses: $/...`, which resolves to the same commit as the
+# workflow itself, so testing a change here only needs the caller pointed at your branch.
 runs:
     using: 'composite'
     steps:
+        # Runs before anything can use a packed secret, see the script for why.
+        - name: Mask config secrets
+          if: inputs.config-secrets != ''
+          shell: bash
+          env:
+              CONFIG_SECRETS: ${{ inputs.config-secrets }}
+          run: bash "${{ github.action_path }}/../../scripts/mask-config-secrets.sh"
+
         - name: Checkout Repository
           uses: actions/checkout@v5
           with:

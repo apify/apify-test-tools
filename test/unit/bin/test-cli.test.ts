@@ -36,7 +36,7 @@ describe('test CLI', () => {
             `import { expect, test } from 'vitest';
 
 test('owner/a: works', ({ task }) => {
-    console.log('ENV', process.env.ACTOR_BUILDS ?? '-', process.env.RUN_ALL_PLATFORM_TESTS ?? '-');
+    console.log('ENV', process.env.ACTOR_BUILDS ?? '-');
     task.meta = { runId: 'run1', runLink: 'https://console.apify.com/view/runs/run1', actorId: 'owner/a' } as never;
 });
 
@@ -57,9 +57,7 @@ test('owner/a: fails', () => {
         expect(result.status).toBe(1);
         // Passed on to the lib as ACTOR_BUILDS, the fields in the order test reads them
         const { actorFullName, buildId, actorRawId, buildNumber } = build;
-        expect(result.stderr).toContain(
-            `ENV ${JSON.stringify([{ actorFullName, buildId, actorRawId, buildNumber }])} -`,
-        );
+        expect(result.stderr).toContain(`ENV ${JSON.stringify([{ actorFullName, buildId, actorRawId, buildNumber }])}`);
         expect(result.stderr).toContain('1) owner/a: works ... https://console.apify.com/view/runs/run1');
         // Vitest's own output still comes through, without the note about the temporary JSON report
         expect(result.stderr).toContain('Test Files');
@@ -81,8 +79,8 @@ test('owner/a: fails', () => {
         const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' };
         const result = run(['test'], JSON.stringify([actorConfig]));
         expect(result.status).toBe(1);
-        // Only the fields the lib reads reach it, and nothing switches on every test
-        expect(result.stderr).toContain('ENV [{"actorFullName":"owner/a"}] -');
+        // Only the fields the lib reads reach it
+        expect(result.stderr).toContain('ENV [{"actorFullName":"owner/a"}]');
         expect(result.stderr).toContain('Testing 1 Actor(s): owner/a (default build)');
         expect(JSON.parse(result.stdout)).toMatchObject({ success: false, summary: { passed: 1, failed: 1 } });
     });

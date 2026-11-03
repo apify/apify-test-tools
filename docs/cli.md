@@ -296,8 +296,8 @@ given with it (`buildId`, `actorRawId` and `buildNumber`, as `build` and `build-
 its default build without one. Other fields are ignored, so the output of
 [`get-actor-configs`](#listing-actors-get-actor-configs) works as it is. A dry-run plan, empty or invalid input is an
 error, as with `build`. So is a missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the
-run would pass having tested nothing. `test` passes the Actors to vitest as `ACTOR_BUILDS`, and ignores
-`ACTOR_BUILDS` and `RUN_ALL_PLATFORM_TESTS` in its own environment.
+run would pass having tested nothing. `test` passes the Actors to vitest as `ACTOR_BUILDS`, in place of any
+`ACTOR_BUILDS` in its own environment.
 
 It runs vitest with `--maxConcurrency=20 --fileParallelism --maxWorkers=100`, since platform tests mostly wait on
 Actor runs rather than the CPU, and with the default reporter plus the JSON one the report is read from. These

@@ -341,7 +341,7 @@ Platform tests are skipped unless `TESTER_APIFY_TOKEN` is set, so your regular u
 To run them locally against the Actors' current default builds:
 
 ```bash
-RUN_ALL_PLATFORM_TESTS=1 TESTER_APIFY_TOKEN=<token> npx vitest --run test/platform
+npx apify-test-tools get-actor-configs | TESTER_APIFY_TOKEN=<token> npx apify-test-tools test
 ```
 
 The [Vitest library API](docs/lib.md) covers everything `toFinishWith` checks, the other matchers, standby Actors,

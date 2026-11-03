@@ -67,8 +67,6 @@ export const runTests = async ({
     const env = { ...process.env };
     // Vitest writes to a pipe, so it would drop colors that the terminal it ends up in shows
     if (process.stderr.isTTY && env.FORCE_COLOR === undefined && env.NO_COLOR === undefined) env.FORCE_COLOR = '1';
-    delete env.ACTOR_BUILDS;
-    delete env.RUN_ALL_PLATFORM_TESTS;
     // The lib runs the tests of the Actors listed here, each on the build given, or on its default build without one
     env.ACTOR_BUILDS = JSON.stringify(targets);
     const described = targets.map(

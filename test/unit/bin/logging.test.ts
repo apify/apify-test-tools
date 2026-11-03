@@ -1,25 +1,21 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
-const compilerPath = fileURLToPath(new URL('../../../node_modules/typescript/bin/tsc', import.meta.url));
+import { compileCli } from './compiled-cli.js';
+
 let cliPath: string;
-let buildDir: string | undefined;
+let cleanup: (() => Promise<void>) | undefined;
 let gitStubDir: string | undefined;
 const sha = '1'.repeat(40);
 
 describe('CLI logging', () => {
     beforeAll(async () => {
-        buildDir = await mkdtemp(path.join(projectRoot, '.cli-test-'));
-        execFileSync(process.execPath, [compilerPath, '--outDir', buildDir], { cwd: projectRoot });
-        cliPath = path.join(buildDir, 'bin/main.js');
-        await chmod(cliPath, 0o755);
+        ({ cliPath, cleanup } = await compileCli());
         gitStubDir = await mkdtemp(path.join(os.tmpdir(), 'apify-cli-logging-'));
         const gitStub = path.join(gitStubDir, 'git');
         await writeFile(
@@ -30,7 +26,7 @@ describe('CLI logging', () => {
     });
 
     afterAll(async () => {
-        if (buildDir) await rm(buildDir, { recursive: true, force: true });
+        await cleanup?.();
         if (gitStubDir) await rm(gitStubDir, { recursive: true, force: true });
     });
 

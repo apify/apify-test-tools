@@ -55,12 +55,17 @@ test('owner/a: fails', () => {
     it('tests the builds on stdin, printing the report on stdout and the vitest output on stderr', () => {
         const result = run(['test'], JSON.stringify([build]));
         expect(result.status).toBe(1);
-        expect(result.stderr).toContain(`ENV ${JSON.stringify([build])} -`);
+        // Passed on to the lib as ACTOR_BUILDS, the fields in the order test reads them
+        const { actorFullName, buildId, actorRawId, buildNumber } = build;
+        expect(result.stderr).toContain(
+            `ENV ${JSON.stringify([{ actorFullName, buildId, actorRawId, buildNumber }])} -`,
+        );
         expect(result.stderr).toContain('1) owner/a: works ... https://console.apify.com/view/runs/run1');
         // Vitest's own output still comes through, without the note about the temporary JSON report
         expect(result.stderr).toContain('Test Files');
         expect(result.stderr).not.toContain('JSON report written to');
         expect(JSON.parse(result.stdout)).toMatchObject({
+            kind: 'test-report',
             version: 1,
             success: false,
             summary: { total: 2, passed: 1, failed: 1, skipped: 0 },
@@ -72,25 +77,21 @@ test('owner/a: fails', () => {
         });
     });
 
-    it('tests every Actor with --all, without reading stdin', () => {
-        const result = run(['test', '--all']);
+    it('tests an Actor without a build on its default build, as get-actor-configs lists them', () => {
+        const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' };
+        const result = run(['test'], JSON.stringify([actorConfig]));
         expect(result.status).toBe(1);
-        expect(result.stderr).toContain('ENV - 1');
+        // Only the fields the lib reads reach it, and nothing switches on every test
+        expect(result.stderr).toContain('ENV [{"actorFullName":"owner/a"}] -');
+        expect(result.stderr).toContain('Testing 1 Actor(s): owner/a (default build)');
         expect(JSON.parse(result.stdout)).toMatchObject({ success: false, summary: { passed: 1, failed: 1 } });
     });
 
     it('adds the reporters it is given to the default and JSON ones, also before the test files', () => {
-        const result = run([
-            '--log-level',
-            'debug',
-            'test',
-            '--all',
-            '--reporter',
-            'dot',
-            '--reporter',
-            'verbose',
-            'test/platform',
-        ]);
+        const result = run(
+            ['--log-level', 'debug', 'test', '--reporter', 'dot', '--reporter', 'verbose', 'test/platform'],
+            JSON.stringify([build]),
+        );
         expect(result.stderr).toMatch(
             /Running vitest: \S+ run test\/platform --reporter=default --reporter=json --reporter=dot --reporter=verbose /,
         );
@@ -107,14 +108,14 @@ test('owner/a: fails', () => {
     it('fails on empty stdin instead of testing nothing', () => {
         const result = run(['test']);
         expect(result.status).toBe(1);
-        expect(result.stderr).toContain('Expected the builds to test as JSON on stdin, got nothing');
+        expect(result.stderr).toContain('Expected the Actors to test as JSON on stdin, got nothing');
         expect(result.stdout).toBe('');
     });
 
     it('fails clearly where vitest is not installed', async () => {
         const emptyDir = await mkdtemp(path.join(os.tmpdir(), 'apify-test-cli-empty-'));
         try {
-            const result = run(['test', '--all'], '', emptyDir);
+            const result = run(['test'], '[]', emptyDir);
             expect(result.status).toBe(1);
             expect(result.stderr).toContain('vitest is not installed');
         } finally {

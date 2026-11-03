@@ -137,8 +137,8 @@ jobs:
 
 ## `public_platform-tests.yaml`
 
-Runs the platform tests against the Actors' current default builds with [`test --all`](cli.md#running-tests-test), so
-every test runs, not only those of built Actors. A separate step then posts failures to Slack with
+Runs the platform tests of every Actor in the config against its current default build, by piping
+[`get-actor-configs`](cli.md#listing-actors-get-actor-configs) into [`test`](cli.md#running-tests-test). A separate step then posts failures to Slack with
 [`notify`](cli.md#notifying-notify), named after the calling workflow and linking to the run, so the Slack token never
 reaches the tests. Both the report of `test` and
 vitest's own JSON report are uploaded as the `vitest-results` artifact. Runs only on `master` or `main`.

@@ -7,8 +7,8 @@ import process from 'node:process';
 import { createInterface } from 'node:readline';
 
 import { logger } from './logger.js';
+import type { TestTarget } from './stdin-input.js';
 import { failedRunReport, logTestReport, type TestReport, toTestReport, type VitestJsonReport } from './test-report.js';
-import type { BuildData } from './types.js';
 
 /**
  * Finds the vitest the repository installed, the way Node would resolve it from `cwd`. The CLI ships as a bundle
@@ -31,8 +31,8 @@ const resolveVitestBin = async (cwd: string): Promise<string> => {
 interface RunTestsOptions {
     /** Vitest file filters, e.g. `test/platform/core` */
     filters: string[];
-    /** The builds to test, from `build`. Null runs the tests of every Actor against its default build. */
-    builds: BuildData[] | null;
+    /** The Actors to test, each with its build or, without one, its default build */
+    targets: TestTarget[];
     /** Keeps vitest's own JSON report there, e.g. to upload it */
     vitestOutputFile?: string;
     /** Vitest reporters to add to the default one and the JSON one the report is read from, e.g. `github-actions` */
@@ -47,7 +47,7 @@ interface RunTestsOptions {
  */
 export const runTests = async ({
     filters,
-    builds,
+    targets,
     vitestOutputFile,
     reporters = [],
     cwd = process.cwd(),
@@ -63,19 +63,18 @@ export const runTests = async ({
     // A report left over from an earlier run must not pass for this one's
     await fs.rm(outputFile, { force: true });
 
-    // Stdin is the only source of builds, so whatever the caller's environment holds doesn't leak into the tests
+    // Stdin is the only source of what to test, so whatever the caller's environment holds doesn't leak into the tests
     const env = { ...process.env };
     // Vitest writes to a pipe, so it would drop colors that the terminal it ends up in shows
     if (process.stderr.isTTY && env.FORCE_COLOR === undefined && env.NO_COLOR === undefined) env.FORCE_COLOR = '1';
     delete env.ACTOR_BUILDS;
     delete env.RUN_ALL_PLATFORM_TESTS;
-    if (builds) {
-        env.ACTOR_BUILDS = JSON.stringify(builds);
-        logger.info(`Testing ${builds.length} build(s): ${builds.map((b) => b.actorFullName).join(', ') || 'none'}`);
-    } else {
-        env.RUN_ALL_PLATFORM_TESTS = '1';
-        logger.info("Testing every Actor's default build");
-    }
+    // The lib runs the tests of the Actors listed here, each on the build given, or on its default build without one
+    env.ACTOR_BUILDS = JSON.stringify(targets);
+    const described = targets.map(
+        ({ actorFullName, buildNumber }) => `${actorFullName} (${buildNumber ?? 'default build'})`,
+    );
+    logger.info(`Testing ${targets.length} Actor(s): ${described.join(', ') || 'none'}`);
 
     const args = [
         vitestBin,

@@ -277,21 +277,27 @@ are skipped. Re-run the failed workflow run, or release the Actors manually.
 ## Running tests (`test`)
 
 `test` runs the repository's own vitest (the version in its `node_modules`, so the tests keep the lib version
-the repository locked) on the builds it is given on stdin, and prints a report of the run for
-[`notify`](#notifying-notify).
+the repository locked) on the Actors it is given on stdin, and prints a report of the run for
+[`notify`](#notifying-notify). Only the tests of those Actors run.
 
 ```bash
 # A PR: test what was just built
 ... | npx apify-test-tools build --version-number 0.99 | npx apify-test-tools test > test-report.json
 
-# Scheduled tests: every Actor's default build, nothing on stdin
-npx apify-test-tools test --all test/platform/core > test-report.json
+# Scheduled tests: every Actor in the config, on its default build
+npx apify-test-tools get-actor-configs | npx apify-test-tools test test/platform/core > test-report.json
+
+# Only some of them
+npx apify-test-tools get-actor-configs --actors john.doe/my-actor | npx apify-test-tools test > test-report.json
 ```
 
-The input is the JSON array `build` and `build-from-local` print. A dry-run plan, empty or invalid input is an
+The input is a JSON array of Actors, `[{ "actorFullName": "<owner/name>" }]`. An Actor's tests run against the build
+given with it (`buildId`, `actorRawId` and `buildNumber`, as `build` and `build-from-local` print them), or against
+its default build without one. Other fields are ignored, so the output of
+[`get-actor-configs`](#listing-actors-get-actor-configs) works as it is. A dry-run plan, empty or invalid input is an
 error, as with `build`. So is a missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the
-run would pass having tested nothing. `--all` reads no stdin and runs the tests of every Actor against its default build. `test` sets `ACTOR_BUILDS` and
-`RUN_ALL_PLATFORM_TESTS` for vitest from its input and flags, and ignores them in its own environment.
+run would pass having tested nothing. `test` passes the Actors to vitest as `ACTOR_BUILDS`, and ignores
+`ACTOR_BUILDS` and `RUN_ALL_PLATFORM_TESTS` in its own environment.
 
 It runs vitest with `--maxConcurrency=20 --fileParallelism --maxWorkers=100`, since platform tests mostly wait on
 Actor runs rather than the CPU, and with the default reporter plus the JSON one the report is read from. These
@@ -300,18 +306,18 @@ annotate the failing tests in a GitHub Actions run. It takes no other vitest opt
 test by name, run vitest directly with the builds in `ACTOR_BUILDS` (see
 [Running tests locally](lib.md#running-tests-locally)).
 
-| Argument / flag        | Default         | Meaning                                                             |
-| ---------------------- | --------------- | ------------------------------------------------------------------- |
-| `[filters..]`          | `test/platform` | Test files to run, as vitest filters                                |
-| `--all`                | `false`         | Test every Actor's default build instead of reading builds on stdin |
-| `--vitest-output-file` |                 | Also keep vitest's own JSON report there, e.g. to upload it         |
-| `--reporter`           |                 | Vitest reporter to add, e.g. `github-actions`. Repeat it for more   |
+| Argument / flag        | Default         | Meaning                                                                                                                         |
+| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `[filters..]`          | `test/platform` | Test files to run, as vitest filters                                                                                            |
+| `--vitest-output-file` |                 | Also keep vitest's own JSON report there, e.g. to upload it                                                                     |
+| `--reporter`           |                 | [Vitest reporter](https://vitest.dev/guide/reporters) to add to `default` and `json`, e.g. `github-actions`. Repeat it for more |
 
 Vitest's own output goes to stderr, followed by a summary that lists every test with the link to its run. Stdout
 gets only the report:
 
 ```json
 {
+    "kind": "test-report",
     "version": 1,
     "success": false,
     "summary": { "total": 3, "passed": 1, "failed": 1, "skipped": 1 },
@@ -338,7 +344,7 @@ anyway, so `notify` still hears about the failure.
 
 `notify` tells one target about what it reads on stdin: a test run, as [`test`](#running-tests-test) reports it,
 or a release, as [`get-affected-actors`](#finding-affected-actors-get-affected-actors) reports it. It tells the two
-apart by their fields, so either can be piped in as it is. Slack is the only target for now. To post to more
+apart by the report's `kind` and the release's `commits`, so either can be piped in as it is. Slack is the only target for now. To post to more
 places, call it once for each.
 
 ```bash
@@ -348,7 +354,7 @@ npx apify-test-tools notify --slack-channel '#notif-my-repo' < test-report.json
 npx apify-test-tools notify --slack-channel '#my-team' < test-report.json
 
 # Or straight from test. With `set -o pipefail` (`shell: bash` in GitHub Actions), failed tests still fail the pipe
-npx apify-test-tools test --all | npx apify-test-tools notify --slack-channel '#notif-my-repo'
+npx apify-test-tools get-actor-configs | npx apify-test-tools test | npx apify-test-tools notify --slack-channel '#notif-my-repo'
 
 # A release, see Releasing Actors
 npx apify-test-tools get-affected-actors --since <sha> | npx apify-test-tools notify --slack-channel '#notif-my-repo'

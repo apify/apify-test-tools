@@ -204,7 +204,8 @@ describe('CLI bundle', () => {
     });
 
     it('test fails without TESTER_APIFY_TOKEN instead of passing with every test skipped', () => {
-        const { status, stdout, stderr } = runCli('test', '--all');
+        // Every Actor in the config, on its default build, as the scheduled tests pipe them in
+        const { status, stdout, stderr } = runCliWithInput(runCli('get-actor-configs').stdout, 'test');
         expect(status).toBe(1);
         expect(stderr).toContain('TESTER_APIFY_TOKEN is not set');
         expect(stdout).toBe('');
@@ -212,6 +213,7 @@ describe('CLI bundle', () => {
 
     it('notify needs the Slack token to post a failed report, even in a dry run', () => {
         const report = {
+            kind: 'test-report',
             version: 1,
             success: false,
             summary: { total: 1, passed: 0, failed: 1, skipped: 0 },

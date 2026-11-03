@@ -41,6 +41,7 @@ describe('toTestReport', () => {
             { cwd, exitCode: 1 },
         );
         expect(report).toStrictEqual({
+            kind: 'test-report',
             version: 1,
             success: false,
             summary: { total: 3, passed: 1, failed: 1, skipped: 1 },

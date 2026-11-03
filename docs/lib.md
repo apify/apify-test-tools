@@ -10,11 +10,11 @@ Requires `vitest` `3.2.4` or later as a peer dependency.
 
 The library reads these when the test file is loaded:
 
-| Variable                 | Description                                                                                                                                                                                                                                   |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TESTER_APIFY_TOKEN`     | Token the tests start runs and read their data with. Without it (and without `RUN_ALL_PLATFORM_TESTS`), every `describe` block is skipped, so a plain `npm test` stays unaffected.                                                            |
-| `ACTOR_BUILDS`           | JSON array of builds, as printed by the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local). Only tests of Actors listed here run, and they run against the listed build. |
-| `RUN_ALL_PLATFORM_TESTS` | Run every test, not only those of Actors in `ACTOR_BUILDS`. Actors missing from `ACTOR_BUILDS` run their default build. The scheduled platform tests set it.                                                                                  |
+| Variable                 | Description                                                                                                                                                                                                                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `TESTER_APIFY_TOKEN`     | Token the tests start runs and read their data with. Without it (and without `RUN_ALL_PLATFORM_TESTS`), every `describe` block is skipped, so a plain `npm test` stays unaffected.                                                                                                                     |
+| `ACTOR_BUILDS`           | JSON array of Actors to test, e.g. the builds the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local) print. Only tests of Actors listed here run, against the listed build, or the default build for an Actor listed without one. |
+| `RUN_ALL_PLATFORM_TESTS` | Run every test, not only those of Actors in `ACTOR_BUILDS`. Actors missing from `ACTOR_BUILDS` run their default build. Handy locally, to run every test against the default builds.                                                                                                                   |
 
 `ACTOR_BUILDS` entries look like this, and are matched to tests by `actorFullName` or `actorRawId`:
 

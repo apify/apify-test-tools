@@ -28,6 +28,7 @@ const failing = (name: string, message = 'AssertionError: boom') =>
 const reportOf = (tests: TestCaseReport[], errors: string[] = []): TestReport => {
     const count = (status: string) => tests.filter((test) => test.status === status).length;
     return {
+        kind: 'test-report',
         version: 1,
         success: count('failed') === 0 && errors.length === 0,
         summary: { total: tests.length, passed: count('passed'), failed: count('failed'), skipped: count('skipped') },

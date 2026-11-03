@@ -14,7 +14,7 @@ import { logger, logLevels } from './logger.js';
 import { notify, notifyOnChoices } from './notify.js';
 import { writeJson } from './output.js';
 import { runTests } from './run-tests.js';
-import { parseBuildInput, parseNotifyInput, parseTestBuilds, readStdin } from './stdin-input.js';
+import { parseBuildInput, parseNotifyInput, parseTestTargets, readStdin } from './stdin-input.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
 /**
@@ -110,19 +110,17 @@ const envVarsSyncOptions = {
     },
 } as const satisfies Record<string, Options>;
 
-/** Flags of `test`, which runs the repository's vitest on the builds piped in from `build`. */
+/** Flags of `test`, which runs the repository's vitest on the Actors piped in, e.g. the builds from `build`. */
 const testOptions = {
-    all: {
-        type: 'boolean',
-        default: false,
-        describe: "Test every Actor's default build instead of reading builds on stdin, as the scheduled tests do",
-    },
     'vitest-output-file': { type: 'string', describe: "Also keep vitest's own JSON report there, e.g. to upload it" },
     reporter: {
         type: 'string',
-        describe: 'Vitest reporter to add to the default one, e.g. github-actions. Repeat it for more',
-        // Not `array: true`: an array option would also take the test files that follow it. A repeated flag still
-        // comes as an array, a single one as a string.
+        describe:
+            'Vitest reporter (https://vitest.dev/guide/reporters) to add to `default` and `json`, which are always on, ' +
+            'e.g. github-actions. Repeat it for more',
+        // A plain string, not `array: true`: yargs would fill an array option with the arguments after it too, so
+        // `test --reporter github-actions test/platform` would take the test path as a reporter. A repeated flag
+        // still comes as an array, a single one as a string, so both are normalized to an array.
         coerce: (value: string | string[] | undefined) => (value === undefined ? [] : [value].flat()),
     },
 } as const satisfies Record<string, Options>;
@@ -225,7 +223,7 @@ await yargs()
     )
     .command(
         'test [filters..]',
-        'Run the tests on the builds listed on stdin (the output of build), and print a report for notify',
+        'Run the tests of the Actors listed on stdin (builds from build, or get-actor-configs for default builds), and print a report for notify',
         (y) =>
             y
                 .positional('filters', {
@@ -238,7 +236,7 @@ await yargs()
         async (args) => {
             const report = await runTests({
                 filters: args.filters,
-                builds: args.all ? null : parseTestBuilds(await readStdin()),
+                targets: parseTestTargets(await readStdin()),
                 vitestOutputFile: args.vitestOutputFile,
                 reporters: args.reporter,
             });

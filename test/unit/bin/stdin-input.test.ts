@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseBuildInput, parseNotifyInput, parseTestBuilds } from '../../../bin/stdin-input.js';
+import { parseBuildInput, parseNotifyInput, parseTestTargets } from '../../../bin/stdin-input.js';
 
 describe('parseBuildInput', () => {
     it('reads the Actors', () => {
@@ -33,28 +33,35 @@ describe('parseBuildInput', () => {
     });
 });
 
-describe('parseTestBuilds', () => {
+describe('parseTestTargets', () => {
     const build = { buildId: 'b', actorRawId: 'r', buildNumber: '0.99.1', actorFullName: 'owner/a' };
 
     it('reads the output of build', () => {
-        expect(parseTestBuilds(JSON.stringify([build]))).toStrictEqual([build]);
-        expect(parseTestBuilds('[]')).toStrictEqual([]);
+        expect(parseTestTargets(JSON.stringify([build]))).toStrictEqual([build]);
+        expect(parseTestTargets('[]')).toStrictEqual([]);
+    });
+
+    it('reads an Actor without a build, for its default build, ignoring the rest of get-actor-configs', () => {
+        const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' };
+        expect(parseTestTargets(JSON.stringify([actorConfig]))).toStrictEqual([{ actorFullName: 'owner/a' }]);
     });
 
     it('rejects a dry-run plan, which built nothing', () => {
-        expect(() => parseTestBuilds(JSON.stringify({ dryRun: true, builds: [build] }))).toThrow('is a dry-run plan');
+        expect(() => parseTestTargets(JSON.stringify({ dryRun: true, builds: [build] }))).toThrow('is a dry-run plan');
     });
 
-    it('rejects empty input and input that is not builds', () => {
-        expect(() => parseTestBuilds('')).toThrow('Expected the builds to test as JSON on stdin, got nothing');
-        expect(() => parseTestBuilds('{"actors":[]}')).toThrow('is not the builds to test');
-        expect(() => parseTestBuilds('{oops')).toThrow('not valid JSON');
+    it('rejects empty input and input that is not Actors', () => {
+        expect(() => parseTestTargets('')).toThrow('Expected the Actors to test as JSON on stdin, got nothing');
+        expect(() => parseTestTargets('{"actors":[]}')).toThrow('is not the Actors to test');
+        expect(() => parseTestTargets('[{"buildNumber":"0.99.1"}]')).toThrow('is not the Actors to test');
+        expect(() => parseTestTargets('{oops')).toThrow('not valid JSON');
     });
 });
 
 describe('parseNotifyInput', () => {
     const commit = { sha: '1'.repeat(40), author: 'Dev<dev@example.com>', date: 'Date', message: 'feat: foo' };
     const report = {
+        kind: 'test-report',
         version: 1,
         success: true,
         summary: { total: 0, passed: 0, failed: 0, skipped: 0 },
@@ -94,10 +101,14 @@ describe('parseNotifyInput', () => {
             'is not the output of test or get-affected-actors',
         );
         expect(() => parseNotifyInput('[]')).toThrow('is not the output of test or get-affected-actors');
+        // A report is told by its kind, not by looking like one
+        expect(() => parseNotifyInput('{"tests":[],"summary":{}}')).toThrow(
+            'is not the output of test or get-affected-actors',
+        );
     });
 
     it('says which document it took a malformed input for', () => {
-        expect(() => parseNotifyInput('{"tests":[]}')).toThrow('is not the output of test (');
+        expect(() => parseNotifyInput('{"kind":"test-report","tests":[]}')).toThrow('is not the output of test (');
         expect(() => parseNotifyInput('{"commits":[]}')).toThrow('is not the output of get-affected-actors (');
     });
 });

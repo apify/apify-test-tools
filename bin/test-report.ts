@@ -29,6 +29,8 @@ export interface TestCaseReport {
  * freely, but renaming or removing one needs a new `version`.
  */
 export interface TestReport {
+    /** What the document is, so `notify` and others can tell it from other outputs */
+    kind: 'test-report';
     version: 1;
     /** False if any test failed, or the run failed in a way no test accounts for (see `errors`) */
     success: boolean;
@@ -111,6 +113,7 @@ export const toTestReport = (
     }
 
     return {
+        kind: 'test-report',
         version: 1,
         success: vitest.success && exitCode === 0 && summary.failed === 0 && errors.length === 0,
         summary,
@@ -121,6 +124,7 @@ export const toTestReport = (
 
 /** The report of a run that left no vitest report behind, e.g. because vitest crashed or was killed. */
 export const failedRunReport = (error: string): TestReport => ({
+    kind: 'test-report',
     version: 1,
     success: false,
     summary: { total: 0, passed: 0, failed: 0, skipped: 0 },

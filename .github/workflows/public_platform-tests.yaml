@@ -57,13 +57,17 @@ jobs:
 
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.
             # Fails on failing tests, but writes the report anyway for the notification below.
+            # Every Actor in the config, on its default build: the one users run
             - name: Test
               id: test
+              # bash rather than the default shell, for pipefail
+              shell: bash
               env:
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
               run: |
-                  apify-test-tools test --all ./test/platform/${{ inputs.test-files-glob || inputs.subtest }} \
-                    --reporter github-actions --vitest-output-file ./test-output.json > test-report.json
+                  apify-test-tools get-actor-configs \
+                    | apify-test-tools test ./test/platform/${{ inputs.test-files-glob || inputs.subtest }} \
+                        --reporter github-actions --vitest-output-file ./test-output.json > test-report.json
 
             # Posts only when the tests failed, but checks the Slack token on every run. Runs whenever the tests
             # did, also after a failure, but not when the token check stopped the job before them.

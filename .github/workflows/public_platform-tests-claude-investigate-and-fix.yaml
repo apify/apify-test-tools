@@ -68,14 +68,34 @@ on:
 
                     Before you create a new issue, check whether the `platform-tests-investigate-and-fix:measure-flakiness` skill applies, and follow it if it does.
 
+                    At the end of your investigation, before you create a new issue, follow the `platform-tests-investigate-and-fix:assess-impact` skill.
+
                     When you create the issue, write it like an incident postmortem: a short summary and impact up top for anyone skimming, full technical detail below for whoever fixes it. Don't water down the engineering detail to make the top readable.
                     - Title: short and clean, describing the actual problem in plain terms — no dates, run numbers, or other noise. Prefix it with a conventional-commit-style type, e.g. "fix: blocking issue on detail endpoint".
-                    - Body, section 1 ("## Summary"): one line stating what's broken plus its impact, in plain language a PM can understand at a glance — no jargon, internal field names, or stack traces (e.g. "Scraping product detail pages fails when a listing has no reviews, affecting N% of runs").
+                    - Body, section 1 ("## Summary"): one line stating what's broken plus its impact, in plain language a PM can understand at a glance — no jargon, internal field names, or stack traces (e.g. "Scraping product detail pages fails when a listing has no reviews").
                     - If you measured flakiness, a "## Flakiness" section right after the Summary, as the `measure-flakiness` skill describes.
+                    - An "## Impact" section under the Flakiness section (or under the Summary if there's none), as the `assess-impact` skill describes.
                     - A `---` divider, then section 2 ("## Details"): the engineering bug report — root cause, relevant log lines, links to the failing run, and any other internals an engineer needs. If a single item/request failed among otherwise-good ones, show or link that specific one (e.g. the dataset item index/id, or its matching debug snapshot) rather than just describing the run as failed.
 
                     If you create a new issue, you MUST write its issue number (just the number, nothing else) to $GITHUB_WORKSPACE/issue-number.txt as the very last thing you do. If you skip creating one because a duplicate already exists, do not create the file.
                 description: Prompt given to Claude for the investigation phase. Override to customize how issues are investigated, titled, and described.
+            priority_prompt:
+                required: false
+                type: string
+                # The prio prompt here is purposefully vague; you can adjust it to
+                # use custom thresholds based on measured impact metrics.
+                default: |
+                    After you create a new issue and before you write its issue number to $GITHUB_WORKSPACE/issue-number.txt, set its Priority field from the failure's impact and flakiness:
+
+                    To do so, exercise your best judgement. Issues marked with higher priority will be reacted to first.
+                    Here are guidelines:
+                    - Determine priority based on combined severity and revenue actually at risk: a less severe bug can outrank a more severe one if much more revenue is actually at risk, and vice versa.
+                    - If the Impact section considers the bug from several points of view, each in its own sub-section, base the priority on the most impactful one.
+                    - If it helps you, you can base your assessment off priorities of already existing bugs in the repo.
+                    - Invisible to the user or Test severity always receives lowest priority.
+
+                    Priority is an organization-level issue field. If the revenue actually at risk can't be determined, e.g. the Impact section says "Cannot be determined", leave Priority unset, unless the relative severity is Invisible to the user or Test.
+                description: Prompt given to Claude for setting a new issue's Priority field from its impact and flakiness. Override to customize how priority is judged, e.g. to set revenue thresholds.
         secrets:
             ANTHROPIC_API_KEY:
                 required: true
@@ -86,6 +106,12 @@ on:
             NPM_TOKEN:
                 required: false
                 description: Read-only token for installing private npm packages before Claude runs.
+            REDASH_API_KEY:
+                required: false
+                description: Redash API key for measuring the failure's impact — affected runs, high-touch customers and revenue — from Snowflake.
+            AGENT_SKILLS_INTERNAL_GITHUB_TOKEN:
+                required: false
+                description: GitHub token with read access to apify/agent-skills-internal, for installing its redash-analyst plugin.
 
 jobs:
     investigate:
@@ -101,28 +127,69 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v5
 
+            - name: Check which optional secrets are set
+              id: optional-secrets
+              run: |
+                  echo "agent-skills-token=${{ secrets.AGENT_SKILLS_INTERNAL_GITHUB_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+                  echo "redash-api-key=${{ secrets.REDASH_API_KEY != '' }}" >> "$GITHUB_OUTPUT"
+
+            - name: Checkout internal agent skills
+              id: agent-skills-internal
+              if: steps.optional-secrets.outputs.agent-skills-token == 'true'
+              continue-on-error: true
+              uses: actions/checkout@v5
+              with:
+                  repository: apify/agent-skills-internal
+                  token: ${{ secrets.AGENT_SKILLS_INTERNAL_GITHUB_TOKEN }}
+                  path: .agent-skills-internal
+                  sparse-checkout: |
+                      .claude-plugin
+                      skills/redash-analyst
+                  persist-credentials: false
+
+            - uses: actions/setup-node@v6
+              if: steps.optional-secrets.outputs.redash-api-key == 'true'
+              with:
+                  node-version: 24
+
+            - name: Install Redash MCP server
+              if: steps.optional-secrets.outputs.redash-api-key == 'true'
+              continue-on-error: true
+              working-directory: ${{ runner.temp }}
+              run: npm install --prefix redash-mcp --ignore-scripts --no-audit --no-fund @suthio/redash-mcp@0.1.0
+
             - name: Run Claude Code
               id: claude
               uses: anthropics/claude-code-action@8251c103ac8c1d761882c86aba1412c7f583c844 # v1.0.213
               env:
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+                  REDASH_API_KEY: ${{ secrets.REDASH_API_KEY }}
                   MAX_FLAKINESS_RUNS: ${{ inputs.max_flakiness_runs }}
               with:
                   prompt: |
                       The failing E2E platform test ran in workflow run ${{ github.run_id }} of this repo.
 
                       ${{ inputs.investigate_prompt }}
+
+                      ${{ inputs.priority_prompt }}
                   github_token: ${{ secrets.GITHUB_TOKEN }}
                   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-                  plugin_marketplaces: https://github.com/apify/apify-test-tools.git
-                  plugins: platform-tests-investigate-and-fix@apify-test-tools
+                  plugin_marketplaces: |
+                      https://github.com/apify/apify-test-tools.git
+                      ${{ steps.agent-skills-internal.outcome == 'success' && format('{0}/.agent-skills-internal', github.workspace) || '' }}
+                  plugins: |
+                      platform-tests-investigate-and-fix@apify-test-tools
+                      ${{ steps.agent-skills-internal.outcome == 'success' && 'redash-analyst@apify-agent-skills-internal' || '' }}
                   # The `tools` query parameter below selects which tools the Apify MCP server
                   # exposes: reading an Actor run — its status, exit code, storage ids and log — and
                   # reading that run's dataset items and its key-value store keys and records, e.g.
                   # INPUT, OUTPUT and error snapshots. WARN: the server adds `abort-actor-run` on top
                   # even when not listed here, see https://github.com/apify/apify-mcp-server
+                  # `--disallowedTools` removes the Redash MCP server's tools that change Redash: creating,
+                  # editing, sharing or deleting queries, visualizations, dashboards, widgets, alerts and snippets.
                   claude_args: |
-                      --mcp-config '{"mcpServers":{"apify":{"type":"http","url":"https://mcp.apify.com/?tools=get-actor-run,get-actor-run-log,get-dataset-list,get-dataset,get-dataset-items,get-key-value-store-list,get-key-value-store,get-key-value-store-keys,get-key-value-store-record","headers":{"Authorization":"Bearer ${TESTER_APIFY_TOKEN}"}}}}'
+                      --mcp-config '{"mcpServers":{"apify":{"type":"http","url":"https://mcp.apify.com/?tools=get-actor-run,get-actor-run-log,get-dataset-list,get-dataset,get-dataset-items,get-key-value-store-list,get-key-value-store,get-key-value-store-keys,get-key-value-store-record","headers":{"Authorization":"Bearer ${TESTER_APIFY_TOKEN}"}},"redash":{"type":"stdio","command":"${{ runner.temp }}/redash-mcp/node_modules/.bin/redash-mcp","env":{"REDASH_URL":"https://charts.apify.com/","REDASH_API_KEY":"${REDASH_API_KEY}"}}}}'
+                      --disallowedTools mcp__redash__create_query,mcp__redash__update_query,mcp__redash__update_query_parameters,mcp__redash__archive_query,mcp__redash__fork_query,mcp__redash__add_query_favorite,mcp__redash__remove_query_favorite,mcp__redash__create_visualization,mcp__redash__update_visualization,mcp__redash__update_chart_visualization,mcp__redash__delete_visualization,mcp__redash__create_dashboard,mcp__redash__update_dashboard,mcp__redash__update_dashboard_parameters,mcp__redash__archive_dashboard,mcp__redash__fork_dashboard,mcp__redash__share_dashboard,mcp__redash__unshare_dashboard,mcp__redash__add_dashboard_favorite,mcp__redash__remove_dashboard_favorite,mcp__redash__create_alert,mcp__redash__update_alert,mcp__redash__delete_alert,mcp__redash__mute_alert,mcp__redash__add_alert_subscription,mcp__redash__remove_alert_subscription,mcp__redash__create_widget,mcp__redash__update_widget,mcp__redash__update_widget_layout,mcp__redash__update_dashboard_layout,mcp__redash__update_widget_parameter_mappings,mcp__redash__delete_widget,mcp__redash__create_query_snippet,mcp__redash__update_query_snippet,mcp__redash__delete_query_snippet
                       --model ${{ inputs.model }}
                       ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
                       --dangerously-skip-permissions

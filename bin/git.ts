@@ -209,6 +209,15 @@ export const normalizeRepoUrl = (repoUrl: string): string => {
         .toLowerCase();
 };
 
+/**
+ * Web link to a commit, e.g. https://github.com/apify-store/google-maps/commit/<sha>. Null for hosts other than
+ * GitHub, whose commit pages live under other paths.
+ */
+export const getCommitUrl = (repoUrl: string, sha: string): string | null => {
+    const repository = normalizeRepoUrl(repoUrl);
+    return repository.startsWith('github.com/') ? `https://${repository}/commit/${sha}` : null;
+};
+
 /** Repository name from its URL, e.g. `google-maps` for git@github.com:apify-store/google-maps.git */
 export const getRepoName = (repoUrl: string): string => {
     return normalizeRepoUrl(repoUrl).split('/').pop()!;

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { ActorBuild } from './helpers.js';
 import {
+    bundlePath,
     cliEnv,
     gitEnv,
     projectRoot,
@@ -21,16 +22,14 @@ import {
 
 // End-to-end run of the shipped CLI bundle against two dummy Actors in an isolated sandbox account:
 // dry-run plans read the real Actors, `build-from-local` really builds them, the lib runs them
-// through `testActor` on exactly those builds (the ACTOR_BUILDS handoff), `report-tests` reads the
-// result, and `delete-old-builds` cleans up. Git builds of a real repository are in
+// through `testActor` on exactly those builds (`build-from-local | test`), `notify` reads the
+// report, and `delete-old-builds` cleans up. Git builds of a real repository are in
 // git-build-release.e2e.test.ts.
 //
 // Runs with `npm run test:e2e`, kept out of `npm test`. Skipped without the token, e.g. on fork PRs.
 const ACTORS = ['test-tools-testing-sandbox/dummy-for-testing-1', 'test-tools-testing-sandbox/dummy-for-testing-2'];
 // Only used as the source URL in dry-run plans; nothing is cloned from it.
 const REPO_URL = 'https://github.com/apify/apify-test-tools-e2e-fixture';
-
-const vitestPath = path.join(projectRoot, 'node_modules/vitest/vitest.mjs');
 
 let repoDir: string;
 let baseSha: string;
@@ -166,34 +165,28 @@ describe('sandbox dummies', () => {${actorTests}
 `,
         );
 
-        const vitest = await runProcess(
-            process.execPath,
-            [vitestPath, 'run', 'test/platform', '--reporter=json', '--outputFile=./test-output.json'],
-            {
-                cwd: repoDir,
-                env: { ...cliEnv, TESTER_APIFY_TOKEN: token!, ACTOR_BUILDS: JSON.stringify(builds) },
-            },
-        );
-        expect(vitest.status, `${vitest.stdout}\n${vitest.stderr}`).toBe(0);
+        const tested = await runProcess(process.execPath, [bundlePath, 'test', 'test/platform'], {
+            cwd: repoDir,
+            env: { ...cliEnv, TESTER_APIFY_TOKEN: token! },
+            input: JSON.stringify(builds),
+        });
+        expect(tested.status, tested.stderr).toBe(0);
+        expect(tested.stderr).toContain('https://console.apify.com/view/runs/');
 
-        // Each run used the build from ACTOR_BUILDS, not the Actor's default build.
-        const report = JSON.parse(await readFile(path.join(repoDir, 'test-output.json'), 'utf8'));
-        const assertions = report.testResults.flatMap(
-            (file: { assertionResults: { meta: { runId: string } }[] }) => file.assertionResults,
-        );
-        expect(assertions).toHaveLength(ACTORS.length);
+        // Each run used the build piped into `test`, not the Actor's default build.
+        const report = JSON.parse(tested.stdout);
+        expect(report).toMatchObject({ success: true, summary: { passed: ACTORS.length, failed: 0 } });
         const client = new ApifyClient({ token });
         const runBuildIds = await Promise.all(
-            assertions.map(
-                async ({ meta }: { meta: { runId: string } }) => (await client.run(meta.runId).get())?.buildId,
+            report.tests.map(
+                async ({ run }: { run: { runId: string } }) => (await client.run(run.runId).get())?.buildId,
             ),
         );
         expect(runBuildIds.sort()).toEqual(builds.map((build) => build.buildId).sort());
 
-        const { status, stderr } = await runCli('report-tests', '--report-file', 'test-output.json', '--dry-run');
+        const { status, stderr } = await runCliWithInput(tested.stdout, 'notify', '--dry-run');
         expect(status, stderr).toBe(0);
-        expect(stderr).toContain(`PASSED: ${ACTORS.length}, FAILED: 0`);
-        expect(stderr).toContain('https://console.apify.com/view/runs/');
+        expect(stderr).toContain('Skipping notification');
     });
 
     // Last, so builds from earlier runs of this suite don't pile up in the sandbox.

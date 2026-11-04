@@ -447,10 +447,3 @@ Then run the tests against the builds with [`test`](#running-tests-test), as oft
 ```bash
 TESTER_APIFY_TOKEN=apify_api_yyy npx apify-test-tools test < builds.json
 ```
-
-## Git range commands
-
-`get-commits`, `get-latest-commit` and `get-changed-files` print the commits, the newest commit, or the changed files
-on `--source-branch` since it diverged from `--target-branch` (optionally only after `--base-commit`).
-[`get-affected-actors`](#finding-affected-actors-get-affected-actors) reports the same data together with the
-affected Actors, so prefer it.

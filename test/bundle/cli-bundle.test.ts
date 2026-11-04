@@ -46,8 +46,6 @@ const runCliWithInput = (input: string, ...args: string[]) => {
 
 const runCli = (...args: string[]) => runCliWithInput('', ...args);
 
-const gitRange = ['--source-branch', 'feature', '--target-branch', 'main'];
-
 describe('CLI bundle', () => {
     // Two Actors on `main`; `feature` changes only tester/foo and the root README.
     beforeAll(async () => {
@@ -91,9 +89,6 @@ describe('CLI bundle', () => {
         const { status, stdout } = runCli('--help');
         expect(status).toBe(0);
         for (const command of [
-            'get-commits',
-            'get-latest-commit',
-            'get-changed-files',
             'get-actor-configs',
             'get-affected-actors',
             'test [filters..]',
@@ -104,27 +99,6 @@ describe('CLI bundle', () => {
         ]) {
             expect(stdout).toContain(command);
         }
-    });
-
-    it('get-commits returns the commits on the source branch', () => {
-        const { status, stdout, stderr } = runCli('get-commits', ...gitRange);
-        expect(status, stderr).toBe(0);
-        expect(JSON.parse(stdout).map((commit: { message: string }) => commit.message)).toEqual([
-            'fix(foo): change foo',
-            'docs: readme',
-        ]);
-    });
-
-    it('get-latest-commit returns the head of the source branch', () => {
-        const { status, stdout, stderr } = runCli('get-latest-commit', ...gitRange);
-        expect(status, stderr).toBe(0);
-        expect(JSON.parse(stdout)).toMatchObject({ sha: headSha, message: 'docs: readme' });
-    });
-
-    it('get-changed-files returns the files changed on the source branch', () => {
-        const { status, stdout, stderr } = runCli('get-changed-files', ...gitRange);
-        expect(status, stderr).toBe(0);
-        expect(JSON.parse(stdout)).toEqual(['README.md', 'actors/foo/main.js']);
     });
 
     it('get-actor-configs reads both Actors from the config file', () => {
@@ -147,6 +121,14 @@ describe('CLI bundle', () => {
             // The root README isn't in tester/bar's folder, so it doesn't count for it
             cosmeticallyChangedActors: [],
         });
+    });
+
+    it.each(['info', 'silent'])('keeps JSON results intact with --log-level %s', (level) => {
+        const { status, stdout, stderr } = runCli('get-affected-actors', '--base', 'main', '--log-level', level);
+        expect(status, stderr).toBe(0);
+        expect(stderr).toEqual(level === 'silent' ? '' : expect.stringContaining('Changed files'));
+        expect(JSON.parse(stdout)).toMatchObject({ head: headSha });
+        expect(stdout.endsWith('\n')).toBe(true);
     });
 
     it('build --dry-run with nothing to build needs no token', () => {

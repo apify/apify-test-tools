@@ -33,7 +33,7 @@ const findOverlappingContextPaths = (contextPaths: RelativeDir[]): [RelativeDir,
 // #region stages
 
 /** Stage 1 — the config file as a plain object, or a failure phrased for whoever wrote it. */
-export const readConfigFileContents = async (): Promise<Record<string, unknown>> => {
+const readConfigFileContents = async (): Promise<Record<string, unknown>> => {
     let configFile: ExistingFile;
     try {
         configFile = new ExistingFile(CONFIG_FILE_NAME);
@@ -118,10 +118,11 @@ export const readBaseConfigFile = async () => {
     const rawFileContents = await readConfigFileContents();
     return parseResolvedConfigFile(rawFileContents).map(
         ({ actorFullName, tokenEnvVar }) =>
+            // using `satisfies` here instead of return type annotation
+            // so its not shown as `PathlessConfig` type on output or IDE, but the expanded form
             ({
                 actorFullName,
                 tokenEnvVar,
             }) satisfies PathlessConfig,
-        // `satisfies` so its not shown as `PathlessConfig` type on output or IDE, but the expanded form
     );
 };

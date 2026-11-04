@@ -8,7 +8,7 @@ const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR
 
 // Lists the changed paths. With rename detection (on by default) a moved file is listed only under its new path,
 // so the Actor whose context it left wouldn't count as changed. --no-renames lists it as deleted and added instead.
-const LIST_CHANGED_PATHS = ['--name-only', '--no-renames'];
+const LIST_CHANGED_PATHS = ['--name-only', '--no-renames', '-z'];
 
 /**
  * Files that differ between two commits, i.e. changed by the commits in the range (fromRef, toRef]. fromRef's own
@@ -21,7 +21,7 @@ export const getChangedFilesBetween = async (fromRef: string, toRef: string) => 
         operation: 'get the list of changed files between commits',
     });
 
-    const changedFiles = changedFilesString.split('\n').filter(Boolean);
+    const changedFiles = changedFilesString.split('\0').filter(Boolean);
     logger.info(`Changed files (up to 50): ${changedFiles.slice(0, 50).join(', ')}`);
     return changedFiles;
 };

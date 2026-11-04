@@ -70,16 +70,16 @@ const classifyFileChange = async (
     } = actorConfig.actorJson;
     const matches = (candidate: RelativeFile | undefined) => candidate?.isEqualTo(changedFile) ?? false;
 
-    if ([readme, changelog].some(matches)) {
-        return { impact: 'cosmetic', semanticallyVerified: false };
-    }
+    if (matches(dockerfile)) return { impact: 'functional' };
 
     if ([file, inputSchema, outputSchema, webServerSchema, ...datasetSchemas, keyValueStoreSchema].some(matches)) {
         const isCosmetic = await isCosmeticOnlyJsonSchemaChange(range, changedFile.path);
         return isCosmetic ? { impact: 'cosmetic', semanticallyVerified: true } : { impact: 'functional' };
     }
 
-    if (matches(dockerfile)) return { impact: 'functional' };
+    if ([readme, changelog].some(matches)) {
+        return { impact: 'cosmetic', semanticallyVerified: false };
+    }
 
     if (isExcludedBySibling(changedFile, actorConfig, allActors)) {
         return { impact: 'outside-context' };

@@ -1,21 +1,48 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import type { MockInstance } from 'vitest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getAffectedActors } from '../../../bin/affected-actors.js';
 import * as DiffChanges from '../../../bin/diff-changes.js';
 import * as Git from '../../../bin/git.js';
 import type { ActorConfig, Commit } from '../../../bin/types.js';
 import * as LoadConfig from '../../../bin/utils/config/load-config.js';
+import { ExistingDir, ExistingFile, RelativeDir, RelativeFile } from '../../../bin/utils/path/repo-relative.js';
 
-// Everything that reads the configs is mocked, so only the identity and name of an Actor matter here
-const actorA = { actorFullName: 'owner/a' } as ActorConfig;
-const actorB = { actorFullName: 'owner/b' } as ActorConfig;
+const originalCwd = process.cwd();
+const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'apify-affected-actors-'));
+process.chdir(fixtureRoot);
+afterAll(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+});
+
+const changelog = new RelativeFile('docs/releases.md');
+const actorConfig = (name: string): ActorConfig => {
+    const folder = `actors/${name}`;
+    fs.mkdirSync(`${folder}/.actor`, { recursive: true });
+    fs.writeFileSync(`${folder}/.actor/actor.json`, '{}');
+    const context = new RelativeDir(folder);
+    return {
+        actorFullName: `owner/${name}`,
+        folder: new ExistingDir(folder),
+        tokenEnvVar: 'APIFY_TOKEN',
+        dockerContextDir: context,
+        contextPaths: [context],
+        actorJson: { file: new ExistingFile(`${folder}/.actor/actor.json`), dockerContextDir: context, changelog },
+    };
+};
+const actorA = actorConfig('a');
+const actorB = actorConfig('b');
 
 const headSha = 'f'.repeat(40);
 const sinceSha = '5'.repeat(40);
 const commit = (sha: string): Commit => ({ sha, author: 'Dev<dev@example.com>', date: 'Date', message: 'msg' });
 const commits = [commit('1'.repeat(40)), commit('2'.repeat(40))];
-const changedFiles = ['src/main.ts', 'CHANGELOG.md'];
+const changedFiles = ['src/main.ts', changelog.path];
 
 const selection = { actors: [], ignore: [] };
 
@@ -65,7 +92,10 @@ describe('getAffectedActors', () => {
             });
             expect(Git.getMergeBase).toHaveBeenCalledWith('origin/master', 'HEAD');
             expect(Git.getChangedFilesBetween).toHaveBeenCalledWith(mergeBaseSha, headSha);
-            expect(Git.getChangelogAdditions).toHaveBeenCalledWith(mergeBaseSha, headSha, changedFiles);
+            expect(Git.getChangelogAdditions).toHaveBeenCalledWith(mergeBaseSha, headSha, changedFiles, [
+                changelog,
+                changelog,
+            ]);
             expect(commitsBetweenSpy).toHaveBeenCalledWith(mergeBaseSha, headSha);
             expect(changedActorsSpy).toHaveBeenCalledWith({
                 filepathsChanged: changedFiles,
@@ -112,6 +142,10 @@ describe('getAffectedActors', () => {
                 const result = await getAffectedActors({ base: 'origin/master', since: sinceSha, ...selection });
                 expect(result.commits).toStrictEqual(commits);
                 expect(result.changedFiles).toStrictEqual(changedFiles);
+                expect(Git.getChangelogAdditions).toHaveBeenCalledWith(mergeBaseSha, headSha, changedFiles, [
+                    changelog,
+                    changelog,
+                ]);
             });
 
             it('retests an Actor whose validated change meets a new functional change', async () => {
@@ -176,7 +210,25 @@ describe('getAffectedActors', () => {
             expect(resolveBaseSpy).toHaveBeenCalledWith('HEAD~2');
             expect(commitsBetweenSpy).toHaveBeenCalledWith(sinceSha, headSha);
             expect(Git.getChangedFilesBetween).toHaveBeenCalledWith(sinceSha, headSha);
-            expect(Git.getChangelogAdditions).toHaveBeenCalledWith(sinceSha, headSha, changedFiles);
+            expect(Git.getChangelogAdditions).toHaveBeenCalledWith(sinceSha, headSha, changedFiles, [
+                changelog,
+                changelog,
+            ]);
+        });
+
+        it("passes only the selected actors' resolved changelogs to extraction", async () => {
+            vi.mocked(LoadConfig.readConfigFile).mockResolvedValue([actorB]);
+            await getAffectedActors({ since: 'HEAD~2', actors: ['owner/b'], ignore: [] });
+            expect(LoadConfig.readConfigFile).toHaveBeenCalledWith({ actors: ['owner/b'], ignore: [] });
+            expect(Git.getChangelogAdditions).toHaveBeenCalledWith(sinceSha, headSha, changedFiles, [changelog]);
+        });
+
+        it('does not invent a root changelog when the selected actors have none', async () => {
+            vi.mocked(LoadConfig.readConfigFile).mockResolvedValue([
+                { ...actorA, actorJson: { ...actorA.actorJson, changelog: undefined } },
+            ]);
+            await getAffectedActors({ since: 'HEAD~2', ...selection });
+            expect(Git.getChangelogAdditions).toHaveBeenCalledWith(sinceSha, headSha, changedFiles, []);
         });
     });
 });

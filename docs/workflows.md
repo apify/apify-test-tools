@@ -41,7 +41,7 @@ Validates a pull request. It runs two jobs in parallel.
    comparing the PR branch with its base branch. Changed files under `test/platform/**` count even when
    `.dockerignore` lists them.
 2. Builds the functionally changed Actors into the test version `0.99` with [`build`](cli.md#building-actors-build).
-   Cosmetic-only changes (README, CHANGELOG, schema formatting) need no tests, so they're not built.
+   Cosmetic-only changes (linked README/changelog edits and cosmetic schema changes) need no tests, so they're not built.
 3. Runs [`test`](cli.md#running-tests-test) on `./test/platform/<test-files-glob>` with those builds, so only the
    tests of the built Actors run. Failing tests are annotated on the PR.
 4. On success, caches the tested commit as the "last validated commit". The next push to the PR then only builds

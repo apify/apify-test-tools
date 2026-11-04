@@ -33,6 +33,8 @@ const actorConfig = (
             file: new RelativeFile(path.join(folderPath, '.actor/actor.json')),
             dockerContextDir: new RelativeDir(dockerContextDir || '.'),
             changelog: new RelativeFile('CHANGELOG.md'),
+            readme: new RelativeFile(path.join(folderPath, 'README.md')),
+            inputSchema: new RelativeFile(path.join(folderPath, '.actor/input_schema.json')),
         },
         dockerContextDir: new RelativeDir(dockerContextDir || '.'),
         contextPaths: contextPaths.map((contextPath) => new RelativeDir(contextPath || '.')),
@@ -83,7 +85,7 @@ describe('getChangedActors', () => {
 
     it('returns empty array when only ignored top-level files changed', async () => {
         const result = await changedActorsFor({
-            filepathsChanged: ['.gitignore', 'README.md', '.husky/pre-commit', '.vscode/settings.json'],
+            filepathsChanged: ['.gitignore', '.husky/pre-commit', '.vscode/settings.json'],
             actorConfigs,
             range,
         });
@@ -217,17 +219,17 @@ describe('getChangedActors', () => {
         expect(result).toEqual([]);
     });
 
-    it('treats any changelog filename as cosmetic regardless of configured paths', async () => {
+    it('treats an unlinked changelog as functional within context', async () => {
         const result = await changedActorsFor({
             filepathsChanged: ['docs/CHANGELOG.md'],
             actorConfigs: [miniActor, standaloneActor],
             range,
             isLatest: true,
         });
-        expect(result).toEqual([miniActor, standaloneActor]);
+        expect(result).toEqual([miniActor]);
     });
 
-    it('does not special-case a configured readme outside the actor context', async () => {
+    it('counts a linked readme outside the actor context as cosmetic', async () => {
         const configuredActor: ActorConfig = {
             ...standaloneActor,
             actorJson: { ...standaloneActor.actorJson, readme: new RelativeFile('docs/guide.md') },
@@ -238,7 +240,7 @@ describe('getChangedActors', () => {
             range,
             isLatest: true,
         });
-        expect(result).toEqual([]);
+        expect(result).toEqual([configuredActor]);
     });
 
     it('triggers narrow-context actor when its own folder changes', async () => {
@@ -479,14 +481,14 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('README outside actor folder but inside context is ignored (not cosmetic)', async () => {
+    it('unlinked README inside context is functional', async () => {
         const result = await changedActorsFor({
             filepathsChanged: ['docs/README.md'],
             actorConfigs: [miniActor],
             range,
             isLatest: true,
         });
-        expect(result).toEqual([]);
+        expect(result).toEqual([miniActor]);
     });
 
     it('README inside actor folder is cosmetic', async () => {
@@ -535,14 +537,120 @@ describe('getChangedActors', () => {
         expect(result).toEqual([amazonActor]);
     });
 
-    it('code/README.md declared via overrideActorContext is ignored (outside actor folder)', async () => {
+    it('unlinked code/README.md declared via overrideActorContext is functional', async () => {
         const result = await changedActorsFor({
             filepathsChanged: ['code/README.md'],
             actorConfigs: [amazonActor],
             range,
             isLatest: true,
         });
-        expect(result).toEqual([]);
+        expect(result).toEqual([amazonActor]);
+    });
+
+    it.each(['readme', 'changelog'] as const)('classifies a custom linked %s as cosmetic', async (field) => {
+        const linkedFile = new RelativeFile('actors/foo_bar/docs/custom');
+        const actor: ActorConfig = {
+            ...miniActor,
+            actorJson: { ...miniActor.actorJson, [field]: linkedFile },
+        };
+        expect(await getChangedActors({ filepathsChanged: [linkedFile.path], actorConfigs: [actor], range })).toEqual({
+            functional: [],
+            cosmetic: [actor],
+        });
+    });
+
+    it.each(['inputSchema', 'outputSchema', 'webServerSchema', 'keyValueStoreSchema'] as const)(
+        'checks linked %s outside context for cosmetic and functional changes',
+        async (field) => {
+            const linkedFile = new RelativeFile('schemas/custom');
+            const actor: ActorConfig = {
+                ...standaloneActor,
+                actorJson: { ...standaloneActor.actorJson, [field]: linkedFile },
+            };
+            const options = { filepathsChanged: [linkedFile.path], actorConfigs: [actor], range };
+            vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(true);
+            expect(await getChangedActors(options)).toEqual({ functional: [], cosmetic: [actor] });
+            expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).toHaveBeenCalledWith(range, linkedFile.path);
+            vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(false);
+            expect(await getChangedActors(options)).toEqual({ functional: [actor], cosmetic: [] });
+        },
+    );
+
+    it.each([
+        'readme',
+        'changelog',
+        'dockerfile',
+        'inputSchema',
+        'outputSchema',
+        'webServerSchema',
+        'keyValueStoreSchema',
+    ] as const)('linked %s takes precedence over sibling, context, and ignore guards', async (field) => {
+        vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(true);
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
+        for (const linkedPath of [
+            'standalone-actors/standalone/custom', // Sibling folder, outside this actor's context.
+            'actors/foo_bar/.gitignore', // Hardcoded ignore.
+            'actors/foo_bar/docs/custom', // Docker ignore.
+        ]) {
+            const actor: ActorConfig = {
+                ...miniActor,
+                contextPaths: [miniActor.folder],
+                actorJson: { ...miniActor.actorJson, [field]: new RelativeFile(linkedPath) },
+            };
+            expect(
+                await getChangedActors({
+                    filepathsChanged: [linkedPath],
+                    actorConfigs: [actor, standaloneActor],
+                    range,
+                }),
+            ).toEqual(
+                field === 'dockerfile' ? { functional: [actor], cosmetic: [] } : { functional: [], cosmetic: [actor] },
+            );
+        }
+    });
+
+    it('checks every linked dataset schema before sibling, context, and ignore guards', async () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
+        const datasetSchemas = [
+            new RelativeFile('standalone-actors/standalone/dataset'),
+            new RelativeFile('actors/foo_bar/.gitignore'),
+            new RelativeFile('actors/foo_bar/schemas/dataset'),
+        ];
+        const actor: ActorConfig = {
+            ...miniActor,
+            contextPaths: [miniActor.folder],
+            actorJson: { ...miniActor.actorJson, datasetSchemas },
+        };
+        for (const schema of datasetSchemas) {
+            const options = { filepathsChanged: [schema.path], actorConfigs: [actor, standaloneActor], range };
+            vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(true);
+            expect(await getChangedActors(options)).toEqual({ functional: [], cosmetic: [actor] });
+            expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).toHaveBeenCalledWith(range, schema.path);
+            vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(false);
+            expect(await getChangedActors(options)).toEqual({ functional: [actor], cosmetic: [] });
+        }
+    });
+
+    it('treats unlinked JSON under .actor/ as functional', async () => {
+        vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(true);
+        expect(
+            await getChangedActors({
+                filepathsChanged: ['actors/foo_bar/.actor/runtime.json'],
+                actorConfigs: [miniActor],
+                range,
+            }),
+        ).toEqual({ functional: [miniActor], cosmetic: [] });
+        expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).not.toHaveBeenCalled();
+    });
+
+    it('matches the resolved changelog path case-sensitively', async () => {
+        expect(
+            await getChangedActors({
+                filepathsChanged: ['changelog.md'],
+                actorConfigs: [standaloneActor],
+                range,
+            }),
+        ).toEqual({ functional: [], cosmetic: [] });
     });
 });
 

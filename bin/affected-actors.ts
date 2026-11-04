@@ -47,7 +47,7 @@ interface AffectedActors {
      * stays the source of truth for the rest.
      */
     functionallyChangedActors: { actorFullName: string }[];
-    /** Actors whose changes are all cosmetic (README, CHANGELOG, cosmetic .actor JSON). They only need a release build. */
+    /** Actors whose changes are all cosmetic (linked docs, cosmetic actor/schema JSON). They only need a release build. */
     cosmeticallyChangedActors: { actorFullName: string }[];
 }
 
@@ -104,8 +104,8 @@ const findValidatedSha = async (since: string, headSha: string): Promise<string 
  * - Our own branch only: a commit changes A's README and B's code.
  *   `since..HEAD`: A cosmetic, B functional. `base...HEAD`: A and B functional.
  *   → A cosmetic, B functional: only B is tested, A's code is still the validated one.
- * - Cosmetic merge: the branch merges base, which only changed READMEs and the CHANGELOG.
- *   `since..HEAD`: every Actor cosmetic (CHANGELOG counts for all). `base...HEAD`: A functional, since the merged
+ * - Cosmetic merge: the branch merges base, which only changed linked READMEs and a shared linked changelog.
+ *   `since..HEAD`: every Actor using that changelog cosmetic. `base...HEAD`: A functional, since the merged
  *   files now match base and drop out of it.
  *   → A cosmetic, the other Actors left out: nothing is tested.
  * - Functional merge: the branch merges base, which changed code of A and of C.
@@ -191,7 +191,12 @@ export const getAffectedActors = async ({
         head: headSha,
         commits: await getCommitsBetween(rangeVsBase.fromRef, rangeVsBase.toRef),
         changedFiles,
-        changelog: await getChangelogAdditions(rangeVsBase.fromRef, rangeVsBase.toRef, changedFiles),
+        changelog: await getChangelogAdditions(
+            rangeVsBase.fromRef,
+            rangeVsBase.toRef,
+            changedFiles,
+            actorConfigs.flatMap(({ actorJson }) => (actorJson.changelog ? [actorJson.changelog] : [])),
+        ),
         functionallyChangedActors: names(changedActors.functional),
         cosmeticallyChangedActors: names(changedActors.cosmetic),
     };

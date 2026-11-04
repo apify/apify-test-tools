@@ -73,6 +73,7 @@ describe('loadActorConfig', () => {
         ['dockerfile', 'Dockerfile'],
         ['readme', 'README.md'],
         ['changelog', 'CHANGELOG.md'],
+        ['inputSchema', 'INPUT_SCHEMA.json'],
     ] as const)('follows Apify default locations for %s', async (field, filename) => {
         await writeActorJson();
 
@@ -127,6 +128,27 @@ describe('loadActorConfig', () => {
         expect(actorJsonPaths.webServerSchema?.path).toBe('actors/shopify/.actor/openapi.json');
     });
 
+    it.each(['input', 'inputSchema'] as const)('does not resolve fallback files for inline %s', async (field) => {
+        await writeActorJson({ [field]: {} });
+        await writeFiles({
+            'actors/shopify/.actor/INPUT_SCHEMA.json': '{}',
+            'actors/shopify/INPUT_SCHEMA.json': '{}',
+        });
+
+        expect(loadActorConfig(entry()).actorJson.inputSchema).toBeUndefined();
+    });
+
+    it('keeps inline input authoritative over the inputSchema alias and fallback files', async () => {
+        await writeActorJson({ input: { type: 'object' }, inputSchema: '../legacy-input.json' });
+        await writeFiles({
+            'actors/shopify/.actor/INPUT_SCHEMA.json': '{}',
+            'actors/shopify/INPUT_SCHEMA.json': '{}',
+            'actors/shopify/legacy-input.json': '{}',
+        });
+
+        expect(loadActorConfig(entry()).actorJson.inputSchema).toBeUndefined();
+    });
+
     it('rejects malformed actor.json path fields', async () => {
         await writeActorJson({ dockerContextDir: 123 });
         expect(() => loadActorConfig(entry())).toThrow(/dockerContextDir/);
@@ -136,6 +158,52 @@ describe('loadActorConfig', () => {
 
         await writeActorJson({ inputSchema: '/outside.json' });
         expect(() => loadActorConfig(entry())).toThrow(/Invalid "inputSchema"/);
+    });
+
+    it('resolves default dataset and key-value store schema paths relative to actor.json', async () => {
+        await writeActorJson({
+            storages: {
+                dataset: '../../../schemas/dataset.json',
+                keyValueStore: '../schemas/kv.json',
+            },
+        });
+        const { actorJson: paths } = loadActorConfig(entry());
+        expect(paths.datasetSchemas?.map((file) => file.path)).toEqual(['schemas/dataset.json']);
+        expect(paths.keyValueStoreSchema?.path).toBe('actors/shopify/schemas/kv.json');
+    });
+
+    it('resolves every linked dataset alias while allowing inline storage schemas', async () => {
+        await writeActorJson({
+            storages: {
+                datasets: {
+                    default: './default.json',
+                    products: '../../../schemas/products.json',
+                    categories: { actorSpecification: 1, fields: {} },
+                },
+                keyValueStore: { actorKeyValueStoreSchemaVersion: 1, collections: {} },
+            },
+        });
+        const { actorJson: paths } = loadActorConfig(entry());
+        expect(paths.datasetSchemas?.map((file) => file.path)).toEqual([
+            'actors/shopify/.actor/default.json',
+            'schemas/products.json',
+        ]);
+        expect(paths.keyValueStoreSchema).toBeUndefined();
+
+        await writeActorJson({ storages: { dataset: { actorSpecification: 1, fields: {} } } });
+        expect(loadActorConfig(entry()).actorJson.datasetSchemas).toEqual([]);
+    });
+
+    it.each([
+        { storages: { dataset: '/outside.json' } },
+        { storages: { datasets: { default: '../../../../outside.json' } } },
+        { storages: { keyValueStore: '/outside.json' } },
+        { storages: { dataset: 123 } },
+        { storages: { datasets: { default: 123 } } },
+        { storages: { keyValueStore: 123 } },
+    ])('rejects malformed storage schema paths: %j', async (fields) => {
+        await writeActorJson(fields);
+        expect(() => loadActorConfig(entry())).toThrow(/storages/);
     });
 
     it('resolves dockerContextDir relative to the .actor/ folder, not the actor folder', async () => {

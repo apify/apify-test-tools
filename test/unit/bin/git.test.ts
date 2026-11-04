@@ -285,15 +285,22 @@ describe('empty commit ranges', () => {
 
 describe('getChangedFilesBetween', () => {
     it('diffs the two endpoints directly', async () => {
-        const spy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('src/main.ts\nCHANGELOG.md');
+        const spy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('src/main.ts\0CHANGELOG.md\0');
 
         await expect(getChangedFilesBetween('base-sha', 'head-sha')).resolves.toStrictEqual([
             'src/main.ts',
             'CHANGELOG.md',
         ]);
-        expect(spy).toHaveBeenCalledWith(['diff', '--name-only', '--no-renames', 'base-sha..head-sha'], {
+        expect(spy).toHaveBeenCalledWith(['diff', '--name-only', '--no-renames', '-z', 'base-sha..head-sha'], {
             operation: 'get the list of changed files between commits',
         });
+    });
+
+    it('preserves Unicode, whitespace, quotes, and newlines in changed paths', async () => {
+        const files = ['space name.md', 'docs/café.md', 'quote"name', 'tab\tname', 'line\nbreak'];
+        vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(`${files.join('\0')}\0`);
+
+        await expect(getChangedFilesBetween('base', 'head')).resolves.toEqual(files);
     });
 });
 

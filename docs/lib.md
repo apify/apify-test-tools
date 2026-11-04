@@ -136,10 +136,11 @@ testActor(actorId, 'validate existing run', async ({ expect, run }) => {
 
 ## `testStandbyActor(actorId, testName, fn, options?)`
 
-Same as `testActor`, for Actors in standby mode. It creates a temporary task with the build from `ACTOR_BUILDS` (or
-the Actor's standby build) and deletes it after the test. Instead of `run`, `fn` gets `callStandby`, which sends a
-`POST` request with `input` as the JSON body to the task's standby URL, plus `path`, and returns
-`{ data, status, headers }`, where `data` is the parsed JSON response. It gets `apifyClient` too.
+Same as `testActor`, for Actors in standby mode. Instead of `run`, `fn` gets `callStandby`, which sends a
+`POST` request with `input` as the JSON body directly to the Actor's standby URL, plus `path`. The request uses the
+`X-Actor-Build` header to select the build from `ACTOR_BUILDS`, falling back to the Actor's configured standby build
+(number or tag). If neither is set, the platform uses its default standby build. No temporary tasks are created.
+It returns `{ data, status, headers }`, where `data` is the parsed JSON response.
 
 Only the Actor's owner, or an account with write access to it, can start a standby Actor on a build other than its
 default one. The tests run with the owner's token by default; if you point `testTokenEnvVar` at another account, give

@@ -60,14 +60,14 @@ function initializePaths(body: ResolvedActorConfig[]): ValidatedActorConfig[] {
 }
 
 /** Check rules that involve more than one Actor, using initialized paths for comparisons. */
-function verifyConfiguration(body: ValidatedActorConfig[], resolved: ResolvedActorConfig[]): void {
+function verifyConfiguration(body: ValidatedActorConfig[]): void {
     const seenFolders = new Set<string>();
     const seenActorFullNames = new Set<string>();
     const errors: string[] = [];
-    for (const [index, entry] of body.entries()) {
+    for (const entry of body) {
         // TODO: drop folder uniqueness (this requires several changes on other places)
         if (seenFolders.has(entry.folder.path)) {
-            errors.push(`Duplicate folder "${resolved[index].folder}". Each actor must have a unique folder.`);
+            errors.push(`Duplicate folder "${entry.folder.path}". Each actor must have a unique folder.`);
         } else {
             seenFolders.add(entry.folder.path);
         }
@@ -98,6 +98,6 @@ export function parseResolvedConfigFile(body: Record<string, unknown>): Resolved
 export function parseConfigFile(body: Record<string, unknown>): ValidatedActorConfig[] {
     const resolved = parseResolvedConfigFile(body);
     const initialized = initializePaths(resolved);
-    verifyConfiguration(initialized, resolved);
+    verifyConfiguration(initialized);
     return initialized;
 }

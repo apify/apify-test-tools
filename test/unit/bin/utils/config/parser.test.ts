@@ -13,7 +13,7 @@ import { ExistingDir, RelativeDir } from '../../../../../bin/utils/path/repo-rel
 const { selectStrategy, initializePaths, verifyConfiguration: verifyInitializedConfiguration } = _privates;
 const verifyConfiguration = (body: ResolvedActorConfig[]) => {
     const initialized = initializePaths(body);
-    verifyInitializedConfiguration(initialized, body);
+    verifyInitializedConfiguration(initialized);
     return initialized;
 };
 
@@ -100,13 +100,13 @@ describe('verifyConfiguration', () => {
         ).toThrow(/Duplicate folder/);
     });
 
-    it('quotes a duplicate folder the way it was written, not the way it normalized', () => {
+    it('reports the normalized path for a duplicate folder', () => {
         expect(() =>
             verifyConfiguration([
                 actor({ folder: '.', actorFullName: 'myteam/actor-a' }),
                 actor({ folder: './', actorFullName: 'myteam/actor-b' }),
             ]),
-        ).toThrow('Duplicate folder "./"');
+        ).toThrow('Duplicate folder "."');
     });
 
     it('rejects two entries pointing at the same actor', () => {

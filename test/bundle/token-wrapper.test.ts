@@ -79,5 +79,35 @@ describe('token wrapper bundle', () => {
         expect(status).toBe(1);
         expect(stdout).toBe('');
         expect(stderr).toContain('At least one configuration group is required');
+        expect(stderr).not.toContain('Cannot read');
+    });
+
+    it.each(['', undefined])(
+        'rejects an empty or missing token name (%s) before starting the child',
+        async (tokenEnvVar) => {
+            await writeFile(
+                path.join(repoDir, configFileName),
+                JSON.stringify({ actors: [{ folder: 'actors/one', actorFullName: 'example/one', tokenEnvVar }] }),
+            );
+
+            const { status, stdout, stderr } = runWrapper();
+            expect(status).toBe(1);
+            expect(stdout).toBe('');
+            expect(stderr).toContain('actors[0].tokenEnvVar');
+            expect(stderr).not.toContain('Warning:');
+            expect(stderr).not.toContain('Cannot read');
+        },
+    );
+
+    it('reports a missing config file without a duplicate error prefix', async () => {
+        await rm(path.join(repoDir, configFileName), { force: true });
+
+        const { status, stdout, stderr } = runWrapper();
+        expect(status).toBe(1);
+        expect(stdout).toBe('');
+        expect(stderr).toBe(
+            `Config file "${configFileName}" not found in the current directory. ` +
+                'Please create one with the required actor entries.\n',
+        );
     });
 });

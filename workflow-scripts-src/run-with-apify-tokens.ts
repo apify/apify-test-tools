@@ -71,7 +71,7 @@ let actorConfigs: Awaited<ReturnType<typeof readBaseConfigFile>>;
 try {
     actorConfigs = await readBaseConfigFile();
 } catch (error) {
-    fail(`Cannot read "${CONFIG_FILE_NAME}": ${error instanceof Error ? error.message : String(error)}`);
+    fail(error instanceof Error ? error.message : String(error));
 }
 
 const tokenNames = [...new Set(actorConfigs.map(({ tokenEnvVar }) => tokenEnvVar))].sort();

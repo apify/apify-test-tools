@@ -13,12 +13,12 @@ const schema = z.object({
                             folder: z.string(),
                             actorFullName: z.string().regex(ACTOR_FULL_NAME_REGEX),
                             // these allow overrides from stuff set at the group level
-                            tokenEnvVar: z.string().optional(),
+                            tokenEnvVar: z.string().min(1).optional(),
                             overrideActorContext: z.array(z.string()).optional(),
                         }),
                     )
                     .min(1),
-                tokenEnvVar: z.string(),
+                tokenEnvVar: z.string().min(1),
                 overrideActorContext: z.array(z.string()).optional(),
             }),
         )

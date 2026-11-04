@@ -40,30 +40,39 @@ type FileChangeForActor =
  * Classify a single file change for a single actor.
  *
  * Steps (in order):
- * 1. CHANGELOG.md, by filename, anywhere → cosmetic. There is a single repo-wide shared changelog,
- *    not one per actor, so it applies to every actor regardless of context/folder.
- * 2. Context matching (actorConfig.contextPaths) → outside-context if no match
- * 3. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
- * 4. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
+ * 1. Resolved documentation → cosmetic; actor.json and schemas → semantic check; Dockerfile → functional.
+ *    These dependencies count regardless of sibling folders, context, or ignores.
+ * 2. Sibling exclusion → outside-context
+ * 3. Context matching (actorConfig.contextPaths) → outside-context if no match
+ * 4. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
+ * 5. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
  *    dir and for test files → ignored if matched
- * 5. README.md by filename → cosmetic if inside the actor's own folder, otherwise ignored
- * 6. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
- * 7. Everything else → functional
+ * 6. Everything else → functional
  */
 const classifyFileChange = async (
     changedFile: RelativeFile,
     actorConfig: ActorConfig,
+    allActors: ActorConfig[],
     range: GitRange,
     dockerIgnoreMatcher: DockerIgnoreMatcher,
     isTestFile: (filePath: string) => boolean,
 ): Promise<FileChangeForActor> => {
-    const lowercaseFilePath = changedFile.path.toLowerCase();
+    const { file, readme, changelog, dockerfile, inputSchema, outputSchema, webServerSchema } = actorConfig.actorJson;
+    const matches = (candidate: RelativeFile | undefined) => candidate?.isEqualTo(changedFile) ?? false;
 
-    // TODO: hardcodes that there's a single repo-wide changelog belonging to every actor. Should instead
-    // be derived from parsing actor.json (readme, changelog, schema paths), see
-    // https://github.com/apify/apify-test-tools/issues/106
-    if (lowercaseFilePath.endsWith('changelog.md')) {
+    if ([readme, changelog].some(matches)) {
         return { impact: 'cosmetic', semanticallyVerified: false };
+    }
+
+    if ([file, inputSchema, outputSchema, webServerSchema].some(matches)) {
+        const isCosmetic = await isCosmeticOnlyJsonSchemaChange(range, changedFile.path);
+        return isCosmetic ? { impact: 'cosmetic', semanticallyVerified: true } : { impact: 'functional' };
+    }
+
+    if (matches(dockerfile)) return { impact: 'functional' };
+
+    if (isExcludedBySibling(changedFile, actorConfig, allActors)) {
+        return { impact: 'outside-context' };
     }
 
     const matchedContext = actorConfig.contextPaths.find((contextPath) => contextPath.contains(changedFile));
@@ -83,17 +92,6 @@ const classifyFileChange = async (
     // Test files are often in .dockerignore too, but a change to them must still build and test.
     if (!isUnderActorDotDir && !isTestFile(changedFile.path) && dockerIgnoreMatcher(changedFile.path)) {
         return { impact: 'ignored' };
-    }
-
-    const isInActorFolder = changedFile.isWithin(actorConfig.folder);
-
-    if (lowercaseFilePath.endsWith('readme.md')) {
-        return isInActorFolder ? { impact: 'cosmetic', semanticallyVerified: false } : { impact: 'ignored' };
-    }
-
-    if (lowercaseFilePath.endsWith('.json') && isUnderActorDotDir) {
-        const isCosmetic = await isCosmeticOnlyJsonSchemaChange(range, changedFile.path);
-        if (isCosmetic) return { impact: 'cosmetic', semanticallyVerified: true };
     }
 
     return { impact: 'functional' };
@@ -189,11 +187,14 @@ export const getChangedActors = async ({
         for (const originalFilePath of filepathsChanged) {
             const filePath = new RelativeFile(originalFilePath);
 
-            if (isExcludedBySibling(filePath, actorConfig, actorConfigs)) {
-                continue;
-            }
-
-            const change = await classifyFileChange(filePath, actorConfig, range, dockerIgnoreMatcher, isTestFile);
+            const change = await classifyFileChange(
+                filePath,
+                actorConfig,
+                actorConfigs,
+                range,
+                dockerIgnoreMatcher,
+                isTestFile,
+            );
             if (change.impact !== 'outside-context' && isTestFile(originalFilePath)) {
                 testFilesInContext.add(originalFilePath);
             }

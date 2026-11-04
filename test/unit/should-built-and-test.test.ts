@@ -35,6 +35,7 @@ const actorConfig = (
             file: new ExistingFile(actorJsonPath),
             dockerContextDir: contextPath,
             changelog: new RelativeFile('CHANGELOG.md'),
+            readme: new RelativeFile(path.posix.join(folder, 'README.md')),
         },
         dockerContextDir: contextPath,
         contextPaths: [contextPath],
@@ -74,7 +75,7 @@ describe('Should build and test parser', () => {
 
     const range = { fromRef: 'Commit0', toRef: 'Commit3' };
 
-    test('Ignores dev-only readme', async () => {
+    test('Unlinked readmes trigger tests within context', async () => {
         const FILES = ['README.md', 'code/README.md', 'shared/README.md'];
 
         const actorsChanged = await changedActorsFor({
@@ -84,7 +85,7 @@ describe('Should build and test parser', () => {
             range,
         });
 
-        expect(actorsChanged).toEqual([]);
+        expect(actorsChanged).toEqual(ACTOR_CONFIGS.slice(0, 2));
     });
 
     test('Ignores other ignored files and folders', async () => {
@@ -133,12 +134,12 @@ describe('Should build and test parser', () => {
         expect(actorsChangedLatest).toEqual(ACTOR_CONFIGS);
     });
 
-    test('A changelog nested inside one actor own folder is excluded for sibling actors', async () => {
+    test('An unlinked changelog inside an actor folder is functional and excluded for siblings', async () => {
         const FILES = ['actors/lukaskrivka_testing-github-integration-1/CHANGELOG.md'];
 
         const actorsChanged = await changedActorsFor({
             actorConfigs: ACTOR_CONFIGS,
-            isLatest: true,
+            isLatest: false,
             filepathsChanged: FILES,
             range,
         });

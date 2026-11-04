@@ -73,6 +73,7 @@ describe('loadActorConfig', () => {
         ['dockerfile', 'Dockerfile'],
         ['readme', 'README.md'],
         ['changelog', 'CHANGELOG.md'],
+        ['inputSchema', 'INPUT_SCHEMA.json'],
     ] as const)('follows Apify default locations for %s', async (field, filename) => {
         await writeActorJson();
 
@@ -125,6 +126,27 @@ describe('loadActorConfig', () => {
         expect(actorJsonPaths.inputSchema?.path).toBe('actors/shopify/INPUT_SCHEMA.json');
         expect(actorJsonPaths.outputSchema).toBeUndefined();
         expect(actorJsonPaths.webServerSchema?.path).toBe('actors/shopify/.actor/openapi.json');
+    });
+
+    it.each(['input', 'inputSchema'] as const)('does not resolve fallback files for inline %s', async (field) => {
+        await writeActorJson({ [field]: {} });
+        await writeFiles({
+            'actors/shopify/.actor/INPUT_SCHEMA.json': '{}',
+            'actors/shopify/INPUT_SCHEMA.json': '{}',
+        });
+
+        expect(loadActorConfig(entry()).actorJson.inputSchema).toBeUndefined();
+    });
+
+    it('keeps inline input authoritative over the inputSchema alias and fallback files', async () => {
+        await writeActorJson({ input: { type: 'object' }, inputSchema: '../legacy-input.json' });
+        await writeFiles({
+            'actors/shopify/.actor/INPUT_SCHEMA.json': '{}',
+            'actors/shopify/INPUT_SCHEMA.json': '{}',
+            'actors/shopify/legacy-input.json': '{}',
+        });
+
+        expect(loadActorConfig(entry()).actorJson.inputSchema).toBeUndefined();
     });
 
     it('rejects malformed actor.json path fields', async () => {

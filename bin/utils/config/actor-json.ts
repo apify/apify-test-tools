@@ -93,6 +93,7 @@ export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
     if (!parsed.success) throw new Error(`Invalid "${actorJsonFile}": ${z.prettifyError(parsed.error)}`);
 
     const fields = parsed.data;
+    const inputSchema = fields.input ?? fields.inputSchema;
     let dockerContextDir: RelativeDir;
     try {
         dockerContextDir = actorJsonFile.joinDir(fields.dockerContextDir);
@@ -117,11 +118,9 @@ export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
             resolveFile(actorJsonFile, 'changelog', fields.changelog) ??
             resolveDefaultFileLocations(actorJsonFile, ['./CHANGELOG.md', '../CHANGELOG.md']),
         inputSchema:
-            resolveFile(
-                actorJsonFile,
-                fields.input != null ? 'input' : 'inputSchema',
-                fields.input ?? fields.inputSchema,
-            ) ?? resolveDefaultFileLocations(actorJsonFile, ['./INPUT_SCHEMA.json', '../INPUT_SCHEMA.json']),
+            inputSchema == null
+                ? resolveDefaultFileLocations(actorJsonFile, ['./INPUT_SCHEMA.json', '../INPUT_SCHEMA.json'])
+                : resolveFile(actorJsonFile, fields.input != null ? 'input' : 'inputSchema', inputSchema),
 
         // these other schemas came after .actor was invented, so they have no fallbacks in platform
         outputSchema: resolveFile(

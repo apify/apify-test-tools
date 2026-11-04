@@ -10,11 +10,10 @@ Requires `vitest` `3.2.4` or later as a peer dependency.
 
 The library reads these when the test file is loaded:
 
-| Variable                 | Description                                                                                                                                                                                                                                   |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TESTER_APIFY_TOKEN`     | Token the tests start runs and read their data with. Without it (and without `RUN_ALL_PLATFORM_TESTS`), every `describe` block is skipped, so a plain `npm test` stays unaffected.                                                            |
-| `ACTOR_BUILDS`           | JSON array of builds, as printed by the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local). Only tests of Actors listed here run, and they run against the listed build. |
-| `RUN_ALL_PLATFORM_TESTS` | Run every test, not only those of Actors in `ACTOR_BUILDS`. Actors missing from `ACTOR_BUILDS` run their default build. The scheduled platform tests set it.                                                                                  |
+| Variable             | Description                                                                                                                                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `TESTER_APIFY_TOKEN` | Token the tests start runs and read their data with. Without it, every `describe` block is skipped, so a plain `npm test` stays unaffected.                                                                                                                                                            |
+| `ACTOR_BUILDS`       | JSON array of Actors to test, e.g. the builds the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local) print. Only tests of Actors listed here run, against the listed build, or the default build for an Actor listed without one. |
 
 `ACTOR_BUILDS` entries look like this, and are matched to tests by `actorFullName` or `actorRawId`:
 
@@ -24,13 +23,13 @@ The library reads these when the test file is loaded:
 
 ## `describe(name, fn, options?)`
 
-Same as vitest's `describe`, but skipped unless `TESTER_APIFY_TOKEN` or `RUN_ALL_PLATFORM_TESTS` is set. Its tests
+Same as vitest's `describe`, but skipped unless `TESTER_APIFY_TOKEN` is set. Its tests
 run concurrently by default. Use it instead of vitest's `describe` for platform tests.
 
 ## `testActor(actorId, testName, fn, options?)`
 
 Registers a test for an Actor. `actorId` is the Actor's full name (`owner/name`) or its raw platform ID. The test
-only runs when the Actor is in `ACTOR_BUILDS` or `RUN_ALL_PLATFORM_TESTS` is set. Its name is
+only runs when the Actor is in `ACTOR_BUILDS`. Its name is
 `<actorId>: <testName>`.
 
 `fn` gets the vitest test context, with `expect` extended by the [custom matchers](#custom-matchers), and a `run`
@@ -247,25 +246,31 @@ export const validateItem = (expect: ExpectStatic, item: any) => {
 
 Run every command from the root of the Actor repository.
 
-**Against the current default builds.** Enough when you only change the tests:
+**Against the current default builds.** Enough when you only change the tests. List the Actors with
+[`get-actor-configs`](cli.md#listing-actors-get-actor-configs), all of them or a few with `--actors`, and pass them to
+[`test`](cli.md#running-tests-test), which tests each on its default build:
 
 ```bash
-RUN_ALL_PLATFORM_TESTS=1 TESTER_APIFY_TOKEN=<token> npx vitest --run test/platform
+npx apify-test-tools get-actor-configs --actors john.doe/my-actor | TESTER_APIFY_TOKEN=<token> npx apify-test-tools test
 ```
+
+This also runs a test that reuses an existing run with [`runId`](#testing-an-existing-run), as long as its Actor is
+listed.
 
 **Against builds of your changes.** Build the Actors with the CLI, either from local files with
 [`build-from-local`](cli.md#build-from-local-source-build-from-local) or from a pushed branch with
-[`build`](cli.md#building-actors-build), and pass the output as `ACTOR_BUILDS`:
+[`build`](cli.md#building-actors-build), and pass the output to [`test`](cli.md#running-tests-test):
 
 ```bash
-BUILDS=$(APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build-from-local --actors john.doe/my-actor)
+APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build-from-local --actors john.doe/my-actor > builds.json
 
-ACTOR_BUILDS="$BUILDS" \
-TESTER_APIFY_TOKEN=<token> \
-  npx vitest --run --maxConcurrency 20 --fileParallelism=true --maxWorkers 100 test/platform
+TESTER_APIFY_TOKEN=<token> npx apify-test-tools test < builds.json
 ```
+
+`test` passes the builds to vitest as `ACTOR_BUILDS`, so plain vitest works too:
+`ACTOR_BUILDS="$(cat builds.json)" TESTER_APIFY_TOKEN=<token> npx vitest run test/platform`.
 
 You can change the tests and re-run them against the same builds.
 
-`TESTER_APIFY_TOKEN` can be the token of any account with enough memory for the runs. To run only some tests, point vitest at a specific file instead of `test/platform`, or filter
-by name with `-t`. See [Running locally](cli.md#running-locally) for the full flow.
+`TESTER_APIFY_TOKEN` can be the token of any account with enough memory for the runs. To run only some tests, pass a specific file instead of `test/platform`, or filter by
+name with vitest's `-t <name>` when running vitest directly. See [Running locally](cli.md#running-locally) for the full flow.

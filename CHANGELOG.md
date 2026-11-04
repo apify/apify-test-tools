@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - **ci:** Support pnpm ([#214](https://github.com/apify/apify-test-tools/pull/214)) ([ee7d734](https://github.com/apify/apify-test-tools/commit/ee7d7340564c5b8657a8a1f0cf920d67b40ae013)) by [@ruocco-l](https://github.com/ruocco-l)
 - Support flexible secret passing methods in workflows ([#225](https://github.com/apify/apify-test-tools/pull/225)) ([22f7e80](https://github.com/apify/apify-test-tools/commit/22f7e807ca3949656c15b79f848a192d71b15946)) by [@metalwarrior665](https://github.com/metalwarrior665), closes [#205](https://github.com/apify/apify-test-tools/issues/205)
 - [**breaking**] Require env vars of test versions in sync with the default version ([#217](https://github.com/apify/apify-test-tools/pull/217)) ([a2481dd](https://github.com/apify/apify-test-tools/commit/a2481ddf09004308cb54e49b783c8b21a25dcbe4)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- Add impact &amp; priority assessment to claude investigator ([#216](https://github.com/apify/apify-test-tools/pull/216)) ([fd16622](https://github.com/apify/apify-test-tools/commit/fd16622b910ec6e9b5515ea0bd26b0a41c22bd23)) by [@foxt451](https://github.com/foxt451), closes [#208](https://github.com/apify/apify-test-tools/issues/208)
 
 ### 🐛 Bug Fixes
 
@@ -22,6 +23,7 @@ All notable changes to this project will be documented in this file.
 - Build and test on test-only changes even when .dockerignore lists the tests ([#177](https://github.com/apify/apify-test-tools/pull/177)) ([5cb1b5a](https://github.com/apify/apify-test-tools/commit/5cb1b5ab5f6f43ec279f9624b402e73d55a5974a)) by [@artogahr](https://github.com/artogahr), closes [#145](https://github.com/apify/apify-test-tools/issues/145)
 - **git:** List both paths of moved files when detecting changes ([#215](https://github.com/apify/apify-test-tools/pull/215)) ([44ba565](https://github.com/apify/apify-test-tools/commit/44ba565242c1ac3daea281a648acb28712bb4363)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - **workflows:** Load setup action and review prompt from the called commit ([#226](https://github.com/apify/apify-test-tools/pull/226)) ([7524711](https://github.com/apify/apify-test-tools/commit/752471135d4d147f6f6492a26c08af388d7ccf72)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- **test:** Clean up compiled CLI dir when build fails ([#224](https://github.com/apify/apify-test-tools/pull/224)) ([f9f2f5c](https://github.com/apify/apify-test-tools/commit/f9f2f5c64cfe936ee0b72a0fbe7408282c68fbac)) by [@JuanGalilea](https://github.com/JuanGalilea)
 
 ### 🚜 Refactor
 

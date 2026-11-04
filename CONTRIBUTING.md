@@ -11,8 +11,10 @@ The package consists of three parts:
 - `bin/build.ts` actor building
 - `bin/git.ts` git wrappers for getting relevant git commits and changed files
 - `bin/main.ts` entrypoing
-- `bin/slack.ts` sending notifications to slack
-- `bin/test-report.ts` processing vitest's test reports
+- `bin/run-tests.ts` running the repository's vitest for the `test` command
+- `bin/test-report.ts` turning vitest's JSON report into the report `test` prints
+- `bin/notify.ts` the `notify` command: what it says about test runs and releases, and its targets (Slack for now)
+- `bin/slack.ts` the Slack client
 
 CLI command results use `writeJson` from `bin/output.ts` to write newline-terminated JSON to stdout.
 Use the CLI `logger` from `bin/logger.ts` for diagnostics; every level writes to stderr.
@@ -84,7 +86,7 @@ renaming one is a breaking change that needs a major tag bump, not a tidy-up.
 The tag is not semver, so `git-cliff` would abort on it. It is skipped only because
 `apify/actions`' cliff.toml sets `tag_pattern = "v[0-9]+\."` — a release failing with
 `Semver error: unexpected character` means that pattern changed, not that anything here is wrong.
-The action's "Nothing to release" guard resolves to this tag and no longer fires, so an empty stable
+The action's "Nothing to release" guard resolves to this tag and never fires, so an empty stable
 release fails at `npm publish` instead of erroring cleanly.
 
 Consumers pin `@workflows-v0`, not `@master`. See [Versioning and releases](#versioning-and-releases) below.
@@ -130,7 +132,7 @@ that commit. The consumer's own `node_modules` is left alone, so their tests kee
   `apify-test-tools`.
 
 The CLI and the lib in one job can be different versions now, so the formats between them are a contract: the
-`ACTOR_BUILDS` JSON that `build` writes and the lib reads, and the vitest JSON report `report-tests` reads. Add
+`ACTOR_BUILDS` JSON that `build` writes and the lib reads, and the vitest JSON report (with the run each test started on its `meta`) that `test` reads. Add
 fields freely; renaming or removing one needs a new major tag.
 
 `workflows-v0` moving on every master push means `@workflows-v0` is as live as `@master` was — there's no staging
@@ -195,7 +197,7 @@ again. The caller's workspace holds the caller's repo, not this one.
 Two tidier-looking alternatives don't work, so don't reach for them:
 
 - **Exporting to `$GITHUB_ENV`** would let the steps call the CLI directly with no wrapper, but `$GITHUB_ENV`
-  applies to every later step in the job. In `pr-build-test` the vitest step runs after the build, so it would
+  applies to every later step in the job. In `pr-build-test` the test step runs after the build, so it would
   inherit Actor tokens it has no use for.
 - **Returning the tokens as a step output** would be scoped correctly, but the runner refuses to set an output whose
   value contains a registered secret. It logs `Skip output <name> since it may contain secret` and leaves the output

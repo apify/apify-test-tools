@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -15,9 +15,6 @@ let repoDir: string;
 describe('token wrapper bundle', () => {
     beforeAll(async () => {
         repoDir = await mkdtemp(path.join(os.tmpdir(), 'apify-token-wrapper-'));
-        for (const name of ['one', 'two']) {
-            await mkdir(path.join(repoDir, 'actors', name), { recursive: true });
-        }
     });
 
     afterAll(async () => {

@@ -1,6 +1,7 @@
 import { logger } from './logger.js';
 import type { Commit } from './types.js';
 import { GitCommandError, runGitCommand } from './utils.js';
+import type { RelativeFile } from './utils/path/repo-relative.js';
 
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
@@ -191,36 +192,28 @@ export const resolveReleaseBaseCommit = async (baseCommit: string, head = 'HEAD'
     return sha;
 };
 
-const CHANGELOG_PATH = 'CHANGELOG.md';
-
-/** Returns the lines added to the root CHANGELOG.md between fromRef and toRef, or null if it didn't change. */
+/** Returns additions to the selected Actors' resolved changelogs, or null if none changed. Shared paths count once. */
 export const getChangelogAdditions = async (
     fromRef: string,
     toRef: string,
     changedFiles: string[],
+    changelogFiles: RelativeFile[],
 ): Promise<string | null> => {
-    if (!changedFiles.includes(CHANGELOG_PATH)) {
+    const paths = [...new Set(changelogFiles.map((file) => file.path))].filter((file) => changedFiles.includes(file));
+    if (!paths.length) {
         return null;
     }
-    const diff = await runGitCommand(['diff', fromRef, toRef, '--', CHANGELOG_PATH], {
+    const diff = await runGitCommand(['--literal-pathspecs', 'diff', '--no-renames', fromRef, toRef, '--', ...paths], {
         operation: 'read changelog changes since the last release',
     });
 
     const added: string[] = [];
-    let startedChangelog = false;
+    let inHunk = false;
     for (const line of diff.split('\n')) {
-        // The diff is already limited to the changelog but better to double check
-        if (line.startsWith('+++') && line.toLowerCase().includes(CHANGELOG_PATH.toLowerCase())) {
-            startedChangelog = true;
-            continue;
-        }
-        if (startedChangelog) {
-            if (line.startsWith('diff')) {
-                break;
-            }
-            if (line.startsWith('+')) {
-                added.push(line.slice(1).trim());
-            }
+        if (line.startsWith('diff --git ')) inHunk = false;
+        if (line.startsWith('@@ ')) inHunk = true;
+        if (inHunk && line.startsWith('+')) {
+            added.push(line.slice(1).trim());
         }
     }
     return added.join('\n').trim();

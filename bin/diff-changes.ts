@@ -57,14 +57,24 @@ const classifyFileChange = async (
     dockerIgnoreMatcher: DockerIgnoreMatcher,
     isTestFile: (filePath: string) => boolean,
 ): Promise<FileChangeForActor> => {
-    const { file, readme, changelog, dockerfile, inputSchema, outputSchema, webServerSchema } = actorConfig.actorJson;
+    const {
+        file,
+        readme,
+        changelog,
+        dockerfile,
+        inputSchema,
+        outputSchema,
+        webServerSchema,
+        datasetSchemas = [],
+        keyValueStoreSchema,
+    } = actorConfig.actorJson;
     const matches = (candidate: RelativeFile | undefined) => candidate?.isEqualTo(changedFile) ?? false;
 
     if ([readme, changelog].some(matches)) {
         return { impact: 'cosmetic', semanticallyVerified: false };
     }
 
-    if ([file, inputSchema, outputSchema, webServerSchema].some(matches)) {
+    if ([file, inputSchema, outputSchema, webServerSchema, ...datasetSchemas, keyValueStoreSchema].some(matches)) {
         const isCosmetic = await isCosmeticOnlyJsonSchemaChange(range, changedFile.path);
         return isCosmetic ? { impact: 'cosmetic', semanticallyVerified: true } : { impact: 'functional' };
     }

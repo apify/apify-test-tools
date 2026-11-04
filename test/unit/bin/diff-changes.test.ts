@@ -559,7 +559,7 @@ describe('getChangedActors', () => {
         });
     });
 
-    it.each(['inputSchema', 'outputSchema', 'webServerSchema'] as const)(
+    it.each(['inputSchema', 'outputSchema', 'webServerSchema', 'keyValueStoreSchema'] as const)(
         'checks linked %s outside context for cosmetic and functional changes',
         async (field) => {
             const linkedFile = new RelativeFile('schemas/custom');
@@ -576,35 +576,60 @@ describe('getChangedActors', () => {
         },
     );
 
-    it.each(['readme', 'changelog', 'dockerfile', 'inputSchema', 'outputSchema', 'webServerSchema'] as const)(
-        'linked %s takes precedence over sibling, context, and ignore guards',
-        async (field) => {
+    it.each([
+        'readme',
+        'changelog',
+        'dockerfile',
+        'inputSchema',
+        'outputSchema',
+        'webServerSchema',
+        'keyValueStoreSchema',
+    ] as const)('linked %s takes precedence over sibling, context, and ignore guards', async (field) => {
+        vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(true);
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
+        for (const linkedPath of [
+            'standalone-actors/standalone/custom', // Sibling folder, outside this actor's context.
+            'actors/foo_bar/.gitignore', // Hardcoded ignore.
+            'actors/foo_bar/docs/custom', // Docker ignore.
+        ]) {
+            const actor: ActorConfig = {
+                ...miniActor,
+                contextPaths: [miniActor.folder],
+                actorJson: { ...miniActor.actorJson, [field]: new RelativeFile(linkedPath) },
+            };
+            expect(
+                await getChangedActors({
+                    filepathsChanged: [linkedPath],
+                    actorConfigs: [actor, standaloneActor],
+                    range,
+                }),
+            ).toEqual(
+                field === 'dockerfile' ? { functional: [actor], cosmetic: [] } : { functional: [], cosmetic: [actor] },
+            );
+        }
+    });
+
+    it('checks every linked dataset schema before sibling, context, and ignore guards', async () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
+        const datasetSchemas = [
+            new RelativeFile('standalone-actors/standalone/dataset'),
+            new RelativeFile('actors/foo_bar/.gitignore'),
+            new RelativeFile('actors/foo_bar/schemas/dataset'),
+        ];
+        const actor: ActorConfig = {
+            ...miniActor,
+            contextPaths: [miniActor.folder],
+            actorJson: { ...miniActor.actorJson, datasetSchemas },
+        };
+        for (const schema of datasetSchemas) {
+            const options = { filepathsChanged: [schema.path], actorConfigs: [actor, standaloneActor], range };
             vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(true);
-            vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
-            for (const linkedPath of [
-                'standalone-actors/standalone/custom', // Sibling folder, outside this actor's context.
-                'actors/foo_bar/.gitignore', // Hardcoded ignore.
-                'actors/foo_bar/docs/custom', // Docker ignore.
-            ]) {
-                const actor: ActorConfig = {
-                    ...miniActor,
-                    contextPaths: [miniActor.folder],
-                    actorJson: { ...miniActor.actorJson, [field]: new RelativeFile(linkedPath) },
-                };
-                expect(
-                    await getChangedActors({
-                        filepathsChanged: [linkedPath],
-                        actorConfigs: [actor, standaloneActor],
-                        range,
-                    }),
-                ).toEqual(
-                    field === 'dockerfile'
-                        ? { functional: [actor], cosmetic: [] }
-                        : { functional: [], cosmetic: [actor] },
-                );
-            }
-        },
-    );
+            expect(await getChangedActors(options)).toEqual({ functional: [], cosmetic: [actor] });
+            expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).toHaveBeenCalledWith(range, schema.path);
+            vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(false);
+            expect(await getChangedActors(options)).toEqual({ functional: [actor], cosmetic: [] });
+        }
+    });
 
     it('treats unlinked JSON under .actor/ as functional', async () => {
         vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(true);

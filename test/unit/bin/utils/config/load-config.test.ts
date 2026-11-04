@@ -138,6 +138,52 @@ describe('loadActorConfig', () => {
         expect(() => loadActorConfig(entry())).toThrow(/Invalid "inputSchema"/);
     });
 
+    it('resolves default dataset and key-value store schema paths relative to actor.json', async () => {
+        await writeActorJson({
+            storages: {
+                dataset: '../../../schemas/dataset.json',
+                keyValueStore: '../schemas/kv.json',
+            },
+        });
+        const { actorJson: paths } = loadActorConfig(entry());
+        expect(paths.datasetSchemas?.map((file) => file.path)).toEqual(['schemas/dataset.json']);
+        expect(paths.keyValueStoreSchema?.path).toBe('actors/shopify/schemas/kv.json');
+    });
+
+    it('resolves every linked dataset alias while allowing inline storage schemas', async () => {
+        await writeActorJson({
+            storages: {
+                datasets: {
+                    default: './default.json',
+                    products: '../../../schemas/products.json',
+                    categories: { actorSpecification: 1, fields: {} },
+                },
+                keyValueStore: { actorKeyValueStoreSchemaVersion: 1, collections: {} },
+            },
+        });
+        const { actorJson: paths } = loadActorConfig(entry());
+        expect(paths.datasetSchemas?.map((file) => file.path)).toEqual([
+            'actors/shopify/.actor/default.json',
+            'schemas/products.json',
+        ]);
+        expect(paths.keyValueStoreSchema).toBeUndefined();
+
+        await writeActorJson({ storages: { dataset: { actorSpecification: 1, fields: {} } } });
+        expect(loadActorConfig(entry()).actorJson.datasetSchemas).toEqual([]);
+    });
+
+    it.each([
+        { storages: { dataset: '/outside.json' } },
+        { storages: { datasets: { default: '../../../../outside.json' } } },
+        { storages: { keyValueStore: '/outside.json' } },
+        { storages: { dataset: 123 } },
+        { storages: { datasets: { default: 123 } } },
+        { storages: { keyValueStore: 123 } },
+    ])('rejects malformed storage schema paths: %j', async (fields) => {
+        await writeActorJson(fields);
+        expect(() => loadActorConfig(entry())).toThrow(/storages/);
+    });
+
     it('resolves dockerContextDir relative to the .actor/ folder, not the actor folder', async () => {
         await writeActorJson({ dockerContextDir: '../../..' });
 

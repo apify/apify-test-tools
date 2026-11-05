@@ -24,10 +24,12 @@ All notable changes to this project will be documented in this file.
 - **git:** List both paths of moved files when detecting changes ([#215](https://github.com/apify/apify-test-tools/pull/215)) ([44ba565](https://github.com/apify/apify-test-tools/commit/44ba565242c1ac3daea281a648acb28712bb4363)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - **workflows:** Load setup action and review prompt from the called commit ([#226](https://github.com/apify/apify-test-tools/pull/226)) ([7524711](https://github.com/apify/apify-test-tools/commit/752471135d4d147f6f6492a26c08af388d7ccf72)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - **test:** Clean up compiled CLI dir when build fails ([#224](https://github.com/apify/apify-test-tools/pull/224)) ([f9f2f5c](https://github.com/apify/apify-test-tools/commit/f9f2f5c64cfe936ee0b72a0fbe7408282c68fbac)) by [@JuanGalilea](https://github.com/JuanGalilea)
+- **cli-test:** Look up actor raw IDs for tests that reference them ([#234](https://github.com/apify/apify-test-tools/pull/234)) ([315baf4](https://github.com/apify/apify-test-tools/commit/315baf495dae984cbcd7056a101935536d7b0011)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 ### 🚜 Refactor
 
 - [**breaking**] Remove build-for-test and release composite commands ([#203](https://github.com/apify/apify-test-tools/pull/203)) ([85efc54](https://github.com/apify/apify-test-tools/commit/85efc54697e98208c827c4f450906e00eebcd9ca)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- [**breaking**] Remove legacy get-commits, get-latest-commit and get-changed-files ([#228](https://github.com/apify/apify-test-tools/pull/228)) ([d254a6d](https://github.com/apify/apify-test-tools/commit/d254a6dd14ac9cb027a26ec73ca20a6ee10460ec)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 
 <!-- git-cliff-unreleased-end -->

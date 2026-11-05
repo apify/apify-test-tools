@@ -121,10 +121,12 @@ testActor(actorId, 'validate existing run', async ({ expect, run }) => {
 
 ## `testStandbyActor(actorId, testName, fn, options?)`
 
-Same as `testActor`, for Actors in standby mode. It creates a temporary task with the build from `ACTOR_BUILDS` (or
-the Actor's standby build) and deletes it after the test. Instead of `run`, `fn` gets `callStandby`, which sends a
-`POST` request with `input` as the JSON body to the task's standby URL, plus `path`, and returns
-`{ data, status, headers }`, where `data` is the parsed JSON response.
+Same as `testActor`, for Actors in standby mode. Instead of `run`, `fn` gets `callStandby`, which sends a
+`POST` request with `input` as the JSON body directly to the Actor's standby URL, plus `path`. The request uses the
+`X-Actor-Build` header to select the build from `ACTOR_BUILDS`, falling back to the Actor's configured standby build
+(number or tag). If neither is set, the platform uses its default standby build. No temporary tasks are created.
+It returns `{ data, status, headers }`, where `data` is the parsed JSON response. Standby requests no longer attach
+task run links to the test, since the Actor's standby runs can be shared by multiple requests and tests.
 
 ```ts
 import { describe, testStandbyActor } from 'apify-test-tools';

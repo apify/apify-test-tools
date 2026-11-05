@@ -75,12 +75,19 @@ test('owner/a: fails', () => {
         });
     });
 
-    it('tests an Actor without a build on its default build, as get-actor-configs lists them', () => {
-        const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' };
+    it('tests an Actor without a build on its default build', () => {
+        // get-actor-configs lists no raw ID, test looks it up (see actor-raw-ids.test.ts). Given here, it isn't, so
+        // the fake token is never sent to the API.
+        const actorConfig = {
+            actorFullName: 'owner/a',
+            actorRawId: 'raw1',
+            folder: 'actors/a',
+            tokenEnvVar: 'APIFY_TOKEN_OWNER',
+        };
         const result = run(['test'], JSON.stringify([actorConfig]));
         expect(result.status).toBe(1);
         // Only the fields the lib reads reach it
-        expect(result.stderr).toContain('ENV [{"actorFullName":"owner/a"}]');
+        expect(result.stderr).toContain('ENV [{"actorFullName":"owner/a","actorRawId":"raw1"}]');
         expect(result.stderr).toContain('Testing 1 Actor(s): owner/a (default build)');
         expect(JSON.parse(result.stdout)).toMatchObject({ success: false, summary: { passed: 1, failed: 1 } });
     });

@@ -210,7 +210,7 @@ The workflows take every change straight to production, with tests in between:
 These are GitHub Actions workflows. On another CI platform, build the same flow with the [CLI](docs/cli.md).
 
 Add these files to `.github/workflows` in your repo. They call the reusable workflows in this repo, pinned at the
-`@workflows-v0` major tag — never at `@master`. Every input, the optional Claude workflows, and how the tag moves are
+`@workflows-v0` major tag — never at `@master`. Every input, the optional Claude workflows, stale issue closer, and how the tag moves are
 in the [Workflow API](docs/workflows.md).
 
 ### `pr-build-devel-test.yaml`

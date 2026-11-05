@@ -46,6 +46,10 @@ describe('parseTestTargets', () => {
         expect(parseTestTargets(JSON.stringify([actorConfig]))).toStrictEqual([{ actorFullName: 'owner/a' }]);
     });
 
+    it('reads an Actor given by its raw ID only', () => {
+        expect(parseTestTargets('[{"actorRawId":"r"}]')).toStrictEqual([{ actorRawId: 'r' }]);
+    });
+
     it('rejects a dry-run plan, which built nothing', () => {
         expect(() => parseTestTargets(JSON.stringify({ dryRun: true, builds: [build] }))).toThrow('is a dry-run plan');
     });
@@ -53,7 +57,9 @@ describe('parseTestTargets', () => {
     it('rejects empty input and input that is not Actors', () => {
         expect(() => parseTestTargets('')).toThrow('Expected the Actors to test as JSON on stdin, got nothing');
         expect(() => parseTestTargets('{"actors":[]}')).toThrow('is not the Actors to test');
-        expect(() => parseTestTargets('[{"buildNumber":"0.99.1"}]')).toThrow('is not the Actors to test');
+        expect(() => parseTestTargets('[{"buildNumber":"0.99.1"}]')).toThrow(
+            'An Actor needs actorFullName or actorRawId',
+        );
         expect(() => parseTestTargets('{oops')).toThrow('not valid JSON');
     });
 });

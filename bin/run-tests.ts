@@ -6,7 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
 
-import { withActorRawIds } from './actor-raw-ids.js';
+import { withActorIds } from './actor-ids.js';
 import { logger } from './logger.js';
 import type { TestTarget } from './stdin-input.js';
 import { failedRunReport, logTestReport, type TestReport, toTestReport, type VitestJsonReport } from './test-report.js';
@@ -58,8 +58,8 @@ export const runTests = async ({
         throw new Error('TESTER_APIFY_TOKEN is not set. The platform tests need it to run the Actors.');
     }
     const vitestBin = await resolveVitestBin(cwd);
-    // Tests that name their Actor by raw ID only run when the ID is listed, also for an Actor listed without a build
-    const actorBuilds = await withActorRawIds(targets);
+    // A test only runs when the ID it names its Actor by is listed, so each Actor gets both its full name and raw ID
+    const actorBuilds = await withActorIds(targets);
 
     const tempDir = vitestOutputFile ? null : await fs.mkdtemp(path.join(os.tmpdir(), 'apify-test-tools-'));
     const outputFile = path.resolve(cwd, vitestOutputFile ?? path.join(tempDir!, 'vitest-report.json'));
@@ -72,7 +72,7 @@ export const runTests = async ({
     if (process.stderr.isTTY && env.FORCE_COLOR === undefined && env.NO_COLOR === undefined) env.FORCE_COLOR = '1';
     // The lib runs the tests of the Actors listed here, each on the build given, or on its default build without one
     env.ACTOR_BUILDS = JSON.stringify(actorBuilds);
-    const described = targets.map(
+    const described = actorBuilds.map(
         ({ actorFullName, buildNumber }) => `${actorFullName} (${buildNumber ?? 'default build'})`,
     );
     logger.info(`Testing ${targets.length} Actor(s): ${described.join(', ') || 'none'}`);

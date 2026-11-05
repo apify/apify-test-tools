@@ -76,7 +76,7 @@ test('owner/a: fails', () => {
     });
 
     it('tests an Actor without a build on its default build', () => {
-        // get-actor-configs lists no raw ID, test looks it up (see actor-raw-ids.test.ts). Given here, it isn't, so
+        // get-actor-configs lists no raw ID, test looks it up (see actor-ids.test.ts). Given here, it isn't, so
         // the fake token is never sent to the API.
         const actorConfig = {
             actorFullName: 'owner/a',

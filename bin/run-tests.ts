@@ -73,7 +73,8 @@ export const runTests = async ({
     // The lib runs the tests of the Actors listed here, each on the build given, or on its default build without one
     env.ACTOR_BUILDS = JSON.stringify(actorBuilds);
     const described = actorBuilds.map(
-        ({ actorFullName, buildNumber }) => `${actorFullName} (${buildNumber ?? 'default build'})`,
+        ({ actorFullName, actorRawId, buildNumber }) =>
+            `${actorFullName ?? actorRawId} (${buildNumber ?? 'default build'})`,
     );
     logger.info(`Testing ${targets.length} Actor(s): ${described.join(', ') || 'none'}`);
 

@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - [**breaking**] Require env vars of test versions in sync with the default version ([#217](https://github.com/apify/apify-test-tools/pull/217)) ([a2481dd](https://github.com/apify/apify-test-tools/commit/a2481ddf09004308cb54e49b783c8b21a25dcbe4)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - Add impact &amp; priority assessment to claude investigator ([#216](https://github.com/apify/apify-test-tools/pull/216)) ([fd16622](https://github.com/apify/apify-test-tools/commit/fd16622b910ec6e9b5515ea0bd26b0a41c22bd23)) by [@foxt451](https://github.com/foxt451), closes [#208](https://github.com/apify/apify-test-tools/issues/208)
 - Stale issue&#x2F;pr workflow ([#236](https://github.com/apify/apify-test-tools/pull/236)) ([aff1fa7](https://github.com/apify/apify-test-tools/commit/aff1fa778adb846a60fdacdd26aa13a71729613d)) by [@JuanGalilea](https://github.com/JuanGalilea), closes [#35](https://github.com/apify/apify-test-tools/issues/35)
+- **workflows:** [**breaking**] Skip Slack when report-slack-channel is empty ([#238](https://github.com/apify/apify-test-tools/pull/238)) ([9a15b56](https://github.com/apify/apify-test-tools/commit/9a15b56de9ca42fb5ea753dc478116f9cd9c2c94)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 ### 🐛 Bug Fixes
 

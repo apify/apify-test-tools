@@ -32,12 +32,16 @@ describe('withActorIds', () => {
         expect(client.actor).not.toHaveBeenCalled();
     });
 
-    it('fails for an Actor the token cannot see, instead of skipping its tests', async () => {
-        await expect(withActorIds([{ actorFullName: 'owner/missing' }], fakeClient())).rejects.toThrow(
-            'Actor owner/missing not found',
-        );
-        await expect(withActorIds([{ actorRawId: 'rawMissing' }], fakeClient())).rejects.toThrow(
-            'Actor rawMissing not found',
-        );
+    it('keeps an Actor the token cannot see as listed, instead of failing the run', async () => {
+        const targets = [
+            { actorFullName: 'owner/missing' },
+            { actorRawId: 'rawMissing' },
+            { actorFullName: 'owner/a' },
+        ];
+        expect(await withActorIds(targets, fakeClient())).toEqual([
+            { actorFullName: 'owner/missing' },
+            { actorRawId: 'rawMissing' },
+            { actorFullName: 'owner/a', actorRawId: 'rawA' },
+        ]);
     });
 });

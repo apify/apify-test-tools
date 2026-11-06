@@ -22,7 +22,7 @@ name: 'Platform tests: Claude failure investigation and fix'
 #     platformTestsCore:
 #         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
 #         with:
-#             subtest: core
+#             test-files-glob: 'test/platform/hourly/**'
 #             report-slack-channel: '#notif-my-repo'
 #         secrets:
 #             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}

@@ -1,8 +1,7 @@
-import picomatch from 'picomatch';
-
 import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
 import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
 import { logger } from './logger.js';
+import { createTestFilesMatcher } from './test-files-glob.js';
 import type { ActorConfig, GitRange } from './types.js';
 import { type RelativeDir, RelativeFile } from './utils/path/repo-relative.js';
 
@@ -181,7 +180,7 @@ export const getChangedActors = async ({
 }: ShouldBuildAndTestOptions): Promise<ChangedActors> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
     const testFilesInContext = new Set<string>();
-    const isTestFile = testFilesGlob ? picomatch(testFilesGlob, { nocase: true, dot: true }) : () => false;
+    const isTestFile = createTestFilesMatcher(testFilesGlob);
 
     for (const actorConfig of actorConfigs) {
         const dockerIgnoreMatcher = loadDockerIgnore(actorConfig.dockerContextDir);

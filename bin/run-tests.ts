@@ -9,6 +9,7 @@ import { createInterface } from 'node:readline';
 import { withActorIds } from './actor-ids.js';
 import { logger } from './logger.js';
 import type { TestTarget } from './stdin-input.js';
+import { resolveTestFilesGlob } from './test-files-glob.js';
 import { failedRunReport, logTestReport, type TestReport, toTestReport, type VitestJsonReport } from './test-report.js';
 
 /**
@@ -29,9 +30,40 @@ const resolveVitestBin = async (cwd: string): Promise<string> => {
     }
 };
 
+/** What `test` runs when it gets neither filters nor a glob */
+const DEFAULT_FILTERS = ['test/platform'];
+
+/**
+ * Turns what `test` was given into vitest filters. Vitest filters are substrings of the file paths, not globs, so
+ * the glob is resolved here into the files it matches. They go to vitest as absolute paths, which vitest matches
+ * from the start of the path, so `test/platform/a.test.ts` does not also run `other/test/platform/a.test.ts`.
+ */
+const resolveVitestFilters = async ({
+    filters,
+    testFilesGlob,
+    cwd,
+}: Pick<RunTestsOptions, 'filters' | 'testFilesGlob'> & { cwd: string }): Promise<string[]> => {
+    if (testFilesGlob === undefined) return filters.length !== 0 ? filters : DEFAULT_FILTERS;
+    if (filters.length !== 0) throw new Error('Pass either test filters or --test-files-glob, not both.');
+    const files = await resolveTestFilesGlob(testFilesGlob, cwd);
+    // Without filters vitest would run every test of the repo
+    if (files.length === 0) {
+        throw new Error(
+            `No files match --test-files-glob "${testFilesGlob}". The glob is relative to the repo root, e.g. "test/platform/**".`,
+        );
+    }
+    logger.info(`Running the ${files.length} file(s) that match --test-files-glob "${testFilesGlob}"`);
+    logger.debug(`Files: ${files.join(', ')}`);
+    // Vitest compares against real paths, and cwd can be a symlink (e.g. /tmp on macOS)
+    const root = await fs.realpath(cwd);
+    return files.map((file) => path.join(root, file));
+};
+
 interface RunTestsOptions {
-    /** Vitest file filters, e.g. `test/platform/core` */
+    /** Vitest file filters, e.g. `test/platform/core`. Empty runs `test/platform`, unless `testFilesGlob` is given */
     filters: string[];
+    /** Glob from the repo root (`cwd`) of the test files to run, e.g. `test/platform/**`. Replaces `filters` */
+    testFilesGlob?: string;
     /** The Actors to test, each with its build or, without one, its default build */
     targets: TestTarget[];
     /** Keeps vitest's own JSON report there, e.g. to upload it */
@@ -48,6 +80,7 @@ interface RunTestsOptions {
  */
 export const runTests = async ({
     filters,
+    testFilesGlob,
     targets,
     vitestOutputFile,
     reporters = [],
@@ -58,6 +91,7 @@ export const runTests = async ({
         throw new Error('TESTER_APIFY_TOKEN is not set. The platform tests need it to run the Actors.');
     }
     const vitestBin = await resolveVitestBin(cwd);
+    const vitestFilters = await resolveVitestFilters({ filters, testFilesGlob, cwd });
     // A test only runs when the ID it names its Actor by is listed, so each Actor gets both its full name and raw ID
     const actorBuilds = await withActorIds(targets);
 
@@ -81,7 +115,7 @@ export const runTests = async ({
     const args = [
         vitestBin,
         'run',
-        ...filters,
+        ...vitestFilters,
         '--reporter=default',
         '--reporter=json',
         ...reporters.map((reporter) => `--reporter=${reporter}`),

@@ -45,6 +45,15 @@ test('owner/a: fails', () => {
 });
 `,
         );
+
+        // Outside test/platform, so the tests that run test/platform don't see them
+        for (const folder of ['with-pr', 'without-pr']) {
+            await mkdir(path.join(repoDir, 'test/glob', folder), { recursive: true });
+            await writeFile(
+                path.join(repoDir, 'test/glob', folder, `${folder}.test.ts`),
+                `import { test } from 'vitest';\n\ntest('owner/a: ${folder}', () => {});\n`,
+            );
+        }
     });
 
     afterAll(async () => {
@@ -101,6 +110,31 @@ test('owner/a: fails', () => {
             /Running vitest: \S+ run test\/platform --reporter=default --reporter=json --reporter=dot --reporter=verbose /,
         );
         expect(JSON.parse(result.stdout)).toMatchObject({ summary: { passed: 1, failed: 1 } });
+    });
+
+    it('runs only the test files that --test-files-glob matches from the repo root', () => {
+        const result = run(['test', '--test-files-glob', 'test/glob/{with-pr,other}/**'], JSON.stringify([build]));
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stderr).toContain('Running the 1 file(s) that match --test-files-glob');
+        expect(JSON.parse(result.stdout)).toMatchObject({
+            success: true,
+            summary: { total: 1, passed: 1 },
+            tests: [{ name: 'owner/a: with-pr', file: 'test/glob/with-pr/with-pr.test.ts' }],
+        });
+    });
+
+    it('fails when --test-files-glob matches no file instead of running every test', () => {
+        // Relative to test/platform, the way the workflows took it before
+        const result = run(['test', '--test-files-glob', 'hourly'], JSON.stringify([build]));
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('No files match --test-files-glob "hourly"');
+        expect(result.stdout).toBe('');
+    });
+
+    it('fails when given both filters and --test-files-glob', () => {
+        const result = run(['test', 'test/platform', '--test-files-glob', 'test/glob/**'], JSON.stringify([build]));
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('Pass either test filters or --test-files-glob, not both');
     });
 
     it('fails without TESTER_APIFY_TOKEN instead of passing with every test skipped', () => {

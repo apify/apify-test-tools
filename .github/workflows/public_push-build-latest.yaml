@@ -3,7 +3,7 @@ name: Build latest and report to slack
 on:
     workflow_call:
         inputs:
-            # Defaults to #notif-<repo-name> when empty.
+            # Slack channel for release announcements. Empty skips Slack.
             report-slack-channel:
                 type: string
                 default: ''
@@ -65,13 +65,14 @@ jobs:
                     | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
                         apify-test-tools build --version-number default
 
-            # Skips the announcement when the push brought no new commits
+            # Skips the announcement when the push brought no new commits, or when no channel is set
             - name: Announce the release on Slack
               env:
                   SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+                  SLACK_CHANNEL: ${{ inputs.report-slack-channel }}
               run: |
                   apify-test-tools notify \
-                    --slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" \
+                    --slack-channel "$SLACK_CHANNEL" \
                     < affected.json
 
             - name: Delete old builds

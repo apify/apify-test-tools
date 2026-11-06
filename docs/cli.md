@@ -73,9 +73,10 @@ changed files. For each changed file, for each Actor:
    matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior.
    Test files are the exception: `get-affected-actors --test-files-glob <glob>` (relative to the repo root) skips
    this check for matching files, so a changed test triggers a build, and with it its tests, even when
-   `.dockerignore` lists it. The PR workflow passes `test/platform/**`. Context matching still applies, so tests
-   outside an Actor's `dockerContextDir` (e.g. a root `test/` with standalone Actors) need to be listed in its
-   `overrideActorContext`; `get-affected-actors` logs a warning for changed test files outside every Actor's context.
+   `.dockerignore` lists it. The PR workflow passes its `test-files-glob` input, the same glob it gives `test`.
+   Context matching still applies, so tests outside an Actor's `dockerContextDir` (e.g. a root `test/` with
+   standalone Actors) need to be listed in its `overrideActorContext`; `get-affected-actors` logs a warning for
+   changed test files outside every Actor's context.
 6. **README classification** — a `README.md` file is `cosmetic` (only triggers a release build, not tests) if it
    lives inside the Actor's own `folder`; otherwise it's ignored entirely, since it isn't documentation for this
    Actor.
@@ -285,7 +286,8 @@ the repository locked) on the Actors it is given on stdin, and prints a report o
 ... | npx apify-test-tools build --version-number 0.99 | npx apify-test-tools test > test-report.json
 
 # Scheduled tests: every Actor in the config, on its default build
-npx apify-test-tools get-actor-configs | npx apify-test-tools test test/platform/core > test-report.json
+npx apify-test-tools get-actor-configs \
+    | npx apify-test-tools test --test-files-glob 'test/platform/{hourly,hourly-without-pr}/**' > test-report.json
 
 # Only some of them
 npx apify-test-tools get-actor-configs --actors john.doe/my-actor | npx apify-test-tools test > test-report.json
@@ -312,8 +314,15 @@ test by name, run vitest directly with the builds in `ACTOR_BUILDS` (see
 | Argument / flag        | Default         | Meaning                                                                                                                         |
 | ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `[filters..]`          | `test/platform` | Test files to run, as vitest filters                                                                                            |
+| `--test-files-glob`    |                 | Glob from the repo root of the test files to run, e.g. `test/platform/**`. Use it in place of `[filters..]`, see below          |
 | `--vitest-output-file` |                 | Also keep vitest's own JSON report there, e.g. to upload it                                                                     |
 | `--reporter`           |                 | [Vitest reporter](https://vitest.dev/guide/reporters) to add to `default` and `json`, e.g. `github-actions`. Repeat it for more |
+
+Vitest filters are parts of a file path, not globs. `--test-files-glob` is a glob, read the same way as in
+[`get-affected-actors`](#finding-affected-actors-get-affected-actors). `test` finds the files it matches and passes
+them to vitest, so pass both commands the same glob and they agree on which tests count. A glob that matches no file
+is an error, because vitest without filters would run every test of the repo. Quote the glob, so the shell doesn't
+expand it.
 
 Vitest's own output goes to stderr, followed by a summary that lists every test with the link to its run. Stdout
 gets only the report:

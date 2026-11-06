@@ -103,6 +103,12 @@ const envVarsSyncOptions = {
 
 /** Flags of `test`, which runs the repository's vitest on the Actors piped in, e.g. the builds from `build`. */
 const testOptions = {
+    'test-files-glob': {
+        type: 'string',
+        describe:
+            'Glob (from the repo root) of the test files to run, e.g. test/platform/**. ' +
+            'Use it in place of [filters..], and pass get-affected-actors the same glob',
+    },
     'vitest-output-file': { type: 'string', describe: "Also keep vitest's own JSON report there, e.g. to upload it" },
     reporter: {
         type: 'string',
@@ -190,13 +196,13 @@ await yargs()
                 .positional('filters', {
                     type: 'string',
                     array: true,
-                    default: ['test/platform'],
-                    describe: 'Test files to run, as vitest filters',
+                    describe: 'Test files to run, as vitest filters. Without them and --test-files-glob, test/platform',
                 })
                 .options(testOptions),
         async (args) => {
             const report = await runTests({
-                filters: args.filters,
+                filters: args.filters ?? [],
+                testFilesGlob: args.testFilesGlob,
                 targets: parseTestTargets(await readStdin()),
                 vitestOutputFile: args.vitestOutputFile,
                 reporters: args.reporter,

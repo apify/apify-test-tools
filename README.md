@@ -259,7 +259,8 @@ jobs:
 
 ### Scheduled tests (optional)
 
-How often to run which tests is up to you. For example, you can run every test once a day:
+How often to run which tests is up to you. `test-files-glob` is a glob from the repo root, see
+[Splitting the tests](docs/workflows.md#splitting-the-tests). For example, you can run the daily tests once a day:
 
 ```yaml
 name: Platform tests - Daily
@@ -273,12 +274,14 @@ on:
 jobs:
     platformTestsDaily:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        with:
+            test-files-glob: 'test/platform/{daily,daily-without-pr}/**'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 ```
 
-and a few critical tests, kept in e.g. `test/platform/hourly`, every hour:
+and a few critical tests every hour:
 
 ```yaml
 name: Platform tests - Hourly
@@ -293,7 +296,7 @@ jobs:
     platformTestsHourly:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
-            test-files-glob: hourly
+            test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

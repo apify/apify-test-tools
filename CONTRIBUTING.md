@@ -73,7 +73,7 @@ You need to run `npm run build` inside `apify-test-tools` repo everytime you wan
 ## Reusable workflows
 
 The `public_`-prefixed workflows are the ones consumer repos call: `public_pr-build-test`,
-`public_platform-tests`, `public_push-build-latest`, `public_claude`, `public_review` and
+`public_platform-tests`, `public_push-build-latest`, `public_claude`, `public_review`, `public_stale-issues` and
 `public_platform-tests-claude-investigate-and-fix`. They live here because they call this package's
 CLI, so a change to both is one PR. GitHub only reads workflow files at the top level of
 `.github/workflows`, so they sit next to this repo's own CI, and the prefix is what separates the

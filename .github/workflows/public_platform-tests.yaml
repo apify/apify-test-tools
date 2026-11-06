@@ -13,7 +13,7 @@ on:
                 type: string
                 default: ''
                 required: false
-            # Defaults to #notif-<repo-name> when empty.
+            # Slack channel for failed tests. Empty skips Slack.
             report-slack-channel:
                 type: string
                 default: ''
@@ -69,8 +69,8 @@ jobs:
                     | apify-test-tools test ./test/platform/${{ inputs.test-files-glob || inputs.subtest }} \
                         --reporter github-actions --vitest-output-file ./test-output.json > test-report.json
 
-            # Posts only when the tests failed, but checks the Slack token on every run. Runs whenever the tests
-            # did, also after a failure, but not when the token check stopped the job before them.
+            # Posts only when the tests failed, but checks the Slack token on every run that has a channel. Runs
+            # whenever the tests did, also after a failure, but not when the token check stopped the job before them.
             - name: Notify
               if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
               env:
@@ -78,6 +78,8 @@ jobs:
                   # Passed through the environment, so a quote in the workflow name can't break the command
                   WORKFLOW_NAME: ${{ github.workflow }}
                   JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                  # Empty makes notify skip Slack
+                  SLACK_CHANNEL: ${{ inputs.report-slack-channel }}
               run: |
                   # Empty when `test` itself failed before running vitest, its error is in the Test step
                   if [ ! -s test-report.json ]; then
@@ -85,7 +87,7 @@ jobs:
                       exit 0
                   fi
                   apify-test-tools notify \
-                    --slack-channel "${{ inputs.report-slack-channel || format('#notif-{0}', github.event.repository.name) }}" \
+                    --slack-channel "$SLACK_CHANNEL" \
                     --title "$WORKFLOW_NAME" \
                     --job-url "$JOB_URL" \
                     < test-report.json

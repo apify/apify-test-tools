@@ -1,0 +1,51 @@
+name: Close stale issues
+
+on:
+    workflow_call:
+        inputs:
+            stale-months:
+                description: Months without activity before warning issue owners (one month = 30 days). Issues close 30 days after the warning.
+                type: number
+                default: 6
+
+jobs:
+    staleIssues:
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        permissions:
+            issues: write
+        concurrency:
+            group: stale-issues-${{ github.repository }}
+            cancel-in-progress: false
+        steps:
+            - name: Convert months to days
+              id: threshold
+              uses: actions/github-script@v9
+              env:
+                  STALE_MONTHS: ${{ inputs.stale-months }}
+              with:
+                  script: |
+                      const months = Number(process.env.STALE_MONTHS);
+                      if (!Number.isSafeInteger(months) || months < 1 || !Number.isSafeInteger(months * 30)) {
+                          throw new Error('stale-months must be a positive whole number whose day count is a safe integer.');
+                      }
+                      if (months > 12) {
+                          throw new Error('stale-months must be less than or equal to 12.');
+                      }
+                      return months * 30;
+
+            - name: Warn and close stale issues
+              uses: actions/stale@v11
+              with:
+                  days-before-issue-stale: ${{ steps.threshold.outputs.result }}
+                  days-before-issue-close: 30
+                  days-before-pr-stale: ${{ steps.threshold.outputs.result }}
+                  days-before-pr-close: 30
+                  stale-issue-label: stale
+                  stale-issue-message: >-
+                      This issue has had no activity for ${{ inputs.stale-months }} month(s).
+                      It will be closed as not planned in 30 days unless it is updated or commented on.
+                  close-issue-message: Closed as not planned after 30 days without activity following the stale warning.
+                  close-issue-reason: not_planned
+                  remove-stale-when-updated: true
+                  operations-per-run: 1000

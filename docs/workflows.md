@@ -26,6 +26,7 @@ The build, release and test workflows below list the CLI commands they run.
 | [`public_platform-tests.yaml`](#public_platform-testsyaml)                                                       | `schedule`                          | Runs platform tests against the released builds and reports results to Slack     |
 | [`public_review.yaml`](#public_reviewyaml)                                                                       | `pull_request` (labeled)            | Claude reviews the PR against the shared guidelines                              |
 | [`public_claude.yaml`](#public_claudeyaml)                                                                       | issue and PR comments, issue labels | Claude acts on `@claude` mentions                                                |
+| [`public_stale-issues.yaml`](#public_stale-issuesyaml)                                                           | `schedule`                          | Warns owners of inactive issues, then closes them a month later                  |
 | [`public_platform-tests-claude-investigate-and-fix.yaml`](#public_platform-tests-claude-investigate-and-fixyaml) | after a failed platform test job    | Claude investigates a failing platform test, opens an issue, and tries to fix it |
 
 All of them run on `ubuntu-latest` with Node.js 24. The ones that need the repo's dependencies install them with
@@ -106,9 +107,9 @@ Releases the Actors a push changed. Skipped when the head commit message contain
 4. `delete-old-builds` deletes old builds of every Actor in the config (see
    [`delete-old-builds`](cli.md#deleting-old-builds-delete-old-builds)).
 
-| Input                  | Type   | Default | Description                                                   |
-| ---------------------- | ------ | ------- | ------------------------------------------------------------- |
-| `report-slack-channel` | string | `''`    | Slack channel for the report. Empty uses `#notif-<repo-name>` |
+| Input                  | Type   | Default | Description                                     |
+| ---------------------- | ------ | ------- | ----------------------------------------------- |
+| `report-slack-channel` | string | `''`    | Slack channel for the report. Empty skips Slack |
 
 Secrets: `SLACK_BOT_TOKEN`, the Actor tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`.
 
@@ -125,6 +126,8 @@ on:
 jobs:
     buildLatest:
         uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
+        with:
+            report-slack-channel: '#notif-my-repo'
         secrets:
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
             # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
@@ -147,7 +150,7 @@ vitest's own JSON report are uploaded as the `vitest-results` artifact. Runs onl
 | ---------------------- | ------ | ------- | ---------------------------------------------------------------------------- |
 | `test-files-glob`      | string | `''`    | Which tests to run, relative to `test/platform`. Empty runs everything in it |
 | `subtest`              | string | `''`    | Deprecated, use `test-files-glob`                                            |
-| `report-slack-channel` | string | `''`    | Slack channel for the results. Empty uses `#notif-<repo-name>`               |
+| `report-slack-channel` | string | `''`    | Slack channel for the results. Empty skips Slack                             |
 
 Secrets: `TESTER_APIFY_TOKEN` (required), `SLACK_BOT_TOKEN`, and optionally `NPM_TOKEN`.
 
@@ -165,6 +168,8 @@ on:
 jobs:
     platformTestsDaily:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        with:
+            report-slack-channel: '#notif-my-repo'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -186,6 +191,7 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: hourly
+            report-slack-channel: '#notif-my-repo'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -285,6 +291,7 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: hourly
+            report-slack-channel: '#notif-my-repo'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -297,6 +304,44 @@ jobs:
             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
 ```
+
+## `public_stale-issues.yaml`
+
+Optional. Wraps [`actions/stale`](https://github.com/actions/stale) to warn on inactive GitHub issues, then close them
+as **not planned** 30 days later if still inactive. Locked issues are skipped. Pull requests use the same stale and
+close thresholds, with the `Stale` label and no warning or closing comments.
+
+| Input          | Type   | Default | Description                                                          |
+| -------------- | ------ | ------- | -------------------------------------------------------------------- |
+| `stale-months` | number | `6`     | Optional whole number of inactive months (1–12); one month = 30 days |
+
+```yaml
+name: Close stale issues
+
+on:
+    schedule:
+        - cron: '0 3 * * *'
+    workflow_dispatch:
+
+jobs:
+    staleIssues:
+        permissions:
+            issues: write
+        uses: apify/apify-test-tools/.github/workflows/public_stale-issues.yaml@workflows-v0
+        with:
+            stale-months: 6
+```
+
+With `stale-months: 6`, an issue is labeled `stale` and warned after 180 days without activity, then closed after
+another 30 inactive days. Existing older issues also get the full 30-day warning when adopting the workflow.
+Actions happen on a scheduled run after the threshold; large backlogs are processed over successive runs.
+
+The warning comment uses [GitHub's normal issue notifications](https://docs.github.com/en/subscriptions-and-notifications/reference/inbox-filters),
+including notifications for assigned issues, subject to each user's notification settings. It does not add explicit
+@mentions. Subsequent activity causes `actions/stale` to remove the stale label and restart the inactivity period.
+
+The caller must grant `issues: write` as shown above. The workflow uses the automatic `GITHUB_TOKEN`; no additional
+secrets, checkout, project dependencies, or Apify configuration are needed.
 
 ## Secrets
 

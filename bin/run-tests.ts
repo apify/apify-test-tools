@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
 
-import { withTestTokens } from './actor-ids.js';
+import { FALLBACK_TOKEN_ENV_VAR, withTestTokens } from './actor-ids.js';
 import {
     findInstalledLibVersion,
     findPackageDir,
@@ -45,21 +45,26 @@ const resolveVitestBin = async (cwd: string): Promise<string> => {
 const ACTOR_BUILDS_VERSION = 2;
 
 /**
- * Fails on a lib older than the `ACTOR_BUILDS` this CLI writes. Such a lib still waits for `TESTER_APIFY_TOKEN` and
- * skips every test without it, so the run would pass having tested nothing. A repository that doesn't install the lib
- * where vitest can find it is left alone: its tests can't import it either.
+ * Checks the lib reads the `ACTOR_BUILDS` this CLI writes. An older lib runs every test with `TESTER_APIFY_TOKEN` and
+ * ignores the Actors' own tokens, which is fine while that token is set: a warning says so. Without it, such a lib
+ * skips every test and the run would pass having tested nothing, so that is an error. A repository that doesn't
+ * install the lib where vitest can find it is left alone: its tests can't import it either.
  */
-const assertLibReadsActorBuilds = async (cwd: string) => {
+const checkLibReadsActorBuilds = async (cwd: string) => {
     const packageDir = findPackageDir(cwd, 'apify-test-tools');
     if (!packageDir) return;
     const { version, apifyTestTools } = await readPackageJson(packageDir);
-    if ((apifyTestTools?.actorBuildsVersion ?? 1) < ACTOR_BUILDS_VERSION) {
+    if ((apifyTestTools?.actorBuildsVersion ?? 1) >= ACTOR_BUILDS_VERSION) return;
+    const outdated =
+        `apify-test-tools ${version} installed in this repository runs every test with ${FALLBACK_TOKEN_ENV_VAR}, ` +
+        `not with each Actor's token from ${CONFIG_FILE_NAME}.`;
+    if (!process.env[FALLBACK_TOKEN_ENV_VAR]) {
         throw new Error(
-            `apify-test-tools ${version} installed in this repository is too old for this CLI: it runs every test ` +
-                `with TESTER_APIFY_TOKEN, while the tests now run with each Actor's token from ${CONFIG_FILE_NAME}. ` +
-                `Update apify-test-tools in the repository.`,
+            `${outdated} ${FALLBACK_TOKEN_ENV_VAR} is not set, so it would skip every test. Update apify-test-tools ` +
+                `in the repository, or set ${FALLBACK_TOKEN_ENV_VAR}.`,
         );
     }
+    logger.warn(`${outdated} Update it to test each Actor with its own token.`);
 };
 
 /**
@@ -118,7 +123,7 @@ export const runTests = async ({
         );
     }
     const vitestFilters = await resolveVitestFilters(testFilesGlob, cwd);
-    await assertLibReadsActorBuilds(cwd);
+    await checkLibReadsActorBuilds(cwd);
     // Each Actor's tests run with the token the config names for it. A test only runs when the ID it names its Actor
     // by is listed, so each Actor gets both its full name and raw ID.
     const actorBuilds = await withTestTokens(targets, { testTokenEnvVars: await readTestTokenEnvVars() });
@@ -145,7 +150,7 @@ export const runTests = async ({
     delete env.RUN_ALL_PLATFORM_TESTS;
     const described = actorBuilds.map(
         ({ actorFullName, actorRawId, buildNumber, testTokenEnvVar }) =>
-            `${actorFullName ?? actorRawId} (${buildNumber ?? 'default build'}, ${testTokenEnvVar ?? 'no token'})`,
+            `${actorFullName ?? actorRawId} (${buildNumber ?? 'default build'}, ${testTokenEnvVar ?? 'no own token'})`,
     );
     logger.info(`Testing ${targets.length} Actor(s): ${described.join(', ') || 'none'}`);
 

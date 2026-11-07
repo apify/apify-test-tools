@@ -66,7 +66,7 @@ describe('test with an old lib', () => {
         expect(devDependencies['apify-test-tools-oldest']).toBe(`npm:apify-test-tools@${OLDEST_SUPPORTED_LIB_VERSION}`);
     });
 
-    it.each(OLD_LIBS)('refuses $alias, $why, which runs every test with TESTER_APIFY_TOKEN', async ({ alias }) => {
+    it.each(OLD_LIBS)('runs the tests of the given Actors with $alias, $why', async ({ alias }) => {
         const repoDir = await repoWithLib(alias);
         const result = spawnSync(process.execPath, [bundlePath, 'test'], {
             cwd: repoDir,
@@ -74,9 +74,31 @@ describe('test with an old lib', () => {
             input: JSON.stringify([build]),
             encoding: 'utf8',
         });
-        expect(result.status).toBe(1);
-        expect(result.stderr).toContain('installed in this repository is too old for this CLI');
-        // A supported version gets no warning about its age
+        expect(result.status, result.stderr).toBe(0);
+        const report = JSON.parse(result.stdout);
+        expect(report.summary).toStrictEqual({ total: 3, passed: 2, failed: 0, skipped: 1 });
+        expect(
+            Object.fromEntries(report.tests.map((test: { name: string; status: string }) => [test.name, test.status])),
+        ).toStrictEqual({
+            'old lib suite owner/a: by full name': 'passed',
+            'old lib suite rawIdOfOwnerA0000: by raw ID': 'passed',
+            'old lib suite owner/other: of an Actor not given': 'skipped',
+        });
+        // Such a lib runs every test with TESTER_APIFY_TOKEN, so it is asked to update, though not for its age
+        expect(result.stderr).toContain('Update it to test each Actor with its own token.');
         expect(result.stderr).not.toContain('the oldest version this CLI supports');
+    });
+
+    it.each(OLD_LIBS)('refuses $alias without TESTER_APIFY_TOKEN, the only token it reads', async ({ alias }) => {
+        const repoDir = await repoWithLib(alias);
+        const result = spawnSync(process.execPath, [bundlePath, 'test'], {
+            cwd: repoDir,
+            env: { PATH: process.env.PATH ?? '', HOME: os.tmpdir(), APIFY_TOKEN_OWNER: 'fake-token' },
+            input: JSON.stringify([build]),
+            encoding: 'utf8',
+        });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('TESTER_APIFY_TOKEN is not set');
+        expect(result.stdout).toBe('');
     });
 });

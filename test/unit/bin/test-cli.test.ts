@@ -56,8 +56,12 @@ describe('tokens', () => {
             expect(apifyClient.token).toBe('fake-token');
         }, { retry: 0 });
     }
-    testActor('stranger/x', 'has no token', async () => {}, { retry: 0 });
-    testActor('partner/p', 'has its token unset', async () => {}, { retry: 0 });
+    testActor('stranger/x', 'has no token', async ({ expect, apifyClient }) => {
+        expect(apifyClient.token).toBe('fallback-token');
+    }, { retry: 0 });
+    testActor('partner/p', 'has its token unset', async ({ expect, apifyClient }) => {
+        expect(apifyClient.token).toBe('fallback-token');
+    }, { retry: 0 });
 });
 `,
         );
@@ -231,9 +235,25 @@ test('owner/a: fails', () => {
             APIFY_TOKEN_OWNER: '',
         });
         expect(result.stderr).toContain('APIFY_TOKEN_OWNER is not set, so the tests of owner/a will fail.');
-        expect(result.stderr).toContain('Actor stranger/x is not in apify-test-tools.config.json');
         expect(result.stderr).toContain(
-            'Testing 2 Actor(s): owner/a (0.99.1, APIFY_TOKEN_OWNER), stranger/x (0.99.1, no token)',
+            'Actor stranger/x is not in apify-test-tools.config.json, so its tests will fail.',
+        );
+        expect(result.stderr).toContain(
+            'Testing 2 Actor(s): owner/a (0.99.1, APIFY_TOKEN_OWNER), stranger/x (0.99.1, no own token)',
+        );
+    });
+
+    it('warns that the tests of the Actors without their own token run with TESTER_APIFY_TOKEN when it is set', () => {
+        const result = run(['test'], JSON.stringify([build, { ...build, actorFullName: 'stranger/x' }]), repoDir, {
+            ...env,
+            APIFY_TOKEN_OWNER: '',
+            TESTER_APIFY_TOKEN: 'fallback-token',
+        });
+        expect(result.stderr).toContain(
+            'APIFY_TOKEN_OWNER is not set, so the tests of owner/a run with TESTER_APIFY_TOKEN.',
+        );
+        expect(result.stderr).toContain(
+            'Actor stranger/x is not in apify-test-tools.config.json, so its tests run with TESTER_APIFY_TOKEN.',
         );
     });
 
@@ -255,13 +275,30 @@ test('owner/a: fails', () => {
         );
         expect(failures['tokens owner/a: gets the client of its token']).toBe('');
         expect(failures['tokens raw1: gets the client of its token']).toBe('');
-        expect(failures['tokens stranger/x: has no token']).toContain('No test token for Actor "stranger/x"');
+        expect(failures['tokens stranger/x: has no token']).toContain(
+            'Neither TESTER_APIFY_TOKEN is set. The tests of Actor "stranger/x" need a token.',
+        );
         expect(failures['tokens partner/p: has its token unset']).toContain(
-            'APIFY_TOKEN_PARTNER is not set. The tests of Actor "partner/p" run with the token in it.',
+            'Neither APIFY_TOKEN_PARTNER nor TESTER_APIFY_TOKEN is set. The tests of Actor "partner/p" need a token.',
         );
     });
 
-    it('fails on a lib that still runs every test with TESTER_APIFY_TOKEN instead of passing with every test skipped', async () => {
+    it('runs the tests of the Actors without their own token with TESTER_APIFY_TOKEN, the others with their own', () => {
+        const targets = [
+            build,
+            { actorFullName: 'stranger/x', actorRawId: 'rawX' },
+            { actorFullName: 'partner/p', actorRawId: 'rawP' },
+        ];
+        const result = run(['test', '--test-files-glob', 'test/lib/**'], JSON.stringify(targets), repoDir, {
+            ...env,
+            TESTER_APIFY_TOKEN: 'fallback-token',
+        });
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toMatchObject({ summary: { total: 4, passed: 4, failed: 0 } });
+        expect(result.stderr).toContain('APIFY_TOKEN_PARTNER is not set, testing with TESTER_APIFY_TOKEN instead.');
+    });
+
+    it('fails on a lib that runs every test with TESTER_APIFY_TOKEN when it is not set, instead of skipping them all', async () => {
         const oldLibRepo = await mkdtemp(path.join(os.tmpdir(), 'apify-test-cli-old-lib-'));
         try {
             const libDir = path.join(oldLibRepo, 'node_modules/apify-test-tools');
@@ -282,8 +319,19 @@ test('owner/a: fails', () => {
 
             const result = run(['test'], JSON.stringify([build]), oldLibRepo);
             expect(result.status).toBe(1);
-            expect(result.stderr).toContain('apify-test-tools 0.10.1 installed in this repository is too old');
+            expect(result.stderr).toContain(
+                'apify-test-tools 0.10.1 installed in this repository runs every test with TESTER_APIFY_TOKEN',
+            );
+            expect(result.stderr).toContain('TESTER_APIFY_TOKEN is not set, so it would skip every test');
             expect(result.stdout).toBe('');
+
+            // With the token, the old lib still runs the tests as it always did
+            const withToken = run(['test'], JSON.stringify([build]), oldLibRepo, {
+                ...env,
+                TESTER_APIFY_TOKEN: 'fallback-token',
+            });
+            expect(withToken.stderr).toContain('Update it to test each Actor with its own token.');
+            expect(withToken.stderr).not.toContain('would skip every test');
 
             await writeFile(
                 path.join(libDir, 'package.json'),
@@ -293,7 +341,7 @@ test('owner/a: fails', () => {
                     apifyTestTools: { actorBuildsVersion: 2 },
                 }),
             );
-            expect(run(['test'], JSON.stringify([build]), oldLibRepo).stderr).not.toContain('too old');
+            expect(run(['test'], JSON.stringify([build]), oldLibRepo).stderr).not.toContain('runs every test with');
         } finally {
             await rm(oldLibRepo, { recursive: true, force: true });
         }

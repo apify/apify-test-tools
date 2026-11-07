@@ -312,13 +312,13 @@ is its `tokenEnvVar` unless the config names another. `test` reads the config fo
 there. It looks up the ID an Actor is listed without with the same token, so its tests run whichever ID they name it
 by. An Actor the token can't see keeps only the ID it was listed with, and a warning names it, so an Actor no test
 uses doesn't stop the run. The same goes for an Actor that isn't in the config or whose token isn't set: a warning
-names it, and only its own tests fail. A dry-run plan, empty or invalid input is an error, as with `build`, and so is a
+names it, and its tests fall back to `TESTER_APIFY_TOKEN` for now. Without that either, only its own tests fail. A dry-run plan, empty or invalid input is an error, as with `build`, and so is a
 missing config.
 
 `test` passes the Actors to vitest as `ACTOR_BUILDS`, each with its `testTokenEnvVar`, in place of any `ACTOR_BUILDS`
-in its own environment. A version of the [lib](lib.md) installed in the repository that predates per-Actor tokens is
-an error: it would wait for `TESTER_APIFY_TOKEN` and skip every test without it, so the run would pass having tested
-nothing. Update `apify-test-tools` in the repository.
+in its own environment. A version of the [lib](lib.md) installed in the repository that predates per-Actor tokens runs
+every test with `TESTER_APIFY_TOKEN`, as it always did, and a warning asks to update it. Without `TESTER_APIFY_TOKEN`
+it would skip every test, so the run would pass having tested nothing: that is an error.
 
 For older lib versions, it also lists each Actor's IDs as `actorName` and `actorId`, the names versions before 0.9.0
 read. It sets `RUN_PLATFORM_TESTS=1`, which versions before 0.10.0 need to run their `describe` blocks, and removes

@@ -28,8 +28,9 @@ on:
             TESTER_APIFY_TOKEN:
                 required: false
                 description: >-
-                    Only used when apify-test-tools.config.json names it as an Actor's `testTokenEnvVar`. The
-                    tests run each Actor with its own `tokenEnvVar` otherwise.
+                    Fallback token for the platform tests: used for Actors whose own test token
+                    (`testTokenEnvVar`, by default `tokenEnvVar`) isn't passed, and for every Actor by a repo
+                    on an apify-test-tools lib older than per-Actor tokens.
             CONFIG_SECRETS:
                 required: false
                 description: >-
@@ -101,11 +102,13 @@ jobs:
                     | tee builds.json
 
             # Runs the repo's test code and its whole import graph, so it gets only the tokens the tests run the
-            # Actors with: each Actor's `testTokenEnvVar`, which is its `tokenEnvVar` unless the config names another.
-            # A token that isn't set fails only the tests of its Actors.
+            # Actors with: each Actor's `testTokenEnvVar`, which is its `tokenEnvVar` unless the config names another,
+            # and TESTER_APIFY_TOKEN, which the tests fall back to when an Actor's own token isn't passed. A repo on
+            # a lib older than per-Actor tokens runs every test with TESTER_APIFY_TOKEN.
             - name: Test
               env:
                   WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
+                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   # Passed through the environment and quoted, so the shell doesn't expand the glob itself
                   # An empty input, e.g. from an expression that picks the glob, runs everything, like the default

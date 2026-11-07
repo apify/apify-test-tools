@@ -34,21 +34,34 @@ export { ExpectStatic };
 const apifyClients = new Map<string, ApifyClient>();
 
 /**
+ * The token the tests fall back to. A CLI older than per-Actor tokens names none, and a caller may not pass the
+ * Actors' own tokens yet, so it stays until every repository and caller has moved over.
+ */
+const FALLBACK_TOKEN_ENV_VAR = 'TESTER_APIFY_TOKEN';
+const warnedFallbacks = new Set<string>();
+
+/**
  * The client an Actor's tests run with: the token in the env var listed with the Actor in `ACTOR_BUILDS`, which `test`
- * takes from `testTokenEnvVar` in `apify-test-tools.config.json` (the Actor's `tokenEnvVar` by default). It throws
- * inside the test, so an Actor without a token fails only its own tests, and the other Actors' tests still run.
+ * takes from `testTokenEnvVar` in `apify-test-tools.config.json` (the Actor's `tokenEnvVar` by default). Without one,
+ * or when it isn't set, `TESTER_APIFY_TOKEN`. It throws inside the test, so an Actor without any token fails only its
+ * own tests, and the other Actors' tests still run.
  */
 const getApifyClient = (actorId: string): ApifyClient => {
-    const tokenEnvVar = config.get(actorId)?.testTokenEnvVar;
-    if (!tokenEnvVar) {
-        throw new Error(
-            `No test token for Actor "${actorId}" in ${ACTOR_BUILDS}. Add the Actor to apify-test-tools.config.json ` +
-                `and run the tests with \`apify-test-tools test\`, which names each Actor's token.`,
-        );
+    const testTokenEnvVar = config.get(actorId)?.testTokenEnvVar;
+    let tokenEnvVar = testTokenEnvVar;
+    if (!tokenEnvVar || !process.env[tokenEnvVar]) {
+        tokenEnvVar = FALLBACK_TOKEN_ENV_VAR;
+        if (testTokenEnvVar && !warnedFallbacks.has(testTokenEnvVar) && process.env[FALLBACK_TOKEN_ENV_VAR]) {
+            warnedFallbacks.add(testTokenEnvVar);
+            console.warn(`${testTokenEnvVar} is not set, testing with ${FALLBACK_TOKEN_ENV_VAR} instead.`);
+        }
     }
     const token = process.env[tokenEnvVar];
     if (!token) {
-        throw new Error(`${tokenEnvVar} is not set. The tests of Actor "${actorId}" run with the token in it.`);
+        const own = testTokenEnvVar ? `${testTokenEnvVar} nor ` : '';
+        throw new Error(
+            `Neither ${own}${FALLBACK_TOKEN_ENV_VAR} is set. The tests of Actor "${actorId}" need a token.`,
+        );
     }
     if (!apifyClients.has(token)) apifyClients.set(token, new ApifyClient({ token }));
     return apifyClients.get(token)!;
@@ -64,10 +77,10 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
 
 /**
  * Platform tests only run on the Actors listed in `ACTOR_BUILDS`, so without any we skip them altogether. A plain
- * `npm test` stays unaffected.
+ * `npm test` stays unaffected. `TESTER_APIFY_TOKEN` alone still enables them, as it did before per-Actor tokens.
  */
 export const describe = (name: string, fn?: SuiteFactory<object>, options: ActorTestOptions = DEFAULT_TEST_OPTIONS) => {
-    vitestDescribe.runIf(actorBuilds.length > 0)(name, options, fn);
+    vitestDescribe.runIf(actorBuilds.length > 0 || !!process.env[FALLBACK_TOKEN_ENV_VAR])(name, options, fn);
 };
 
 /**

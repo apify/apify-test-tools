@@ -15,7 +15,8 @@ on:
                 required: false
         # Every secret is optional. The tests run each Actor with its `testTokenEnvVar` from
         # apify-test-tools.config.json, which is its `tokenEnvVar` unless the config names another. Those names
-        # differ per repo, so the tokens come packed in CONFIG_SECRETS. See the Secrets section of docs/workflows.md.
+        # differ per repo, so the tokens come packed in CONFIG_SECRETS. Actors whose token isn't passed fall back to
+        # TESTER_APIFY_TOKEN. See the Secrets section of docs/workflows.md.
         secrets:
             NPM_TOKEN:
                 required: false
@@ -29,8 +30,9 @@ on:
             TESTER_APIFY_TOKEN:
                 required: false
                 description: >-
-                    Only used when apify-test-tools.config.json names it as an Actor's `testTokenEnvVar`. The
-                    tests run each Actor with its own `tokenEnvVar` otherwise.
+                    Fallback token for the platform tests: used for Actors whose own test token
+                    (`testTokenEnvVar`, by default `tokenEnvVar`) isn't passed, and for every Actor by a repo
+                    on an apify-test-tools lib older than per-Actor tokens.
             SLACK_BOT_TOKEN:
                 required: false
                 description: Slack token for reporting test results.
@@ -51,7 +53,8 @@ jobs:
                   config-secrets: ${{ secrets.CONFIG_SECRETS }}
 
             # Runs the repo's test code and its whole import graph, so it gets only the tokens the tests run the
-            # Actors with, see run-with-apify-tokens.mjs. A token that isn't set fails only the tests of its Actors.
+            # Actors with, see run-with-apify-tokens.mjs, and TESTER_APIFY_TOKEN, which the tests fall back to when an
+            # Actor's own token isn't passed.
             # Fails on failing tests, but writes the report anyway for the notification below.
             # Every Actor in the config, on its default build: the one users run
             - name: Test
@@ -61,6 +64,7 @@ jobs:
               env:
                   WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
+                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
                   # Passed through the environment and quoted, so the shell doesn't expand the glob itself
                   # An empty input, e.g. from an expression that picks the glob, runs everything, like the default
                   TEST_FILES_GLOB: ${{ inputs.test-files-glob || 'test/platform/**' }}

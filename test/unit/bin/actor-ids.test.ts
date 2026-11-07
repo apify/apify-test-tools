@@ -101,8 +101,29 @@ describe('withTestTokens', () => {
         ]);
         expect(createClient).toHaveBeenCalledTimes(1);
         expect(warn.mock.calls.map(([message]) => message)).toEqual([
-            'Actor stranger/x is not in apify-test-tools.config.json, so there is no token to test it with. Its tests will fail.',
+            'Actor stranger/x is not in apify-test-tools.config.json, so its tests will fail.',
             'APIFY_TOKEN_PARTNER is not set, so the tests of partner/p will fail.',
+        ]);
+        warn.mockRestore();
+    });
+
+    it('looks up and tests the Actors without a token of their own with TESTER_APIFY_TOKEN when it is set', async () => {
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        const { result, actor } = await resolve(
+            [{ actorFullName: 'stranger/x' }, { actorFullName: 'partner/p' }, { actorRawId: 'rawP' }],
+            { env: { TESTER_APIFY_TOKEN: 'partner-token' } },
+        );
+        // Each keeps the token the config names for it, the lib falls back the same way
+        expect(result).toEqual([
+            { actorFullName: 'stranger/x' },
+            { actorFullName: 'partner/p', actorRawId: 'rawP', testTokenEnvVar: 'APIFY_TOKEN_PARTNER' },
+            { actorRawId: 'rawP', actorFullName: 'partner/p', testTokenEnvVar: 'APIFY_TOKEN_PARTNER' },
+        ]);
+        expect(actor).toHaveBeenCalledWith('partner-token', 'partner/p');
+        expect(warn.mock.calls.map(([message]) => message)).toEqual([
+            "Actor stranger/x not found, or TESTER_APIFY_TOKEN can't access it. Tests that name it by its raw ID will be skipped.",
+            'Actor stranger/x is not in apify-test-tools.config.json, so its tests run with TESTER_APIFY_TOKEN.',
+            'APIFY_TOKEN_PARTNER is not set, so the tests of partner/p, partner/p run with TESTER_APIFY_TOKEN.',
         ]);
         warn.mockRestore();
     });

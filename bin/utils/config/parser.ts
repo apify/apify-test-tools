@@ -83,7 +83,7 @@ function verifyConfiguration(body: ValidatedActorConfig[]): void {
 }
 
 /** Which changed files are platform tests, unless the config sets `platformTestsGlob` */
-export const DEFAULT_PLATFORM_TESTS_GLOB = 'test/platform/**';
+const DEFAULT_PLATFORM_TESTS_GLOB = 'test/platform/**';
 
 /** Settings for the whole repository, next to the Actor entries at the top level of the config. */
 export interface RepoSettings {

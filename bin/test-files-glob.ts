@@ -4,8 +4,8 @@ import path from 'node:path';
 import picomatch from 'picomatch';
 
 /**
- * `--test-files-glob` is one glob from the repo root, e.g. `test/platform/**`. `get-affected-actors` matches changed
- * files against it and `test` runs the files it matches, so both read it with these same options.
+ * Test globs are from the repo root, e.g. `test/platform/**`. `get-affected-actors` matches changed files against the
+ * config's `platformTestsGlob` and `test` runs the files `--test-files-glob` matches, so both read globs the same way.
  */
 const PICOMATCH_OPTIONS = { nocase: true, dot: true } as const;
 
@@ -14,7 +14,7 @@ const SKIPPED_DIRS = new Set(['node_modules', '.git']);
 
 const assertRelativeGlob = (glob: string) => {
     if (path.posix.isAbsolute(glob) || path.win32.isAbsolute(glob)) {
-        throw new Error(`--test-files-glob must be relative to the repo root, got "${glob}".`);
+        throw new Error(`Test file globs must be relative to the repo root, got "${glob}".`);
     }
 };
 

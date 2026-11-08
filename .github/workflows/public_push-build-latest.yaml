@@ -52,6 +52,7 @@ jobs:
 
             # A release ships cosmetic changes too (README, input schema descriptions), so both lists are built,
             # into each Actor's default version: the one its default build tag points to, which users run.
+            # testChangedActors is left out: a change to platform tests alone needs no release.
             # run-with-apify-tokens.mjs reads the token names from in apify-test-tools.config.json
             # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
             # The library never sees secrets it doesn't need

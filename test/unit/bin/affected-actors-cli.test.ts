@@ -72,10 +72,31 @@ const runGetAffectedActors = (...args: string[]) => {
     return JSON.parse(result.stdout);
 };
 
+const names = (actors: { actorFullName: string }[]) =>
+    actors.map(({ actorFullName }) => actorFullName.replace('owner/actor-', '')).sort();
+
+/** All three lists, for the tests about test changes */
+const getAllChangedActors = (...args: string[]) => {
+    const document = runGetAffectedActors(...args);
+    return {
+        functional: names(document.functionallyChangedActors),
+        cosmetic: names(document.cosmeticallyChangedActors),
+        test: names(document.testChangedActors),
+    };
+};
+
+/** Writes the config with actor-a's context also covering `extraContext`. It is committed with the next commit. */
+const writeConfigWithTestsInContext = async (extraContext: string, settings: Record<string, unknown> = {}) => {
+    const actors = CONFIG.actors.map((actor) =>
+        actor.folder === 'actors/a'
+            ? { ...actor, overrideActorContext: [...actor.overrideActorContext!, extraContext] }
+            : actor,
+    );
+    await writeFile(path.join(repoDir, 'apify-test-tools.config.json'), JSON.stringify({ ...settings, actors }));
+};
+
 const getAffectedActors = (...args: string[]) => {
     const document = runGetAffectedActors(...args);
-    const names = (actors: { actorFullName: string }[]) =>
-        actors.map(({ actorFullName }) => actorFullName.replace('owner/actor-', '')).sort();
     return {
         functional: names(document.functionallyChangedActors),
         cosmetic: names(document.cosmeticallyChangedActors),
@@ -191,8 +212,57 @@ describe('get-affected-actors CLI on real git histories', () => {
         expect(getAffectedActors('--base', 'main', '--since', 'e'.repeat(40))).toStrictEqual(wholeBranch);
     });
 
+    it('lists Actors whose platform tests changed, and a test change alone is not functional', async () => {
+        await writeConfigWithTestsInContext('test');
+        await writeFiles('test/', ['.dockerignore']);
+        // A test and its helper, both under the default platformTestsGlob test/platform/**
+        await commit('test(a): change a test and its helper', 'test/platform/a.test.ts', 'test/platform/utils.ts');
+
+        const testOnly = { functional: [], cosmetic: [], test: ['a'] };
+        // A PR runs the tests
+        expect(getAllChangedActors('--base', 'main')).toStrictEqual(testOnly);
+        // A release builds only the functional and cosmetic lists, so it builds nothing
+        expect(getAllChangedActors('--since', git('rev-parse', 'main'))).toStrictEqual(testOnly);
+    });
+
+    it('lists an Actor in both lists when its source and its tests changed', async () => {
+        await writeConfigWithTestsInContext('test');
+        await commit('feat(a): change and test it', 'actors/a/main.ts', 'test/platform/a.test.ts');
+
+        expect(getAllChangedActors('--base', 'main')).toStrictEqual({ functional: ['a'], cosmetic: [], test: ['a'] });
+    });
+
+    it('lists only the tests changed since the last validated commit', async () => {
+        await writeConfigWithTestsInContext('test');
+        const validated = await commit('feat(a): validated change', 'actors/a/main.ts');
+        await commit('test(a): new test', 'test/platform/a.test.ts');
+
+        // The validated build of A has the branch's code, only the tests changed since
+        expect(getAllChangedActors('--base', 'main', '--since', validated)).toStrictEqual({
+            functional: [],
+            cosmetic: [],
+            test: ['a'],
+        });
+    });
+
+    it('reads which files are platform tests from platformTestsGlob in the config', async () => {
+        await writeConfigWithTestsInContext('e2e', { platformTestsGlob: 'e2e/platform/**' });
+        await commit('test(a): new test', 'e2e/platform/a.test.ts');
+        expect(getAllChangedActors('--base', 'main')).toStrictEqual({ functional: [], cosmetic: [], test: ['a'] });
+
+        // Outside the glob, a file in the context is a source change like any other
+        await commit('feat(a): other file', 'e2e/fixtures/data.json');
+        expect(getAllChangedActors('--base', 'main')).toStrictEqual({ functional: ['a'], cosmetic: [], test: ['a'] });
+    });
+
     it('reports nothing for an empty range', async () => {
-        const nothing = { commits: [], changedFiles: [], functionallyChangedActors: [], cosmeticallyChangedActors: [] };
+        const nothing = {
+            commits: [],
+            changedFiles: [],
+            functionallyChangedActors: [],
+            cosmeticallyChangedActors: [],
+            testChangedActors: [],
+        };
         // The branch has no commits of its own yet
         expect(runGetAffectedActors('--base', 'main')).toMatchObject(nothing);
         // A release with nothing new since the last one

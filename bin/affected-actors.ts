@@ -10,7 +10,7 @@ import {
 } from './git.js';
 import { logger } from './logger.js';
 import type { ActorConfig, Commit, GitRange } from './types.js';
-import { readConfigFile } from './utils/config/load-config.js';
+import { readConfigFile, readRepoSettings } from './utils/config/load-config.js';
 
 // The range always ends at the checked-out commit: check out what you want to inspect
 const HEAD = 'HEAD';
@@ -28,8 +28,6 @@ interface AffectedActorsOptions {
      * counts, and it must be an ancestor of HEAD (e.g. the last release).
      */
     since?: string;
-    /** Glob relative to the repo root. Matching files count as changes even when .dockerignore lists them. */
-    testFilesGlob?: string;
     actors: string[];
     ignore: string[];
 }
@@ -47,8 +45,17 @@ interface AffectedActors {
      * stays the source of truth for the rest.
      */
     functionallyChangedActors: { actorFullName: string }[];
-    /** Actors whose changes are all cosmetic (README, CHANGELOG, cosmetic .actor JSON). They only need a release build. */
+    /**
+     * Actors with cosmetic changes (README, CHANGELOG, cosmetic .actor JSON) and no functional one. They only need a
+     * release build.
+     */
     cosmeticallyChangedActors: { actorFullName: string }[];
+    /**
+     * Actors whose platform tests (`platformTestsGlob` in the config) changed in their context, whatever else
+     * changed. Their tests need to run, but a test change alone needs no release. An Actor can also be in one of the
+     * lists above.
+     */
+    testChangedActors: { actorFullName: string }[];
 }
 
 const names = (configs: ActorConfig[]) => configs.map(({ actorFullName }) => ({ actorFullName }));
@@ -114,7 +121,12 @@ const findValidatedSha = async (since: string, headSha: string): Promise<string 
  *   base's change, which base already validated.
  */
 const intersectChangedInBranchVsSince = (branch: ChangedActors, sinceValidated: ChangedActors): ChangedActors => {
-    const narrowed: ChangedActors = { functional: [], cosmetic: [] };
+    const narrowed: ChangedActors = {
+        functional: [],
+        cosmetic: [],
+        // The same rule for tests: the branch changed them, and they changed again since they were last validated
+        test: branch.test.filter((actor) => sinceValidated.test.includes(actor)),
+    };
     // All checks are done for each Actor separately, that's cleanest and most accurate
     for (const actor of [...branch.functional, ...branch.cosmetic]) {
         // base...HEAD
@@ -145,7 +157,6 @@ const intersectChangedInBranchVsSince = (branch: ChangedActors, sinceValidated: 
 export const getAffectedActors = async ({
     base,
     since: sinceOption,
-    testFilesGlob,
     actors,
     ignore,
 }: AffectedActorsOptions): Promise<AffectedActors> => {
@@ -156,6 +167,7 @@ export const getAffectedActors = async ({
     }
 
     const actorConfigs = await readConfigFile({ actors, ignore });
+    const { platformTestsGlob } = await readRepoSettings();
     const getChangedInRange = async (range: GitRange) => {
         const changedFiles = await getChangedFilesBetween(range.fromRef, range.toRef);
         return {
@@ -164,7 +176,7 @@ export const getAffectedActors = async ({
                 filepathsChanged: changedFiles,
                 actorConfigs,
                 range,
-                testFilesGlob,
+                platformTestsGlob,
             }),
         };
     };
@@ -194,5 +206,6 @@ export const getAffectedActors = async ({
         changelog: await getChangelogAdditions(rangeVsBase.fromRef, rangeVsBase.toRef, changedFiles),
         functionallyChangedActors: names(changedActors.functional),
         cosmeticallyChangedActors: names(changedActors.cosmetic),
+        testChangedActors: names(changedActors.test),
     };
 };

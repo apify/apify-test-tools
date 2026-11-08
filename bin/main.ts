@@ -56,10 +56,6 @@ const affectedRangeOptions = {
         type: 'string',
         describe: 'Only count commits after this one. Ignored with --base if it is not on the branch',
     },
-    'test-files-glob': {
-        type: 'string',
-        describe: 'Glob (from the repo root) of test files that count as changes even when .dockerignore lists them',
-    },
 } as const satisfies Record<string, Options>;
 
 /**
@@ -106,8 +102,7 @@ const testOptions = {
     'test-files-glob': {
         type: 'string',
         describe:
-            'Glob (from the repo root) of the test files to run, e.g. test/platform/**. ' +
-            'Use it in place of [filters..], and pass get-affected-actors the same glob',
+            'Glob (from the repo root) of the test files to run, e.g. test/platform/**. Use it in place of [filters..]',
     },
     'vitest-output-file': { type: 'string', describe: "Also keep vitest's own JSON report there, e.g. to upload it" },
     reporter: {

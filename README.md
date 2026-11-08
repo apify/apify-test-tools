@@ -16,7 +16,7 @@ Build, test and release Apify Actors from a Git repository or local source code.
 
     ```bash
     npx apify-test-tools get-affected-actors --base origin/master \
-      | jq '{ actors: .functionallyChangedActors }' \
+      | jq '{ actors: (.functionallyChangedActors + .testChangedActors | unique_by(.actorFullName)) }' \
       | npx apify-test-tools build --version-number 0.99
     ```
 
@@ -180,14 +180,15 @@ group needs a `tokenEnvVar` and at least one Actor. Add another group for Actors
 Actors owned by another account.
 
 The orchestrator sets `overrideActorContext` because its tests live outside its own folder: without it, a change to
-only `test/platform/orchestrator` wouldn't build and test it. The other two already have the whole repo, tests
-included, as their context.
+only `test/platform/orchestrator` wouldn't test it. The other two already have the whole repo, tests included, as
+their context.
 
 | Field                  | Where          | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ---------------------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `folder`               | Actor          | yes      | Relative path from repo root to the Actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`), the Actor's README/CHANGELOG, and its source. Use `"."` for a single-Actor repo where `.actor/` is at the root.                                                                                                                                                                                                                         |
 | `actorFullName`        | Actor          | yes      | Full Actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the Actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                              |
 | `tokenEnvVar`          | group or Actor | yes      | Name of the environment variable holding the Apify API token that builds the group's Actors. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                   |
+| `platformTestsGlob`    | top level      | no       | Glob from the repo root of the platform tests and their helpers. Default `test/platform/**`. A changed file that matches it is a test change, also when `.dockerignore` lists it: the PR workflow builds and tests the Actor whose context holds it, and a release skips it. See [Change detection](docs/cli.md#change-detection).                                                                                                                                                                     |
 | `overrideActorContext` | group or Actor | no       | Array of paths (relative to repo root) that define which files are relevant to the Actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an Actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The Actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
 
 A value set on an Actor replaces the group's for that Actor only. Values are replaced, not merged: if the `myteam`

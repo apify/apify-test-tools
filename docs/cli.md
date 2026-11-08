@@ -71,12 +71,13 @@ changed files. For each changed file, for each Actor:
    get no special treatment: to treat them as top-level, list them in `overrideActorContext`.
 5. **`.dockerignore` filtering** — if a `.dockerignore` exists at the root of the Actor's `dockerContextDir`,
    matching files are ignored. Patterns are resolved relative to `dockerContextDir`, matching Docker's own behavior.
-   Test files are the exception: `get-affected-actors --test-files-glob <glob>` (relative to the repo root) skips
-   this check for matching files, so a changed test triggers a build, and with it its tests, even when
-   `.dockerignore` lists it. The PR workflow passes its `test-files-glob` input, the same glob it gives `test`.
-   Context matching still applies, so tests outside an Actor's `dockerContextDir` (e.g. a root `test/` with
-   standalone Actors) need to be listed in its `overrideActorContext`; `get-affected-actors` logs a warning for
-   changed test files outside every Actor's context.
+   Platform test files are the exception, see the next step.
+   **Platform test files** — a file that matches `platformTestsGlob` from the config file (a glob from the repo root,
+   default `test/platform/**`, helpers included) is a `test` change, also when `.dockerignore` lists it. This is
+   checked before the `.dockerignore` filtering. A test change puts the Actor in `testChangedActors`, so its tests
+   run, but it is neither functional nor cosmetic, so a release doesn't build it. Context matching still applies, so
+   tests outside an Actor's `dockerContextDir` (e.g. a root `test/` with standalone Actors) need to be listed in its
+   `overrideActorContext`; `get-affected-actors` logs a warning for changed test files outside every Actor's context.
 6. **README classification** — a `README.md` file is `cosmetic` (only triggers a release build, not tests) if it
    lives inside the Actor's own `folder`; otherwise it's ignored entirely, since it isn't documentation for this
    Actor.
@@ -98,13 +99,12 @@ npx apify-test-tools get-affected-actors --base origin/master --since <sha>
 npx apify-test-tools get-affected-actors --since <sha>
 ```
 
-| Flag                | Default | Meaning                                                                                                                                    |
-| ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--base`            |         | Only what `HEAD` changes compared to this branch counts, like `git diff <base>...HEAD`                                                     |
-| `--since`           |         | Only changes after this commit count (see below)                                                                                           |
-| `--test-files-glob` |         | Test files (glob from the repo root) that count as changes even when `.dockerignore` lists them, see [Change detection](#change-detection) |
-| `--actors`          | all     | Only report these Actors                                                                                                                   |
-| `--ignore`          | none    | Never report these Actors                                                                                                                  |
+| Flag       | Default | Meaning                                                                                |
+| ---------- | ------- | -------------------------------------------------------------------------------------- |
+| `--base`   |         | Only what `HEAD` changes compared to this branch counts, like `git diff <base>...HEAD` |
+| `--since`  |         | Only changes after this commit count (see below)                                       |
+| `--actors` | all     | Only report these Actors                                                               |
+| `--ignore` | none    | Never report these Actors                                                              |
 
 Pass `--base`, `--since`, or both:
 
@@ -134,14 +134,20 @@ The output is a JSON document:
     "changedFiles": ["src/main.ts", "CHANGELOG.md"],
     "changelog": "Lines added to CHANGELOG.md, or null",
     "functionallyChangedActors": [{ "actorFullName": "john.doe/my-actor" }],
-    "cosmeticallyChangedActors": [{ "actorFullName": "john.doe/other-actor" }]
+    "cosmeticallyChangedActors": [{ "actorFullName": "john.doe/other-actor" }],
+    "testChangedActors": [{ "actorFullName": "john.doe/my-actor" }]
 }
 ```
 
-Each changed Actor is in exactly one of the lists. `functionallyChangedActors` have at least one functional change,
-so they need a new build and tests. `cosmeticallyChangedActors` only have cosmetic changes (see
-[Change detection](#change-detection)), so they need a new build only when released: the PR workflow builds
-`functionallyChangedActors`, the release workflow builds both.
+`functionallyChangedActors` have at least one functional change, so they need a new build and tests.
+`cosmeticallyChangedActors` have cosmetic changes and no functional one (see [Change detection](#change-detection)), so
+they need a new build only when released. An Actor is in at most one of these two lists. `testChangedActors` have a
+changed platform test (`platformTestsGlob` in the config) in their context, whatever else changed, so their tests need
+to run. A test change alone needs no release. The PR workflow builds `functionallyChangedActors` and
+`testChangedActors`. The release workflow builds `functionallyChangedActors` and `cosmeticallyChangedActors`.
+
+With `--base` and `--since`, an Actor is in `testChangedActors` when its tests changed on the branch and again since
+`--since`, the same rule as for functional changes.
 
 ## Building Actors (`build`)
 
@@ -151,9 +157,9 @@ branch to build from. It doesn't look at git history: which Actors to build is u
 output of [`get-affected-actors`](#finding-affected-actors-get-affected-actors).
 
 ```bash
-# A PR: the Actors a branch changed functionally, built into the test version
+# A PR: the Actors whose code or platform tests the branch changed, built into the test version
 npx apify-test-tools get-affected-actors --base origin/master \
-  | jq '{ actors: .functionallyChangedActors }' \
+  | jq '{ actors: (.functionallyChangedActors + .testChangedActors | unique_by(.actorFullName)) }' \
   | npx apify-test-tools build --version-number 0.99
 
 # A release: every Actor changed since the last release, into the version users run
@@ -318,9 +324,9 @@ test by name, run vitest directly with the builds in `ACTOR_BUILDS` (see
 | `--vitest-output-file` |                 | Also keep vitest's own JSON report there, e.g. to upload it                                                                     |
 | `--reporter`           |                 | [Vitest reporter](https://vitest.dev/guide/reporters) to add to `default` and `json`, e.g. `github-actions`. Repeat it for more |
 
-Vitest filters are parts of a file path, not globs. `--test-files-glob` is a glob, read the same way as in
-[`get-affected-actors`](#finding-affected-actors-get-affected-actors). `test` finds the files it matches and passes
-them to vitest, so pass both commands the same glob and they agree on which tests count. A glob that matches no file
+Vitest filters are parts of a file path, not globs. `--test-files-glob` is a glob, read the same way as
+`platformTestsGlob` in the config file. `test` finds the files it matches and passes
+them to vitest. A glob that matches no file
 is an error, because vitest without filters would run every test of the repo. Quote the glob, so the shell doesn't
 expand it.
 
@@ -441,15 +447,15 @@ To build from git, like CI does:
 5. Run tests against those builds. You can change tests and run on the same builds.
 
 ```bash
-npx apify-test-tools get-affected-actors --base origin/master --test-files-glob 'test/platform/**' \
-    | jq '{ actors: .functionallyChangedActors }' \
+npx apify-test-tools get-affected-actors --base origin/master \
+    | jq '{ actors: (.functionallyChangedActors + .testChangedActors | unique_by(.actorFullName)) }' \
     | APIFY_TOKEN_JOHN_DOE=apify_api_xxx npx apify-test-tools build --version-number 0.99 > builds.json
 ```
 
 Run it with your dummy branch checked out: it builds the Actors that branch changed functionally, from the branch as
 it is on the remote, into the test version `0.99`. Add `--dry-run` to `build` to print the plan (the version and Git
 URL each Actor would be built from) first, and update `--base` to the branch you compare against. Tests only run for
-Actors in `ACTOR_BUILDS`, so pass `--test-files-glob` to count test changes even when `.dockerignore` lists them.
+Actors in `ACTOR_BUILDS`, so the `jq` filter also builds the Actors whose platform tests changed.
 
 If you want to test against existing builds instead, skip the build and write the build array by hand, only for the
 Actors you need to test.

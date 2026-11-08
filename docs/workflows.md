@@ -39,10 +39,11 @@ Validates a pull request. It runs two jobs in parallel.
 **`platformTest`** builds and tests the Actors the PR changes:
 
 1. Finds the affected Actors with [`get-affected-actors`](cli.md#finding-affected-actors-get-affected-actors),
-   comparing the PR branch with its base branch. Changed files that match `test-files-glob` count even when
-   `.dockerignore` lists them.
-2. Builds the functionally changed Actors into the test version `0.99` with [`build`](cli.md#building-actors-build).
-   Cosmetic-only changes (README, CHANGELOG, schema formatting) need no tests, so they're not built.
+   comparing the PR branch with its base branch. Changed files that match `platformTestsGlob` in the config file
+   (default `test/platform/**`) are test changes, also when `.dockerignore` lists them.
+2. Builds the Actors with functional or test changes into the test version `0.99` with
+   [`build`](cli.md#building-actors-build). Cosmetic-only changes (README, CHANGELOG, schema formatting) need no
+   tests, so they're not built.
 3. Runs [`test`](cli.md#running-tests-test) on the files that match `test-files-glob` with those builds, so only the
    tests of the built Actors run. Failing tests are annotated on the PR.
 4. On success, caches the tested commit as the "last validated commit". The next push to the PR then only builds
@@ -104,7 +105,7 @@ Releases the Actors a push changed. Skipped when the head commit message contain
 1. `get-affected-actors --since ${{ github.event.before }}` finds everything the push changed. See
    [Releasing Actors](cli.md#releasing-actors) for how the released range is determined.
 2. `build --version-number default` builds both the functionally and the cosmetically changed Actors into their
-   default version, the one users run.
+   default version, the one users run. A push that only changes platform tests builds nothing.
 3. [`notify`](cli.md#notifying-notify) posts the release (its changelog additions and its commits, linked to
    GitHub) to the report channel. It posts nothing when the push brought no new commits.
 4. `delete-old-builds` deletes old builds of every Actor in the config (see
@@ -203,8 +204,10 @@ jobs:
 
 ## Splitting the tests
 
-`test-files-glob` is one glob from the repo root, for example `test/platform/**`. Both test workflows take it. The
-PR workflow also gives it to `get-affected-actors`, so a change to a test that the PR runs builds its Actors.
+`test-files-glob` is one glob from the repo root, for example `test/platform/**`. Both test workflows take it, and it
+only selects which tests run. Which changed files count as test changes is a separate setting, `platformTestsGlob` in
+the config file (default `test/platform/**`). So on a PR, a change to a `*-without-pr` test or to a shared helper
+still builds and tests the Actors, even though the PR doesn't run that test.
 
 Most repos split `test/platform` into folders by how often the tests run, and by whether a PR runs them:
 
@@ -225,9 +228,7 @@ Each workflow then selects its folders with a brace pattern:
 
 Write the glob to match files, not folders: `test/platform/hourly` matches no file, `test/platform/hourly/**` matches
 every file in it. A glob that matches no file fails the test step, so a typo doesn't pass as a run with no tests.
-A shared helper outside the glob, like `test/platform/utils.ts`, doesn't count as a test change when `.dockerignore`
-lists it. To count it, add it to the PR workflow's glob: `test/platform/{{daily,hourly}/**,utils.ts}`. `test` only
-runs the matched files that vitest sees as test files, so a helper in the glob runs nothing.
+`test` only runs the matched files that vitest sees as test files, so a helper in the glob runs nothing.
 
 ## `public_review.yaml`
 

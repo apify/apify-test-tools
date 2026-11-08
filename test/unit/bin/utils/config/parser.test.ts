@@ -4,7 +4,12 @@ import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { _privates, parseConfigFile, parseResolvedConfigFile } from '../../../../../bin/utils/config/parser.js';
+import {
+    _privates,
+    parseConfigFile,
+    parseRepoSettings,
+    parseResolvedConfigFile,
+} from '../../../../../bin/utils/config/parser.js';
 import { CONFIG_FILE_STRATEGY, type ResolvedActorConfig } from '../../../../../bin/utils/config/structures/base.js';
 import { GROUPED_PARSER } from '../../../../../bin/utils/config/structures/grouped.js';
 import { LEGACY_PARSER } from '../../../../../bin/utils/config/structures/legacy.js';
@@ -226,5 +231,23 @@ describe('parseConfigFile', () => {
                 ],
             }),
         ).toThrow('Duplicate folder "test"');
+    });
+});
+
+describe('parseRepoSettings', () => {
+    it('defaults platformTestsGlob to test/platform/**', () => {
+        expect(parseRepoSettings({ actors: [actor()] })).toStrictEqual({ platformTestsGlob: 'test/platform/**' });
+    });
+
+    it('reads platformTestsGlob next to the Actor entries, in any mode', () => {
+        expect(parseRepoSettings({ platformTestsGlob: 'e2e/**', actors: [actor()] })).toStrictEqual({
+            platformTestsGlob: 'e2e/**',
+        });
+        expect(parseConfigFile({ platformTestsGlob: 'e2e/**', actors: [actor({ folder: 'bin' })] })).toHaveLength(1);
+    });
+
+    it('rejects an empty or non-string platformTestsGlob', () => {
+        expect(() => parseRepoSettings({ platformTestsGlob: '' })).toThrow(/platformTestsGlob/);
+        expect(() => parseRepoSettings({ platformTestsGlob: ['test/**'] })).toThrow(/platformTestsGlob/);
     });
 });

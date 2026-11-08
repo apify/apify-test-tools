@@ -12,8 +12,15 @@ import { runBuildsFromLocal } from './build-from-local.js';
 import { logger, logLevels } from './logger.js';
 import { notify, notifyOnChoices } from './notify.js';
 import { writeJson } from './output.js';
+import { planPrBuilds, readStoredBuilds } from './pr-builds.js';
 import { runTests } from './run-tests.js';
-import { parseBuildInput, parseNotifyInput, parseTestTargets, readStdin } from './stdin-input.js';
+import {
+    parseBuildInput,
+    parseNotifyInput,
+    parsePrBuildPlanInput,
+    parseTestTargets,
+    readStdin,
+} from './stdin-input.js';
 import { readConfigFile } from './utils/config/load-config.js';
 
 /**
@@ -151,6 +158,16 @@ const notifyOptions = {
     },
 } as const satisfies Record<string, Options>;
 
+/** Flags of `plan-pr-builds`, which picks the builds a PR run makes and the existing builds it tests on. */
+const prBuildPlanOptions = {
+    'stored-builds': {
+        type: 'string',
+        describe:
+            'JSON file with the builds earlier runs of this PR built and tested, each with builtAt in Unix seconds. ' +
+            'A missing file has none',
+    },
+} as const satisfies Record<string, Options>;
+
 /** Global flags, available to every command. */
 const globalOptions = {
     'log-level': {
@@ -180,6 +197,19 @@ await yargs()
         (y) => y.options(affectedRangeOptions).options(actorSelectionOptions),
         async (args) => {
             writeJson(await getAffectedActors(args));
+        },
+    )
+    .command(
+        'plan-pr-builds',
+        'Read get-affected-actors --base on stdin and print which Actors to build and which to test on existing builds',
+        (y) => y.options(prBuildPlanOptions),
+        async (args) => {
+            writeJson(
+                planPrBuilds({
+                    affected: parsePrBuildPlanInput(await readStdin()),
+                    storedBuilds: await readStoredBuilds(args.storedBuilds),
+                }),
+            );
         },
     )
     .command(

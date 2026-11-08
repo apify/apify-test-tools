@@ -91,6 +91,7 @@ describe('CLI bundle', () => {
         for (const command of [
             'get-actor-configs',
             'get-affected-actors',
+            'plan-pr-builds',
             'test',
             'notify',
             'build',
@@ -159,6 +160,22 @@ describe('CLI bundle', () => {
         const { status, stderr } = runCli('build', '--version-number', '0.99', '--dry-run');
         expect(status).toBe(1);
         expect(stderr).toContain('got nothing');
+    });
+
+    it('plan-pr-builds builds the functionally changed Actors of get-affected-actors and needs no stored builds', () => {
+        const affected = runCli('get-affected-actors', '--base', 'main').stdout;
+        const { status, stdout, stderr } = runCliWithInput(
+            affected,
+            'plan-pr-builds',
+            '--stored-builds',
+            'missing-pr-builds.json',
+        );
+        expect(status, stderr).toBe(0);
+        expect(JSON.parse(stdout)).toStrictEqual({
+            version: 1,
+            build: { actors: [{ actorFullName: 'tester/foo' }] },
+            existingBuilds: [],
+        });
     });
 
     it('get-affected-actors --since HEAD reports nothing', () => {

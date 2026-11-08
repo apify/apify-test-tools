@@ -66,13 +66,16 @@ jobs:
                       exit 1
                   fi
 
-            - name: Pick last validated commit from cache
+            # The builds this PR made and tested are kept with it, so a later push that only changes tests reuses them
+            - name: Pick last validated commit and its builds from cache
               id: base_commit
               uses: actions/cache@v5
               with:
                   # We have to call it base commit for the library but it makes more sense as "last validated commit"
                   # Using run_id ensures the key is always unique so the cache always saves at end-of-job (no "cache hit, not saving" issue)
-                  path: ./base_commit.txt
+                  path: |
+                      ./base_commit.txt
+                      ./pr-builds.json
                   key: base_commit-${{ github.run_id }}
                   # This is needed to force overriding the cache with new entry at the end
                   restore-keys: base_commit-
@@ -91,8 +94,14 @@ jobs:
                   [ -n "$base_commit" ] && args+=(--since "$base_commit")
                   apify-test-tools get-affected-actors "${args[@]}" > affected.json
 
-            # Cosmetic-only changes need no tests, so only the Actors with functional or platform test changes are
-            # built, into the test version 0.99 that users never run.
+            # Functional changes need a new build. Actors with only platform test changes are tested on a build that
+            # already has their code: the default build when the branch didn't change their code, or the build an
+            # earlier run of this PR made. They are built only when no such build is stored. Cosmetic-only changes
+            # need no tests.
+            - name: Plan builds
+              run: apify-test-tools plan-pr-builds --stored-builds pr-builds.json < affected.json > plan.json
+
+            # Builds into the test version 0.99 that users never run.
             # run-with-apify-tokens.mjs reads the token names from in apify-test-tools.config.json
             # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
             # The library never sees secrets it doesn't need
@@ -104,13 +113,16 @@ jobs:
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
               run: |
-                  jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
+                  jq .build plan.json \
                     | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99 \
                         --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC" \
                     | tee builds.json
 
             # Runs the repo's test code and its whole import graph, so it gets the tester token only.
+            # Tests the new builds and the existing ones from the plan.
             - name: Test
+              # bash rather than the default shell, for pipefail
+              shell: bash
               env:
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
                   # Passed through the environment and quoted, so the shell doesn't expand the glob itself
@@ -118,16 +130,24 @@ jobs:
                   TEST_FILES_GLOB: ${{ inputs.test-files-glob || 'test/platform/**' }}
               # The github-actions reporter annotates the PR with the failing tests
               run: |
-                  apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" --reporter github-actions \
-                    < builds.json > test-report.json
+                  jq -s '.[0] + .[1].existingBuilds' builds.json plan.json \
+                    | apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" --reporter github-actions > test-report.json
 
             # NOTE: This is an optimization that if we did functional changes and later only cosmetic changes (e.g. dev readme), we will compare changes files only for the last commit. This must run after tests because we want to cache the latest commit only if the tests are successful
-            - name: Store last validated commit to cache
+            # The builds are stored with the commit, so the next run knows which builds have the validated code.
+            - name: Store last validated commit and its builds to cache
               run: |
                   echo "Old last validated (base) commit: $(cat base_commit.txt 2>/dev/null || echo "")"
                   # The HEAD that was just built and tested
                   jq -r .head affected.json > base_commit.txt
                   echo "New last validated (base) commit: $(cat base_commit.txt)"
+                  # The new builds replace the stored ones of the same Actors. builtAt lets plan-pr-builds skip builds
+                  # that delete-old-builds may have deleted.
+                  [ -s pr-builds.json ] || echo '[]' > pr-builds.json
+                  jq -n --slurpfile stored pr-builds.json --slurpfile new builds.json --argjson now "$(date +%s)" \
+                    '[$stored[0][], ($new[0][] | . + { builtAt: $now })] | group_by(.actorFullName) | map(last)' \
+                    > pr-builds.next.json
+                  mv pr-builds.next.json pr-builds.json
 
     # Pure static checks against the repo. Needs no Apify or Slack credentials, only the npm
     # token to install dependencies.

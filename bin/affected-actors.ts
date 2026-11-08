@@ -55,7 +55,16 @@ interface AffectedActors {
      * changed. Their tests need to run, but a test change alone needs no release. An Actor can also be in one of the
      * lists above.
      */
-    testChangedActors: { actorFullName: string }[];
+    testChangedActors: TestChangedActor[];
+}
+
+interface TestChangedActor {
+    actorFullName: string;
+    /**
+     * With `--base`: the branch changed the Actor's code compared to base (`base...HEAD`, whatever `--since` is), so its
+     * tests need a build of the branch. When false, its default build has the same code and can run the tests.
+     */
+    needsBranchBuild: boolean;
 }
 
 const names = (configs: ActorConfig[]) => configs.map(({ actorFullName }) => ({ actorFullName }));
@@ -206,6 +215,9 @@ export const getAffectedActors = async ({
         changelog: await getChangelogAdditions(rangeVsBase.fromRef, rangeVsBase.toRef, changedFiles),
         functionallyChangedActors: names(changedActors.functional),
         cosmeticallyChangedActors: names(changedActors.cosmetic),
-        testChangedActors: names(changedActors.test),
+        testChangedActors: changedActors.test.map((actor) => ({
+            actorFullName: actor.actorFullName,
+            needsBranchBuild: changedVsBase.functional.includes(actor),
+        })),
     };
 };

@@ -59,6 +59,20 @@ export const parseBuildInput = (raw: string) =>
         example: `e.g. echo '{"actors":[{"actorFullName":"owner/name"}]}' | apify-test-tools build --version-number 0.1`,
     });
 
+/** What `plan-pr-builds` reads: the output of `get-affected-actors --base`. Other fields are ignored. */
+const prBuildPlanInputSchema = z.object({
+    functionallyChangedActors: z.array(z.object({ actorFullName: z.string() })),
+    testChangedActors: z.array(z.object({ actorFullName: z.string(), needsBranchBuild: z.boolean() })),
+});
+
+export type PrBuildPlanInput = z.infer<typeof prBuildPlanInputSchema>;
+
+export const parsePrBuildPlanInput = (raw: string): PrBuildPlanInput =>
+    parseStdinJson(raw, prBuildPlanInputSchema, {
+        expected: 'the output of get-affected-actors',
+        example: 'e.g. apify-test-tools get-affected-actors --base origin/master | apify-test-tools plan-pr-builds',
+    });
+
 /**
  * What `test` reads: the Actors to test, each with the build to test or, without one, its default build. The builds
  * `build` and `build-from-local` print fit, and so does `get-actor-configs`, whose other fields are ignored. An Actor

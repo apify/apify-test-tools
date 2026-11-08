@@ -13,6 +13,7 @@ Results are written to stdout as JSON, diagnostics to stderr, so commands can be
 | Command                                                               | Does                                                    | Needs                |
 | --------------------------------------------------------------------- | ------------------------------------------------------- | -------------------- |
 | [`get-affected-actors`](#finding-affected-actors-get-affected-actors) | Lists the Actors changed in a commit range              | git only             |
+| [`plan-pr-builds`](#planning-pr-builds-plan-pr-builds)                | Picks what a PR run builds and what it tests on         | nothing              |
 | [`build`](#building-actors-build)                                     | Builds the Actors given on stdin from the pushed branch | Actor tokens         |
 | [`build-from-local`](#build-from-local-source-build-from-local)       | Builds Actors from local files                          | Actor tokens         |
 | [`test`](#running-tests-test)                                         | Runs the platform tests on the builds given on stdin    | `TESTER_APIFY_TOKEN` |
@@ -135,7 +136,7 @@ The output is a JSON document:
     "changelog": "Lines added to CHANGELOG.md, or null",
     "functionallyChangedActors": [{ "actorFullName": "john.doe/my-actor" }],
     "cosmeticallyChangedActors": [{ "actorFullName": "john.doe/other-actor" }],
-    "testChangedActors": [{ "actorFullName": "john.doe/my-actor" }]
+    "testChangedActors": [{ "actorFullName": "john.doe/my-actor", "needsBranchBuild": true }]
 }
 ```
 
@@ -143,11 +144,53 @@ The output is a JSON document:
 `cosmeticallyChangedActors` have cosmetic changes and no functional one (see [Change detection](#change-detection)), so
 they need a new build only when released. An Actor is in at most one of these two lists. `testChangedActors` have a
 changed platform test (`platformTestsGlob` in the config) in their context, whatever else changed, so their tests need
-to run. A test change alone needs no release. The PR workflow builds `functionallyChangedActors` and
-`testChangedActors`. The release workflow builds `functionallyChangedActors` and `cosmeticallyChangedActors`.
+to run. A test change alone needs no release. The PR workflow builds `functionallyChangedActors` and tests them
+together with `testChangedActors`, see [`plan-pr-builds`](#planning-pr-builds-plan-pr-builds). The release workflow
+builds `functionallyChangedActors` and `cosmeticallyChangedActors`.
 
 With `--base` and `--since`, an Actor is in `testChangedActors` when its tests changed on the branch and again since
-`--since`, the same rule as for functional changes.
+`--since`, the same rule as for functional changes. `needsBranchBuild` tells whether the branch changed the Actor's
+code compared to `--base`, whatever `--since` is. When it is false, the Actor's default build has the same code and
+can run its tests. [`plan-pr-builds`](#planning-pr-builds-plan-pr-builds) reads it.
+
+## Planning PR builds (`plan-pr-builds`)
+
+`plan-pr-builds` reads the output of `get-affected-actors --base` on stdin and decides which Actors a PR run builds
+and which it tests on builds that already exist. It makes no API calls.
+
+- An Actor in `functionallyChangedActors` is built.
+- An Actor with only test changes and `needsBranchBuild: false` is tested on its default build.
+- An Actor with only test changes and `needsBranchBuild: true` is tested on the build an earlier run of the PR made,
+  from `--stored-builds`. That build has the current code, because a functional change after it would have built the
+  Actor again. Without such a build, or when it is 25 days old or older, the Actor is built. `delete-old-builds`
+  deletes builds after 30 days.
+
+```bash
+npx apify-test-tools get-affected-actors --base origin/master --since <last validated sha> \
+  | npx apify-test-tools plan-pr-builds --stored-builds pr-builds.json > plan.json
+jq .build plan.json | npx apify-test-tools build --version-number 0.99 > builds.json
+jq -s '.[0] + .[1].existingBuilds' builds.json plan.json | npx apify-test-tools test > test-report.json
+```
+
+| Flag              | Default | Meaning                                                                                                                                                    |
+| ----------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--stored-builds` |         | JSON array of the builds earlier runs of the PR made and tested, as `build` prints them plus `builtAt` in Unix seconds. A missing or invalid file has none |
+
+The output:
+
+```json
+{
+    "version": 1,
+    "build": { "actors": [{ "actorFullName": "john.doe/my-actor" }] },
+    "existingBuilds": [
+        { "actorFullName": "john.doe/other-actor" },
+        { "actorFullName": "john.doe/third-actor", "buildId": "…", "actorRawId": "…", "buildNumber": "0.99.12" }
+    ]
+}
+```
+
+`build` is the input of [`build`](#building-actors-build). `existingBuilds` are inputs of [`test`](#running-tests-test):
+an entry without build fields runs on the default build.
 
 ## Building Actors (`build`)
 

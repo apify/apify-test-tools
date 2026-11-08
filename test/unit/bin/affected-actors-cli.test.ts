@@ -223,6 +223,10 @@ describe('get-affected-actors CLI on real git histories', () => {
         expect(getAllChangedActors('--base', 'main')).toStrictEqual(testOnly);
         // A release builds only the functional and cosmetic lists, so it builds nothing
         expect(getAllChangedActors('--since', git('rev-parse', 'main'))).toStrictEqual(testOnly);
+        // The branch didn't change A's code, so its default build can run the tests
+        expect(runGetAffectedActors('--base', 'main').testChangedActors).toStrictEqual([
+            { actorFullName: 'owner/actor-a', needsBranchBuild: false },
+        ]);
     });
 
     it('lists an Actor in both lists when its source and its tests changed', async () => {
@@ -243,6 +247,10 @@ describe('get-affected-actors CLI on real git histories', () => {
             cosmetic: [],
             test: ['a'],
         });
+        // The branch changed A's code, so the tests need a build of the branch, not the default build
+        expect(runGetAffectedActors('--base', 'main', '--since', validated).testChangedActors).toStrictEqual([
+            { actorFullName: 'owner/actor-a', needsBranchBuild: true },
+        ]);
     });
 
     it('reads which files are platform tests from platformTestsGlob in the config', async () => {

@@ -101,8 +101,8 @@ const envVarsSyncOptions = {
 const testOptions = {
     'test-files-glob': {
         type: 'string',
-        describe:
-            'Glob (from the repo root) of the test files to run, e.g. test/platform/**. Use it in place of [filters..]',
+        default: 'test/platform/**',
+        describe: 'Glob (from the repo root) of the test files to run. Quote it, so the shell does not expand it',
     },
     'vitest-output-file': { type: 'string', describe: "Also keep vitest's own JSON report there, e.g. to upload it" },
     reporter: {
@@ -110,9 +110,8 @@ const testOptions = {
         describe:
             'Vitest reporter (https://vitest.dev/guide/reporters) to add to `default` and `json`, which are always on, ' +
             'e.g. github-actions. Repeat it for more',
-        // A plain string, not `array: true`: yargs would fill an array option with the arguments after it too, so
-        // `test --reporter github-actions test/platform` would take the test path as a reporter. A repeated flag
-        // still comes as an array, a single one as a string, so both are normalized to an array.
+        // A plain string, not `array: true`: yargs would fill an array option with the arguments after it too. A
+        // repeated flag still comes as an array, a single one as a string, so both are normalized to an array.
         coerce: (value: string | string[] | undefined) => (value === undefined ? [] : [value].flat()),
     },
 } as const satisfies Record<string, Options>;
@@ -184,19 +183,11 @@ await yargs()
         },
     )
     .command(
-        'test [filters..]',
+        'test',
         'Run the tests of the Actors listed on stdin (builds from build, or get-actor-configs for default builds), and print a report for notify',
-        (y) =>
-            y
-                .positional('filters', {
-                    type: 'string',
-                    array: true,
-                    describe: 'Test files to run, as vitest filters. Without them and --test-files-glob, test/platform',
-                })
-                .options(testOptions),
+        (y) => y.options(testOptions),
         async (args) => {
             const report = await runTests({
-                filters: args.filters ?? [],
                 testFilesGlob: args.testFilesGlob,
                 targets: parseTestTargets(await readStdin()),
                 vitestOutputFile: args.vitestOutputFile,

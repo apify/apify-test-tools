@@ -91,7 +91,7 @@ describe('CLI bundle', () => {
         for (const command of [
             'get-actor-configs',
             'get-affected-actors',
-            'test [filters..]',
+            'test',
             'notify',
             'build',
             'build-from-local',

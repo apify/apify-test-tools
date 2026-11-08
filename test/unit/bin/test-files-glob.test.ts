@@ -46,8 +46,11 @@ describe('resolveTestFilesGlob', () => {
         if (repoDir) await rm(repoDir, { recursive: true, force: true });
     });
 
+    const files = async (glob: string) => (await resolveTestFilesGlob(glob, repoDir)).files;
+    const paths = async (glob: string) => (await resolveTestFilesGlob(glob, repoDir)).paths;
+
     it('lists the matched files from the repo root, sorted, skipping node_modules', async () => {
-        expect(await resolveTestFilesGlob('test/platform/**', repoDir)).toEqual([
+        expect(await files('test/platform/**')).toEqual([
             'test/platform/daily-without-pr/b.test.ts',
             'test/platform/daily/a.test.ts',
             'test/platform/hourly/nested/c.test.ts',
@@ -56,27 +59,60 @@ describe('resolveTestFilesGlob', () => {
     });
 
     it('selects folders with a brace pattern', async () => {
-        expect(await resolveTestFilesGlob('test/platform/{daily,hourly}/**', repoDir)).toEqual([
+        expect(await files('test/platform/{daily,hourly}/**')).toEqual([
             'test/platform/daily/a.test.ts',
             'test/platform/hourly/nested/c.test.ts',
         ]);
     });
 
     it('accepts a leading ./', async () => {
-        expect(await resolveTestFilesGlob('./test/platform/daily/**', repoDir)).toEqual([
-            'test/platform/daily/a.test.ts',
-        ]);
+        expect(await files('./test/platform/daily/**')).toEqual(['test/platform/daily/a.test.ts']);
     });
 
     it('walks the whole repo when the glob has no static base', async () => {
-        expect(await resolveTestFilesGlob('**/daily/*.test.ts', repoDir)).toEqual([
+        expect(await files('**/daily/*.test.ts')).toEqual([
             'other/test/platform/daily/e.test.ts',
             'test/platform/daily/a.test.ts',
         ]);
     });
 
+    it('resolves a glob without wildcards to the file itself', async () => {
+        expect(await resolveTestFilesGlob('test/platform/utils.ts', repoDir)).toStrictEqual({
+            files: ['test/platform/utils.ts'],
+            paths: ['test/platform/utils.ts'],
+        });
+    });
+
     it('matches no file with a glob relative to test/platform or a folder without **', async () => {
-        expect(await resolveTestFilesGlob('daily/**', repoDir)).toEqual([]);
-        expect(await resolveTestFilesGlob('test/platform/daily', repoDir)).toEqual([]);
+        expect(await files('daily/**')).toEqual([]);
+        expect(await files('test/platform/daily')).toEqual([]);
+    });
+
+    it('gives a folder whose files all match as one path, ending with / so it is not a prefix of a sibling', async () => {
+        expect(await paths('test/platform/{daily,hourly}/**')).toEqual([
+            'test/platform/daily/',
+            'test/platform/hourly/',
+        ]);
+    });
+
+    it('lists the matched files one by one in a folder that also holds files the glob leaves out', async () => {
+        // test/platform/utils.ts is left out, so test/platform/ can't be one path
+        expect(await paths('test/platform/**/*.test.ts')).toEqual([
+            'test/platform/daily-without-pr/',
+            'test/platform/daily/',
+            'test/platform/hourly/',
+        ]);
+        // other/ holds only the matched file, so it is the highest folder that can be one path
+        expect(await paths('**/daily/*.test.ts')).toEqual(['other/', 'test/platform/daily/']);
+    });
+
+    it('never gives a folder that holds a skipped node_modules as one path', async () => {
+        // test/platform/node_modules/ is not walked, so test/platform/ might hold files the glob leaves out
+        expect(await paths('test/platform/**')).toEqual([
+            'test/platform/daily-without-pr/',
+            'test/platform/daily/',
+            'test/platform/hourly/',
+            'test/platform/utils.ts',
+        ]);
     });
 });

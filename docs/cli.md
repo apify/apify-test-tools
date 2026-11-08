@@ -317,18 +317,19 @@ annotate the failing tests in a GitHub Actions run. It takes no other vitest opt
 test by name, run vitest directly with the builds in `ACTOR_BUILDS` (see
 [Running tests locally](lib.md#running-tests-locally)).
 
-| Argument / flag        | Default         | Meaning                                                                                                                         |
-| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `[filters..]`          | `test/platform` | Test files to run, as vitest filters                                                                                            |
-| `--test-files-glob`    |                 | Glob from the repo root of the test files to run, e.g. `test/platform/**`. Use it in place of `[filters..]`, see below          |
-| `--vitest-output-file` |                 | Also keep vitest's own JSON report there, e.g. to upload it                                                                     |
-| `--reporter`           |                 | [Vitest reporter](https://vitest.dev/guide/reporters) to add to `default` and `json`, e.g. `github-actions`. Repeat it for more |
+| Flag                   | Default            | Meaning                                                                                                                         |
+| ---------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `--test-files-glob`    | `test/platform/**` | Glob from the repo root of the test files to run, see below                                                                     |
+| `--vitest-output-file` |                    | Also keep vitest's own JSON report there, e.g. to upload it                                                                     |
+| `--reporter`           |                    | [Vitest reporter](https://vitest.dev/guide/reporters) to add to `default` and `json`, e.g. `github-actions`. Repeat it for more |
 
-Vitest filters are parts of a file path, not globs. `--test-files-glob` is a glob, read the same way as
-`platformTestsGlob` in the config file. `test` finds the files it matches and passes
-them to vitest. A glob that matches no file
-is an error, because vitest without filters would run every test of the repo. Quote the glob, so the shell doesn't
-expand it.
+`test` takes no test paths as arguments, only `--test-files-glob`. The glob is read the same way as
+`platformTestsGlob` in the config file. Vitest filters are parts of a file path, not globs, so `test` finds the files
+the glob matches and passes vitest as few paths as it can: each folder whose files all match, with a trailing `/`, and
+the other matched files one by one. `test/platform/{daily,hourly}/**` becomes two folders however many tests they
+hold, so the command line stays short. Vitest still applies its own `include` and `exclude`, so helper files in the
+glob run nothing. A glob that matches no file is an error, because vitest without filters would run every test of the
+repo. Quote the glob, so the shell doesn't expand it.
 
 Vitest's own output goes to stderr, followed by a summary that lists every test with the link to its run. Stdout
 gets only the report:

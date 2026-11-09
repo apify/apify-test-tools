@@ -54,6 +54,7 @@ See [Change detection](docs/cli.md#change-detection) for the exact rules.
 This README covers what you need to get a repo running. The full reference lives in `docs/`:
 
 - [Vitest library API](docs/lib.md) — `testActor`, `testStandbyActor`, `RunTestResult`, matchers, running tests locally
+- [Throwaway Actors for library repositories](docs/lib.md#throwaway-actors-for-library-repositories) — testing an SDK or framework by building Actors from the local checkout
 - [CLI API](docs/cli.md) — every command, change detection, releasing, building locally
 - [Workflow API](docs/workflows.md) — every GitHub workflow, its inputs and secrets, versioning
 

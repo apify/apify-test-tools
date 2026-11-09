@@ -28,6 +28,7 @@ All notable changes to this project will be documented in this file.
 - **test:** Clean up compiled CLI dir when build fails ([#224](https://github.com/apify/apify-test-tools/pull/224)) ([f9f2f5c](https://github.com/apify/apify-test-tools/commit/f9f2f5c64cfe936ee0b72a0fbe7408282c68fbac)) by [@JuanGalilea](https://github.com/JuanGalilea)
 - **cli-test:** Look up actor raw IDs for tests that reference them ([#234](https://github.com/apify/apify-test-tools/pull/234)) ([315baf4](https://github.com/apify/apify-test-tools/commit/315baf495dae984cbcd7056a101935536d7b0011)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - **cli-test:** Warn instead of failing on Actors the tester token can&#x27;t see ([#237](https://github.com/apify/apify-test-tools/pull/237)) ([1d339ab](https://github.com/apify/apify-test-tools/commit/1d339ab04d3190191cffa3766e86a7c74c309985)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- **run-with-apify-token:** Support all config modes ([#219](https://github.com/apify/apify-test-tools/pull/219)) ([4b9e95b](https://github.com/apify/apify-test-tools/commit/4b9e95b8328144eb77805ddd7ae1176ee14b84dc)) by [@JuanGalilea](https://github.com/JuanGalilea)
 
 ### 🚜 Refactor
 

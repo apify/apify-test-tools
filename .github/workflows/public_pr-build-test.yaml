@@ -114,7 +114,8 @@ jobs:
               env:
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
                   # Passed through the environment and quoted, so the shell doesn't expand the glob itself
-                  TEST_FILES_GLOB: ${{ inputs.test-files-glob }}
+                  # An empty input, e.g. from an expression that picks the glob, runs everything, like the default
+                  TEST_FILES_GLOB: ${{ inputs.test-files-glob || 'test/platform/**' }}
               # The github-actions reporter annotates the PR with the failing tests
               run: |
                   apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" --reporter github-actions \

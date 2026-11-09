@@ -63,11 +63,11 @@ Validates a pull request. It runs two jobs in parallel.
 In a repo whose Actors aren't written in JavaScript or TypeScript, define the `build-check`, `lint` and `test`
 scripts, e.g. to run your language's own checks: without them, the TypeScript, Lint and Test checks fail.
 
-| Input                      | Type    | Default            | Description                                                                                                              |
-| -------------------------- | ------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `skip-platform-tests`      | boolean | `false`            | Skip the `platformTest` job and run the static checks only                                                               |
-| `test-files-glob`          | string  | `test/platform/**` | Glob of the test files to run, from the repo root. See [Splitting the tests](#splitting-the-tests)                       |
-| `require-env-vars-in-sync` | boolean | `true`             | Fail the build unless the env var names of `0.99` match the default version's, see [Env var check](cli.md#env-var-check) |
+| Input                      | Type    | Default            | Description                                                                                                                 |
+| -------------------------- | ------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `skip-platform-tests`      | boolean | `false`            | Skip the `platformTest` job and run the static checks only                                                                  |
+| `test-files-glob`          | string  | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests) |
+| `require-env-vars-in-sync` | boolean | `true`             | Fail the build unless the env var names of `0.99` match the default version's, see [Env var check](cli.md#env-var-check)    |
 
 Secrets: `TESTER_APIFY_TOKEN`, the Actor tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`. With
 `skip-platform-tests`, only `NPM_TOKEN`.
@@ -150,10 +150,10 @@ Runs the platform tests of every Actor in the config against its current default
 reaches the tests. Both the report of `test` and
 vitest's own JSON report are uploaded as the `vitest-results` artifact. Runs only on `master` or `main`.
 
-| Input                  | Type   | Default            | Description                                                                                        |
-| ---------------------- | ------ | ------------------ | -------------------------------------------------------------------------------------------------- |
-| `test-files-glob`      | string | `test/platform/**` | Glob of the test files to run, from the repo root. See [Splitting the tests](#splitting-the-tests) |
-| `report-slack-channel` | string | `''`               | Slack channel for the results. Empty skips Slack                                                   |
+| Input                  | Type   | Default            | Description                                                                                                                 |
+| ---------------------- | ------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `test-files-glob`      | string | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests) |
+| `report-slack-channel` | string | `''`               | Slack channel for the results. Empty skips Slack                                                                            |
 
 Secrets: `TESTER_APIFY_TOKEN` (required), `SLACK_BOT_TOKEN`, and optionally `NPM_TOKEN`.
 

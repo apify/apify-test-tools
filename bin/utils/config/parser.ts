@@ -82,6 +82,28 @@ function verifyConfiguration(body: ValidatedActorConfig[]): void {
     if (errors.length > 0) throw new Error(errors.join('\n'));
 }
 
+/** Which changed files are platform tests, unless the config sets `platformTestsGlob` */
+const DEFAULT_PLATFORM_TESTS_GLOB = 'test/platform/**';
+
+/** Settings for the whole repository, next to the Actor entries at the top level of the config. */
+export interface RepoSettings {
+    /**
+     * Glob from the repo root of the platform test files and their helpers. A change to a matching file is a test
+     * change: the tests run, but no release is built for it.
+     */
+    platformTestsGlob: string;
+}
+
+const RepoSettingsSchema = z.object({
+    platformTestsGlob: z.string().min(1).default(DEFAULT_PLATFORM_TESTS_GLOB),
+});
+
+export function parseRepoSettings(body: Record<string, unknown>): RepoSettings {
+    const parsed = RepoSettingsSchema.safeParse(body);
+    if (!parsed.success) throw new Error(z.prettifyError(parsed.error));
+    return parsed.data;
+}
+
 // eslint-disable-next-line no-underscore-dangle
 export const _privates = {
     selectStrategy,
@@ -90,7 +112,8 @@ export const _privates = {
 };
 
 export function parseResolvedConfigFile(body: Record<string, unknown>): ResolvedActorConfig[] {
-    const { mode, ...rest } = body;
+    // The repo settings are read by parseRepoSettings, the strategies only see the Actor entries
+    const { mode, platformTestsGlob: _platformTestsGlob, ...rest } = body;
     const strategy = selectStrategy({ mode });
     return strategy.parse(rest);
 }

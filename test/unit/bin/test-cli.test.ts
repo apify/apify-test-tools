@@ -45,6 +45,15 @@ test('owner/a: fails', () => {
 });
 `,
         );
+
+        // Outside test/platform, so the tests that run test/platform don't see them
+        for (const folder of ['with-pr', 'without-pr']) {
+            await mkdir(path.join(repoDir, 'test/glob', folder), { recursive: true });
+            await writeFile(
+                path.join(repoDir, 'test/glob', folder, `${folder}.test.ts`),
+                `import { test } from 'vitest';\n\ntest('owner/a: ${folder}', () => {});\n`,
+            );
+        }
     });
 
     afterAll(async () => {
@@ -92,15 +101,44 @@ test('owner/a: fails', () => {
         expect(JSON.parse(result.stdout)).toMatchObject({ success: false, summary: { passed: 1, failed: 1 } });
     });
 
-    it('adds the reporters it is given to the default and JSON ones, also before the test files', () => {
+    it('passes vitest a folder whose files all match as one filter, and adds the reporters it is given', () => {
         const result = run(
-            ['--log-level', 'debug', 'test', '--reporter', 'dot', '--reporter', 'verbose', 'test/platform'],
+            ['--log-level', 'debug', 'test', '--reporter', 'dot', '--reporter', 'verbose'],
             JSON.stringify([build]),
         );
+        // The default glob test/platform/** matches every file in test/platform, so vitest gets just that folder
         expect(result.stderr).toMatch(
-            /Running vitest: \S+ run test\/platform --reporter=default --reporter=json --reporter=dot --reporter=verbose /,
+            /Running vitest: \S+ run \S+\/test\/platform\/ --reporter=default --reporter=json --reporter=dot --reporter=verbose /,
         );
         expect(JSON.parse(result.stdout)).toMatchObject({ summary: { passed: 1, failed: 1 } });
+    });
+
+    it('runs only the test files that --test-files-glob matches from the repo root', () => {
+        const result = run(['test', '--test-files-glob', 'test/glob/{with-pr,other}/**'], JSON.stringify([build]));
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stderr).toContain('Running the 1 file(s) that match --test-files-glob');
+        expect(JSON.parse(result.stdout)).toMatchObject({
+            success: true,
+            summary: { total: 1, passed: 1 },
+            tests: [{ name: 'owner/a: with-pr', file: 'test/glob/with-pr/with-pr.test.ts' }],
+        });
+    });
+
+    it('fails when --test-files-glob matches no file instead of running every test', () => {
+        // Relative to test/platform, the way the workflows took it before
+        const result = run(['test', '--test-files-glob', 'hourly'], JSON.stringify([build]));
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('No files match --test-files-glob "hourly"');
+        expect(result.stdout).toBe('');
+    });
+
+    it('rejects test paths given the old way, as arguments, instead of running every test', () => {
+        const result = run(['test', 'test/platform/core'], JSON.stringify([build]));
+        expect(result.status).toBe(1);
+        // The help that comes with it shows --test-files-glob
+        expect(result.stderr).toContain('Unknown command: test/platform/core');
+        expect(result.stderr).toContain('--test-files-glob');
+        expect(result.stdout).toBe('');
     });
 
     it('fails without TESTER_APIFY_TOKEN instead of passing with every test skipped', () => {

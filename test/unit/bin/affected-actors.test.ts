@@ -24,9 +24,10 @@ describe('getAffectedActors', () => {
 
     beforeEach(() => {
         vi.spyOn(LoadConfig, 'readConfigFile').mockResolvedValue([actorA, actorB]);
+        vi.spyOn(LoadConfig, 'readRepoSettings').mockResolvedValue({ platformTestsGlob: 'test/platform/**' });
         changedActorsSpy = vi
             .spyOn(DiffChanges, 'getChangedActors')
-            .mockResolvedValue({ functional: [actorA], cosmetic: [actorB] });
+            .mockResolvedValue({ functional: [actorA], cosmetic: [actorB], test: [] });
         vi.spyOn(Git, 'resolveCommitSha').mockResolvedValue(headSha);
         vi.spyOn(Git, 'getChangedFilesBetween').mockResolvedValue(changedFiles);
         vi.spyOn(Git, 'getChangelogAdditions').mockResolvedValue('- Added foo');
@@ -62,6 +63,7 @@ describe('getAffectedActors', () => {
                 // Only the names, the config file stays the source of truth for the rest
                 functionallyChangedActors: [{ actorFullName: 'owner/a' }],
                 cosmeticallyChangedActors: [{ actorFullName: 'owner/b' }],
+                testChangedActors: [],
             });
             expect(Git.getMergeBase).toHaveBeenCalledWith('origin/master', 'HEAD');
             expect(Git.getChangedFilesBetween).toHaveBeenCalledWith(mergeBaseSha, headSha);
@@ -71,6 +73,7 @@ describe('getAffectedActors', () => {
                 filepathsChanged: changedFiles,
                 actorConfigs: [actorA, actorB],
                 range: { fromRef: mergeBaseSha, toRef: headSha },
+                platformTestsGlob: 'test/platform/**',
             });
             expect(findCommitSpy).not.toHaveBeenCalled();
         });
@@ -96,15 +99,20 @@ describe('getAffectedActors', () => {
                 return {
                     functional: result.functionallyChangedActors.map(({ actorFullName }) => actorFullName),
                     cosmetic: result.cosmeticallyChangedActors.map(({ actorFullName }) => actorFullName),
+                    test: result.testChangedActors.map(({ actorFullName }) => actorFullName),
                 };
             };
 
             it('classifies the changes since --since separately', async () => {
-                await getNarrowed({ functional: [actorA], cosmetic: [] }, { functional: [actorA], cosmetic: [] });
+                await getNarrowed(
+                    { functional: [actorA], cosmetic: [], test: [] },
+                    { functional: [actorA], cosmetic: [], test: [] },
+                );
                 expect(changedActorsSpy).toHaveBeenCalledWith({
                     filepathsChanged: sinceFiles,
                     actorConfigs: [actorA, actorB],
                     range: { fromRef: sinceSha, toRef: headSha },
+                    platformTestsGlob: 'test/platform/**',
                 });
             });
 
@@ -116,25 +124,55 @@ describe('getAffectedActors', () => {
 
             it('retests an Actor whose validated change meets a new functional change', async () => {
                 await expect(
-                    getNarrowed({ functional: [actorA], cosmetic: [] }, { functional: [actorA], cosmetic: [] }),
-                ).resolves.toStrictEqual({ functional: ['owner/a'], cosmetic: [] });
+                    getNarrowed(
+                        { functional: [actorA], cosmetic: [], test: [] },
+                        { functional: [actorA], cosmetic: [], test: [] },
+                    ),
+                ).resolves.toStrictEqual({ functional: ['owner/a'], cosmetic: [], test: [] });
             });
 
             it('leaves out Actors that only the branch changed before --since or only --base changed', async () => {
                 await expect(
-                    getNarrowed({ functional: [actorA], cosmetic: [] }, { functional: [actorB], cosmetic: [] }),
-                ).resolves.toStrictEqual({ functional: [], cosmetic: [] });
+                    getNarrowed(
+                        { functional: [actorA], cosmetic: [], test: [] },
+                        { functional: [actorB], cosmetic: [], test: [] },
+                    ),
+                ).resolves.toStrictEqual({ functional: [], cosmetic: [], test: [] });
             });
 
             it('takes the less impactful change when the two disagree', async () => {
                 // A validated functional change, then only cosmetic changes (e.g. a README merged in from base)
                 await expect(
-                    getNarrowed({ functional: [actorA], cosmetic: [] }, { functional: [], cosmetic: [actorA] }),
-                ).resolves.toStrictEqual({ functional: [], cosmetic: ['owner/a'] });
+                    getNarrowed(
+                        { functional: [actorA], cosmetic: [], test: [] },
+                        { functional: [], cosmetic: [actorA], test: [] },
+                    ),
+                ).resolves.toStrictEqual({ functional: [], cosmetic: ['owner/a'], test: [] });
                 // A functional change merged in from base, while the branch only changes the README
                 await expect(
-                    getNarrowed({ functional: [], cosmetic: [actorA] }, { functional: [actorA], cosmetic: [] }),
-                ).resolves.toStrictEqual({ functional: [], cosmetic: ['owner/a'] });
+                    getNarrowed(
+                        { functional: [], cosmetic: [actorA], test: [] },
+                        { functional: [actorA], cosmetic: [], test: [] },
+                    ),
+                ).resolves.toStrictEqual({ functional: [], cosmetic: ['owner/a'], test: [] });
+            });
+
+            it('runs the tests of an Actor whose tests the branch changed and changed again since --since', async () => {
+                await expect(
+                    getNarrowed(
+                        { functional: [actorA], cosmetic: [], test: [actorA, actorB] },
+                        { functional: [], cosmetic: [], test: [actorA] },
+                    ),
+                ).resolves.toStrictEqual({ functional: [], cosmetic: [], test: ['owner/a'] });
+            });
+
+            it('leaves out test changes that only --base or only the validated part of the branch has', async () => {
+                await expect(
+                    getNarrowed(
+                        { functional: [], cosmetic: [], test: [actorA] },
+                        { functional: [], cosmetic: [], test: [actorB] },
+                    ),
+                ).resolves.toStrictEqual({ functional: [], cosmetic: [], test: [] });
             });
 
             it.each([
@@ -172,6 +210,7 @@ describe('getAffectedActors', () => {
                 // Only the names, the config file stays the source of truth for the rest
                 functionallyChangedActors: [{ actorFullName: 'owner/a' }],
                 cosmeticallyChangedActors: [{ actorFullName: 'owner/b' }],
+                testChangedActors: [],
             });
             expect(resolveBaseSpy).toHaveBeenCalledWith('HEAD~2');
             expect(commitsBetweenSpy).toHaveBeenCalledWith(sinceSha, headSha);

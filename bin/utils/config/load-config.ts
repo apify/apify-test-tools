@@ -3,7 +3,7 @@ import type { ActorConfig } from '../../types.js';
 import { safeReadJsonObjectFile } from '../json-file.js';
 import { ExistingFile, type RelativeDir } from '../path/repo-relative.js';
 import { readActorJson } from './actor-json.js';
-import { parseConfigFile, parseResolvedConfigFile } from './parser.js';
+import { parseConfigFile, parseRepoSettings, parseResolvedConfigFile, type RepoSettings } from './parser.js';
 import type { ResolvedActorConfig, ValidatedActorConfig } from './structures/base.js';
 
 export const CONFIG_FILE_NAME = 'apify-test-tools.config.json';
@@ -126,3 +126,6 @@ export const readBaseConfigFile = async () => {
             }) satisfies PathlessConfig,
     );
 };
+
+/** The settings for the whole repository, such as `platformTestsGlob`, with their defaults filled in. */
+export const readRepoSettings = async (): Promise<RepoSettings> => parseRepoSettings(await readConfigFileContents());

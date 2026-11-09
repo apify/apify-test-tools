@@ -7,10 +7,11 @@ on:
                 type: boolean
                 default: false
                 required: false
-            # Specify what tests you want to run, relative to `test/platform`
+            # Glob of the test files to run, from the repo root, e.g. `test/platform/{daily,hourly}/**`. Which changed
+            # files count as test changes is `platformTestsGlob` in apify-test-tools.config.json, not this.
             test-files-glob:
                 type: string
-                default: ''
+                default: 'test/platform/**'
                 required: false
             # Fail the build unless the env var names of version 0.99 match the default version's
             require-env-vars-in-sync:
@@ -86,16 +87,12 @@ jobs:
               run: |
                   base_commit=$(cat base_commit.txt 2>/dev/null || echo "")
                   echo "Last validated (base) commit to be used for build & test: $base_commit"
-                  args=(
-                    --base "origin/$BASE_REF"
-                    # TODO: Temporary hotfix until build glob matching aligns with Vitest's test selection glob.
-                    --test-files-glob 'test/platform/**'
-                  )
+                  args=(--base "origin/$BASE_REF")
                   [ -n "$base_commit" ] && args+=(--since "$base_commit")
                   apify-test-tools get-affected-actors "${args[@]}" > affected.json
 
-            # Cosmetic-only changes need no tests, so only the functionally changed Actors are built, into the
-            # test version 0.99 that users never run.
+            # Cosmetic-only changes need no tests, so only the Actors with functional or platform test changes are
+            # built, into the test version 0.99 that users never run.
             # run-with-apify-tokens.mjs reads the token names from in apify-test-tools.config.json
             # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
             # The library never sees secrets it doesn't need
@@ -107,7 +104,7 @@ jobs:
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
               run: |
-                  jq '{ actors: .functionallyChangedActors }' affected.json \
+                  jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
                     | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99 \
                         --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC" \
                     | tee builds.json
@@ -116,9 +113,12 @@ jobs:
             - name: Test
               env:
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+                  # Passed through the environment and quoted, so the shell doesn't expand the glob itself
+                  # An empty input, e.g. from an expression that picks the glob, runs everything, like the default
+                  TEST_FILES_GLOB: ${{ inputs.test-files-glob || 'test/platform/**' }}
               # The github-actions reporter annotates the PR with the failing tests
               run: |
-                  apify-test-tools test ./test/platform/${{ inputs.test-files-glob }} --reporter github-actions \
+                  apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" --reporter github-actions \
                     < builds.json > test-report.json
 
             # NOTE: This is an optimization that if we did functional changes and later only cosmetic changes (e.g. dev readme), we will compare changes files only for the last commit. This must run after tests because we want to cache the latest commit only if the tests are successful

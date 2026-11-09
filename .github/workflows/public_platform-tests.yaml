@@ -3,15 +3,10 @@ name: Platform tests
 on:
     workflow_call:
         inputs:
-            # Deprecated, use `test-files-glob`
-            subtest:
-                type: string
-                default: ''
-                required: false
-            # Specify what tests you want to run, relative to `test/platform`
+            # Glob of the test files to run, from the repo root, e.g. `test/platform/{hourly,hourly-without-pr}/**`
             test-files-glob:
                 type: string
-                default: ''
+                default: 'test/platform/**'
                 required: false
             # Slack channel for failed tests. Empty skips Slack.
             report-slack-channel:
@@ -64,9 +59,12 @@ jobs:
               shell: bash
               env:
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+                  # Passed through the environment and quoted, so the shell doesn't expand the glob itself
+                  # An empty input, e.g. from an expression that picks the glob, runs everything, like the default
+                  TEST_FILES_GLOB: ${{ inputs.test-files-glob || 'test/platform/**' }}
               run: |
                   apify-test-tools get-actor-configs \
-                    | apify-test-tools test ./test/platform/${{ inputs.test-files-glob || inputs.subtest }} \
+                    | apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" \
                         --reporter github-actions --vitest-output-file ./test-output.json > test-report.json
 
             # Posts only when the tests failed, but checks the Slack token on every run that has a channel. Runs

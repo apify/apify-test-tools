@@ -1,8 +1,7 @@
-import picomatch from 'picomatch';
-
 import { isCosmeticOnlyJsonSchemaChange } from './diff-json-schema.js';
 import { type DockerIgnoreMatcher, loadDockerIgnore } from './dockerignore.js';
 import { logger } from './logger.js';
+import { createTestFilesMatcher } from './test-files-glob.js';
 import type { ActorConfig, GitRange } from './types.js';
 import { type RelativeDir, RelativeFile } from './utils/path/repo-relative.js';
 
@@ -11,8 +10,11 @@ interface ShouldBuildAndTestOptions {
     actorConfigs: ActorConfig[];
     /** The range the files changed in, to compare `.actor` JSON files across. */
     range: GitRange;
-    // Glob relative to the repo root. Matching files count as changes even when .dockerignore lists them.
-    testFilesGlob?: string;
+    /**
+     * Glob of the platform test files, from the repo root (`platformTestsGlob` in the config). A change to a matching
+     * file is a test change, even when .dockerignore lists it.
+     */
+    platformTestsGlob?: string;
 }
 
 const IGNORED_TOP_LEVEL_FILES = [
@@ -34,6 +36,7 @@ type FileChangeForActor =
     | { impact: 'ignored' }
     | { impact: 'outside-context' }
     | { impact: 'cosmetic'; semanticallyVerified: boolean }
+    | { impact: 'test' }
     | { impact: 'functional' };
 
 /**
@@ -44,11 +47,13 @@ type FileChangeForActor =
  *    not one per actor, so it applies to every actor regardless of context/folder.
  * 2. Context matching (actorConfig.contextPaths) → outside-context if no match
  * 3. Hardcoded ignore list, checked against the path hoisted relative to the matched context entry → ignored
- * 4. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
- *    dir and for test files → ignored if matched
- * 5. README.md by filename → cosmetic if inside the actor's own folder, otherwise ignored
- * 6. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
- * 7. Everything else → functional
+ * 4. Platform test files (`platformTestsGlob`) → test, even when .dockerignore lists them. A test change needs the
+ *    tests to run, but no release.
+ * 5. .dockerignore filtering (patterns relative to dockerContextDir), skipped for the actor's own `.actor/`
+ *    dir → ignored if matched
+ * 6. README.md by filename → cosmetic if inside the actor's own folder, otherwise ignored
+ * 7. .json inside the actor's own `.actor/` dir with only cosmetic schema diffs → cosmetic (semantically verified)
+ * 8. Everything else → functional
  */
 const classifyFileChange = async (
     changedFile: RelativeFile,
@@ -75,13 +80,17 @@ const classifyFileChange = async (
         return { impact: 'ignored' };
     }
 
+    // Test files are often in .dockerignore, but a change to them must still run the tests
+    if (isTestFile(changedFile.path)) {
+        return { impact: 'test' };
+    }
+
     const isUnderActorDotDir = actorConfig.actorJson.file.parent.contains(changedFile);
 
     // .actor/ can legitimately be listed in .dockerignore (the Apify platform evaluates it before
     // the Docker build, so excluding it from the build context is a valid caching optimization) —
     // that shouldn't cause changes to .actor/ itself to be ignored here.
-    // Test files are often in .dockerignore too, but a change to them must still build and test.
-    if (!isUnderActorDotDir && !isTestFile(changedFile.path) && dockerIgnoreMatcher(changedFile.path)) {
+    if (!isUnderActorDotDir && dockerIgnoreMatcher(changedFile.path)) {
         return { impact: 'ignored' };
     }
 
@@ -113,6 +122,8 @@ type ActorChangeEntry = {
     actorConfig: ActorConfig;
     files: string[];
     hasFunctionalChange: boolean;
+    hasCosmeticChange: boolean;
+    hasTestChange: boolean;
 };
 
 type ChangeGroup = { actors: string[]; files: string[] };
@@ -168,8 +179,13 @@ const logChangeGroups = (groups: ChangeGroup[]): void => {
 export interface ChangedActors {
     /** Actors with at least one functional change. They need a new build and tests. */
     functional: ActorConfig[];
-    /** Actors whose changes are all cosmetic. They only need a new build when released. */
+    /** Actors with cosmetic changes and no functional one. They only need a new build when released. */
     cosmetic: ActorConfig[];
+    /**
+     * Actors with at least one platform test change, whatever else changed. Their tests need to run, but test changes
+     * alone need no release. An Actor can be in this list and in one of the others.
+     */
+    test: ActorConfig[];
 }
 
 /** Finds the Actors the changed files belong to, split by the most impactful change each Actor has. */
@@ -177,11 +193,11 @@ export const getChangedActors = async ({
     filepathsChanged,
     actorConfigs,
     range,
-    testFilesGlob,
+    platformTestsGlob,
 }: ShouldBuildAndTestOptions): Promise<ChangedActors> => {
     const actorsChangedMap = new Map<string, ActorChangeEntry>();
     const testFilesInContext = new Set<string>();
-    const isTestFile = testFilesGlob ? picomatch(testFilesGlob, { nocase: true, dot: true }) : () => false;
+    const isTestFile = createTestFilesMatcher(platformTestsGlob);
 
     for (const actorConfig of actorConfigs) {
         const dockerIgnoreMatcher = loadDockerIgnore(actorConfig.dockerContextDir);
@@ -204,9 +220,13 @@ export const getChangedActors = async ({
                 actorConfig,
                 files: [],
                 hasFunctionalChange: false,
+                hasCosmeticChange: false,
+                hasTestChange: false,
             };
             entry.files.push(originalFilePath);
             entry.hasFunctionalChange ||= change.impact === 'functional';
+            entry.hasCosmeticChange ||= change.impact === 'cosmetic';
+            entry.hasTestChange ||= change.impact === 'test';
             actorsChangedMap.set(actorConfig.folder.path, entry);
         }
     }
@@ -226,11 +246,15 @@ export const getChangedActors = async ({
 
     const entries = Array.from(actorsChangedMap.values());
     const functional = entries.filter((entry) => entry.hasFunctionalChange).map((entry) => entry.actorConfig);
-    const cosmetic = entries.filter((entry) => !entry.hasFunctionalChange).map((entry) => entry.actorConfig);
+    const cosmetic = entries
+        .filter((entry) => !entry.hasFunctionalChange && entry.hasCosmeticChange)
+        .map((entry) => entry.actorConfig);
+    const test = entries.filter((entry) => entry.hasTestChange).map((entry) => entry.actorConfig);
 
     const names = (configs: ActorConfig[]) => configs.map((config) => config.actorFullName).join(', ') || 'none';
     logger.info(`[DIFF]: Actors with functional changes: ${names(functional)}`);
     logger.info(`[DIFF]: Actors with only cosmetic changes: ${names(cosmetic)}`);
+    logger.info(`[DIFF]: Actors with platform test changes: ${names(test)}`);
 
-    return { functional, cosmetic };
+    return { functional, cosmetic, test };
 };

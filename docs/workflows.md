@@ -39,11 +39,12 @@ Validates a pull request. It runs two jobs in parallel.
 **`platformTest`** builds and tests the Actors the PR changes:
 
 1. Finds the affected Actors with [`get-affected-actors`](cli.md#finding-affected-actors-get-affected-actors),
-   comparing the PR branch with its base branch. Changed files under `test/platform/**` count even when
-   `.dockerignore` lists them.
-2. Builds the functionally changed Actors into the test version `0.99` with [`build`](cli.md#building-actors-build).
-   Cosmetic-only changes (README, CHANGELOG, schema formatting) need no tests, so they're not built.
-3. Runs [`test`](cli.md#running-tests-test) on `./test/platform/<test-files-glob>` with those builds, so only the
+   comparing the PR branch with its base branch. Changed files that match `platformTestsGlob` in the config file
+   (default `test/platform/**`) are test changes, also when `.dockerignore` lists them.
+2. Builds the Actors with functional or test changes into the test version `0.99` with
+   [`build`](cli.md#building-actors-build). Cosmetic-only changes (README, CHANGELOG, schema formatting) need no
+   tests, so they're not built.
+3. Runs [`test`](cli.md#running-tests-test) on the files that match `test-files-glob` with those builds, so only the
    tests of the built Actors run. Failing tests are annotated on the PR.
 4. On success, caches the tested commit as the "last validated commit". The next push to the PR then only builds
    and tests the Actors that changed since it (see `--since` in
@@ -62,11 +63,11 @@ Validates a pull request. It runs two jobs in parallel.
 In a repo whose Actors aren't written in JavaScript or TypeScript, define the `build-check`, `lint` and `test`
 scripts, e.g. to run your language's own checks: without them, the TypeScript, Lint and Test checks fail.
 
-| Input                      | Type    | Default | Description                                                                                                              |
-| -------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `skip-platform-tests`      | boolean | `false` | Skip the `platformTest` job and run the static checks only                                                               |
-| `test-files-glob`          | string  | `''`    | Which tests to run, relative to `test/platform`. Empty runs everything in it                                             |
-| `require-env-vars-in-sync` | boolean | `true`  | Fail the build unless the env var names of `0.99` match the default version's, see [Env var check](cli.md#env-var-check) |
+| Input                      | Type    | Default            | Description                                                                                                                 |
+| -------------------------- | ------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `skip-platform-tests`      | boolean | `false`            | Skip the `platformTest` job and run the static checks only                                                                  |
+| `test-files-glob`          | string  | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests) |
+| `require-env-vars-in-sync` | boolean | `true`             | Fail the build unless the env var names of `0.99` match the default version's, see [Env var check](cli.md#env-var-check)    |
 
 Secrets: `TESTER_APIFY_TOKEN`, the Actor tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`. With
 `skip-platform-tests`, only `NPM_TOKEN`.
@@ -83,6 +84,9 @@ on:
 jobs:
     buildDevelAndTest:
         uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
+        with:
+            # Leaves out the *-without-pr folders, see "Splitting the tests"
+            test-files-glob: 'test/platform/{daily,hourly}/**'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
@@ -101,7 +105,7 @@ Releases the Actors a push changed. Skipped when the head commit message contain
 1. `get-affected-actors --since ${{ github.event.before }}` finds everything the push changed. See
    [Releasing Actors](cli.md#releasing-actors) for how the released range is determined.
 2. `build --version-number default` builds both the functionally and the cosmetically changed Actors into their
-   default version, the one users run.
+   default version, the one users run. A push that only changes platform tests builds nothing.
 3. [`notify`](cli.md#notifying-notify) posts the release (its changelog additions and its commits, linked to
    GitHub) to the report channel. It posts nothing when the push brought no new commits.
 4. `delete-old-builds` deletes old builds of every Actor in the config (see
@@ -146,15 +150,15 @@ Runs the platform tests of every Actor in the config against its current default
 reaches the tests. Both the report of `test` and
 vitest's own JSON report are uploaded as the `vitest-results` artifact. Runs only on `master` or `main`.
 
-| Input                  | Type   | Default | Description                                                                  |
-| ---------------------- | ------ | ------- | ---------------------------------------------------------------------------- |
-| `test-files-glob`      | string | `''`    | Which tests to run, relative to `test/platform`. Empty runs everything in it |
-| `subtest`              | string | `''`    | Deprecated, use `test-files-glob`                                            |
-| `report-slack-channel` | string | `''`    | Slack channel for the results. Empty skips Slack                             |
+| Input                  | Type   | Default            | Description                                                                                                                 |
+| ---------------------- | ------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `test-files-glob`      | string | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests) |
+| `report-slack-channel` | string | `''`               | Slack channel for the results. Empty skips Slack                                                                            |
 
 Secrets: `TESTER_APIFY_TOKEN` (required), `SLACK_BOT_TOKEN`, and optionally `NPM_TOKEN`.
 
-How often to run which tests is up to you. For example, every test once a day:
+How often to run which tests is up to you, see [Splitting the tests](#splitting-the-tests). For example, the daily
+tests once a day:
 
 ```yaml
 name: Platform tests - Daily
@@ -169,13 +173,14 @@ jobs:
     platformTestsDaily:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
+            test-files-glob: 'test/platform/{daily,daily-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 ```
 
-and a few critical tests, kept in e.g. `test/platform/hourly`, every hour:
+and a few critical tests every hour:
 
 ```yaml
 name: Platform tests - Hourly
@@ -190,12 +195,40 @@ jobs:
     platformTestsHourly:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
-            test-files-glob: hourly
+            test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 ```
+
+## Splitting the tests
+
+`test-files-glob` is one glob from the repo root, for example `test/platform/**`. Both test workflows take it, and it
+only selects which tests run. Which changed files count as test changes is a separate setting, `platformTestsGlob` in
+the config file (default `test/platform/**`). So on a PR, a change to a `*-without-pr` test or to a shared helper
+still builds and tests the Actors, even though the PR doesn't run that test.
+
+Most repos split `test/platform` into folders by how often the tests run, and by whether a PR runs them:
+
+| Folder                            | Runs                                                            |
+| --------------------------------- | --------------------------------------------------------------- |
+| `test/platform/hourly`            | every hour and on every PR                                      |
+| `test/platform/daily`             | once a day and on every PR                                      |
+| `test/platform/hourly-without-pr` | every hour only, e.g. tests that are too slow or costly for PRs |
+| `test/platform/daily-without-pr`  | once a day only                                                 |
+
+Each workflow then selects its folders with a brace pattern:
+
+| Job                                   | `test-files-glob`                             |
+| ------------------------------------- | --------------------------------------------- |
+| PR (`public_pr-build-test.yaml`)      | `test/platform/{daily,hourly}/**`             |
+| Hourly (`public_platform-tests.yaml`) | `test/platform/{hourly,hourly-without-pr}/**` |
+| Daily (`public_platform-tests.yaml`)  | `test/platform/{daily,daily-without-pr}/**`   |
+
+Write the glob to match files, not folders: `test/platform/hourly` matches no file, `test/platform/hourly/**` matches
+every file in it. A glob that matches no file fails the test step, so a typo doesn't pass as a run with no tests.
+`test` only runs the matched files that vitest sees as test files, so a helper in the glob runs nothing.
 
 ## `public_review.yaml`
 
@@ -290,7 +323,7 @@ jobs:
     platformTestsHourly:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
-            test-files-glob: hourly
+            test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}

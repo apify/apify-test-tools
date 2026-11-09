@@ -165,11 +165,15 @@ describe('sandbox dummies', () => {${actorTests}
 `,
         );
 
-        const tested = await runProcess(process.execPath, [bundlePath, 'test', 'test/platform'], {
-            cwd: repoDir,
-            env: { ...cliEnv, TESTER_APIFY_TOKEN: token! },
-            input: JSON.stringify(builds),
-        });
+        const tested = await runProcess(
+            process.execPath,
+            [bundlePath, 'test', '--test-files-glob', 'test/platform/**'],
+            {
+                cwd: repoDir,
+                env: { ...cliEnv, TESTER_APIFY_TOKEN: token! },
+                input: JSON.stringify(builds),
+            },
+        );
         expect(tested.status, tested.stderr).toBe(0);
         expect(tested.stderr).toContain('https://console.apify.com/view/runs/');
 

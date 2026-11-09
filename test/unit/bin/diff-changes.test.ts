@@ -71,6 +71,10 @@ const changedActorsFor = async ({
     return options.actorConfigs.filter((config) => changed.includes(config));
 };
 
+// The Actors whose platform tests run because of a test change
+const testChangedActorsFor = async (options: Parameters<typeof getChangedActors>[0]): Promise<ActorConfig[]> =>
+    (await getChangedActors(options)).test;
+
 describe('getChangedActors', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
@@ -404,34 +408,58 @@ describe('getChangedActors', () => {
         expect(result).toEqual([miniActor]);
     });
 
-    it('test file listed in .dockerignore triggers a build when it matches the test files glob', async () => {
+    it('test file listed in .dockerignore is a test change when it matches the platform tests glob', async () => {
         vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue((filePath) => filePath.startsWith('test/'));
-        const result = await changedActorsFor({
+        const options = {
             filepathsChanged: ['test/platform/daily/foo.test.ts'],
             actorConfigs: [miniActor],
             range,
-            testFilesGlob: 'test/platform/**',
-        });
-        expect(result).toEqual([miniActor]);
+            platformTestsGlob: 'test/platform/**',
+        };
+        expect(await testChangedActorsFor(options)).toEqual([miniActor]);
+        // A test change needs no build of its own, neither for a PR nor for a release
+        expect(await changedActorsFor({ ...options, isLatest: true })).toEqual([]);
     });
 
-    it('test file listed in .dockerignore stays ignored without a test files glob', async () => {
+    it('a test change that is not listed in .dockerignore is still only a test change', async () => {
+        vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => false);
+        const options = {
+            filepathsChanged: ['test/platform/utils.ts'],
+            actorConfigs: [miniActor],
+            range,
+            platformTestsGlob: 'test/platform/**',
+        };
+        expect(await testChangedActorsFor(options)).toEqual([miniActor]);
+        expect(await changedActorsFor({ ...options, isLatest: true })).toEqual([]);
+    });
+
+    it('lists an Actor with both source and test changes as functional and as test changed', async () => {
+        const result = await getChangedActors({
+            filepathsChanged: ['test/platform/daily/foo.test.ts', 'actors/foo_bar/src/main.ts'],
+            actorConfigs: [miniActor],
+            range,
+            platformTestsGlob: 'test/platform/**',
+        });
+        expect(result).toStrictEqual({ functional: [miniActor], cosmetic: [], test: [miniActor] });
+    });
+
+    it('test file listed in .dockerignore stays ignored without a platform tests glob', async () => {
         vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue((filePath) => filePath.startsWith('test/'));
-        const result = await changedActorsFor({
+        const result = await getChangedActors({
             filepathsChanged: ['test/platform/daily/foo.test.ts'],
             actorConfigs: [miniActor],
             range,
         });
-        expect(result).toEqual([]);
+        expect(result).toStrictEqual({ functional: [], cosmetic: [], test: [] });
     });
 
-    it('test files glob matches case-insensitively and does not bypass .dockerignore for other files', async () => {
+    it('platform tests glob matches case-insensitively and does not bypass .dockerignore for other files', async () => {
         vi.spyOn(Dockerignore, 'loadDockerIgnore').mockReturnValue(() => true);
-        const result = await changedActorsFor({
+        const result = await testChangedActorsFor({
             filepathsChanged: ['Test/Platform/Foo.test.ts'],
             actorConfigs: [miniActor],
             range,
-            testFilesGlob: 'test/platform/**',
+            platformTestsGlob: 'test/platform/**',
         });
         expect(result).toEqual([miniActor]);
         expect(
@@ -439,7 +467,7 @@ describe('getChangedActors', () => {
                 filepathsChanged: ['actors/foo_bar/node_modules/foo.js'],
                 actorConfigs: [miniActor],
                 range,
-                testFilesGlob: 'test/platform/**',
+                platformTestsGlob: 'test/platform/**',
             }),
         ).toEqual([]);
     });
@@ -450,7 +478,7 @@ describe('getChangedActors', () => {
             filepathsChanged: ['test/platform/daily/foo.test.ts'],
             actorConfigs: [standaloneActor],
             range,
-            testFilesGlob: 'test/platform/**',
+            platformTestsGlob: 'test/platform/**',
         });
         expect(result).toEqual([]);
     });
@@ -461,11 +489,11 @@ describe('getChangedActors', () => {
             ...standaloneActor,
             contextPaths: [...standaloneActor.contextPaths, new RelativeDir('test')],
         };
-        const result = await changedActorsFor({
+        const result = await testChangedActorsFor({
             filepathsChanged: ['test/platform/standalone.test.ts'],
             actorConfigs: [actorWithTests],
             range,
-            testFilesGlob: 'test/platform/**',
+            platformTestsGlob: 'test/platform/**',
         });
         expect(result).toEqual([actorWithTests]);
     });
@@ -602,6 +630,7 @@ describe('getChangedActors logging', () => {
             '[DIFF]: Changes specific to actor team/actor-b: actors/b/b-only.ts',
             '[DIFF]: Actors with functional changes: team/actor-a, team/actor-b',
             '[DIFF]: Actors with only cosmetic changes: none',
+            '[DIFF]: Actors with platform test changes: none',
         ]);
     });
 
@@ -614,7 +643,7 @@ describe('getChangedActors logging', () => {
             filepathsChanged: ['test/platform/standalone.test.ts'],
             actorConfigs: [standaloneActor],
             range,
-            testFilesGlob: 'test/platform/**',
+            platformTestsGlob: 'test/platform/**',
         });
 
         expect(logger.warn).toHaveBeenCalledWith(outsideContextWarning('test/platform/standalone.test.ts'));
@@ -625,7 +654,7 @@ describe('getChangedActors logging', () => {
             filepathsChanged: ['test/platform/standalone.test.ts', 'standalone-actors/standalone/src/main.ts'],
             actorConfigs: [standaloneActor],
             range,
-            testFilesGlob: 'test/platform/**',
+            platformTestsGlob: 'test/platform/**',
         });
 
         expect(result).toEqual([standaloneActor]);
@@ -637,7 +666,7 @@ describe('getChangedActors logging', () => {
             filepathsChanged: ['test/platform/foo.test.ts', 'test/platform/README.md', 'test/platform/CHANGELOG.md'],
             actorConfigs: [miniActor],
             range,
-            testFilesGlob: 'test/platform/**',
+            platformTestsGlob: 'test/platform/**',
         });
 
         expect(logger.warn).not.toHaveBeenCalled();
@@ -672,12 +701,12 @@ describe('getChangedActors split by impact', () => {
             actorConfigs,
             range,
         });
-        expect(result).toStrictEqual({ functional: [miniActor], cosmetic: [standaloneActor] });
+        expect(result).toStrictEqual({ functional: [miniActor], cosmetic: [standaloneActor], test: [] });
     });
 
     it('returns empty lists when nothing relevant changed', async () => {
         expect(
             await getChangedActors({ filepathsChanged: ['.vscode/settings.json'], actorConfigs, range }),
-        ).toStrictEqual({ functional: [], cosmetic: [] });
+        ).toStrictEqual({ functional: [], cosmetic: [], test: [] });
     });
 });

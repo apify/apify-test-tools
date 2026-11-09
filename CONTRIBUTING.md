@@ -172,7 +172,7 @@ brought:
   env:
       WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
   run: |
-      jq '{ actors: .functionallyChangedActors }' affected.json \
+      jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
         | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
           apify-test-tools build --version-number 0.99
 ```

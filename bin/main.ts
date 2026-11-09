@@ -56,10 +56,6 @@ const affectedRangeOptions = {
         type: 'string',
         describe: 'Only count commits after this one. Ignored with --base if it is not on the branch',
     },
-    'test-files-glob': {
-        type: 'string',
-        describe: 'Glob (from the repo root) of test files that count as changes even when .dockerignore lists them',
-    },
 } as const satisfies Record<string, Options>;
 
 /**
@@ -103,15 +99,19 @@ const envVarsSyncOptions = {
 
 /** Flags of `test`, which runs the repository's vitest on the Actors piped in, e.g. the builds from `build`. */
 const testOptions = {
+    'test-files-glob': {
+        type: 'string',
+        default: 'test/platform/**',
+        describe: 'Glob (from the repo root) of the test files to run. Quote it, so the shell does not expand it',
+    },
     'vitest-output-file': { type: 'string', describe: "Also keep vitest's own JSON report there, e.g. to upload it" },
     reporter: {
         type: 'string',
         describe:
             'Vitest reporter (https://vitest.dev/guide/reporters) to add to `default` and `json`, which are always on, ' +
             'e.g. github-actions. Repeat it for more',
-        // A plain string, not `array: true`: yargs would fill an array option with the arguments after it too, so
-        // `test --reporter github-actions test/platform` would take the test path as a reporter. A repeated flag
-        // still comes as an array, a single one as a string, so both are normalized to an array.
+        // A plain string, not `array: true`: yargs would fill an array option with the arguments after it too. A
+        // repeated flag still comes as an array, a single one as a string, so both are normalized to an array.
         coerce: (value: string | string[] | undefined) => (value === undefined ? [] : [value].flat()),
     },
 } as const satisfies Record<string, Options>;
@@ -183,20 +183,12 @@ await yargs()
         },
     )
     .command(
-        'test [filters..]',
+        'test',
         'Run the tests of the Actors listed on stdin (builds from build, or get-actor-configs for default builds), and print a report for notify',
-        (y) =>
-            y
-                .positional('filters', {
-                    type: 'string',
-                    array: true,
-                    default: ['test/platform'],
-                    describe: 'Test files to run, as vitest filters',
-                })
-                .options(testOptions),
+        (y) => y.options(testOptions),
         async (args) => {
             const report = await runTests({
-                filters: args.filters,
+                testFilesGlob: args.testFilesGlob,
                 targets: parseTestTargets(await readStdin()),
                 vitestOutputFile: args.vitestOutputFile,
                 reporters: args.reporter,
@@ -229,7 +221,8 @@ await yargs()
         async (args) => {
             const input = parseBuildInput(await readStdin());
             const names = input.actors.map(({ actorFullName }) => actorFullName);
-            // An empty --actors selects every Actor, but an empty list here means there is nothing to build
+            // An empty --actors selects every Actor, but an empty list here means there is nothing to build. The configs
+            // are picked by name, so an Actor listed twice (e.g. in two lists of get-affected-actors) is built once
             const actorConfigs = names.length > 0 ? await readConfigFile({ actors: names, ignore: [] }) : [];
             const builds = await buildActors({
                 actorConfigs,

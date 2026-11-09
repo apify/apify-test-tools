@@ -55,17 +55,18 @@ describe('ActorSource', () => {
 });
 
 describe('ActorSource.main', { timeout: 60_000 }, () => {
-    // Inside the repo, so the isolated type-check finds this tsconfig.json and typescript.
+    // See test/fixtures/actor-main/README.md.
+    const fixtures = path.join(import.meta.dirname, '../fixtures/actor-main');
     const testFile = async (code: string) => {
-        const dir = await mkdtemp(path.join(import.meta.dirname, 'tmp-'));
+        const dir = await mkdtemp(path.join(fixtures, 'tmp-'));
         const file = path.join(dir, 'scenario.test.ts');
         await writeFile(file, code);
         await writeFile(path.join(dir, 'package.json'), '{}');
         return { dir, file };
     };
     afterAll(async () => {
-        for (const dir of await readdir(import.meta.dirname)) {
-            if (dir.startsWith('tmp-')) await rm(path.join(import.meta.dirname, dir), { recursive: true, force: true });
+        for (const dir of await readdir(fixtures)) {
+            if (dir.startsWith('tmp-')) await rm(path.join(fixtures, dir), { recursive: true, force: true });
         }
     });
     // Only its name matters; the source comes from the file.

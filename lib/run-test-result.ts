@@ -28,9 +28,18 @@ export class RunTestResult {
         /**/
     }
 
+    /**
+     * Crawlee v3 writes `SDK_CRAWLER_STATISTICS_<n>`, v4 `CRAWLEE_CRAWLER_STATISTICS_<n>`. A crawler that replaces
+     * its statistics (adaptive Playwright) lands on the next `<n>`, so the highest one is the live record.
+     */
     getStatistics = once(async (): Promise<SdkCrawlerStatistics | undefined> => {
-        const record = await this.getKeyValueStoreClient().getRecord('SDK_CRAWLER_STATISTICS_0');
-        return record?.value as SdkCrawlerStatistics | undefined;
+        const store = this.getKeyValueStoreClient();
+        const [key] = (await store.listKeys()).items
+            .map(({ key: name }) => name)
+            .filter((name) => /^(SDK|CRAWLEE)_CRAWLER_STATISTICS_\d+$/.test(name))
+            .sort((a, b) => Number(b.slice(b.lastIndexOf('_') + 1)) - Number(a.slice(a.lastIndexOf('_') + 1)));
+        if (!key) return undefined;
+        return (await store.getRecord(key))?.value as SdkCrawlerStatistics | undefined;
     });
 
     getLog = once(async (): Promise<string> => {

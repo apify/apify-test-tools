@@ -146,6 +146,10 @@ The tag tracks the **workflows'** contract, not the npm package version. They mo
 its callers, not when the package does. The usage examples in the workflows, README and docs repeat the tag
 literally, so update them by hand when you bump it.
 
+A breaking change can also stay on `@workflows-v0` when all callers migrate at once. Open the caller PRs first,
+then merge this repo's PR first, so the caller PRs run their CI on the new workflows before they merge. Merge the
+caller PRs right after, since their scheduled runs fail between the two merges.
+
 ## Testing workflow changes
 
 - Point [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions) at your

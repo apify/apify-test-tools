@@ -61,6 +61,8 @@ const buildInputSchema = z.object({
             actorFullName: z.string(),
             // From testChangedActors: an existing build that runs the tests instead of a new one
             build: existingBuildSchema.optional(),
+            // From select-changed-tests: only these test files run for the Actor. Passed through to the output
+            testFiles: z.array(z.string()).optional(),
         }),
     ),
 });
@@ -71,6 +73,25 @@ export const parseBuildInput = (raw: string) =>
     parseStdinJson(raw, buildInputSchema, {
         expected: 'the Actors to build',
         example: `e.g. echo '{"actors":[{"actorFullName":"owner/name"}]}' | apify-test-tools build --version-number 0.1`,
+    });
+
+/**
+ * What `select-changed-tests` reads: the output of `get-affected-actors --base`. It prints the same document back, so
+ * the other fields, also those of each Actor, are kept.
+ */
+const selectChangedTestsInputSchema = z.looseObject({
+    head: z.string(),
+    testChangesSince: z.string(),
+    testChangedActors: z.array(z.looseObject({ actorFullName: z.string() })),
+});
+
+export type SelectChangedTestsInput = z.infer<typeof selectChangedTestsInputSchema>;
+
+export const parseSelectChangedTestsInput = (raw: string): SelectChangedTestsInput =>
+    parseStdinJson(raw, selectChangedTestsInputSchema, {
+        expected: 'the output of get-affected-actors',
+        example:
+            'e.g. apify-test-tools get-affected-actors --base origin/master | apify-test-tools select-changed-tests',
     });
 
 /**
@@ -86,6 +107,8 @@ const testTargetsSchema = z.array(
             buildId: z.string().optional(),
             actorRawId: z.string().optional(),
             buildNumber: z.string().optional(),
+            // Only the tests of the Actor in these files run, as repo-root-relative paths. Without it, all of them
+            testFiles: z.array(z.string()).optional(),
         })
         .refine(({ actorFullName, actorRawId }) => !!actorFullName || !!actorRawId, {
             message: 'An Actor needs actorFullName or actorRawId',

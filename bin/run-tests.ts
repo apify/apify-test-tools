@@ -17,7 +17,7 @@ import { failedRunReport, logTestReport, type TestReport, toTestReport, type Vit
  * that runs outside the repository's `node_modules`, so the tests keep the vitest (and the lib) version the
  * repository locked. Read from `package.json` because vitest's exports don't expose its bin.
  */
-const resolveVitestBin = async (cwd: string): Promise<string> => {
+export const resolveVitestBin = async (cwd: string): Promise<string> => {
     for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
         const packageDir = path.join(dir, 'node_modules', 'vitest');
         if (existsSync(path.join(packageDir, 'package.json'))) {

@@ -429,6 +429,21 @@ describe('buildOrReuseActors', () => {
         ).resolves.toStrictEqual([{ actorFullName: 'owner/a', ...stored }]);
     });
 
+    it('passes the testFiles of an Actor through, so test runs only those of its tests', async () => {
+        await expect(
+            run([{ actorFullName: 'owner/a', build: 'default', testFiles: ['test/platform/a.test.ts'] }]),
+        ).resolves.toStrictEqual([{ actorFullName: 'owner/a', testFiles: ['test/platform/a.test.ts'] }]);
+    });
+
+    it('builds an Actor listed with different testFiles and runs all its tests', async () => {
+        await expect(
+            planned([
+                { actorFullName: 'owner/a', build: 'default', testFiles: ['test/platform/a.test.ts'] },
+                { actorFullName: 'owner/a', build: 'default', testFiles: ['test/platform/b.test.ts'] },
+            ]),
+        ).resolves.toStrictEqual(['owner/a']);
+    });
+
     it('builds an Actor that is also listed without a build', async () => {
         await expect(
             planned([{ actorFullName: 'owner/a', build: 'default' }, { actorFullName: 'owner/a' }]),

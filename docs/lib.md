@@ -21,6 +21,12 @@ The library reads these when the test file is loaded:
 [{ "buildId": "...", "actorRawId": "...", "buildNumber": "1.2.3", "actorFullName": "john.doe/my-actor" }]
 ```
 
+An entry can also list `testFiles`, paths from the repo root (the directory vitest runs in). Then only the Actor's tests
+in those files run, and its tests in other files are skipped while vitest collects them, so their hooks don't run
+either. The CLI's `test` sets it for Actors whose only changes are some of their tests, see
+[`select-changed-tests`](cli.md#selecting-changed-tests-select-changed-tests). A lib version without it runs all of
+the Actor's tests.
+
 ## `describe(name, fn, options?)`
 
 Same as vitest's `describe`, but skipped unless `TESTER_APIFY_TOKEN` is set. Its tests

@@ -1,7 +1,10 @@
+import nodePath from 'node:path';
+import process from 'node:process';
+
 import type { Actor, ActorRun, ActorRunListItem, ActorStandby, Task } from 'apify-client';
 import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
-import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
+import { describe as vitestDescribe, expect as vitestExpect, ExpectStatic, test as vitestTest } from 'vitest';
 
 import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
@@ -22,6 +25,18 @@ try {
 } catch (err) {
     throw new Error(`Failed to parse actor builds: ${err}`);
 }
+
+/**
+ * Whether the Actor's tests run in the file being collected: always, unless its entry in ACTOR_BUILDS lists the only
+ * `testFiles` to run. Checked while the file is collected, so a skipped test's hooks don't run either.
+ */
+const runsInCurrentFile = (build: ActorBuild): boolean => {
+    if (!build.testFiles) return true;
+    const { testPath } = vitestExpect.getState();
+    if (!testPath) return true;
+    const file = nodePath.relative(process.cwd(), testPath).split(nodePath.sep).join('/');
+    return build.testFiles.includes(file);
+};
 
 const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
     map.set(cfg.actorFullName, cfg);
@@ -62,7 +77,8 @@ const defineActorTest = (
 ) => {
     const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
     const name = `${actorId}: ${testName}`;
-    vitestTest.runIf(config.has(actorId))(name, options, async (context) => {
+    const build = config.get(actorId);
+    vitestTest.runIf(build !== undefined && runsInCurrentFile(build))(name, options, async (context) => {
         await body({ ...context, expect: extendExpect(context.expect) }, name);
     });
 };

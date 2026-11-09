@@ -493,42 +493,51 @@ export const buildActors = async ({ actorConfigs, repoUrl, ...options }: BuildAc
     });
 };
 
-/** A build that `build` prints: a new or reused one, or `{ actorFullName }` alone for the Actor's default build. */
-type BuildResult = BuildData | { actorFullName: string };
+/**
+ * A build that `build` prints: a new or reused one, or `{ actorFullName }` alone for the Actor's default build. With
+ * the `testFiles` the Actor was listed with, so `test` runs only those of its tests.
+ */
+type BuildResult = (BuildData | { actorFullName: string }) & { testFiles?: string[] };
 
 /**
- * The existing build of each Actor that has one. An Actor listed several times keeps it only when every entry names
- * the same build: entries that differ, e.g. one without a build, are a conflict, and the Actor is built from scratch.
+ * The existing build and the test files of each Actor listed with them. An Actor listed several times keeps them only
+ * when every entry is the same: entries that differ, in `build` or in `testFiles`, are a conflict, so the Actor is
+ * built from scratch and runs all its tests.
  */
-const resolveExistingBuilds = (targets: BuildTarget[]): Map<string, ExistingBuild> => {
+const resolveTargets = (targets: BuildTarget[]) => {
     const entriesByActor = new Map<string, BuildTarget[]>();
     for (const target of targets) {
         entriesByActor.set(target.actorFullName, [...(entriesByActor.get(target.actorFullName) ?? []), target]);
     }
     const existingBuilds = new Map<string, ExistingBuild>();
+    const testFiles = new Map<string, string[]>();
     for (const [actorFullName, entries] of entriesByActor) {
-        const builds = new Set(entries.map(({ build }) => JSON.stringify(build ?? null)));
-        if (builds.size > 1) {
-            logger.info(`[${actorFullName}]: Building, since it is listed with different builds`);
+        const distinct = new Set(
+            entries.map((entry) => JSON.stringify([entry.build ?? null, entry.testFiles ?? null])),
+        );
+        if (distinct.size > 1) {
+            logger.info(`[${actorFullName}]: Building and running all its tests, since its entries differ`);
             continue;
         }
-        if (entries[0].build) existingBuilds.set(actorFullName, entries[0].build);
+        const [{ build, testFiles: files }] = entries;
+        if (build) existingBuilds.set(actorFullName, build);
+        if (files) testFiles.set(actorFullName, files);
     }
-    return existingBuilds;
+    return { existingBuilds, testFiles };
 };
 
 /**
  * Builds the given Actors like `buildActors`, except those listed with an existing `build` (see testChangedActors of
  * get-affected-actors). Those reuse it: `default` passes through as `{ actorFullName }`, which `test` runs on the
  * default build, and a stored build passes through while it still exists and succeeded. A stored build that can't be
- * used any more is replaced by a new build. An Actor listed with different builds, e.g. once without one, is built.
+ * used any more is replaced by a new build. An Actor listed with entries that differ is built and runs all its tests.
  */
 export const buildOrReuseActors = async ({
     targets,
     actorConfigs,
     ...options
 }: BuildActorsOptions & { targets: BuildTarget[] }): Promise<BuildResult[] | DryRunPlan<GitBuildPlan>> => {
-    const existingBuilds = resolveExistingBuilds(targets);
+    const { existingBuilds, testFiles: testFilesOf } = resolveTargets(targets);
 
     const reused: BuildResult[] = [];
     const toBuild: ActorConfig[] = [];
@@ -555,7 +564,11 @@ export const buildOrReuseActors = async ({
     const built = await buildActors({ ...options, actorConfigs: toBuild });
     // A dry run plans only the builds; it logged the reused ones above
     if (!Array.isArray(built)) return built;
-    return [...reused, ...built];
+    // An Actor listed without testFiles runs all its tests
+    return [...reused, ...built].map((result) => {
+        const testFiles = testFilesOf.get(result.actorFullName);
+        return testFiles ? { ...result, testFiles } : result;
+    });
 };
 
 export const deleteOldBuilds = async (actorConfigs: ActorConfig[], { dryRun }: { dryRun: boolean }) => {

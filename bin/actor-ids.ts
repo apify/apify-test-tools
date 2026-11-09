@@ -3,7 +3,7 @@ import { ApifyClient } from 'apify-client';
 import { logger } from './logger.js';
 import type { TestTarget } from './stdin-input.js';
 
-type ActorGetter = Pick<ApifyClient, 'actor'>;
+export type ActorGetter = Pick<ApifyClient, 'actor'>;
 
 /**
  * Adds the ID each target is missing: the raw ID to those listed by full name, e.g. by `get-actor-configs`, and the

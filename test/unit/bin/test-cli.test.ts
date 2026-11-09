@@ -62,6 +62,16 @@ test('owner/a: fails', () => {
             `import { test } from 'vitest';\n\ntest.skip('owner/a: skipped', () => {});\n`,
         );
 
+        // Tests written with the lib, which skips an Actor's tests outside the testFiles it is given
+        for (const name of ['one', 'two']) {
+            await mkdir(path.join(repoDir, 'test/lib'), { recursive: true });
+            await writeFile(
+                path.join(repoDir, `test/lib/${name}.test.ts`),
+                `import { testActor } from ${JSON.stringify(path.join(projectRoot, 'lib/lib.ts'))};\n\n` +
+                    `testActor('owner/a', '${name}', async () => {});\n`,
+            );
+        }
+
         for (const folder of ['with-pr', 'without-pr']) {
             await mkdir(path.join(repoDir, 'test/glob', folder), { recursive: true });
             await writeFile(
@@ -162,6 +172,21 @@ test('owner/a: fails', () => {
         const result = run(['test', '--test-files-glob', 'test/skipped/**'], JSON.stringify([build]));
         expect(result.status, result.stderr).toBe(0);
         expect(result.stderr).toContain('Every test was skipped, although 1 Actor(s) were given');
+    });
+
+    it("runs an Actor's tests only in the testFiles it is listed with", () => {
+        const result = run(
+            ['test', '--test-files-glob', 'test/lib/**'],
+            JSON.stringify([{ ...build, testFiles: ['test/lib/one.test.ts'] }]),
+        );
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+            summary: { total: 2, passed: 1, skipped: 1 },
+            tests: expect.arrayContaining([
+                expect.objectContaining({ name: 'owner/a: one', status: 'passed' }),
+                expect.objectContaining({ name: 'owner/a: two', status: 'skipped' }),
+            ]),
+        });
     });
 
     it('rejects test paths given the old way, as arguments, instead of running every test', () => {

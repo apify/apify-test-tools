@@ -4,7 +4,12 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { CONFIG_FILE_NAME, loadActorConfig, readConfigFile } from '../../../../../bin/utils/config/load-config.js';
+import {
+    CONFIG_FILE_NAME,
+    loadActorConfig,
+    readBaseConfigFile,
+    readConfigFile,
+} from '../../../../../bin/utils/config/load-config.js';
 import type { ResolvedActorConfig } from '../../../../../bin/utils/config/structures/base.js';
 import { ExistingDir, ExistingFile, RelativeDir, RelativeFile } from '../../../../../bin/utils/path/repo-relative.js';
 
@@ -263,5 +268,25 @@ describe('readConfigFile', () => {
     it('surfaces a schema failure from the parser', async () => {
         await writeFiles({ [CONFIG_FILE_NAME]: JSON.stringify({ notActors: [] }) });
         await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/at actors/);
+    });
+});
+
+describe('readBaseConfigFile', () => {
+    it('returns non-file settings without checking Actor paths or reading actor.json', async () => {
+        await writeFiles({
+            [CONFIG_FILE_NAME]: validConfig([
+                {
+                    folder: 'missing-actor-dir',
+                    actorFullName: 'myteam/shopify',
+                    tokenEnvVar: 'APIFY_TOKEN',
+                    overrideActorContext: ['../outside'],
+                },
+            ]),
+        });
+
+        await expect(readBaseConfigFile()).resolves.toEqual([
+            { actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' },
+        ]);
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow();
     });
 });

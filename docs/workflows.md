@@ -396,6 +396,9 @@ token is not passed on. A token the config declares but the repo hasn't set is a
 carry an Actor whose token isn't configured and still build fine as long as that Actor never changes. The build fails
 with an error naming the Actor once it actually needs the token.
 
+The wrapper validates the config with the CLI's parser. Each Actor must declare a nonempty `tokenEnvVar` or inherit
+one from its group. An empty name or a missing required `tokenEnvVar` fails during config validation.
+
 The `unitTest` job runs static checks and needs `NPM_TOKEN` only. No job runs `npm ci` or `pnpm install` with Apify
 or Slack credentials in scope, so a postinstall script in the dependency tree cannot read them.
 

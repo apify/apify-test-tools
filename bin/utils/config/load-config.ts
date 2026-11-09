@@ -3,8 +3,8 @@ import type { ActorConfig } from '../../types.js';
 import { safeReadJsonObjectFile } from '../json-file.js';
 import { ExistingFile, type RelativeDir } from '../path/repo-relative.js';
 import { readActorJson } from './actor-json.js';
-import { parseConfigFile } from './parser.js';
-import type { ValidatedActorConfig } from './structures/base.js';
+import { parseConfigFile, parseResolvedConfigFile } from './parser.js';
+import type { ResolvedActorConfig, ValidatedActorConfig } from './structures/base.js';
 
 export const CONFIG_FILE_NAME = 'apify-test-tools.config.json';
 
@@ -110,4 +110,19 @@ export const readConfigFile = async (selection: { actors: string[]; ignore: stri
     }
 
     return selectActors(selection, actorConfigs);
+};
+
+type PathlessConfig = Omit<ResolvedActorConfig, 'folder' | 'overrideActorContext'>;
+/** Read settings shared by all commands without initializing or validating local paths. */
+export const readBaseConfigFile = async () => {
+    const rawFileContents = await readConfigFileContents();
+    return parseResolvedConfigFile(rawFileContents).map(
+        ({ actorFullName, tokenEnvVar }) =>
+            // using `satisfies` here instead of return type annotation
+            // so its not shown as `PathlessConfig` type on output or IDE, but the expanded form
+            ({
+                actorFullName,
+                tokenEnvVar,
+            }) satisfies PathlessConfig,
+    );
 };

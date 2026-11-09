@@ -8,7 +8,7 @@ const schema = z.object({
             z.object({
                 folder: z.string(),
                 actorFullName: z.string().regex(ACTOR_FULL_NAME_REGEX),
-                tokenEnvVar: z.string(),
+                tokenEnvVar: z.string().min(1),
                 overrideActorContext: z.array(z.string()).optional(),
             }),
         )

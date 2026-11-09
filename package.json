@@ -59,7 +59,8 @@
         "vitest": "^3.2.4"
     },
     "peerDependencies": {
-        "vitest": ">=3.2.4"
+        "vitest": ">=3.2.4",
+        "typescript": ">=5"
     },
     "scripts": {
         "start": "npm run dist/bin/main.js",
@@ -81,5 +82,10 @@
         "*.ts": "eslint"
     },
     "author": "oklinov",
-    "license": "ISC"
+    "license": "ISC",
+    "peerDependenciesMeta": {
+        "typescript": {
+            "optional": true
+        }
+    }
 }

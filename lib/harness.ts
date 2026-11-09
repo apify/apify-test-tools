@@ -13,7 +13,7 @@ import { transformSync } from 'oxc-transform';
 
 import type { ACTOR_PERMISSION_LEVEL } from '@apify/consts';
 
-import { collectNonIgnoredFiles } from '../bin/build-from-local.js';
+import { collectNonIgnoredFiles } from '../bin/source-files.js';
 import { RelativeDir } from '../bin/utils/path/repo-relative.js';
 import { RunTestResult } from './run-test-result.js';
 

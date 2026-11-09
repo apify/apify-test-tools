@@ -371,7 +371,8 @@ describe('buildOrReuseActors', () => {
     const run = async (targets: Parameters<typeof buildOrReuseActors>[0]['targets']) =>
         buildOrReuseActors({
             targets,
-            actorConfigs: targets.map(({ actorFullName }) => config(actorFullName)),
+            // Unique, like the configs build reads by name
+            actorConfigs: [...new Set(targets.map(({ actorFullName }) => actorFullName))].map(config),
             versionNumber: '0.99',
             repoUrl: REPO_URL,
             dryRun: false,
@@ -409,6 +410,24 @@ describe('buildOrReuseActors', () => {
     ])('builds again when the stored build %s', async (_, found) => {
         builds.b1 = found;
         await expect(planned([{ actorFullName: 'owner/a', build: stored }])).resolves.toStrictEqual(['owner/a']);
+    });
+
+    it('builds an Actor listed with two different builds', async () => {
+        await expect(
+            planned([
+                { actorFullName: 'owner/a', build: 'default' },
+                { actorFullName: 'owner/a', build: stored },
+            ]),
+        ).resolves.toStrictEqual(['owner/a']);
+    });
+
+    it('reuses the build of an Actor listed twice with the same build', async () => {
+        await expect(
+            run([
+                { actorFullName: 'owner/a', build: stored },
+                { actorFullName: 'owner/a', build: { ...stored } },
+            ]),
+        ).resolves.toStrictEqual([{ actorFullName: 'owner/a', ...stored }]);
     });
 
     it('builds an Actor that is also listed without a build', async () => {

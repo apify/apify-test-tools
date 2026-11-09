@@ -504,23 +504,38 @@ export const buildActors = async ({ actorConfigs, repoUrl, ...options }: BuildAc
 type BuildResult = BuildData | { actorFullName: string };
 
 /**
+ * The existing build of each Actor that has one. An Actor listed several times keeps it only when every entry names
+ * the same build: entries that differ, e.g. one without a build, are a conflict, and the Actor is built from scratch.
+ */
+const resolveExistingBuilds = (targets: BuildTarget[]): Map<string, ExistingBuild> => {
+    const entriesByActor = new Map<string, BuildTarget[]>();
+    for (const target of targets) {
+        entriesByActor.set(target.actorFullName, [...(entriesByActor.get(target.actorFullName) ?? []), target]);
+    }
+    const existingBuilds = new Map<string, ExistingBuild>();
+    for (const [actorFullName, entries] of entriesByActor) {
+        const builds = new Set(entries.map(({ build }) => JSON.stringify(build ?? null)));
+        if (builds.size > 1) {
+            logger.info(`[${actorFullName}]: Building, since it is listed with different builds`);
+            continue;
+        }
+        if (entries[0].build) existingBuilds.set(actorFullName, entries[0].build);
+    }
+    return existingBuilds;
+};
+
+/**
  * Builds the given Actors like `buildActors`, except those listed with an existing `build` (see testChangedActors of
  * get-affected-actors). Those reuse it: `default` passes through as `{ actorFullName }`, which `test` runs on the
  * default build, and a stored build passes through while it still exists and succeeded. A stored build that can't be
- * used any more is replaced by a new build. An Actor listed both with and without a build is built.
+ * used any more is replaced by a new build. An Actor listed with different builds, e.g. once without one, is built.
  */
 export const buildOrReuseActors = async ({
     targets,
     actorConfigs,
     ...options
 }: BuildActorsOptions & { targets: BuildTarget[] }): Promise<BuildResult[] | DryRunPlan<GitBuildPlan>> => {
-    const existingBuilds = new Map<string, ExistingBuild>();
-    const mustBuild = new Set<string>();
-    for (const { actorFullName, build } of targets) {
-        if (build) existingBuilds.set(actorFullName, build);
-        else mustBuild.add(actorFullName);
-    }
-    for (const actorFullName of mustBuild) existingBuilds.delete(actorFullName);
+    const existingBuilds = resolveExistingBuilds(targets);
 
     const reused: BuildResult[] = [];
     const toBuild: ActorConfig[] = [];

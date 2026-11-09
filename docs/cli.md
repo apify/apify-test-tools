@@ -172,7 +172,9 @@ An Actor in `testChangedActors` gets the existing `build` that can run its tests
 
 `build` builds exactly the Actors it is given on stdin, from the checked-out branch as it is on the remote, and
 prints the builds as the same JSON array `build-from-local` prints. An Actor listed twice is built once, so the lists
-of `get-affected-actors` can be joined without removing duplicates first.
+of `get-affected-actors` can be joined without removing duplicates first. A detached HEAD is an error, since there is
+no branch to build from. It doesn't look at git history: which Actors to build is up to you, usually picked from the
+output of [`get-affected-actors`](#finding-affected-actors-get-affected-actors).
 
 An Actor listed with a `build`, as `testChangedActors` of
 [`get-affected-actors`](#finding-affected-actors-get-affected-actors) gives it, is not built:
@@ -182,11 +184,10 @@ An Actor listed with a `build`, as `testChangedActors` of
 - A build object passes through while the build still exists, succeeded, belongs to the Actor and is of
   `--version-number`. Otherwise the Actor is built as usual, and the log says why. `delete-old-builds` deletes builds
   after 30 days, so an old stored build is replaced this way.
-- An Actor also listed without a `build` is built.
+- An Actor listed several times with different builds, e.g. once without one, is built from scratch. Entries that
+  name the same build count as one.
 
-The output then lists every build to test, new and reused, so it goes straight to `test`. A detached HEAD is an error, since there is
-no branch to build from. It doesn't look at git history: which Actors to build is up to you, usually picked from the
-output of [`get-affected-actors`](#finding-affected-actors-get-affected-actors).
+The output then lists every build to test, new and reused, so it goes straight to `test`.
 
 ```bash
 # A PR: the Actors whose code or platform tests the branch changed, built into the test version, or reused
@@ -203,7 +204,8 @@ npx apify-test-tools get-affected-actors --since <sha> \
 echo '{ "actors": [{ "actorFullName": "john.doe/my-actor" }] }' | npx apify-test-tools build --version-number 0.99
 ```
 
-The input is `{ "actors": [{ "actorFullName": "<owner/name>" }] }`; other fields are ignored. An empty `actors` list
+The input is `{ "actors": [{ "actorFullName": "<owner/name>" }] }`, each Actor with an optional `build` (see above);
+other fields are ignored. An empty `actors` list
 builds nothing and prints `[]`. Empty or invalid input is an error, so a failed command earlier in the pipe can't turn
 into a successful run that built nothing. In GitHub Actions, give such a step `shell: bash` so the pipe also fails on
 its own (the default shell has no `pipefail`).
@@ -215,10 +217,14 @@ its own (the default shell has no `pipefail`).
 | `--require-env-vars-in-sync` | `false`             | Fail unless the built version's env var names match the default version's, see [Env var check](#env-var-check)         |
 | `--dry-run`                  | `false`             | See [Dry runs](#dry-runs---dry-run)                                                                                    |
 
-The output is the build array the vitest library reads from `ACTOR_BUILDS`:
+The output is the build array the vitest library reads from `ACTOR_BUILDS`. A reused default build is the Actor's
+name alone:
 
 ```json
-[{ "buildId": "...", "actorRawId": "...", "buildNumber": "...", "actorFullName": "john.doe/my-actor" }]
+[
+    { "buildId": "...", "actorRawId": "...", "buildNumber": "...", "actorFullName": "john.doe/my-actor" },
+    { "actorFullName": "john.doe/other-actor" }
+]
 ```
 
 `build` never sets or changes build tags. A build gets the tag its version is configured with on the platform, so
@@ -492,7 +498,8 @@ npx apify-test-tools get-affected-actors --base origin/master \
 Run it with your dummy branch checked out: it builds the Actors that branch changed functionally, from the branch as
 it is on the remote, into the test version `0.99`. Add `--dry-run` to `build` to print the plan (the version and Git
 URL each Actor would be built from) first, and update `--base` to the branch you compare against. Tests only run for
-Actors in `ACTOR_BUILDS`, so the `jq` filter also builds the Actors whose platform tests changed.
+Actors in `ACTOR_BUILDS`, so the `jq` filter also passes the Actors whose platform tests changed. Those whose code the
+branch didn't change run on their default build, the others are built.
 
 If you want to test against existing builds instead, skip the build and write the build array by hand, only for the
 Actors you need to test.

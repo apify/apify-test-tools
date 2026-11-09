@@ -43,6 +43,7 @@ const ValidatedConfigSchema = z.array(
         actorFullName: z.string(),
         folder: ExistingDirSchema,
         tokenEnvVar: z.string(),
+        testTokenEnvVar: z.string(),
         overrideActorContext: z.array(RelativeDirSchema).optional(),
     }),
 );

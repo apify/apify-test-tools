@@ -45,6 +45,14 @@ const repoWithLib = async (alias: string) => {
     await symlink(path.join(projectRoot, 'node_modules/vitest'), path.join(repoDir, 'node_modules/vitest'));
     await mkdir(path.join(repoDir, 'test/platform'), { recursive: true });
     await writeFile(path.join(repoDir, 'test/platform/old.test.ts'), testFile);
+    // `test` reads each Actor's test token from the config
+    await mkdir(path.join(repoDir, 'actors/a'), { recursive: true });
+    await writeFile(
+        path.join(repoDir, 'apify-test-tools.config.json'),
+        JSON.stringify({
+            actors: [{ folder: 'actors/a', actorFullName: 'owner/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' }],
+        }),
+    );
     return repoDir;
 };
 
@@ -58,7 +66,7 @@ describe('test with an old lib', () => {
         expect(devDependencies['apify-test-tools-oldest']).toBe(`npm:apify-test-tools@${OLDEST_SUPPORTED_LIB_VERSION}`);
     });
 
-    it.each(OLD_LIBS)('runs the tests of the given Actors with $alias, $why', async ({ alias }) => {
+    it.each(OLD_LIBS)('refuses $alias, $why, which runs every test with TESTER_APIFY_TOKEN', async ({ alias }) => {
         const repoDir = await repoWithLib(alias);
         const result = spawnSync(process.execPath, [bundlePath, 'test'], {
             cwd: repoDir,
@@ -66,16 +74,8 @@ describe('test with an old lib', () => {
             input: JSON.stringify([build]),
             encoding: 'utf8',
         });
-        expect(result.status, result.stderr).toBe(0);
-        const report = JSON.parse(result.stdout);
-        expect(report.summary).toStrictEqual({ total: 3, passed: 2, failed: 0, skipped: 1 });
-        expect(
-            Object.fromEntries(report.tests.map((test: { name: string; status: string }) => [test.name, test.status])),
-        ).toStrictEqual({
-            'old lib suite owner/a: by full name': 'passed',
-            'old lib suite rawIdOfOwnerA0000: by raw ID': 'passed',
-            'old lib suite owner/other: of an Actor not given': 'skipped',
-        });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('installed in this repository is too old for this CLI');
         // A supported version gets no warning about its age
         expect(result.stderr).not.toContain('the oldest version this CLI supports');
     });

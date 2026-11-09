@@ -20,6 +20,8 @@ export interface ResolvedActorConfig {
     actorFullName: string;
     folder: string;
     tokenEnvVar: string;
+    /** The token the platform tests run the Actor with, `tokenEnvVar` unless the config names another */
+    testTokenEnvVar: string;
     overrideActorContext: string[] | undefined;
 }
 

@@ -48,6 +48,7 @@ describe('loadActorConfig', () => {
         folder: new ExistingDir(fields.folder ?? 'actors/shopify'),
         actorFullName: fields.actorFullName ?? 'myteam/shopify',
         tokenEnvVar: fields.tokenEnvVar ?? 'APIFY_TOKEN',
+        testTokenEnvVar: fields.testTokenEnvVar ?? fields.tokenEnvVar ?? 'APIFY_TOKEN',
         overrideActorContext: fields.overrideActorContext?.map((contextPath) => new RelativeDir(contextPath)),
     });
 
@@ -285,7 +286,7 @@ describe('readBaseConfigFile', () => {
         });
 
         await expect(readBaseConfigFile()).resolves.toEqual([
-            { actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' },
+            { actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN', testTokenEnvVar: 'APIFY_TOKEN' },
         ]);
         await expect(readConfigFile(emptyActorSelection)).rejects.toThrow();
     });

@@ -45,7 +45,7 @@ Validates a pull request. It runs two jobs in parallel.
    [`build`](cli.md#building-actors-build). Cosmetic-only changes (README, CHANGELOG, schema formatting) need no
    tests, so they're not built.
 3. Runs [`test`](cli.md#running-tests-test) on the files that match `test-files-glob` with those builds, so only the
-   tests of the built Actors run. Failing tests are annotated on the PR.
+   tests of the built Actors run, each Actor with its test token. Failing tests are annotated on the PR.
 4. On success, caches the tested commit as the "last validated commit". The next push to the PR then only builds
    and tests the Actors that changed since it (see `--since` in
    [`get-affected-actors`](cli.md#finding-affected-actors-get-affected-actors)).
@@ -69,8 +69,10 @@ scripts, e.g. to run your language's own checks: without them, the TypeScript, L
 | `test-files-glob`          | string  | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests) |
 | `require-env-vars-in-sync` | boolean | `true`             | Fail the build unless the env var names of `0.99` match the default version's, see [Env var check](cli.md#env-var-check)    |
 
-Secrets: `TESTER_APIFY_TOKEN`, the Actor tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`. With
-`skip-platform-tests`, only `NPM_TOKEN`.
+Secrets: the Actor and test tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`. With `skip-platform-tests`, only
+`NPM_TOKEN`. The build gets each Actor's `tokenEnvVar`, the tests its `testTokenEnvVar`, which is the same token unless
+the config names another. `TESTER_APIFY_TOKEN` is still accepted by name, for a config that names it as a
+`testTokenEnvVar`.
 
 A new push to the same PR cancels the run in progress.
 
@@ -88,8 +90,7 @@ jobs:
             # Leaves out the *-without-pr folders, see "Splitting the tests"
             test-files-glob: 'test/platform/{daily,hourly}/**'
         secrets:
-            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-            # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
+            # One entry per secret apify-test-tools.config.json names: each `tokenEnvVar` and `testTokenEnvVar`
             CONFIG_SECRETS: |
                 {
                     "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
@@ -134,7 +135,7 @@ jobs:
             report-slack-channel: '#notif-my-repo'
         secrets:
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-            # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
+            # One entry per secret apify-test-tools.config.json names, here each `tokenEnvVar`
             CONFIG_SECRETS: |
                 {
                     "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
@@ -155,7 +156,9 @@ vitest's own JSON report are uploaded as the `vitest-results` artifact. Runs onl
 | `test-files-glob`      | string | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests) |
 | `report-slack-channel` | string | `''`               | Slack channel for the results. Empty skips Slack                                                                            |
 
-Secrets: `TESTER_APIFY_TOKEN` (required), `SLACK_BOT_TOKEN`, and optionally `NPM_TOKEN`.
+Secrets: the test tokens in `CONFIG_SECRETS`, `SLACK_BOT_TOKEN`, and optionally `NPM_TOKEN`. The tests run each Actor
+with its `testTokenEnvVar`, its `tokenEnvVar` unless the config names another. `TESTER_APIFY_TOKEN` is still accepted
+by name, for a config that names it as a `testTokenEnvVar`.
 
 How often to run which tests is up to you, see [Splitting the tests](#splitting-the-tests). For example, the daily
 tests once a day:
@@ -176,8 +179,12 @@ jobs:
             test-files-glob: 'test/platform/{daily,daily-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
         secrets:
-            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+            CONFIG_SECRETS: |
+                {
+                    "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
+                    "APIFY_TOKEN_PARTNER": "${{ secrets.APIFY_TOKEN_PARTNER }}"
+                }
 ```
 
 and a few critical tests every hour:
@@ -198,8 +205,12 @@ jobs:
             test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
         secrets:
-            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+            CONFIG_SECRETS: |
+                {
+                    "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
+                    "APIFY_TOKEN_PARTNER": "${{ secrets.APIFY_TOKEN_PARTNER }}"
+                }
 ```
 
 ## Splitting the tests
@@ -318,6 +329,9 @@ dependency rather than a label-triggered run of `public_claude.yaml`.
 
 Secrets: `ANTHROPIC_API_KEY`, `TESTER_APIFY_TOKEN`, and optionally `NPM_TOKEN`, `REDASH_API_KEY` and `AGENT_SKILLS_INTERNAL_GITHUB_TOKEN`.
 
+Runs are private to the account that started them, so `TESTER_APIFY_TOKEN` here must be the token the tests ran the
+failing Actor with: its `testTokenEnvVar`, which is its `tokenEnvVar` unless the config names another.
+
 ```yaml
 jobs:
     platformTestsHourly:
@@ -326,8 +340,12 @@ jobs:
             test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
         secrets:
-            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+            CONFIG_SECRETS: |
+                {
+                    "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
+                    "APIFY_TOKEN_PARTNER": "${{ secrets.APIFY_TOKEN_PARTNER }}"
+                }
 
     handle-failure:
         needs: platformTestsHourly
@@ -335,7 +353,8 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v0
         secrets:
             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+            # The token the tests ran the Actors with, so Claude can read the failing run
+            TESTER_APIFY_TOKEN: ${{ secrets.APIFY_TOKEN_MYTEAM }}
 ```
 
 ## `public_stale-issues.yaml`
@@ -380,19 +399,19 @@ secrets, checkout, project dependencies, or Apify configuration are needed.
 
 The workflows take two kinds of secrets:
 
-- **Secrets a workflow always reads**, like `TESTER_APIFY_TOKEN` for the tests or `NPM_TOKEN` for installing private
+- **Secrets a workflow always reads**, like `SLACK_BOT_TOKEN` for notifications or `NPM_TOKEN` for installing private
   packages. Each workflow declares these, and you pass them by name.
-- **Secrets your `apify-test-tools.config.json` names**, today each Actor's `tokenEnvVar`. Their names differ per
-  repo, and a reusable workflow only accepts secrets it declares by name, so they go packed in one JSON object,
-  `CONFIG_SECRETS`, with one entry per name the config uses. A name the config declares but the object leaves out
-  is reported as a warning in the build step.
+- **Secrets your `apify-test-tools.config.json` names**: each Actor's `tokenEnvVar`, and its `testTokenEnvVar` where
+  the config sets one. Their names differ per repo, and a reusable workflow only accepts secrets it declares by name,
+  so they go packed in one JSON object, `CONFIG_SECRETS`, with one entry per name the config uses. A name the config
+  declares but the object leaves out is reported as a warning in the build or test step. The test workflows also
+  declare `TESTER_APIFY_TOKEN`, so a config whose `testTokenEnvVar` names it can keep passing it by name.
 
 The examples above show both. If you'd rather not keep `CONFIG_SECRETS` in sync with the config, you can pass all of
 the repo's secrets in it:
 
 ```yaml
 secrets:
-    TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
     CONFIG_SECRETS: ${{ toJSON(secrets) }}
 ```
 
@@ -404,8 +423,8 @@ organization or enterprise as this repo. The config's secrets are then looked up
 `CONFIG_SECRETS` doesn't have them.
 
 `required` on a reusable workflow's secret only checks that the caller lists it, not that it has a value: the repo
-may not have the secret, and PRs from forks never get secrets. The test workflows check that `TESTER_APIFY_TOKEN` is
-not empty before doing anything else, and fail with a message saying so.
+may not have the secret, and PRs from forks never get secrets. A test token that doesn't arrive is a warning in the
+test step, and fails the tests of the Actors that need it, with a message naming it.
 
 Values that arrive inside `CONFIG_SECRETS` are registered as masks one by one before anything uses them. The runner
 masks a secret by its exact value, so it would otherwise only recognise the whole JSON blob, not a single token taken
@@ -414,15 +433,16 @@ out of it.
 The workflows do not turn the secrets they receive into job-wide environment variables, so a secret is only visible
 to the step that needs it:
 
-| Secret                                                                    | Reaches                                                                                                                                                                                                                    |
-| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NPM_TOKEN`                                                               | dependency install steps only, as both `NPM_TOKEN` and `NODE_AUTH_TOKEN`. Use a read-only token: npm granular tokens can be read-only, classic automation tokens can publish.                                              |
-| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the build and `delete-old-builds` steps only                                                                                                                                                                               |
-| `TESTER_APIFY_TOKEN`                                                      | the test step, and the Claude investigation step: the Apify MCP server's bearer token for reading the failing run, its log and its storages, and Claude's token for re-running it to measure how often the failure happens |
-| `SLACK_BOT_TOKEN`                                                         | the `notify` steps only                                                                                                                                                                                                    |
-| `ANTHROPIC_API_KEY`                                                       | the Claude steps of the Claude workflows only                                                                                                                                                                              |
-| `REDASH_API_KEY`                                                          | the Claude investigation step: the Redash MCP server's key for measuring the failure's impact from Snowflake. Optional                                                                                                     |
-| `AGENT_SKILLS_INTERNAL_GITHUB_TOKEN`                                      | the investigation job's checkout of `apify/agent-skills-internal` only, for the `redash-analyst` plugin. Optional                                                                                                          |
+| Secret                                                                    | Reaches                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NPM_TOKEN`                                                               | dependency install steps only, as both `NPM_TOKEN` and `NODE_AUTH_TOKEN`. Use a read-only token: npm granular tokens can be read-only, classic automation tokens can publish.                                                                                              |
+| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | the build and `delete-old-builds` steps only                                                                                                                                                                                                                               |
+| the test tokens named by `testTokenEnvVar`, by default the Actor tokens   | the test step only. A token that is also an Actor token reaches the build steps too                                                                                                                                                                                        |
+| `TESTER_APIFY_TOKEN`                                                      | the test step when the config names it as a `testTokenEnvVar`, and the Claude investigation step: the Apify MCP server's bearer token for reading the failing run, its log and its storages, and Claude's token for re-running it to measure how often the failure happens |
+| `SLACK_BOT_TOKEN`                                                         | the `notify` steps only                                                                                                                                                                                                                                                    |
+| `ANTHROPIC_API_KEY`                                                       | the Claude steps of the Claude workflows only                                                                                                                                                                                                                              |
+| `REDASH_API_KEY`                                                          | the Claude investigation step: the Redash MCP server's key for measuring the failure's impact from Snowflake. Optional                                                                                                                                                     |
+| `AGENT_SKILLS_INTERNAL_GITHUB_TOKEN`                                      | the investigation job's checkout of `apify/agent-skills-internal` only, for the `redash-analyst` plugin. Optional                                                                                                                                                          |
 
 The Actor tokens reach the build only for the Actors your config declares: a secret that merely looks like an Actor
 token is not passed on. A token the config declares but the repo hasn't set is a warning, not a failure: a repo can

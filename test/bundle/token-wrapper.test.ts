@@ -28,14 +28,18 @@ describe('token wrapper bundle', () => {
     };
 
     const runWrapper = (workflowSecrets: Record<string, string> = actorSecrets) =>
-        spawnSync(process.execPath, [wrapperPath, process.execPath, '-e', 'console.log(JSON.stringify(process.env))'], {
-            cwd: repoDir,
-            env: {
-                PATH: process.env.PATH ?? '',
-                WORKFLOW_SECRETS: JSON.stringify(workflowSecrets),
+        spawnSync(
+            process.execPath,
+            [wrapperPath, '--tokens', 'build', process.execPath, '-e', 'console.log(JSON.stringify(process.env))'],
+            {
+                cwd: repoDir,
+                env: {
+                    PATH: process.env.PATH ?? '',
+                    WORKFLOW_SECRETS: JSON.stringify(workflowSecrets),
+                },
+                encoding: 'utf8',
             },
-            encoding: 'utf8',
-        });
+        );
 
     it.each(['inherited secrets', 'CONFIG_SECRETS'])(
         'passes grouped tokens and actor overrides from %s without unrelated secrets',
@@ -65,7 +69,7 @@ describe('token wrapper bundle', () => {
             expect(childEnv).not.toHaveProperty('OTHER');
             expect(childEnv).not.toHaveProperty('WORKFLOW_SECRETS');
             expect(childEnv).not.toHaveProperty('CONFIG_SECRETS');
-            expect(stderr).toContain('Passing 2 Actor token(s)');
+            expect(stderr).toContain('Passing 2 build token(s)');
         },
     );
 

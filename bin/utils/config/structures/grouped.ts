@@ -14,11 +14,13 @@ const schema = z.object({
                             actorFullName: z.string().regex(ACTOR_FULL_NAME_REGEX),
                             // these allow overrides from stuff set at the group level
                             tokenEnvVar: z.string().min(1).optional(),
+                            testTokenEnvVar: z.string().min(1).optional(),
                             overrideActorContext: z.array(z.string()).optional(),
                         }),
                     )
                     .min(1),
                 tokenEnvVar: z.string().min(1),
+                testTokenEnvVar: z.string().min(1).optional(),
                 overrideActorContext: z.array(z.string()).optional(),
             }),
         )
@@ -30,11 +32,17 @@ type GroupedConfig = z.infer<typeof schema>;
 export const GROUPED_PARSER = defineStrategy(CONFIG_FILE_STRATEGY.GROUPED, schema, (body: GroupedConfig) => {
     const entries = Object.entries(body.groups);
     return entries.flatMap(([_folder, entry]) =>
-        entry.actors.map((actor) => ({
-            tokenEnvVar: entry.tokenEnvVar,
-            overrideActorContext: entry.overrideActorContext,
-            // last so actor can override stuff from the group
-            ...actor,
-        })),
+        entry.actors.map((actor) => {
+            const tokenEnvVar = actor.tokenEnvVar ?? entry.tokenEnvVar;
+            return {
+                overrideActorContext: entry.overrideActorContext,
+                // last so actor can override stuff from the group
+                ...actor,
+                tokenEnvVar,
+                // Each field is inherited on its own: a group's test token applies to an Actor that sets only its
+                // own tokenEnvVar, and the tests fall back to the build token only when neither names one
+                testTokenEnvVar: actor.testTokenEnvVar ?? entry.testTokenEnvVar ?? tokenEnvVar,
+            };
+        }),
     );
 });

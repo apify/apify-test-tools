@@ -91,6 +91,7 @@ export const loadActorConfig = (entry: ValidatedActorConfig): ActorConfig => {
         actorFullName: entry.actorFullName,
         folder: entry.folder,
         tokenEnvVar: entry.tokenEnvVar,
+        testTokenEnvVar: entry.testTokenEnvVar,
         actorJson,
         dockerContextDir,
         contextPaths,
@@ -117,15 +118,22 @@ type PathlessConfig = Omit<ResolvedActorConfig, 'folder' | 'overrideActorContext
 export const readBaseConfigFile = async () => {
     const rawFileContents = await readConfigFileContents();
     return parseResolvedConfigFile(rawFileContents).map(
-        ({ actorFullName, tokenEnvVar }) =>
+        ({ actorFullName, tokenEnvVar, testTokenEnvVar }) =>
             // using `satisfies` here instead of return type annotation
             // so its not shown as `PathlessConfig` type on output or IDE, but the expanded form
             ({
                 actorFullName,
                 tokenEnvVar,
+                testTokenEnvVar,
             }) satisfies PathlessConfig,
     );
 };
 
 /** The settings for the whole repository, such as `platformTestsGlob`, with their defaults filled in. */
 export const readRepoSettings = async (): Promise<RepoSettings> => parseRepoSettings(await readConfigFileContents());
+
+/** The env var each Actor's platform tests run with, by full name. `test` needs no local paths for it. */
+export const readTestTokenEnvVars = async (): Promise<Map<string, string>> => {
+    const baseConfigs = await readBaseConfigFile();
+    return new Map(baseConfigs.map(({ actorFullName, testTokenEnvVar }) => [actorFullName, testTokenEnvVar]));
+};

@@ -22,14 +22,23 @@ export const isOlderVersion = (version: string, than: string): boolean => {
     return false;
 };
 
+/** Finds a package the repository installed, the way Node would resolve it from `cwd`. */
+export const findPackageDir = (cwd: string, name: string): string | undefined => {
+    for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
+        const packageDir = path.join(dir, 'node_modules', name);
+        if (existsSync(path.join(packageDir, 'package.json'))) return packageDir;
+        if (path.dirname(dir) === dir) return undefined;
+    }
+};
+
+export const readPackageJson = async (packageDir: string) =>
+    JSON.parse(await fs.readFile(path.join(packageDir, 'package.json'), 'utf8'));
+
 /**
  * The version of the lib the repository installed, found the way Node would resolve `apify-test-tools` from `cwd`.
  * Undefined when it isn't installed, e.g. when the tests import it by path.
  */
 export const findInstalledLibVersion = async (cwd: string): Promise<string | undefined> => {
-    for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
-        const packageJson = path.join(dir, 'node_modules', 'apify-test-tools', 'package.json');
-        if (existsSync(packageJson)) return JSON.parse(await fs.readFile(packageJson, 'utf8')).version;
-        if (path.dirname(dir) === dir) return undefined;
-    }
+    const packageDir = findPackageDir(cwd, 'apify-test-tools');
+    return packageDir ? (await readPackageJson(packageDir)).version : undefined;
 };

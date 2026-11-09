@@ -13,11 +13,24 @@ describe('LEGACY_PARSER', () => {
     it("returns the entries as written — normalizing is not this layer's job", () => {
         const raw = entry({ folder: 'actors/shopify/', overrideActorContext: ['packages/'] });
 
-        expect(LEGACY_PARSER.parse({ actors: [raw] })).toEqual([raw]);
+        expect(LEGACY_PARSER.parse({ actors: [raw] })).toEqual([{ ...raw, testTokenEnvVar: 'APIFY_TOKEN' }]);
     });
 
     it('drops the "mode" discriminator rather than choking on it', () => {
-        expect(LEGACY_PARSER.parse({ mode: 'legacy', actors: [entry()] })).toEqual([entry()]);
+        expect(LEGACY_PARSER.parse({ mode: 'legacy', actors: [entry()] })).toEqual([
+            { ...entry(), testTokenEnvVar: 'APIFY_TOKEN' },
+        ]);
+    });
+
+    it('tests an Actor with its own token, unless it names another one', () => {
+        expect(
+            LEGACY_PARSER.parse({
+                actors: [
+                    entry(),
+                    entry({ folder: 'actors/x', actorFullName: 'myteam/x', testTokenEnvVar: 'TESTER_APIFY_TOKEN' }),
+                ],
+            }).map(({ testTokenEnvVar }) => testTokenEnvVar),
+        ).toEqual(['APIFY_TOKEN', 'TESTER_APIFY_TOKEN']);
     });
 
     it('rejects a file with no "actors" array', () => {

@@ -32,28 +32,71 @@ describe('GROUPED_PARSER', () => {
                 folder: 'actors/shopify',
                 actorFullName: 'myteam/shopify',
                 tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
+                testTokenEnvVar: 'APIFY_TOKEN_MYTEAM',
                 overrideActorContext: ['packages'],
             },
             {
                 folder: 'actors/email',
                 actorFullName: 'myteam/email',
                 tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
+                testTokenEnvVar: 'APIFY_TOKEN_MYTEAM',
                 overrideActorContext: ['packages'],
             },
-            { folder: 'actors/x', actorFullName: 'other/x', tokenEnvVar: 'TOKEN', overrideActorContext: undefined },
+            {
+                folder: 'actors/x',
+                actorFullName: 'other/x',
+                tokenEnvVar: 'TOKEN',
+                testTokenEnvVar: 'TOKEN',
+                overrideActorContext: undefined,
+            },
         ]);
     });
 
     it('ignores the group key entirely', () => {
         expect(GROUPED_PARSER.parse({ groups: { 'not-a-folder-at-all': group() } })).toEqual([
-            { folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' },
+            {
+                folder: 'actors/shopify',
+                actorFullName: 'myteam/shopify',
+                tokenEnvVar: 'APIFY_TOKEN',
+                testTokenEnvVar: 'APIFY_TOKEN',
+            },
         ]);
     });
 
     it('allows actors to override some fields', () => {
         expect(
             GROUPED_PARSER.parse({ groups: { myteam: group({ actors: [actor({ tokenEnvVar: 'FROM_ACTOR' })] }) } }),
-        ).toEqual([{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'FROM_ACTOR' }]);
+        ).toEqual([
+            {
+                folder: 'actors/shopify',
+                actorFullName: 'myteam/shopify',
+                tokenEnvVar: 'FROM_ACTOR',
+                testTokenEnvVar: 'FROM_ACTOR',
+            },
+        ]);
+    });
+
+    it.each([
+        ['falls back to the build token of the Actor', {}, {}, 'APIFY_TOKEN'],
+        ["falls back to the Actor's own build token", {}, { tokenEnvVar: 'FROM_ACTOR' }, 'FROM_ACTOR'],
+        ['takes the group test token', { testTokenEnvVar: 'TESTER' }, {}, 'TESTER'],
+        [
+            "takes the group test token over the Actor's own build token",
+            { testTokenEnvVar: 'TESTER' },
+            { tokenEnvVar: 'FROM_ACTOR' },
+            'TESTER',
+        ],
+        [
+            "takes the Actor's test token over the group's",
+            { testTokenEnvVar: 'TESTER' },
+            { testTokenEnvVar: 'ACTOR_TESTER' },
+            'ACTOR_TESTER',
+        ],
+    ])('resolves the test token: %s', (_name, groupFields, actorFields, expected) => {
+        const [parsed] = GROUPED_PARSER.parse({
+            groups: { myteam: group({ ...groupFields, actors: [actor(actorFields)] }) },
+        });
+        expect(parsed.testTokenEnvVar).toBe(expected);
     });
 
     it("returns the entries as written — normalizing is not this layer's job", () => {
@@ -61,7 +104,9 @@ describe('GROUPED_PARSER', () => {
 
         expect(
             GROUPED_PARSER.parse({ groups: { myteam: group({ actors: [raw], overrideActorContext: ['packages/'] }) } }),
-        ).toEqual([{ ...raw, tokenEnvVar: 'APIFY_TOKEN', overrideActorContext: ['packages/'] }]);
+        ).toEqual([
+            { ...raw, tokenEnvVar: 'APIFY_TOKEN', testTokenEnvVar: 'APIFY_TOKEN', overrideActorContext: ['packages/'] },
+        ]);
     });
 
     it('rejects a config with no groups (and thus no actors)', () => {

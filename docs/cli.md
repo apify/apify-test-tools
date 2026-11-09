@@ -10,18 +10,19 @@ npx apify-test-tools <command> [flags]
 Run every command from the root of the Actor repository; it reads `apify-test-tools.config.json` from there.
 Results are written to stdout as JSON, diagnostics to stderr, so commands can be piped into each other and into `jq`.
 
-| Command                                                               | Does                                                    | Needs                |
-| --------------------------------------------------------------------- | ------------------------------------------------------- | -------------------- |
-| [`get-affected-actors`](#finding-affected-actors-get-affected-actors) | Lists the Actors changed in a commit range              | git only             |
-| [`build`](#building-actors-build)                                     | Builds the Actors given on stdin from the pushed branch | Actor tokens         |
-| [`build-from-local`](#build-from-local-source-build-from-local)       | Builds Actors from local files                          | Actor tokens         |
-| [`test`](#running-tests-test)                                         | Runs the platform tests on the builds given on stdin    | `TESTER_APIFY_TOKEN` |
-| [`notify`](#notifying-notify)                                         | Posts a test report or a release to Slack               | a Slack token        |
-| [`delete-old-builds`](#deleting-old-builds-delete-old-builds)         | Deletes old builds of the Actors                        | Actor tokens         |
-| [`get-actor-configs`](#listing-actors-get-actor-configs)              | Prints the resolved config                              | nothing              |
+| Command                                                               | Does                                                    | Needs         |
+| --------------------------------------------------------------------- | ------------------------------------------------------- | ------------- |
+| [`get-affected-actors`](#finding-affected-actors-get-affected-actors) | Lists the Actors changed in a commit range              | git only      |
+| [`build`](#building-actors-build)                                     | Builds the Actors given on stdin from the pushed branch | Actor tokens  |
+| [`build-from-local`](#build-from-local-source-build-from-local)       | Builds Actors from local files                          | Actor tokens  |
+| [`test`](#running-tests-test)                                         | Runs the platform tests on the builds given on stdin    | test tokens   |
+| [`notify`](#notifying-notify)                                         | Posts a test report or a release to Slack               | a Slack token |
+| [`delete-old-builds`](#deleting-old-builds-delete-old-builds)         | Deletes old builds of the Actors                        | Actor tokens  |
+| [`get-actor-configs`](#listing-actors-get-actor-configs)              | Prints the resolved config                              | nothing       |
 
-"Actor tokens" are the environment variables named by each Actor's `tokenEnvVar` in the config. A command only needs
-the tokens of the Actors it touches.
+"Actor tokens" are the environment variables named by each Actor's `tokenEnvVar` in the config, "test tokens" those
+named by its `testTokenEnvVar`, which default to the Actor tokens. A command only needs the tokens of the Actors it
+touches.
 
 ## Global flags
 
@@ -304,15 +305,24 @@ The input is a JSON array of Actors, each given by its full name, its raw ID or 
 `[{ "actorFullName": "<owner/name>" }]` or `[{ "actorRawId": "<id>" }]`. An Actor's tests run against the build given
 with it (`buildId` and `buildNumber`, as `build` and `build-from-local` print them), or against its default build
 without one. Other fields are ignored, so the output of [`get-actor-configs`](#listing-actors-get-actor-configs) works
-as it is. `test` looks up the ID an Actor is listed without with `TESTER_APIFY_TOKEN`, so its tests run whichever ID
-they name it by. An Actor the token can't see keeps only the ID it was listed with, and a warning names it, so an
-Actor no test uses doesn't stop the run. A dry-run plan, empty or invalid input is an error, as with `build`. So is a
-missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the run would pass having tested
-nothing. `test` passes the Actors to vitest as `ACTOR_BUILDS`, in place of any
-`ACTOR_BUILDS` in its own environment. For older lib versions, it also lists each Actor's IDs as `actorName` and
-`actorId`, the names versions before 0.9.0 read. It sets `RUN_PLATFORM_TESTS=1`, which versions before 0.10.0 need to
-run their `describe` blocks, and removes `RUN_ALL_PLATFORM_TESTS`, which would make those versions run the tests of
-every Actor.
+as it is.
+
+Each Actor's tests run with its test token: the environment variable its `testTokenEnvVar` in the config names, which
+is its `tokenEnvVar` unless the config names another. `test` reads the config for it, so the Actors must be listed
+there. It looks up the ID an Actor is listed without with the same token, so its tests run whichever ID they name it
+by. An Actor the token can't see keeps only the ID it was listed with, and a warning names it, so an Actor no test
+uses doesn't stop the run. The same goes for an Actor that isn't in the config or whose token isn't set: a warning
+names it, and only its own tests fail. A dry-run plan, empty or invalid input is an error, as with `build`, and so is a
+missing config.
+
+`test` passes the Actors to vitest as `ACTOR_BUILDS`, each with its `testTokenEnvVar`, in place of any `ACTOR_BUILDS`
+in its own environment. A version of the [lib](lib.md) installed in the repository that predates per-Actor tokens is
+an error: it would wait for `TESTER_APIFY_TOKEN` and skip every test without it, so the run would pass having tested
+nothing. Update `apify-test-tools` in the repository.
+
+For older lib versions, it also lists each Actor's IDs as `actorName` and `actorId`, the names versions before 0.9.0
+read. It sets `RUN_PLATFORM_TESTS=1`, which versions before 0.10.0 need to run their `describe` blocks, and removes
+`RUN_ALL_PLATFORM_TESTS`, which would make those versions run the tests of every Actor.
 
 When `test` is given Actors but no test runs, the report fails with an error, since a run that tested nothing must
 not pass. For any set of given Actors, at least 1 test must be performed, not 1 for each Actor. When none runs, the
@@ -432,7 +442,7 @@ Deletes builds older than 30 days of every selected Actor. It never deletes the 
 ## Listing Actors (`get-actor-configs`)
 
 Prints the [config](../README.md#config-file) as the tool resolves it: one entry per Actor, with the group's values
-applied and `actor.json` read. Takes `--actors` and `--ignore`. Useful to check a config change.
+applied, `testTokenEnvVar` defaulted to `tokenEnvVar`, and `actor.json` read. Takes `--actors` and `--ignore`. Useful to check a config change.
 
 ## Running locally
 
@@ -473,5 +483,5 @@ Actors you need to test.
 Then run the tests against the builds with [`test`](#running-tests-test), as often as you like:
 
 ```bash
-TESTER_APIFY_TOKEN=apify_api_yyy npx apify-test-tools test < builds.json
+APIFY_TOKEN_JOHN_DOE=apify_api_xxx npx apify-test-tools test < builds.json
 ```

@@ -52,6 +52,7 @@ const actor = (fields: Record<string, unknown> = {}) => ({
     folder: 'actors/shopify',
     actorFullName: 'myteam/shopify',
     tokenEnvVar: 'APIFY_TOKEN',
+    testTokenEnvVar: 'APIFY_TOKEN',
     overrideActorContext: undefined,
     ...fields,
 });
@@ -76,11 +77,12 @@ describe('selectStrategy', () => {
 describe('verifyConfiguration', () => {
     it('resolves the repo root and gets rid of trailing slashes', () => {
         const result = verifyConfiguration([
-            { folder: '.', actorFullName: 'myteam/root', tokenEnvVar: 'APIFY_TOKEN', overrideActorContext: undefined },
+            actor({ folder: '.', actorFullName: 'myteam/root' }),
             {
                 folder: 'actors/shopify/',
                 actorFullName: 'myteam/shopify',
                 tokenEnvVar: 'APIFY_TOKEN',
+                testTokenEnvVar: 'APIFY_TOKEN',
                 overrideActorContext: ['packages/'],
             },
         ]);
@@ -167,6 +169,7 @@ describe('parseConfigFile', () => {
                 actorFullName: 'myteam/shopify',
                 folder: 'missing-actor-dir',
                 tokenEnvVar: 'APIFY_TOKEN',
+                testTokenEnvVar: 'APIFY_TOKEN',
                 overrideActorContext: ['../outside'],
             },
         ]);

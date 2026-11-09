@@ -37,13 +37,15 @@ export const listRepoFilePaths = async (repoRoot: string, subDir: string): Promi
 export const getGitignoredPaths = async (relativePaths: string[], cwd?: string): Promise<Set<string>> => {
     if (relativePaths.length === 0) return new Set();
 
+    // Paths go over stdin: a repo with node_modules has more of them than argv can hold (E2BIG).
     // Exit code 1 means none of the given paths are ignored - not an error. Anything else
     // (e.g. 128 for "not a git repository") is a real failure.
-    return runGitCommand(['check-ignore', '--', ...relativePaths], {
+    return runGitCommand(['check-ignore', '--stdin', '-z'], {
         cwd,
         operation: 'check which repository paths are ignored',
+        input: relativePaths.join('\0'),
     })
-        .then((output) => new Set(output.split('\n').filter(Boolean)))
+        .then((output) => new Set(output.split('\0').filter(Boolean)))
         .catch((error: unknown) => {
             // exit code 1 means none of the given paths are ignored - not an error
             if (error instanceof GitCommandError && error.exitCode === 1) {
@@ -90,16 +92,16 @@ export class GitCommandError extends Error {
 /** Runs Git asynchronously, passing each argument directly to Git without a shell. */
 export const runGitCommand = async (
     args: string[],
-    { cwd, operation }: { cwd?: string; operation?: string } = {},
+    { cwd, operation, input }: { cwd?: string; operation?: string; input?: string } = {},
 ): Promise<string> => {
     logger.debug('git', args);
-    const { stdout } = await execFileAsync('git', args, { cwd, encoding: 'utf8', maxBuffer: 100 * 1024 * 1024 }).catch(
-        (error: unknown) => {
-            const err = new GitCommandError(args, error, operation);
-            logger.debug('git command failed:\n', err);
-            throw err;
-        },
-    );
+    const execution = execFileAsync('git', args, { cwd, encoding: 'utf8', maxBuffer: 100 * 1024 * 1024 });
+    if (input !== undefined) execution.child.stdin!.end(input);
+    const { stdout } = await execution.catch((error: unknown) => {
+        const err = new GitCommandError(args, error, operation);
+        logger.debug('git command failed:\n', err);
+        throw err;
+    });
     return stdout.trim();
 };
 

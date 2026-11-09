@@ -56,3 +56,17 @@ export const sleep = async (ms: number) => {
         setTimeout(resolve, ms);
     });
 };
+
+/** Platform storages are eventually consistent; poll instead of sleeping a magic number. */
+export const pollUntil = async <T>(
+    fn: () => Promise<T>,
+    done: (value: T) => boolean,
+    { timeout = 30_000, interval = 2_000 } = {},
+): Promise<T> => {
+    const deadline = Date.now() + timeout;
+    for (;;) {
+        const value = await fn();
+        if (done(value) || Date.now() > deadline) return value;
+        await sleep(interval);
+    }
+};

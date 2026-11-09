@@ -104,7 +104,7 @@ jobs:
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
               run: |
-                  jq '{ actors: (.functionallyChangedActors + .testChangedActors | unique_by(.actorFullName)) }' affected.json \
+                  jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
                     | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99 \
                         --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC" \
                     | tee builds.json

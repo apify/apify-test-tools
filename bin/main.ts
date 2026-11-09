@@ -221,7 +221,8 @@ await yargs()
         async (args) => {
             const input = parseBuildInput(await readStdin());
             const names = input.actors.map(({ actorFullName }) => actorFullName);
-            // An empty --actors selects every Actor, but an empty list here means there is nothing to build
+            // An empty --actors selects every Actor, but an empty list here means there is nothing to build. The configs
+            // are picked by name, so an Actor listed twice (e.g. in two lists of get-affected-actors) is built once
             const actorConfigs = names.length > 0 ? await readConfigFile({ actors: names, ignore: [] }) : [];
             const builds = await buildActors({
                 actorConfigs,

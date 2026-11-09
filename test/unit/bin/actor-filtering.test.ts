@@ -36,6 +36,14 @@ describe('selectActors', () => {
         ]);
     });
 
+    it('selects an actor listed twice once, in config order', () => {
+        // build relies on this to build an Actor in both functionallyChangedActors and testChangedActors once
+        expect(names(selectActors({ actors: ['owner/c', 'owner/a', 'owner/c'], ignore: [] }, configs))).toStrictEqual([
+            'owner/a',
+            'owner/c',
+        ]);
+    });
+
     it('drops the actors listed in --ignore', () => {
         expect(names(selectActors({ actors: [], ignore: ['owner/b'] }, configs))).toStrictEqual(['owner/a', 'owner/c']);
     });

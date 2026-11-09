@@ -152,14 +152,15 @@ With `--base` and `--since`, an Actor is in `testChangedActors` when its tests c
 ## Building Actors (`build`)
 
 `build` builds exactly the Actors it is given on stdin, from the checked-out branch as it is on the remote, and
-prints the builds as the same JSON array `build-from-local` prints. A detached HEAD is an error, since there is no
-branch to build from. It doesn't look at git history: which Actors to build is up to you, usually picked from the
+prints the builds as the same JSON array `build-from-local` prints. An Actor listed twice is built once, so the lists
+of `get-affected-actors` can be joined without removing duplicates first. A detached HEAD is an error, since there is
+no branch to build from. It doesn't look at git history: which Actors to build is up to you, usually picked from the
 output of [`get-affected-actors`](#finding-affected-actors-get-affected-actors).
 
 ```bash
 # A PR: the Actors whose code or platform tests the branch changed, built into the test version
 npx apify-test-tools get-affected-actors --base origin/master \
-  | jq '{ actors: (.functionallyChangedActors + .testChangedActors | unique_by(.actorFullName)) }' \
+  | jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' \
   | npx apify-test-tools build --version-number 0.99
 
 # A release: every Actor changed since the last release, into the version users run
@@ -449,7 +450,7 @@ To build from git, like CI does:
 
 ```bash
 npx apify-test-tools get-affected-actors --base origin/master \
-    | jq '{ actors: (.functionallyChangedActors + .testChangedActors | unique_by(.actorFullName)) }' \
+    | jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' \
     | APIFY_TOKEN_JOHN_DOE=apify_api_xxx npx apify-test-tools build --version-number 0.99 > builds.json
 ```
 

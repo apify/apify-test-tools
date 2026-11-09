@@ -16,7 +16,7 @@ Build, test and release Apify Actors from a Git repository or local source code.
 
     ```bash
     npx apify-test-tools get-affected-actors --base origin/master \
-      | jq '{ actors: (.functionallyChangedActors + .testChangedActors | unique_by(.actorFullName)) }' \
+      | jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' \
       | npx apify-test-tools build --version-number 0.99
     ```
 

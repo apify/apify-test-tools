@@ -296,9 +296,10 @@ The input is a JSON array of Actors, each given by its full name, its raw ID or 
 with it (`buildId` and `buildNumber`, as `build` and `build-from-local` print them), or against its default build
 without one. Other fields are ignored, so the output of [`get-actor-configs`](#listing-actors-get-actor-configs) works
 as it is. `test` looks up the ID an Actor is listed without with `TESTER_APIFY_TOKEN`, so its tests run whichever ID
-they name it by. It fails if the token can't see the Actor. A dry-run plan, empty or invalid input is an
-error, as with `build`. So is a missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the
-run would pass having tested nothing. `test` passes the Actors to vitest as `ACTOR_BUILDS`, in place of any
+they name it by. An Actor the token can't see keeps only the ID it was listed with, and a warning names it, so an
+Actor no test uses doesn't stop the run. A dry-run plan, empty or invalid input is an error, as with `build`. So is a
+missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the run would pass having tested
+nothing. `test` passes the Actors to vitest as `ACTOR_BUILDS`, in place of any
 `ACTOR_BUILDS` in its own environment.
 
 It runs vitest with `--maxConcurrency=20 --fileParallelism --maxWorkers=100`, since platform tests mostly wait on

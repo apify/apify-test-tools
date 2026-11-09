@@ -68,6 +68,18 @@ describe('GROUPED_PARSER', () => {
         expect(() => GROUPED_PARSER.parse({})).toThrow();
     });
 
+    it('rejects an empty group token name', () => {
+        expect(() => GROUPED_PARSER.parse({ groups: { myteam: group({ tokenEnvVar: '' }) } })).toThrow(
+            /at groups\.myteam\.tokenEnvVar/,
+        );
+    });
+
+    it('rejects an empty actor token override instead of falling back to the group token', () => {
+        expect(() =>
+            GROUPED_PARSER.parse({ groups: { myteam: group({ actors: [actor({ tokenEnvVar: '' })] }) } }),
+        ).toThrow(/at groups\.myteam\.actors\[0\]\.tokenEnvVar/);
+    });
+
     it('reports problems from every group at once instead of only the first', () => {
         const message = (() => {
             try {

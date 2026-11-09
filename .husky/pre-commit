@@ -1,10 +1,10 @@
 echo "pre-commit: typechecking, linting, testing, checking code formatting, checking for unused exports & validating schemas"
 
 
-# The workflows run the CLI from this bundle, so it ships with every commit that changes bin/ or its
-# dependencies. Rebuilding takes well under a second.
+# The workflows run the CLI and token wrapper from these bundles, so they ship with every commit
+# that changes their sources or dependencies.
 npm run -s bundle
-git add .github/cli/apify-test-tools.mjs
+git add .github/cli/apify-test-tools.mjs .github/scripts/run-with-apify-tokens.mjs
 
 npm test
 npm run format:check

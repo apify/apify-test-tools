@@ -107,9 +107,9 @@ Releases the Actors a push changed. Skipped when the head commit message contain
 4. `delete-old-builds` deletes old builds of every Actor in the config (see
    [`delete-old-builds`](cli.md#deleting-old-builds-delete-old-builds)).
 
-| Input                  | Type   | Default | Description                                                   |
-| ---------------------- | ------ | ------- | ------------------------------------------------------------- |
-| `report-slack-channel` | string | `''`    | Slack channel for the report. Empty uses `#notif-<repo-name>` |
+| Input                  | Type   | Default | Description                                     |
+| ---------------------- | ------ | ------- | ----------------------------------------------- |
+| `report-slack-channel` | string | `''`    | Slack channel for the report. Empty skips Slack |
 
 Secrets: `SLACK_BOT_TOKEN`, the Actor tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`.
 
@@ -126,6 +126,8 @@ on:
 jobs:
     buildLatest:
         uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
+        with:
+            report-slack-channel: '#notif-my-repo'
         secrets:
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
             # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
@@ -148,7 +150,7 @@ vitest's own JSON report are uploaded as the `vitest-results` artifact. Runs onl
 | ---------------------- | ------ | ------- | ---------------------------------------------------------------------------- |
 | `test-files-glob`      | string | `''`    | Which tests to run, relative to `test/platform`. Empty runs everything in it |
 | `subtest`              | string | `''`    | Deprecated, use `test-files-glob`                                            |
-| `report-slack-channel` | string | `''`    | Slack channel for the results. Empty uses `#notif-<repo-name>`               |
+| `report-slack-channel` | string | `''`    | Slack channel for the results. Empty skips Slack                             |
 
 Secrets: `TESTER_APIFY_TOKEN` (required), `SLACK_BOT_TOKEN`, and optionally `NPM_TOKEN`.
 
@@ -166,6 +168,8 @@ on:
 jobs:
     platformTestsDaily:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        with:
+            report-slack-channel: '#notif-my-repo'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -187,6 +191,7 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: hourly
+            report-slack-channel: '#notif-my-repo'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -286,6 +291,7 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: hourly
+            report-slack-channel: '#notif-my-repo'
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -389,6 +395,9 @@ The Actor tokens reach the build only for the Actors your config declares: a sec
 token is not passed on. A token the config declares but the repo hasn't set is a warning, not a failure: a repo can
 carry an Actor whose token isn't configured and still build fine as long as that Actor never changes. The build fails
 with an error naming the Actor once it actually needs the token.
+
+The wrapper validates the config with the CLI's parser. Each Actor must declare a nonempty `tokenEnvVar` or inherit
+one from its group. An empty name or a missing required `tokenEnvVar` fails during config validation.
 
 The `unitTest` job runs static checks and needs `NPM_TOKEN` only. No job runs `npm ci` or `pnpm install` with Apify
 or Slack credentials in scope, so a postinstall script in the dependency tree cannot read them.

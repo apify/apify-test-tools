@@ -32,6 +32,7 @@ describe('LEGACY_PARSER', () => {
         ['folder is missing', { folder: undefined }, /at actors\[0\]\.folder/],
         ['folder is not a string', { folder: 123 }, /at actors\[0\]\.folder/],
         ['tokenEnvVar is missing', { tokenEnvVar: undefined }, /at actors\[0\]\.tokenEnvVar/],
+        ['tokenEnvVar is empty', { tokenEnvVar: '' }, /at actors\[0\]\.tokenEnvVar/],
         ['overrideActorContext is not an array', { overrideActorContext: 'packages' }, /expected array/],
         ['overrideActorContext holds non-strings', { overrideActorContext: [123] }, /overrideActorContext\[0\]/],
     ])('rejects an entry where %s', (_name, fields, expected) => {

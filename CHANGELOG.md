@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - [**breaking**] Require env vars of test versions in sync with the default version ([#217](https://github.com/apify/apify-test-tools/pull/217)) ([a2481dd](https://github.com/apify/apify-test-tools/commit/a2481ddf09004308cb54e49b783c8b21a25dcbe4)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - Add impact &amp; priority assessment to claude investigator ([#216](https://github.com/apify/apify-test-tools/pull/216)) ([fd16622](https://github.com/apify/apify-test-tools/commit/fd16622b910ec6e9b5515ea0bd26b0a41c22bd23)) by [@foxt451](https://github.com/foxt451), closes [#208](https://github.com/apify/apify-test-tools/issues/208)
 - Stale issue&#x2F;pr workflow ([#236](https://github.com/apify/apify-test-tools/pull/236)) ([aff1fa7](https://github.com/apify/apify-test-tools/commit/aff1fa778adb846a60fdacdd26aa13a71729613d)) by [@JuanGalilea](https://github.com/JuanGalilea), closes [#35](https://github.com/apify/apify-test-tools/issues/35)
+- **workflows:** [**breaking**] Skip Slack when report-slack-channel is empty ([#238](https://github.com/apify/apify-test-tools/pull/238)) ([9a15b56](https://github.com/apify/apify-test-tools/commit/9a15b56de9ca42fb5ea753dc478116f9cd9c2c94)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 ### 🐛 Bug Fixes
 
@@ -26,6 +27,8 @@ All notable changes to this project will be documented in this file.
 - **workflows:** Load setup action and review prompt from the called commit ([#226](https://github.com/apify/apify-test-tools/pull/226)) ([7524711](https://github.com/apify/apify-test-tools/commit/752471135d4d147f6f6492a26c08af388d7ccf72)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - **test:** Clean up compiled CLI dir when build fails ([#224](https://github.com/apify/apify-test-tools/pull/224)) ([f9f2f5c](https://github.com/apify/apify-test-tools/commit/f9f2f5c64cfe936ee0b72a0fbe7408282c68fbac)) by [@JuanGalilea](https://github.com/JuanGalilea)
 - **cli-test:** Look up actor raw IDs for tests that reference them ([#234](https://github.com/apify/apify-test-tools/pull/234)) ([315baf4](https://github.com/apify/apify-test-tools/commit/315baf495dae984cbcd7056a101935536d7b0011)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- **cli-test:** Warn instead of failing on Actors the tester token can&#x27;t see ([#237](https://github.com/apify/apify-test-tools/pull/237)) ([1d339ab](https://github.com/apify/apify-test-tools/commit/1d339ab04d3190191cffa3766e86a7c74c309985)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- **run-with-apify-token:** Support all config modes ([#219](https://github.com/apify/apify-test-tools/pull/219)) ([4b9e95b](https://github.com/apify/apify-test-tools/commit/4b9e95b8328144eb77805ddd7ae1176ee14b84dc)) by [@JuanGalilea](https://github.com/JuanGalilea)
 
 ### 🚜 Refactor
 

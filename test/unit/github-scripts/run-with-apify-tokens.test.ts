@@ -12,9 +12,9 @@ const SCRIPT = fileURLToPath(new URL('../../../.github/scripts/run-with-apify-to
 // Three Actors, each with its own token, so a test can leave any of them out.
 const CONFIG = {
     actors: [
-        { actorFullName: 'team/one', tokenEnvVar: 'TOKEN_ONE' },
-        { actorFullName: 'team/two', tokenEnvVar: 'TOKEN_TWO' },
-        { actorFullName: 'team/three', tokenEnvVar: 'TOKEN_THREE' },
+        { folder: 'actors/one', actorFullName: 'team/one', tokenEnvVar: 'TOKEN_ONE' },
+        { folder: 'actors/two', actorFullName: 'team/two', tokenEnvVar: 'TOKEN_TWO' },
+        { folder: 'actors/three', actorFullName: 'team/three', tokenEnvVar: 'TOKEN_THREE' },
     ],
 };
 

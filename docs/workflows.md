@@ -41,14 +41,13 @@ Validates a pull request. It runs two jobs in parallel.
 1. Finds the affected Actors with [`get-affected-actors`](cli.md#finding-affected-actors-get-affected-actors),
    comparing the PR branch with its base branch. Changed files that match `platformTestsGlob` in the config file
    (default `test/platform/**`) are test changes, also when `.dockerignore` lists them.
-2. Plans the builds with [`plan-pr-builds`](cli.md#planning-pr-builds-plan-pr-builds). Actors with functional
-   changes are built. Actors with only test changes are not built: they are tested on their default build when the
-   branch didn't change their code, or on the build an earlier run of the PR made. Cosmetic-only changes (README,
-   CHANGELOG, schema formatting) need no tests, so they're not built.
-3. Builds the planned Actors into the test version `0.99` with [`build`](cli.md#building-actors-build).
-4. Runs [`test`](cli.md#running-tests-test) on the files that match `test-files-glob`, with the new builds and the
-   existing ones, so only the tests of those Actors run. Failing tests are annotated on the PR.
-5. On success, caches the tested commit as the "last validated commit", together with the builds the PR made. The
+2. Builds the Actors with functional changes into the test version `0.99` with
+   [`build`](cli.md#building-actors-build). Actors with only test changes are not built: they are tested on their
+   default build when the branch didn't change their code, or on the build an earlier run of the PR made, while that
+   build still exists. Cosmetic-only changes (README, CHANGELOG, schema formatting) need no tests, so they're not built.
+3. Runs [`test`](cli.md#running-tests-test) on the files that match `test-files-glob`, with the new and reused builds,
+   so only the tests of those Actors run. Failing tests are annotated on the PR.
+4. On success, caches the tested commit as the "last validated commit", together with the builds the PR made. The
    next push to the PR then only builds and tests the Actors that changed since it (see `--since` in
    [`get-affected-actors`](cli.md#finding-affected-actors-get-affected-actors)). If GitHub evicts the cache, the
    next push checks and builds the whole branch again.

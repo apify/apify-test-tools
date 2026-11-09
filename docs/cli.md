@@ -13,7 +13,6 @@ Results are written to stdout as JSON, diagnostics to stderr, so commands can be
 | Command                                                               | Does                                                    | Needs                |
 | --------------------------------------------------------------------- | ------------------------------------------------------- | -------------------- |
 | [`get-affected-actors`](#finding-affected-actors-get-affected-actors) | Lists the Actors changed in a commit range              | git only             |
-| [`plan-pr-builds`](#planning-pr-builds-plan-pr-builds)                | Picks what a PR run builds and what it tests on         | nothing              |
 | [`build`](#building-actors-build)                                     | Builds the Actors given on stdin from the pushed branch | Actor tokens         |
 | [`build-from-local`](#build-from-local-source-build-from-local)       | Builds Actors from local files                          | Actor tokens         |
 | [`test`](#running-tests-test)                                         | Runs the platform tests on the builds given on stdin    | `TESTER_APIFY_TOKEN` |
@@ -100,12 +99,13 @@ npx apify-test-tools get-affected-actors --base origin/master --since <sha>
 npx apify-test-tools get-affected-actors --since <sha>
 ```
 
-| Flag       | Default | Meaning                                                                                |
-| ---------- | ------- | -------------------------------------------------------------------------------------- |
-| `--base`   |         | Only what `HEAD` changes compared to this branch counts, like `git diff <base>...HEAD` |
-| `--since`  |         | Only changes after this commit count (see below)                                       |
-| `--actors` | all     | Only report these Actors                                                               |
-| `--ignore` | none    | Never report these Actors                                                              |
+| Flag              | Default | Meaning                                                                                                                      |
+| ----------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `--base`          |         | Only what `HEAD` changes compared to this branch counts, like `git diff <base>...HEAD`                                       |
+| `--since`         |         | Only changes after this commit count (see below)                                                                             |
+| `--stored-builds` |         | JSON file with the builds earlier runs of the PR made, as `build` prints them. A missing or invalid file has none, see below |
+| `--actors`        | all     | Only report these Actors                                                                                                     |
+| `--ignore`        | none    | Never report these Actors                                                                                                    |
 
 Pass `--base`, `--since`, or both:
 
@@ -136,73 +136,61 @@ The output is a JSON document:
     "changelog": "Lines added to CHANGELOG.md, or null",
     "functionallyChangedActors": [{ "actorFullName": "john.doe/my-actor" }],
     "cosmeticallyChangedActors": [{ "actorFullName": "john.doe/other-actor" }],
-    "testChangedActors": [{ "actorFullName": "john.doe/my-actor", "needsBranchBuild": true }]
+    "testChangedActors": [
+        { "actorFullName": "john.doe/third-actor", "build": "default" },
+        {
+            "actorFullName": "john.doe/fourth-actor",
+            "build": { "buildId": "…", "actorRawId": "…", "buildNumber": "0.99.12" }
+        },
+        { "actorFullName": "john.doe/fifth-actor" }
+    ]
 }
 ```
 
 `functionallyChangedActors` have at least one functional change, so they need a new build and tests.
 `cosmeticallyChangedActors` have cosmetic changes and no functional one (see [Change detection](#change-detection)), so
 they need a new build only when released. An Actor is in at most one of these two lists. `testChangedActors` have a
-changed platform test (`platformTestsGlob` in the config) in their context, whatever else changed, so their tests need
-to run. A test change alone needs no release. The PR workflow builds `functionallyChangedActors` and tests them
-together with `testChangedActors`, see [`plan-pr-builds`](#planning-pr-builds-plan-pr-builds). The release workflow
-builds `functionallyChangedActors` and `cosmeticallyChangedActors`.
+changed platform test (`platformTestsGlob` in the config) in their context and no functional change, so their tests
+need to run. A test change alone needs no release. An Actor can be in `cosmeticallyChangedActors` and
+`testChangedActors`, but never in `functionallyChangedActors` and `testChangedActors`: a functional change needs a new
+build and all the tests anyway. The PR workflow passes `functionallyChangedActors` and `testChangedActors` to
+[`build`](#building-actors-build). The release workflow builds `functionallyChangedActors` and
+`cosmeticallyChangedActors`.
 
 With `--base` and `--since`, an Actor is in `testChangedActors` when its tests changed on the branch and again since
-`--since`, the same rule as for functional changes. `needsBranchBuild` tells whether the branch changed the Actor's
-code compared to `--base`, whatever `--since` is. When it is false, the Actor's default build has the same code and
-can run its tests. [`plan-pr-builds`](#planning-pr-builds-plan-pr-builds) reads it.
+`--since`, the same rule as for functional changes.
 
-## Planning PR builds (`plan-pr-builds`)
+An Actor in `testChangedActors` gets the existing `build` that can run its tests, so `build` doesn't build it again:
 
-`plan-pr-builds` reads the output of `get-affected-actors --base` on stdin and decides which Actors a PR run builds
-and which it tests on builds that already exist. It makes no API calls.
-
-- An Actor in `functionallyChangedActors` is built.
-- An Actor with only test changes and `needsBranchBuild: false` is tested on its default build.
-- An Actor with only test changes and `needsBranchBuild: true` is tested on the build an earlier run of the PR made,
-  from `--stored-builds`. That build has the current code, because a functional change after it would have built the
-  Actor again. Without such a build, or when it is 25 days old or older, the Actor is built. `delete-old-builds`
-  deletes builds after 30 days.
-
-```bash
-npx apify-test-tools get-affected-actors --base origin/master --since <last validated sha> \
-  | npx apify-test-tools plan-pr-builds --stored-builds pr-builds.json > plan.json
-jq .build plan.json | npx apify-test-tools build --version-number 0.99 > builds.json
-jq -s '.[0] + .[1].existingBuilds' builds.json plan.json | npx apify-test-tools test > test-report.json
-```
-
-| Flag              | Default | Meaning                                                                                                                                                    |
-| ----------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--stored-builds` |         | JSON array of the builds earlier runs of the PR made and tested, as `build` prints them plus `builtAt` in Unix seconds. A missing or invalid file has none |
-
-The output:
-
-```json
-{
-    "version": 1,
-    "build": { "actors": [{ "actorFullName": "john.doe/my-actor" }] },
-    "existingBuilds": [
-        { "actorFullName": "john.doe/other-actor" },
-        { "actorFullName": "john.doe/third-actor", "buildId": "…", "actorRawId": "…", "buildNumber": "0.99.12" }
-    ]
-}
-```
-
-`build` is the input of [`build`](#building-actors-build). `existingBuilds` are inputs of [`test`](#running-tests-test):
-an entry without build fields runs on the default build.
+- `"default"`: the branch didn't change the Actor's code compared to `--base` (whatever `--since` is), so its default
+  build has the same code.
+- A stored build from `--stored-builds`: the branch changed the code, and an earlier run of the PR built it. That build
+  has the current code, because a functional change after it would have built the Actor again.
+- No `build`: the branch changed the code and no build of it is stored, so `build` builds the Actor.
 
 ## Building Actors (`build`)
 
 `build` builds exactly the Actors it is given on stdin, from the checked-out branch as it is on the remote, and
 prints the builds as the same JSON array `build-from-local` prints. An Actor listed twice is built once, so the lists
-of `get-affected-actors` can be joined without removing duplicates first. A detached HEAD is an error, since there is
+of `get-affected-actors` can be joined without removing duplicates first.
+
+An Actor listed with a `build`, as `testChangedActors` of
+[`get-affected-actors`](#finding-affected-actors-get-affected-actors) gives it, is not built:
+
+- `"build": "default"` passes through as `{ "actorFullName": … }`, which [`test`](#running-tests-test) runs on the
+  default build.
+- A build object passes through while the build still exists, succeeded, belongs to the Actor and is of
+  `--version-number`. Otherwise the Actor is built as usual, and the log says why. `delete-old-builds` deletes builds
+  after 30 days, so an old stored build is replaced this way.
+- An Actor also listed without a `build` is built.
+
+The output then lists every build to test, new and reused, so it goes straight to `test`. A detached HEAD is an error, since there is
 no branch to build from. It doesn't look at git history: which Actors to build is up to you, usually picked from the
 output of [`get-affected-actors`](#finding-affected-actors-get-affected-actors).
 
 ```bash
-# A PR: the Actors whose code or platform tests the branch changed, built into the test version
-npx apify-test-tools get-affected-actors --base origin/master \
+# A PR: the Actors whose code or platform tests the branch changed, built into the test version, or reused
+npx apify-test-tools get-affected-actors --base origin/master --stored-builds pr-builds.json \
   | jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' \
   | npx apify-test-tools build --version-number 0.99
 

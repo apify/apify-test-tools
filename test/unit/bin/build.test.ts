@@ -11,6 +11,7 @@ import {
     assertEnvVarsMatchDefaultVersion,
     assertRepoUrlMatchesDefaultVersion,
     buildActors,
+    buildOrReuseActors,
     deleteOldBuilds,
     resolveDefaultVersion,
     runBuilds,
@@ -340,5 +341,79 @@ describe('dry run', () => {
         await deleteOldBuilds([actorConfig], { dryRun: false });
         expect(buildClient).toHaveBeenCalledWith('old-build');
         expect(deleteBuild).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('buildOrReuseActors', () => {
+    const TOKEN_ENV_VAR = 'APIFY_TOKEN_REUSE';
+    const config = (actorFullName: string) =>
+        ({ actorFullName, tokenEnvVar: TOKEN_ENV_VAR, folder: { isRoot: () => true } }) as unknown as ActorConfig;
+    const stored = { buildId: 'b1', actorRawId: 'raw-a', buildNumber: '0.99.4' };
+    let builds: Record<string, unknown>;
+
+    beforeEach(() => {
+        vi.stubEnv(TOKEN_ENV_VAR, 'token');
+        builds = { b1: { status: 'SUCCEEDED', actId: 'raw-a', buildNumber: '0.99.4' } };
+        vi.mocked(ApifyClient).mockImplementation(function () {
+            return {
+                actor: () => ({ get: async () => makeActorInfo() }),
+                build: (id: string) => ({ get: async () => builds[id] }),
+            };
+        } as never);
+        vi.spyOn(Git, 'getCurrentBranch').mockResolvedValue('feature');
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.restoreAllMocks();
+    });
+
+    const run = async (targets: Parameters<typeof buildOrReuseActors>[0]['targets']) =>
+        buildOrReuseActors({
+            targets,
+            actorConfigs: targets.map(({ actorFullName }) => config(actorFullName)),
+            versionNumber: '0.99',
+            repoUrl: REPO_URL,
+            dryRun: false,
+        });
+    // A dry run, so a build the reuse falls back to is planned rather than started
+    const planned = async (targets: Parameters<typeof buildOrReuseActors>[0]['targets']) => {
+        const result = await buildOrReuseActors({
+            targets,
+            actorConfigs: [...new Set(targets.map(({ actorFullName }) => actorFullName))].map(config),
+            versionNumber: '0.99',
+            repoUrl: REPO_URL,
+            dryRun: true,
+        });
+        if (Array.isArray(result)) throw new Error('A dry run must return a plan');
+        return result.builds.map(({ actorFullName }) => actorFullName);
+    };
+
+    it('passes the default build through, which test runs on the default build', async () => {
+        await expect(run([{ actorFullName: 'owner/a', build: 'default' }])).resolves.toStrictEqual([
+            { actorFullName: 'owner/a' },
+        ]);
+    });
+
+    it('passes a stored build through while it exists, succeeded and is of the version', async () => {
+        await expect(run([{ actorFullName: 'owner/a', build: stored }])).resolves.toStrictEqual([
+            { actorFullName: 'owner/a', ...stored },
+        ]);
+    });
+
+    it.each([
+        ['no longer exists', undefined],
+        ['failed', { status: 'FAILED', actId: 'raw-a', buildNumber: '0.99.4' }],
+        ['belongs to another Actor', { status: 'SUCCEEDED', actId: 'raw-b', buildNumber: '0.99.4' }],
+        ['is of another version', { status: 'SUCCEEDED', actId: 'raw-a', buildNumber: '0.1.4' }],
+    ])('builds again when the stored build %s', async (_, found) => {
+        builds.b1 = found;
+        await expect(planned([{ actorFullName: 'owner/a', build: stored }])).resolves.toStrictEqual(['owner/a']);
+    });
+
+    it('builds an Actor that is also listed without a build', async () => {
+        await expect(
+            planned([{ actorFullName: 'owner/a', build: 'default' }, { actorFullName: 'owner/a' }]),
+        ).resolves.toStrictEqual(['owner/a']);
     });
 });

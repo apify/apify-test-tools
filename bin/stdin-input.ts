@@ -45,32 +45,32 @@ const validateStdinJson = <T>(
 };
 
 /**
- * What `build` reads: the Actors to build. Only their names are read, the config file stays the source of truth
- * for everything else about them. Other fields are ignored, so a get-affected-actors document only needs its Actor
- * list picked, e.g. `jq '{ actors: .functionallyChangedActors }'`.
+ * What `build` reads: the Actors to build. Their names and an optional existing `build` to reuse are read, the config
+ * file stays the source of truth for everything else about them. Other fields are ignored, so a get-affected-actors
+ * document only needs its Actor lists picked, e.g.
+ * `jq '{ actors: (.functionallyChangedActors + .testChangedActors) }'`.
  */
+const existingBuildSchema = z.union([
+    z.literal('default'),
+    z.object({ buildId: z.string(), actorRawId: z.string(), buildNumber: z.string() }),
+]);
+
 const buildInputSchema = z.object({
-    actors: z.array(z.object({ actorFullName: z.string() })),
+    actors: z.array(
+        z.object({
+            actorFullName: z.string(),
+            // From testChangedActors: an existing build that runs the tests instead of a new one
+            build: existingBuildSchema.optional(),
+        }),
+    ),
 });
+
+export type BuildTarget = z.infer<typeof buildInputSchema>['actors'][number];
 
 export const parseBuildInput = (raw: string) =>
     parseStdinJson(raw, buildInputSchema, {
         expected: 'the Actors to build',
         example: `e.g. echo '{"actors":[{"actorFullName":"owner/name"}]}' | apify-test-tools build --version-number 0.1`,
-    });
-
-/** What `plan-pr-builds` reads: the output of `get-affected-actors --base`. Other fields are ignored. */
-const prBuildPlanInputSchema = z.object({
-    functionallyChangedActors: z.array(z.object({ actorFullName: z.string() })),
-    testChangedActors: z.array(z.object({ actorFullName: z.string(), needsBranchBuild: z.boolean() })),
-});
-
-export type PrBuildPlanInput = z.infer<typeof prBuildPlanInputSchema>;
-
-export const parsePrBuildPlanInput = (raw: string): PrBuildPlanInput =>
-    parseStdinJson(raw, prBuildPlanInputSchema, {
-        expected: 'the output of get-affected-actors',
-        example: 'e.g. apify-test-tools get-affected-actors --base origin/master | apify-test-tools plan-pr-builds',
     });
 
 /**

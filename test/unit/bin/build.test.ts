@@ -396,7 +396,7 @@ describe('buildOrReuseActors', () => {
         ]);
     });
 
-    it('passes a stored build through while it exists, succeeded and is of the version', async () => {
+    it('passes a stored build through while it exists and succeeded', async () => {
         await expect(run([{ actorFullName: 'owner/a', build: stored }])).resolves.toStrictEqual([
             { actorFullName: 'owner/a', ...stored },
         ]);
@@ -406,7 +406,6 @@ describe('buildOrReuseActors', () => {
         ['no longer exists', undefined],
         ['failed', { status: 'FAILED', actId: 'raw-a', buildNumber: '0.99.4' }],
         ['belongs to another Actor', { status: 'SUCCEEDED', actId: 'raw-b', buildNumber: '0.99.4' }],
-        ['is of another version', { status: 'SUCCEEDED', actId: 'raw-a', buildNumber: '0.1.4' }],
     ])('builds again when the stored build %s', async (_, found) => {
         builds.b1 = found;
         await expect(planned([{ actorFullName: 'owner/a', build: stored }])).resolves.toStrictEqual(['owner/a']);

@@ -183,21 +183,14 @@ export class ApifyBuilder {
     };
 
     /**
-     * Why an existing build can't run the tests, or undefined when it can: it must still exist, have succeeded, belong to
-     * this Actor, and be a build of the version the tests are meant for (`delete-old-builds` deletes old ones).
+     * Why an existing build can't run the tests, or undefined when it can: it must still exist (`delete-old-builds`
+     * deletes old ones), have succeeded, and belong to this Actor. Which build to pass is the caller's choice.
      */
-    whyBuildIsUnusable = async (
-        build: Exclude<ExistingBuild, 'default'>,
-        versionNumber: string,
-    ): Promise<string | undefined> => {
+    whyBuildIsUnusable = async (build: Exclude<ExistingBuild, 'default'>): Promise<string | undefined> => {
         const found = await this.apifyClient.build(build.buildId).get();
         if (!found) return `build ${build.buildNumber} (${build.buildId}) no longer exists`;
         if (found.status !== 'SUCCEEDED') return `build ${build.buildNumber} has status ${found.status}`;
         if (found.actId !== build.actorRawId) return `build ${build.buildId} belongs to another Actor`;
-        const foundNumber = (found as ApifyClientTypes.Build & { buildNumber: string }).buildNumber;
-        if (versionNumber !== DEFAULT_VERSION_KEYWORD && !foundNumber.startsWith(`${versionNumber}.`)) {
-            return `build ${foundNumber} is not of version ${versionNumber}`;
-        }
         return undefined;
     };
 
@@ -548,10 +541,7 @@ export const buildOrReuseActors = async ({
             logger.info(`[${actorFullName}]: Not building, the tests run on the default build`);
             reused.push({ actorFullName });
         } else {
-            const reason = await ApifyBuilder.fromActorConfig(actorConfig).whyBuildIsUnusable(
-                existing,
-                options.versionNumber,
-            );
+            const reason = await ApifyBuilder.fromActorConfig(actorConfig).whyBuildIsUnusable(existing);
             if (reason) {
                 logger.info(`[${actorFullName}]: Building again, since ${reason}`);
                 toBuild.push(actorConfig);

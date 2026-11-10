@@ -181,9 +181,9 @@ An Actor listed with a `build`, as `testChangedActors` of
 
 - `"build": "default"` passes through as `{ "actorFullName": … }`, which [`test`](#running-tests-test) runs on the
   default build.
-- A build object passes through while the build still exists, succeeded, belongs to the Actor and is of
-  `--version-number`. Otherwise the Actor is built as usual, and the log says why. `delete-old-builds` deletes builds
-  after 30 days, so an old stored build is replaced this way.
+- A build object passes through while the build still exists, succeeded and belongs to the Actor. Otherwise the
+  Actor is built as usual, and the log says why. `delete-old-builds` deletes builds after 30 days, so an old stored
+  build is replaced this way. Which build to pass is up to the caller.
 - An Actor listed several times with different builds, e.g. once without one, is built from scratch. Entries that
   name the same build count as one.
 

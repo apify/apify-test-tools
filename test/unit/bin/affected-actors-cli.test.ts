@@ -223,13 +223,17 @@ describe('get-affected-actors CLI on real git histories', () => {
         expect(getAllChangedActors('--base', 'main')).toStrictEqual(testOnly);
         // A release builds only the functional and cosmetic lists, so it builds nothing
         expect(getAllChangedActors('--since', git('rev-parse', 'main'))).toStrictEqual(testOnly);
+        // The branch didn't change A's code, so its default build can run the tests
+        expect(runGetAffectedActors('--base', 'main').testChangedActors).toStrictEqual([
+            { actorFullName: 'owner/actor-a', build: 'default' },
+        ]);
     });
 
-    it('lists an Actor in both lists when its source and its tests changed', async () => {
+    it('lists an Actor whose source and tests changed only as functional, since it needs a new build', async () => {
         await writeConfigWithTestsInContext('test');
         await commit('feat(a): change and test it', 'actors/a/main.ts', 'test/platform/a.test.ts');
 
-        expect(getAllChangedActors('--base', 'main')).toStrictEqual({ functional: ['a'], cosmetic: [], test: ['a'] });
+        expect(getAllChangedActors('--base', 'main')).toStrictEqual({ functional: ['a'], cosmetic: [], test: [] });
     });
 
     it('lists only the tests changed since the last validated commit', async () => {
@@ -243,6 +247,30 @@ describe('get-affected-actors CLI on real git histories', () => {
             cosmetic: [],
             test: ['a'],
         });
+        // The branch changed A's code and no build of it is stored, so build builds it
+        expect(runGetAffectedActors('--base', 'main', '--since', validated).testChangedActors).toStrictEqual([
+            { actorFullName: 'owner/actor-a' },
+        ]);
+
+        // With the build an earlier run stored, the tests run on it
+        const storedBuild = {
+            actorFullName: 'owner/actor-a',
+            buildId: 'b1',
+            actorRawId: 'raw-a',
+            buildNumber: '0.99.4',
+        };
+        await writeFile(path.join(repoDir, 'pr-builds.json'), JSON.stringify([storedBuild]));
+        const withStored = runGetAffectedActors(
+            '--base',
+            'main',
+            '--since',
+            validated,
+            '--stored-builds',
+            'pr-builds.json',
+        );
+        expect(withStored.testChangedActors).toStrictEqual([
+            { actorFullName: 'owner/actor-a', build: { buildId: 'b1', actorRawId: 'raw-a', buildNumber: '0.99.4' } },
+        ]);
     });
 
     it('reads which files are platform tests from platformTestsGlob in the config', async () => {
@@ -252,7 +280,7 @@ describe('get-affected-actors CLI on real git histories', () => {
 
         // Outside the glob, a file in the context is a source change like any other
         await commit('feat(a): other file', 'e2e/fixtures/data.json');
-        expect(getAllChangedActors('--base', 'main')).toStrictEqual({ functional: ['a'], cosmetic: [], test: ['a'] });
+        expect(getAllChangedActors('--base', 'main')).toStrictEqual({ functional: ['a'], cosmetic: [], test: [] });
     });
 
     it('reports nothing for an empty range', async () => {

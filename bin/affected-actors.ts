@@ -9,7 +9,8 @@ import {
     resolveReleaseBaseCommit,
 } from './git.js';
 import { logger } from './logger.js';
-import type { ActorConfig, Commit, GitRange } from './types.js';
+import { readStoredBuilds, type StoredBuild } from './stored-builds.js';
+import type { ActorConfig, Commit, ExistingBuild, GitRange } from './types.js';
 import { readConfigFile, readRepoSettings } from './utils/config/load-config.js';
 
 // The range always ends at the checked-out commit: check out what you want to inspect
@@ -28,6 +29,12 @@ interface AffectedActorsOptions {
      * counts, and it must be an ancestor of HEAD (e.g. the last release).
      */
     since?: string;
+    /**
+     * JSON file with the builds earlier runs of a PR made and tested, as `build` prints them. An Actor whose only
+     * changes are tests gets its stored build in `testChangedActors`, so `build` doesn't build it again. A missing file
+     * has none.
+     */
+    storedBuilds?: string;
     actors: string[];
     ignore: string[];
 }
@@ -51,12 +58,37 @@ interface AffectedActors {
      */
     cosmeticallyChangedActors: { actorFullName: string }[];
     /**
-     * Actors whose platform tests (`platformTestsGlob` in the config) changed in their context, whatever else
-     * changed. Their tests need to run, but a test change alone needs no release. An Actor can also be in one of the
-     * lists above.
+     * Actors without a functional change whose platform tests (`platformTestsGlob` in the config) changed in their
+     * context. Their tests need to run, but a test change alone needs no release. An Actor can also be in
+     * `cosmeticallyChangedActors`, but never in `functionallyChangedActors`, which needs a new build anyway.
      */
-    testChangedActors: { actorFullName: string }[];
+    testChangedActors: TestChangedActor[];
 }
+
+interface TestChangedActor {
+    actorFullName: string;
+    /**
+     * The existing build that can run the tests, so `build` doesn't build the Actor again:
+     * - `default`: the branch didn't change the Actor's code compared to base (`base...HEAD`, whatever `--since` is),
+     *   so its default build has the same code.
+     * - a stored build (`--stored-builds`): the branch changed the code, and an earlier run of the PR built it.
+     * Without it, the branch changed the code and no build of it is stored, so `build` builds the Actor.
+     */
+    build?: ExistingBuild;
+}
+
+/** Which existing build, if any, can run the tests of an Actor whose only changes since `--since` are tests. */
+const existingBuildFor = (
+    actor: ActorConfig,
+    changedVsBase: ChangedActors,
+    storedBuilds: StoredBuild[],
+): ExistingBuild | undefined => {
+    if (!changedVsBase.functional.includes(actor)) return 'default';
+    const stored = storedBuilds.find(({ actorFullName }) => actorFullName === actor.actorFullName);
+    if (!stored) return undefined;
+    const { buildId, actorRawId, buildNumber } = stored;
+    return { buildId, actorRawId, buildNumber };
+};
 
 const names = (configs: ActorConfig[]) => configs.map(({ actorFullName }) => ({ actorFullName }));
 
@@ -157,6 +189,7 @@ const intersectChangedInBranchVsSince = (branch: ChangedActors, sinceValidated: 
 export const getAffectedActors = async ({
     base,
     since: sinceOption,
+    storedBuilds: storedBuildsFile,
     actors,
     ignore,
 }: AffectedActorsOptions): Promise<AffectedActors> => {
@@ -168,6 +201,7 @@ export const getAffectedActors = async ({
 
     const actorConfigs = await readConfigFile({ actors, ignore });
     const { platformTestsGlob } = await readRepoSettings();
+    const storedBuilds = await readStoredBuilds(storedBuildsFile);
     const getChangedInRange = async (range: GitRange) => {
         const changedFiles = await getChangedFilesBetween(range.fromRef, range.toRef);
         return {
@@ -206,6 +240,11 @@ export const getAffectedActors = async ({
         changelog: await getChangelogAdditions(rangeVsBase.fromRef, rangeVsBase.toRef, changedFiles),
         functionallyChangedActors: names(changedActors.functional),
         cosmeticallyChangedActors: names(changedActors.cosmetic),
-        testChangedActors: names(changedActors.test),
+        testChangedActors: changedActors.test
+            .filter((actor) => !changedActors.functional.includes(actor))
+            .map((actor) => {
+                const build = existingBuildFor(actor, changedVsBase, storedBuilds);
+                return build ? { actorFullName: actor.actorFullName, build } : { actorFullName: actor.actorFullName };
+            }),
     };
 };

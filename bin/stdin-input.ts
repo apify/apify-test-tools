@@ -45,13 +45,27 @@ const validateStdinJson = <T>(
 };
 
 /**
- * What `build` reads: the Actors to build. Only their names are read, the config file stays the source of truth
- * for everything else about them. Other fields are ignored, so a get-affected-actors document only needs its Actor
- * list picked, e.g. `jq '{ actors: .functionallyChangedActors }'`.
+ * What `build` reads: the Actors to build. Their names and an optional existing `build` to reuse are read, the config
+ * file stays the source of truth for everything else about them. Other fields are ignored, so a get-affected-actors
+ * document only needs its Actor lists picked, e.g.
+ * `jq '{ actors: (.functionallyChangedActors + .testChangedActors) }'`.
  */
+const existingBuildSchema = z.union([
+    z.literal('default'),
+    z.object({ buildId: z.string(), actorRawId: z.string(), buildNumber: z.string() }),
+]);
+
 const buildInputSchema = z.object({
-    actors: z.array(z.object({ actorFullName: z.string() })),
+    actors: z.array(
+        z.object({
+            actorFullName: z.string(),
+            // From testChangedActors: an existing build that runs the tests instead of a new one
+            build: existingBuildSchema.optional(),
+        }),
+    ),
 });
+
+export type BuildTarget = z.infer<typeof buildInputSchema>['actors'][number];
 
 export const parseBuildInput = (raw: string) =>
     parseStdinJson(raw, buildInputSchema, {

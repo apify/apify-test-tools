@@ -166,6 +166,15 @@ describe('getAffectedActors', () => {
                 ).resolves.toStrictEqual({ functional: [], cosmetic: [], test: ['owner/a'] });
             });
 
+            it('leaves an Actor with a functional change out of the test-changed Actors', async () => {
+                await expect(
+                    getNarrowed(
+                        { functional: [actorA], cosmetic: [], test: [actorA] },
+                        { functional: [actorA], cosmetic: [], test: [actorA] },
+                    ),
+                ).resolves.toStrictEqual({ functional: ['owner/a'], cosmetic: [], test: [] });
+            });
+
             it('leaves out test changes that only --base or only the validated part of the branch has', async () => {
                 await expect(
                     getNarrowed(

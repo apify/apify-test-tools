@@ -135,6 +135,20 @@ The CLI and the lib in one job can be different versions now, so the formats bet
 `ACTOR_BUILDS` JSON that `build` writes and the lib reads, and the vitest JSON report (with the run each test started on its `meta`) that `test` reads. Add
 fields freely; renaming or removing one needs a new major tag.
 
+**The CLI must keep working with every lib version from 0.2.4 up.** That is the oldest version a consumer repo locks
+(article-extractor, as of 2026-11; google-search is on 0.5.4, google-maps on 0.8.2). Old libs read the contract
+differently, and a mismatch skips every test while the run still passes:
+
+- Before 0.9.0, the lib reads the Actor IDs in `ACTOR_BUILDS` as `actorName` and `actorId`. `test` writes them under
+  both the old and the new names.
+- Before 0.10.0, the lib's `describe` runs only with `RUN_PLATFORM_TESTS` set, and `RUN_ALL_PLATFORM_TESTS` runs the
+  tests of every Actor. `test` sets the first and removes the second.
+
+Raise the oldest supported version only after the consumer repos update their lib: check the `apify-test-tools`
+version in each repo's lockfile. No test covers this yet. A contract test would install the oldest supported versions
+as npm aliases (e.g. `apify-test-tools-0.2.4`) and run the bundled `test` on a fixture repo with each, as #246 checked
+by hand with 0.8.2.
+
 `workflows-v0` moving on every master push means `@workflows-v0` is as live as `@master` was — there's no staging
 step. What the tag buys you is a `workflows-v1` for breaking workflow changes, so repos migrate one at a time instead
 of all at once, and a way to roll back by pointing the tag at an earlier commit (**Move major version tag**

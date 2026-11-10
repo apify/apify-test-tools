@@ -170,6 +170,8 @@ An Actor in `testChangedActors` gets the existing `build` that can run its tests
   build has the same code.
 - A stored build from `--stored-builds`: the branch changed the code, and an earlier run of the PR built it. That build
   has the current code, because a functional change after it would have built the Actor again.
+  The file is the output of the last `build`, as it is. Its entries without a `buildId`, the default builds `build`
+  passes through, are skipped.
 - No `build`: the branch changed the code and no build of it is stored, so `build` builds the Actor.
 
 ## Selecting changed tests (`select-changed-tests`)

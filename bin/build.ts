@@ -503,6 +503,9 @@ type BuildResult = (BuildData | { actorFullName: string }) & { testFiles?: strin
  * The existing build and the test files of each Actor listed with them. An Actor listed several times keeps them only
  * when every entry is the same: entries that differ, in `build` or in `testFiles`, are a conflict, so the Actor is
  * built from scratch and runs all its tests.
+ * get-affected-actors never lists an Actor in both functionallyChangedActors and testChangedActors, so a conflict
+ * guards against a bug there (or a hand-made input) that resolves the same Actor differently in the two lists. A new
+ * build that runs all the tests is always correct, while reusing the wrong build would test old code.
  */
 const resolveTargets = (targets: BuildTarget[]) => {
     const entriesByActor = new Map<string, BuildTarget[]>();

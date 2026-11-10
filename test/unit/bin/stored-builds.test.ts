@@ -25,6 +25,12 @@ describe('readStoredBuilds', () => {
         expect(await readStoredBuilds(file)).toStrictEqual([storedBuild]);
     });
 
+    it('skips the default builds that build passes through, which have no buildId', async () => {
+        const file = path.join(dir, 'with-default.json');
+        await writeFile(file, JSON.stringify([{ actorFullName: 'owner/b' }, storedBuild]));
+        expect(await readStoredBuilds(file)).toStrictEqual([storedBuild]);
+    });
+
     it('has none without a file, so the Actors are built again', async () => {
         expect(await readStoredBuilds(undefined)).toStrictEqual([]);
         expect(await readStoredBuilds(path.join(dir, 'missing.json'))).toStrictEqual([]);
@@ -32,7 +38,9 @@ describe('readStoredBuilds', () => {
 
     it('has none when the file is not valid, instead of failing the run', async () => {
         const file = path.join(dir, 'broken.json');
-        await writeFile(file, '[{"actorFullName": "owner/a"}]');
+        await writeFile(file, '[{"actorFullName": "owner/a", "buildId": "b1"}]');
+        expect(await readStoredBuilds(file)).toStrictEqual([]);
+        await writeFile(file, '{"builds": []}');
         expect(await readStoredBuilds(file)).toStrictEqual([]);
     });
 });

@@ -9,12 +9,19 @@ import { hideBin } from 'yargs/helpers';
 import { getAffectedActors } from './affected-actors.js';
 import { buildOrReuseActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
+import { selectChangedTests } from './changed-tests.js';
 import { logger, logLevels } from './logger.js';
 import { notify, notifyOnChoices } from './notify.js';
 import { writeJson } from './output.js';
 import { runTests } from './run-tests.js';
-import { parseBuildInput, parseNotifyInput, parseTestTargets, readStdin } from './stdin-input.js';
-import { readConfigFile } from './utils/config/load-config.js';
+import {
+    parseBuildInput,
+    parseNotifyInput,
+    parseSelectChangedTestsInput,
+    parseTestTargets,
+    readStdin,
+} from './stdin-input.js';
+import { readConfigFile, readRepoSettings } from './utils/config/load-config.js';
 
 /**
  * Middlewares to be run before every command execution
@@ -186,6 +193,22 @@ await yargs()
         (y) => y.options(affectedRangeOptions).options(actorSelectionOptions),
         async (args) => {
             writeJson(await getAffectedActors(args));
+        },
+    )
+    .command(
+        'select-changed-tests',
+        'Narrow testChangedActors of get-affected-actors --base on stdin to the Actors and test files the changes affect',
+        (y) => y,
+        async () => {
+            const affected = parseSelectChangedTestsInput(await readStdin());
+            const { platformTestsGlob } = await readRepoSettings();
+            writeJson(
+                await selectChangedTests({
+                    affected,
+                    platformTestsGlob,
+                    actorConfigs: await readConfigFile({ actors: [], ignore: [] }),
+                }),
+            );
         },
     )
     .command(

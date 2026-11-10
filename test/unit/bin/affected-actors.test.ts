@@ -64,6 +64,7 @@ describe('getAffectedActors', () => {
                 functionallyChangedActors: [{ actorFullName: 'owner/a' }],
                 cosmeticallyChangedActors: [{ actorFullName: 'owner/b' }],
                 testChangedActors: [],
+                testChangesSince: mergeBaseSha,
             });
             expect(Git.getMergeBase).toHaveBeenCalledWith('origin/master', 'HEAD');
             expect(Git.getChangedFilesBetween).toHaveBeenCalledWith(mergeBaseSha, headSha);
@@ -118,6 +119,8 @@ describe('getAffectedActors', () => {
 
             it('still describes the whole branch', async () => {
                 const result = await getAffectedActors({ base: 'origin/master', since: sinceSha, ...selection });
+                // Only the test changes after the last validated commit are new
+                expect(result.testChangesSince).toBe(sinceSha);
                 expect(result.commits).toStrictEqual(commits);
                 expect(result.changedFiles).toStrictEqual(changedFiles);
             });
@@ -220,6 +223,7 @@ describe('getAffectedActors', () => {
                 functionallyChangedActors: [{ actorFullName: 'owner/a' }],
                 cosmeticallyChangedActors: [{ actorFullName: 'owner/b' }],
                 testChangedActors: [],
+                testChangesSince: sinceSha,
             });
             expect(resolveBaseSpy).toHaveBeenCalledWith('HEAD~2');
             expect(commitsBetweenSpy).toHaveBeenCalledWith(sinceSha, headSha);

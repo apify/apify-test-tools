@@ -10,15 +10,16 @@ npx apify-test-tools <command> [flags]
 Run every command from the root of the Actor repository; it reads `apify-test-tools.config.json` from there.
 Results are written to stdout as JSON, diagnostics to stderr, so commands can be piped into each other and into `jq`.
 
-| Command                                                               | Does                                                    | Needs                |
-| --------------------------------------------------------------------- | ------------------------------------------------------- | -------------------- |
-| [`get-affected-actors`](#finding-affected-actors-get-affected-actors) | Lists the Actors changed in a commit range              | git only             |
-| [`build`](#building-actors-build)                                     | Builds the Actors given on stdin from the pushed branch | Actor tokens         |
-| [`build-from-local`](#build-from-local-source-build-from-local)       | Builds Actors from local files                          | Actor tokens         |
-| [`test`](#running-tests-test)                                         | Runs the platform tests on the builds given on stdin    | `TESTER_APIFY_TOKEN` |
-| [`notify`](#notifying-notify)                                         | Posts a test report or a release to Slack               | a Slack token        |
-| [`delete-old-builds`](#deleting-old-builds-delete-old-builds)         | Deletes old builds of the Actors                        | Actor tokens         |
-| [`get-actor-configs`](#listing-actors-get-actor-configs)              | Prints the resolved config                              | nothing              |
+| Command                                                                 | Does                                                    | Needs                |
+| ----------------------------------------------------------------------- | ------------------------------------------------------- | -------------------- |
+| [`get-affected-actors`](#finding-affected-actors-get-affected-actors)   | Lists the Actors changed in a commit range              | git only             |
+| [`select-changed-tests`](#selecting-changed-tests-select-changed-tests) | Narrows test changes to the tests they affect           | `TESTER_APIFY_TOKEN` |
+| [`build`](#building-actors-build)                                       | Builds the Actors given on stdin from the pushed branch | Actor tokens         |
+| [`build-from-local`](#build-from-local-source-build-from-local)         | Builds Actors from local files                          | Actor tokens         |
+| [`test`](#running-tests-test)                                           | Runs the platform tests on the builds given on stdin    | `TESTER_APIFY_TOKEN` |
+| [`notify`](#notifying-notify)                                           | Posts a test report or a release to Slack               | a Slack token        |
+| [`delete-old-builds`](#deleting-old-builds-delete-old-builds)           | Deletes old builds of the Actors                        | Actor tokens         |
+| [`get-actor-configs`](#listing-actors-get-actor-configs)                | Prints the resolved config                              | nothing              |
 
 "Actor tokens" are the environment variables named by each Actor's `tokenEnvVar` in the config. A command only needs
 the tokens of the Actors it touches.
@@ -143,7 +144,8 @@ The output is a JSON document:
             "build": { "buildId": "…", "actorRawId": "…", "buildNumber": "0.99.12" }
         },
         { "actorFullName": "john.doe/fifth-actor" }
-    ]
+    ],
+    "testChangesSince": "<sha>"
 }
 ```
 
@@ -158,7 +160,9 @@ build and all the tests anyway. The PR workflow passes `functionallyChangedActor
 `cosmeticallyChangedActors`.
 
 With `--base` and `--since`, an Actor is in `testChangedActors` when its tests changed on the branch and again since
-`--since`, the same rule as for functional changes.
+`--since`, the same rule as for functional changes. `testChangesSince` is the commit the test changes are counted from:
+the last validated commit with `--since`, otherwise where the branch forked from `--base`.
+[`select-changed-tests`](#selecting-changed-tests-select-changed-tests) reads it.
 
 An Actor in `testChangedActors` gets the existing `build` that can run its tests, so `build` doesn't build it again:
 
@@ -169,6 +173,55 @@ An Actor in `testChangedActors` gets the existing `build` that can run its tests
   The file has the entries `build` printed in earlier runs. Entries without a `buildId`, the default builds `build`
   passes through, are skipped.
 - No `build`: the branch changed the code and no build of it is stored, so `build` builds the Actor.
+
+## Selecting changed tests (`select-changed-tests`)
+
+`select-changed-tests` reads the output of `get-affected-actors --base` on stdin and prints it back with
+`testChangedActors` narrowed:
+
+1. `vitest list --changed <testChangesSince> --filesOnly` finds the test files the changes affect. Vitest follows
+   imports, so a changed helper selects every test file that uses it. Only the files that match `platformTestsGlob`
+   count.
+2. `vitest list` on those files gives their tests. The lib names every test `<actorId>: <name>`, so the tests tell
+   which Actors each file tests. Raw IDs are mapped to full names with `TESTER_APIFY_TOKEN`.
+3. An Actor stays in `testChangedActors` only when a selected file tests it, and gets those files as `testFiles`. Its
+   other fields, such as `build`, are kept. An Actor the input doesn't list is never added.
+
+It loads the repository's test files, like `test` does, so it needs the repository's dependencies installed.
+
+When it can't tell the tests for certain, it prints the input unchanged, so every test of those Actors runs, and says
+why in `changedTests.reason`:
+
+- A changed file in `platformTestsGlob` is not JavaScript, TypeScript or Markdown. Vitest doesn't see files that tests
+  read at run time with `fs`, or import with a path built entirely at run time.
+- A selected file has no test that names an Actor of the config, e.g. a test of an Actor the tester token can't see.
+- `vitest list` fails.
+
+```bash
+npx apify-test-tools get-affected-actors --base origin/master --since <last validated sha> --stored-builds pr-builds.json \
+  | npx apify-test-tools select-changed-tests > changed-tests.json
+jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' changed-tests.json \
+  | npx apify-test-tools build --version-number 0.99 \
+  | npx apify-test-tools test > test-report.json
+```
+
+The output adds `testFiles` to the Actors it keeps, and `changedTests`:
+
+```json
+{
+    "testChangedActors": [
+        {
+            "actorFullName": "john.doe/my-actor",
+            "build": "default",
+            "testFiles": ["test/platform/daily/my-actor.test.ts"]
+        }
+    ],
+    "changedTests": { "narrowed": true }
+}
+```
+
+[`build`](#building-actors-build) passes `testFiles` on to its output, and [`test`](#running-tests-test) runs only
+the Actor's tests in those files.
 
 ## Building Actors (`build`)
 
@@ -186,8 +239,10 @@ An Actor listed with a `build`, as `testChangedActors` of
 - A build object passes through while the build still exists, succeeded and belongs to the Actor. Otherwise the
   Actor is built as usual, and the log says why. `delete-old-builds` deletes builds after 30 days, so an old stored
   build is replaced this way. Which build to pass is up to the caller.
-- An Actor listed several times with different builds, e.g. once without one, is built from scratch. Entries that
-  name the same build count as one.
+- An Actor listed several times with entries that differ, in `build` or in `testFiles`, is built from scratch and
+  runs all its tests. Entries that are the same count as one.
+- `testFiles`, from [`select-changed-tests`](#selecting-changed-tests-select-changed-tests), pass through to the
+  output, so [`test`](#running-tests-test) runs only the Actor's tests in those files.
 
 The output then lists every build to test, new and reused, so it goes straight to `test`.
 
@@ -342,7 +397,9 @@ npx apify-test-tools get-actor-configs --actors john.doe/my-actor | npx apify-te
 The input is a JSON array of Actors, each given by its full name, its raw ID or both:
 `[{ "actorFullName": "<owner/name>" }]` or `[{ "actorRawId": "<id>" }]`. An Actor's tests run against the build given
 with it (`buildId` and `buildNumber`, as `build` and `build-from-local` print them), or against its default build
-without one. Other fields are ignored, so the output of [`get-actor-configs`](#listing-actors-get-actor-configs) works
+without one. An Actor listed with `testFiles` (paths from the repo root) runs only its tests in those files, see
+[`select-changed-tests`](#selecting-changed-tests-select-changed-tests). Other fields are ignored, so the output of
+[`get-actor-configs`](#listing-actors-get-actor-configs) works
 as it is. `test` looks up the ID an Actor is listed without with `TESTER_APIFY_TOKEN`, so its tests run whichever ID
 they name it by. An Actor the token can't see keeps only the ID it was listed with, and a warning names it, so an
 Actor no test uses doesn't stop the run. A dry-run plan, empty or invalid input is an error, as with `build`. So is a

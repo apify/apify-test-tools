@@ -91,6 +91,7 @@ describe('CLI bundle', () => {
         for (const command of [
             'get-actor-configs',
             'get-affected-actors',
+            'select-changed-tests',
             'test',
             'notify',
             'build',

@@ -6,6 +6,11 @@ export type ActorBuild = {
     actorRawId: string;
     buildNumber: string;
     actorFullName: string;
+    /**
+     * Only the Actor's tests in these files run, as paths from the repo root (the directory vitest runs in). Without
+     * it, all of them. The CLI sets it for Actors whose only changes are some of their tests.
+     */
+    testFiles?: string[];
 };
 
 export type RunOptions<T> = {

@@ -96,9 +96,19 @@ jobs:
                   # default build, or the build an earlier run of this PR made and stored in pr-builds.json
                   apify-test-tools get-affected-actors "${args[@]}" --stored-builds pr-builds.json > affected.json
 
+            # Narrows the Actors with test changes to those the changed tests name, each to its changed test files.
+            # `vitest list` follows imports, so a changed helper selects the tests that use it. When it can't tell
+            # for certain (e.g. a changed JSON fixture), every test of those Actors runs. It loads the repo's test
+            # code, so it gets the tester token only, like the Test step.
+            - name: Select changed tests
+              env:
+                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+              run: apify-test-tools select-changed-tests < affected.json > changed-tests.json
+
             # Functional changes are built into the test version 0.99 that users never run. Actors with only test
             # changes reuse the build listed with them while it still exists, and are built otherwise. Cosmetic-only
-            # changes need no tests. The output lists every build to test, new and reused.
+            # changes need no tests. The output lists every build to test, new and reused. Actors with only test
+            # changes keep their changed test files as `testFiles`, so only those of their tests run.
             # run-with-apify-tokens.mjs reads the token names from in apify-test-tools.config.json
             # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
             # The library never sees secrets it doesn't need
@@ -110,7 +120,7 @@ jobs:
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
               run: |
-                  jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
+                  jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' changed-tests.json \
                     | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99 \
                         --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC" \
                     | tee builds.json

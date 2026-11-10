@@ -63,6 +63,11 @@ interface AffectedActors {
      * `cosmeticallyChangedActors`, but never in `functionallyChangedActors`, which needs a new build anyway.
      */
     testChangedActors: TestChangedActor[];
+    /**
+     * The commit test changes are counted from: the last validated commit with `--since`, otherwise where the
+     * branch forked from `--base`. `select-changed-tests` lists the tests changed since it.
+     */
+    testChangesSince: string;
 }
 
 interface TestChangedActor {
@@ -246,5 +251,6 @@ export const getAffectedActors = async ({
                 const build = existingBuildFor(actor, changedVsBase, storedBuilds);
                 return build ? { actorFullName: actor.actorFullName, build } : { actorFullName: actor.actorFullName };
             }),
+        testChangesSince: sinceFromRef,
     };
 };

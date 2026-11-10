@@ -135,13 +135,9 @@ jobs:
                   # The HEAD that was just built and tested
                   jq -r .head affected.json > base_commit.txt
                   echo "New last validated (base) commit: $(cat base_commit.txt)"
-                  # The builds of this run replace the stored ones of the same Actors. Default-build entries have no
-                  # buildId, so they are not stored. build checks a stored build still exists before it reuses it.
-                  [ -s pr-builds.json ] || echo '[]' > pr-builds.json
-                  jq -n --slurpfile stored pr-builds.json --slurpfile new builds.json \
-                    '[$stored[0][], ($new[0][] | select(.buildId))] | group_by(.actorFullName) | map(last)' \
-                    > pr-builds.next.json
-                  mv pr-builds.next.json pr-builds.json
+                  # The builds this run tested, new and reused, have the code of the validated commit. An Actor this
+                  # run didn't test loses its stored build, and is built again if a later push changes only its tests.
+                  cp builds.json pr-builds.json
 
     # Pure static checks against the repo. Needs no Apify or Slack credentials, only the npm
     # token to install dependencies.

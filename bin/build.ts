@@ -499,6 +499,9 @@ type BuildResult = BuildData | { actorFullName: string };
 /**
  * The existing build of each Actor that has one. An Actor listed several times keeps it only when every entry names
  * the same build: entries that differ, e.g. one without a build, are a conflict, and the Actor is built from scratch.
+ * get-affected-actors never lists an Actor in both functionallyChangedActors and testChangedActors, so a conflict
+ * guards against a bug there (or a hand-made input) that resolves the same Actor differently in the two lists. A new
+ * build is always correct, while reusing the wrong build would test old code.
  */
 const resolveExistingBuilds = (targets: BuildTarget[]): Map<string, ExistingBuild> => {
     const entriesByActor = new Map<string, BuildTarget[]>();

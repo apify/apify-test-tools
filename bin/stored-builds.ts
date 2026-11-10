@@ -5,8 +5,8 @@ import z from 'zod';
 import { logger } from './logger.js';
 
 /**
- * A build of a PR branch that an earlier run of the PR workflow made and tested. The workflow keeps the output of
- * `build` in its cache, next to the last validated commit. Other fields, e.g. from an older format, are ignored.
+ * A build of a PR branch that an earlier run of the PR workflow made and tested. The workflow keeps the builds `build`
+ * printed in its cache, next to the last validated commit. Other fields, e.g. from an older format, are ignored.
  */
 const storedBuildSchema = z.object({
     actorFullName: z.string(),

@@ -135,9 +135,12 @@ jobs:
                   # The HEAD that was just built and tested
                   jq -r .head affected.json > base_commit.txt
                   echo "New last validated (base) commit: $(cat base_commit.txt)"
-                  # The builds this run tested, new and reused, have the code of the validated commit. An Actor this
-                  # run didn't test loses its stored build, and is built again if a later push changes only its tests.
-                  cp builds.json pr-builds.json
+                  # The builds this run tested replace the stored builds of the same Actors, and the other stored
+                  # builds stay: those Actors didn't change since. INDEX keys the builds by Actor, the later one wins.
+                  # touch: on the first run there are no stored builds, and jq -s reads an empty file as nothing.
+                  touch pr-builds.json
+                  jq -s 'add | INDEX(.actorFullName) | [.[]]' pr-builds.json builds.json > pr-builds.next.json
+                  mv pr-builds.next.json pr-builds.json
 
     # Pure static checks against the repo. Needs no Apify or Slack credentials, only the npm
     # token to install dependencies.

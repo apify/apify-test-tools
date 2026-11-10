@@ -10,7 +10,14 @@ import { withActorIds } from './actor-ids.js';
 import { logger } from './logger.js';
 import type { TestTarget } from './stdin-input.js';
 import { resolveTestFilesGlob } from './test-files-glob.js';
-import { failedRunReport, logTestReport, type TestReport, toTestReport, type VitestJsonReport } from './test-report.js';
+import {
+    failedRunReport,
+    logTestReport,
+    requireTestsToRun,
+    type TestReport,
+    toTestReport,
+    type VitestJsonReport,
+} from './test-report.js';
 
 /**
  * Finds the vitest the repository installed, the way Node would resolve it from `cwd`. The CLI ships as a bundle
@@ -139,15 +146,8 @@ export const runTests = async ({
             logTestReport(report);
             return report;
         }
-        const report = toTestReport(vitestReport, { cwd, exitCode });
+        const report = requireTestsToRun(toTestReport(vitestReport, { cwd, exitCode }), actorBuilds);
         logTestReport(report);
-        const { total, skipped } = report.summary;
-        if (targets.length !== 0 && total !== 0 && skipped === total) {
-            logger.warn(
-                `Every test was skipped, although ${targets.length} Actor(s) were given. Check that the tests name ` +
-                    'these Actors by their full name or raw ID.',
-            );
-        }
         return report;
     } finally {
         if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });

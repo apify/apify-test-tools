@@ -158,10 +158,22 @@ test('owner/a: fails', () => {
         expect(JSON.parse(result.stdout)).toMatchObject({ summary: { total: 1, passed: 1, skipped: 0 } });
     });
 
-    it('warns when every test was skipped although Actors were given', () => {
+    it('fails when no test ran although Actors were given, instead of passing having tested nothing', () => {
         const result = run(['test', '--test-files-glob', 'test/skipped/**'], JSON.stringify([build]));
+        expect(result.status).toBe(1);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+            success: false,
+            summary: { total: 1, skipped: 1 },
+            errors: [expect.stringContaining('No test ran, although 1 Actor(s) were given')],
+        });
+    });
+
+    it('warns about a given Actor none of whose tests ran, and passes on the tests of the others', () => {
+        const other = { ...build, actorFullName: 'owner/other', actorRawId: 'rawOther', buildId: 'b2' };
+        const result = run(['test', '--test-files-glob', 'test/glob/with-pr/**'], JSON.stringify([build, other]));
         expect(result.status, result.stderr).toBe(0);
-        expect(result.stderr).toContain('Every test was skipped, although 1 Actor(s) were given');
+        expect(result.stderr).toContain('[owner/other]: None of its tests ran');
+        expect(result.stderr).not.toContain('[owner/a]: None of its tests ran');
     });
 
     it('rejects test paths given the old way, as arguments, instead of running every test', () => {

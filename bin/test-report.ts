@@ -157,3 +157,35 @@ export const logTestReport = ({ summary, tests, errors }: TestReport) => {
     logger.info();
     logger.info(totals);
 };
+
+/**
+ * Fails a report in which no test ran although Actors were given: a run that tested nothing must not pass, and it
+ * usually means the tests name the Actors differently or the glob selects none of their tests. An Actor none of whose
+ * tests ran only gets a warning, since an Actor may have no tests in the selected files. Each Actor is matched by the
+ * IDs it was given with, as the lib names every test `<actorId>: <name>`.
+ */
+export const requireTestsToRun = (
+    report: TestReport,
+    actors: { actorFullName?: string; actorRawId?: string }[],
+): TestReport => {
+    if (actors.length === 0) return report;
+    const ran = report.tests.filter((test) => test.status !== 'skipped');
+    if (ran.length === 0) {
+        return {
+            ...report,
+            success: false,
+            errors: [
+                ...report.errors,
+                `No test ran, although ${actors.length} Actor(s) were given. Check that --test-files-glob selects ` +
+                    'their tests, and that the tests name them by their full name or raw ID.',
+            ],
+        };
+    }
+    for (const { actorFullName, actorRawId } of actors) {
+        const ids = [actorFullName, actorRawId].filter((id): id is string => !!id);
+        if (!ran.some((test) => ids.some((id) => test.name.includes(`${id}: `)))) {
+            logger.warn(`[${actorFullName ?? actorRawId}]: None of its tests ran`);
+        }
+    }
+    return report;
+};

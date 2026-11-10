@@ -30,6 +30,7 @@ All notable changes to this project will be documented in this file.
 - **cli-test:** Look up actor raw IDs for tests that reference them ([#234](https://github.com/apify/apify-test-tools/pull/234)) ([315baf4](https://github.com/apify/apify-test-tools/commit/315baf495dae984cbcd7056a101935536d7b0011)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - **cli-test:** Warn instead of failing on Actors the tester token can&#x27;t see ([#237](https://github.com/apify/apify-test-tools/pull/237)) ([1d339ab](https://github.com/apify/apify-test-tools/commit/1d339ab04d3190191cffa3766e86a7c74c309985)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - **run-with-apify-token:** Support all config modes ([#219](https://github.com/apify/apify-test-tools/pull/219)) ([4b9e95b](https://github.com/apify/apify-test-tools/commit/4b9e95b8328144eb77805ddd7ae1176ee14b84dc)) by [@JuanGalilea](https://github.com/JuanGalilea)
+- **cli-test:** Run the platform tests of repos on lib versions before 0.10.0 ([#246](https://github.com/apify/apify-test-tools/pull/246)) ([6ee7460](https://github.com/apify/apify-test-tools/commit/6ee7460bb2c1fe611a96ad4e4cac8dc5cb9a7931)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 ### 🚜 Refactor
 

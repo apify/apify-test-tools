@@ -19,15 +19,15 @@ Always reference them at the `@workflows-v0` major tag, never at `@master` — s
 They only run on GitHub Actions. On another CI platform, build the same steps with the [CLI](cli.md); each workflow
 The build, release and test workflows below list the CLI commands they run.
 
-| Workflow                                                                                                         | Typical trigger                     | What it does                                                                     |
-| ---------------------------------------------------------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------- |
-| [`public_pr-build-test.yaml`](#public_pr-build-testyaml)                                                         | `pull_request`                      | Builds the Actors a PR changes into `0.99` and tests them, plus static checks    |
-| [`public_push-build-latest.yaml`](#public_push-build-latestyaml)                                                 | `push` to `master`                  | Builds the changed Actors into their default version and announces the release   |
-| [`public_platform-tests.yaml`](#public_platform-testsyaml)                                                       | `schedule`                          | Runs platform tests against the released builds and reports results to Slack     |
-| [`public_review.yaml`](#public_reviewyaml)                                                                       | `pull_request` (labeled)            | Claude reviews the PR against the shared guidelines                              |
-| [`public_claude.yaml`](#public_claudeyaml)                                                                       | issue and PR comments, issue labels | Claude acts on `@claude` mentions                                                |
-| [`public_stale-issues.yaml`](#public_stale-issuesyaml)                                                           | `schedule`                          | Warns owners of inactive issues, then closes them a month later                  |
-| [`public_platform-tests-claude-investigate-and-fix.yaml`](#public_platform-tests-claude-investigate-and-fixyaml) | after a failed platform test job    | Claude investigates a failing platform test, opens an issue, and tries to fix it |
+| Workflow                                                                                         | Typical trigger                     | What it does                                                                   |
+| ------------------------------------------------------------------------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------ |
+| [`public_pr-build-test.yaml`](#public_pr-build-testyaml)                                         | `pull_request`                      | Builds the Actors a PR changes into `0.99` and tests them, plus static checks  |
+| [`public_push-build-latest.yaml`](#public_push-build-latestyaml)                                 | `push` to `master`                  | Builds the changed Actors into their default version and announces the release |
+| [`public_platform-tests.yaml`](#public_platform-testsyaml)                                       | `schedule`                          | Runs platform tests against the released builds and reports results to Slack   |
+| [`public_review.yaml`](#public_reviewyaml)                                                       | `pull_request` (labeled)            | Claude reviews the PR against the shared guidelines                            |
+| [`public_claude.yaml`](#public_claudeyaml)                                                       | issue and PR comments, issue labels | Claude acts on `@claude` mentions                                              |
+| [`public_stale-issues.yaml`](#public_stale-issuesyaml)                                           | `schedule`                          | Warns owners of inactive issues, then closes them a month later                |
+| [`public_platform-tests-claude-investigate.yaml`](#public_platform-tests-claude-investigateyaml) | after a failed platform test job    | Claude investigates a failing platform test and opens an issue                 |
 
 All of them run on `ubuntu-latest` with Node.js 24. The ones that need the repo's dependencies install them with
 `npm ci`, or with pnpm when the repo has a `pnpm-lock.yaml` and no `package-lock.json`.
@@ -295,28 +295,32 @@ jobs:
             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-## `public_platform-tests-claude-investigate-and-fix.yaml`
+## `public_platform-tests-claude-investigate.yaml`
 
-Optional. Call it after a failed platform test job. It runs in two phases:
+Optional. Call it after a failed platform test job. It runs in two stages:
 
-1. **investigate** — Claude reviews the test logs, recent workflow runs and existing issues, and investigates the
-   failing run on the Apify platform (its log, dataset and key-value store). It opens a GitHub issue with its
-   findings and labels it `claude`, or does nothing if a matching issue already exists.
-2. **fix** — runs only when the first phase opened an issue. Claude implements a fix, opens a PR, and labels the
-   issue `claude:done`.
+1. **Deduplication** — a cheap model, Haiku by default, reads the failing tests from the run's test report, works
+   out what actually broke, and checks whether open issues already cover it. The tests overlap a lot, so it judges by
+   root cause, not by test. It has the same Apify and Redash access as the investigation, but on GitHub it can only
+   read issues. Each covering issue gets the run recorded in one comment that keeps a count and links to the latest
+   runs, updated in place so subscribers aren't notified every time. If open issues cover everything, the job stops
+   here, so a known bug isn't investigated in full on every scheduled run.
+2. **Investigation** — otherwise the main model investigates what isn't covered: the test logs, recent workflow runs,
+   and the failing run on the Apify platform (its log, dataset and key-value store). It opens a GitHub issue with its
+   findings and labels it `claude`.
 
-Scheduled runs use a `GITHUB_TOKEN` that cannot trigger other workflows, so the fix phase is a direct job
-dependency rather than a label-triggered run of `public_claude.yaml`.
+If the deduplication can't give an answer, e.g. the run has no test report or the model fails, the investigation runs.
 
 | Input                | Type   | Default    | Description                                                                                                                                              |
 | -------------------- | ------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`              | string | `sonnet`   | Claude model for both phases                                                                                                                             |
+| `model`              | string | `sonnet`   | Claude model for the investigation                                                                                                                       |
 | `effort`             | string | `''`       | Claude effort level (`low`, `medium`, `high`, `xhigh`, `max`). Empty uses the Claude Code default                                                        |
+| `dedupe_model`       | string | `haiku`    | Claude model that checks whether open issues already cover the failing tests, before the investigation                                                   |
 | `max_flakiness_runs` | number | `200`      | The most times Claude may re-run the failing Actor run to measure how often the failure happens                                                          |
 | `investigate_prompt` | string | (built in) | Prompt for the investigation phase. Override to change how issues are investigated, titled and described                                                 |
 | `priority_prompt`    | string | (built in) | Prompt for setting a new issue's Priority field from its impact and flakiness. Override to change how priority is judged, e.g. to set revenue thresholds |
 
-Secrets: `ANTHROPIC_API_KEY`, `TESTER_APIFY_TOKEN`, and optionally `NPM_TOKEN`, `REDASH_API_KEY` and `AGENT_SKILLS_INTERNAL_GITHUB_TOKEN`.
+Secrets: `ANTHROPIC_API_KEY`, `TESTER_APIFY_TOKEN`, and optionally `REDASH_API_KEY` and `AGENT_SKILLS_INTERNAL_GITHUB_TOKEN`.
 
 ```yaml
 jobs:
@@ -332,7 +336,7 @@ jobs:
     handle-failure:
         needs: platformTestsHourly
         if: ${{ failure() }}
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate.yaml@workflows-v0
         secrets:
             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}

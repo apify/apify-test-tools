@@ -96,7 +96,15 @@ export const runTests = async ({
     // Vitest writes to a pipe, so it would drop colors that the terminal it ends up in shows
     if (process.stderr.isTTY && env.FORCE_COLOR === undefined && env.NO_COLOR === undefined) env.FORCE_COLOR = '1';
     // The lib runs the tests of the Actors listed here, each on the build given, or on its default build without one
-    env.ACTOR_BUILDS = JSON.stringify(actorBuilds);
+    // Lib versions before 0.9.0 read the IDs as actorName and actorId, so they are given under both names
+    env.ACTOR_BUILDS = JSON.stringify(
+        actorBuilds.map((build) => ({ ...build, actorName: build.actorFullName, actorId: build.actorRawId })),
+    );
+    // Lib versions before 0.10.0 skip every test in their `describe` unless this is set. Newer versions read
+    // TESTER_APIFY_TOKEN instead and ignore it. It only unlocks `describe`: which tests run still follows ACTOR_BUILDS.
+    env.RUN_PLATFORM_TESTS = '1';
+    // In those versions this runs the tests of every Actor, whatever ACTOR_BUILDS lists
+    delete env.RUN_ALL_PLATFORM_TESTS;
     const described = actorBuilds.map(
         ({ actorFullName, actorRawId, buildNumber }) =>
             `${actorFullName ?? actorRawId} (${buildNumber ?? 'default build'})`,
@@ -133,6 +141,13 @@ export const runTests = async ({
         }
         const report = toTestReport(vitestReport, { cwd, exitCode });
         logTestReport(report);
+        const { total, skipped } = report.summary;
+        if (targets.length !== 0 && total !== 0 && skipped === total) {
+            logger.warn(
+                `Every test was skipped, although ${targets.length} Actor(s) were given. Check that the tests name ` +
+                    'these Actors by their full name or raw ID.',
+            );
+        }
         return report;
     } finally {
         if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });

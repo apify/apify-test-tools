@@ -47,6 +47,21 @@ test('owner/a: fails', () => {
         );
 
         // Outside test/platform, so the tests that run test/platform don't see them
+        // Lib versions before 0.10.0 run their describe only with RUN_PLATFORM_TESTS set
+        await mkdir(path.join(repoDir, 'test/old-lib'), { recursive: true });
+        await writeFile(
+            path.join(repoDir, 'test/old-lib/old.test.ts'),
+            `import { describe, test } from 'vitest';\n\n` +
+                `describe.runIf(!!process.env.RUN_PLATFORM_TESTS)('old lib', () => {\n` +
+                `    test('owner/a: runs', () => {});\n` +
+                `});\n`,
+        );
+        await mkdir(path.join(repoDir, 'test/skipped'), { recursive: true });
+        await writeFile(
+            path.join(repoDir, 'test/skipped/skipped.test.ts'),
+            `import { test } from 'vitest';\n\ntest.skip('owner/a: skipped', () => {});\n`,
+        );
+
         for (const folder of ['with-pr', 'without-pr']) {
             await mkdir(path.join(repoDir, 'test/glob', folder), { recursive: true });
             await writeFile(
@@ -66,7 +81,10 @@ test('owner/a: fails', () => {
         expect(result.status).toBe(1);
         // Passed on to the lib as ACTOR_BUILDS, the fields in the order test reads them
         const { actorFullName, buildId, actorRawId, buildNumber } = build;
-        expect(result.stderr).toContain(`ENV ${JSON.stringify([{ actorFullName, buildId, actorRawId, buildNumber }])}`);
+        // Also under the names lib versions before 0.9.0 read
+        expect(result.stderr).toContain(
+            `ENV ${JSON.stringify([{ actorFullName, buildId, actorRawId, buildNumber, actorName: actorFullName, actorId: actorRawId }])}`,
+        );
         expect(result.stderr).toContain('1) owner/a: works ... https://console.apify.com/view/runs/run1');
         // Vitest's own output still comes through, without the note about the temporary JSON report
         expect(result.stderr).toContain('Test Files');
@@ -96,7 +114,9 @@ test('owner/a: fails', () => {
         const result = run(['test'], JSON.stringify([actorConfig]));
         expect(result.status).toBe(1);
         // Only the fields the lib reads reach it
-        expect(result.stderr).toContain('ENV [{"actorFullName":"owner/a","actorRawId":"raw1"}]');
+        expect(result.stderr).toContain(
+            'ENV [{"actorFullName":"owner/a","actorRawId":"raw1","actorName":"owner/a","actorId":"raw1"}]',
+        );
         expect(result.stderr).toContain('Testing 1 Actor(s): owner/a (default build)');
         expect(JSON.parse(result.stdout)).toMatchObject({ success: false, summary: { passed: 1, failed: 1 } });
     });
@@ -130,6 +150,18 @@ test('owner/a: fails', () => {
         expect(result.status).toBe(1);
         expect(result.stderr).toContain('No files match --test-files-glob "hourly"');
         expect(result.stdout).toBe('');
+    });
+
+    it('runs the describe blocks of lib versions before 0.10.0, which need RUN_PLATFORM_TESTS', () => {
+        const result = run(['test', '--test-files-glob', 'test/old-lib/**'], JSON.stringify([build]));
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toMatchObject({ summary: { total: 1, passed: 1, skipped: 0 } });
+    });
+
+    it('warns when every test was skipped although Actors were given', () => {
+        const result = run(['test', '--test-files-glob', 'test/skipped/**'], JSON.stringify([build]));
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stderr).toContain('Every test was skipped, although 1 Actor(s) were given');
     });
 
     it('rejects test paths given the old way, as arguments, instead of running every test', () => {

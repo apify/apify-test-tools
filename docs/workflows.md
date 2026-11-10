@@ -52,7 +52,7 @@ Validates a pull request. It runs two jobs in parallel.
 4. Runs [`test`](cli.md#running-tests-test) on the files that match `test-files-glob`, with the new and reused builds,
    so only the tests of those Actors run. An Actor with only test changes runs only its changed test files, with an
    `apify-test-tools` lib version that supports `testFiles`. Failing tests are annotated on the PR.
-5. On success, caches the tested commit as the "last validated commit", together with the builds it tested. The
+5. On success, caches the tested commit as the "last validated commit", together with the builds the PR tested. The
    next push to the PR then only builds and tests the Actors that changed since it (see `--since` in
    [`get-affected-actors`](cli.md#finding-affected-actors-get-affected-actors)). If GitHub evicts the cache, the
    next push checks and builds the whole branch again.

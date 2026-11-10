@@ -176,8 +176,9 @@ export const requireTestsToRun = (
             success: false,
             errors: [
                 ...report.errors,
-                `No test ran, although ${actors.length} Actor(s) were given. Check that --test-files-glob selects ` +
-                    'their tests, and that the tests name them by their full name or raw ID.',
+                `No test ran, although ${actors.length} Actor(s) were given. For any changed Actor, at least 1 test ` +
+                    'must be implemented. Check that --test-files-glob selects their tests, and that the tests name ' +
+                    'them by their full name or raw ID.',
             ],
         };
     }

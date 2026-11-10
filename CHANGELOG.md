@@ -2,8 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-<!-- git-cliff-unreleased-start -->
-## 0.10.2 - **not yet released**
+## [0.11.0](https://github.com/apify/apify-test-tools/releases/tag/v0.11.0) (2026-11-10)
 
 ### 🚀 Features
 
@@ -38,7 +37,6 @@ All notable changes to this project will be documented in this file.
 - [**breaking**] Remove legacy get-commits, get-latest-commit and get-changed-files ([#228](https://github.com/apify/apify-test-tools/pull/228)) ([d254a6d](https://github.com/apify/apify-test-tools/commit/d254a6dd14ac9cb027a26ec73ca20a6ee10460ec)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 
-<!-- git-cliff-unreleased-end -->
 ## [0.10.1](https://github.com/apify/apify-test-tools/releases/tag/v0.10.1) (2026-10-13)
 
 ### 🚀 Features

@@ -32,21 +32,18 @@ describe('GROUPED_PARSER', () => {
                 folder: 'actors/shopify',
                 actorFullName: 'myteam/shopify',
                 tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
-                testTokenEnvVar: 'APIFY_TOKEN_MYTEAM',
                 overrideActorContext: ['packages'],
             },
             {
                 folder: 'actors/email',
                 actorFullName: 'myteam/email',
                 tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
-                testTokenEnvVar: 'APIFY_TOKEN_MYTEAM',
                 overrideActorContext: ['packages'],
             },
             {
                 folder: 'actors/x',
                 actorFullName: 'other/x',
                 tokenEnvVar: 'TOKEN',
-                testTokenEnvVar: 'TOKEN',
                 overrideActorContext: undefined,
             },
         ]);
@@ -58,7 +55,6 @@ describe('GROUPED_PARSER', () => {
                 folder: 'actors/shopify',
                 actorFullName: 'myteam/shopify',
                 tokenEnvVar: 'APIFY_TOKEN',
-                testTokenEnvVar: 'APIFY_TOKEN',
             },
         ]);
     });
@@ -71,14 +67,14 @@ describe('GROUPED_PARSER', () => {
                 folder: 'actors/shopify',
                 actorFullName: 'myteam/shopify',
                 tokenEnvVar: 'FROM_ACTOR',
-                testTokenEnvVar: 'FROM_ACTOR',
             },
         ]);
     });
 
     it.each([
-        ['falls back to the build token of the Actor', {}, {}, 'APIFY_TOKEN'],
-        ["falls back to the Actor's own build token", {}, { tokenEnvVar: 'FROM_ACTOR' }, 'FROM_ACTOR'],
+        // The default to the build token comes after the modes, see parser.test.ts
+        ['leaves it unset without one', {}, {}, undefined],
+        ['leaves it unset when the Actor sets only its own build token', {}, { tokenEnvVar: 'FROM_ACTOR' }, undefined],
         ['takes the group test token', { testTokenEnvVar: 'TESTER' }, {}, 'TESTER'],
         [
             "takes the group test token over the Actor's own build token",
@@ -92,7 +88,7 @@ describe('GROUPED_PARSER', () => {
             { testTokenEnvVar: 'ACTOR_TESTER' },
             'ACTOR_TESTER',
         ],
-    ])('resolves the test token: %s', (_name, groupFields, actorFields, expected) => {
+    ])('inherits the test token: %s', (_name, groupFields, actorFields, expected) => {
         const [parsed] = GROUPED_PARSER.parse({
             groups: { myteam: group({ ...groupFields, actors: [actor(actorFields)] }) },
         });
@@ -104,9 +100,7 @@ describe('GROUPED_PARSER', () => {
 
         expect(
             GROUPED_PARSER.parse({ groups: { myteam: group({ actors: [raw], overrideActorContext: ['packages/'] }) } }),
-        ).toEqual([
-            { ...raw, tokenEnvVar: 'APIFY_TOKEN', testTokenEnvVar: 'APIFY_TOKEN', overrideActorContext: ['packages/'] },
-        ]);
+        ).toEqual([{ ...raw, tokenEnvVar: 'APIFY_TOKEN', overrideActorContext: ['packages/'] }]);
     });
 
     it('rejects a config with no groups (and thus no actors)', () => {

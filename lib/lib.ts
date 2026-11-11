@@ -3,6 +3,7 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
+import { isActorFullName, isActorRawId } from './actor-ids.js';
 import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
@@ -24,8 +25,8 @@ try {
 }
 
 const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
-    map.set(cfg.actorFullName, cfg);
-    map.set(cfg.actorRawId, cfg);
+    if (cfg.actorFullName) map.set(cfg.actorFullName, cfg);
+    if (cfg.actorRawId) map.set(cfg.actorRawId, cfg);
     return map;
 }, new Map<string, ActorBuild>());
 
@@ -87,6 +88,9 @@ export const describe = (name: string, fn?: SuiteFactory<object>, options: Actor
  * Registers a vitest test for an Actor, which only runs when the Actor is listed in `ACTOR_BUILDS`: against the build
  * listed with it, or its default build without one.
  * `body` gets the test context with the soft `expect` and the full test name.
+ *
+ * While any Actors are listed, a test also runs, and fails, when `actorId` is neither a full name nor a raw ID, since it
+ * could never match one.
  */
 const defineActorTest = (
     actorId: string,
@@ -96,7 +100,14 @@ const defineActorTest = (
 ) => {
     const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
     const name = `${actorId}: ${testName}`;
-    vitestTest.runIf(config.has(actorId))(name, options, async (context) => {
+    const isValidId = isActorFullName(actorId) || isActorRawId(actorId);
+    const runs = config.has(actorId) || (actorBuilds.length > 0 && !isValidId);
+    vitestTest.runIf(runs)(name, options, async (context) => {
+        if (!isValidId) {
+            throw new Error(
+                `"${actorId}" is neither an Actor's full name (owner/name) nor its raw ID (17 letters and digits).`,
+            );
+        }
         await body({ ...context, expect: extendExpect(context.expect) }, name);
     });
 };

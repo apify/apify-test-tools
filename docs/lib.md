@@ -44,7 +44,7 @@ run concurrently by default. Use it instead of vitest's `describe` for platform 
 
 Registers a test for an Actor. `actorId` is the Actor's full name (`owner/name`) or its raw platform ID. The test
 only runs when the Actor is in `ACTOR_BUILDS`. Its name is
-`<actorId>: <testName>`.
+`<actorId>: <testName>`. A test whose `actorId` is neither a full name nor a raw ID fails.
 
 `fn` gets the vitest test context, with `expect` extended by the [custom matchers](#custom-matchers), a `run`
 function, and `apifyClient`: an `ApifyClient` with the token the Actor's tests run with, e.g. to read storages the run

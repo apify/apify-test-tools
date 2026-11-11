@@ -1,17 +1,9 @@
 import { prettifyError, type ZodType } from 'zod';
 
-import { ACTOR_NAME, USERNAME } from '@apify/consts';
-
 import type { ExistingDir, RelativeDir } from '../../path/repo-relative.js';
 
-function stripRegexAnchor(regex: string): string {
-    return regex.replace(/^\^/, '').replace(/\$$/, '');
-}
-
-export const ACTOR_FULL_NAME_REGEX = new RegExp(
-    `^${stripRegexAnchor(USERNAME.REGEX.source)}/${stripRegexAnchor(ACTOR_NAME.REGEX.source)}$`,
-    USERNAME.REGEX.flags + ACTOR_NAME.REGEX.flags,
-);
+// The lib checks the IDs tests name their Actors by with the same rules
+export { ACTOR_FULL_NAME_REGEX } from '../../../../lib/actor-ids.js';
 
 // All fields must exist, even if their value can be undefined.
 // This makes typescript enforce all configs to have resolution for EVERY field.

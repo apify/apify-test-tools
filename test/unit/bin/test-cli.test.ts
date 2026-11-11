@@ -79,6 +79,19 @@ describe('tokens', () => {
 });
 `,
         );
+        // Tests that name their Actor by full name, by raw ID, and by neither
+        await mkdir(path.join(repoDir, 'test/ids'), { recursive: true });
+        await writeFile(
+            path.join(repoDir, 'test/ids/ids.test.ts'),
+            `import { describe, testActor } from ${JSON.stringify(path.join(projectRoot, 'index.ts'))};
+
+describe('ids', () => {
+    for (const actorId of ['owner/a', 'rawIdOfOwnerA0000', 'not an id']) {
+        testActor(actorId, 'is named', async () => {}, { retry: 0 });
+    }
+});
+`,
+        );
         await writeFile(path.join(repoDir, 'apify-test-tools.config.json'), CONFIG);
         await writeFile(
             path.join(repoDir, 'test/platform/a.test.ts'),
@@ -297,6 +310,26 @@ test('owner/a: fails', () => {
         expect(result.status, result.stderr).toBe(0);
         expect(JSON.parse(result.stdout)).toMatchObject({ summary: { total: 4, passed: 4, failed: 0 } });
         expect(result.stderr).toContain('APIFY_TOKEN_PARTNER is not set, testing with TESTER_APIFY_TOKEN instead.');
+    });
+
+    const failuresOf = (stdout: string): Record<string, string> =>
+        Object.fromEntries(
+            JSON.parse(stdout).tests.map(({ name, failureMessages }: { name: string; failureMessages: string[] }) => [
+                name,
+                failureMessages.join('\n'),
+            ]),
+        );
+
+    it('matches a test to its Actor by full name or raw ID, and fails a test that names it by neither', () => {
+        const result = run(['test', '--test-files-glob', 'test/ids/**'], JSON.stringify([build]));
+        expect(result.status).toBe(1);
+        expect(JSON.parse(result.stdout).summary).toMatchObject({ total: 3, passed: 2, failed: 1 });
+        const failures = failuresOf(result.stdout);
+        expect(failures['ids owner/a: is named']).toBe('');
+        expect(failures['ids rawIdOfOwnerA0000: is named']).toBe('');
+        expect(failures['ids not an id: is named']).toContain(
+            '"not an id" is neither an Actor\'s full name (owner/name) nor its raw ID (17 letters and digits).',
+        );
     });
 
     it('fails on a lib that runs every test with TESTER_APIFY_TOKEN when it is not set, instead of skipping them all', async () => {

@@ -1,11 +1,12 @@
 import type { ActorCallOptions } from 'apify-client';
 import type { Assertion, TestOptions } from 'vitest';
 
+/** An Actor listed in `ACTOR_BUILDS`, by its full name, its raw ID or both, with its build or without one. */
 export type ActorBuild = {
-    buildId: string;
-    actorRawId: string;
-    buildNumber: string;
-    actorFullName: string;
+    buildId?: string;
+    actorRawId?: string;
+    buildNumber?: string;
+    actorFullName?: string;
     /** The env var holding the token the Actor's tests run with */
     testTokenEnvVar?: string;
 };

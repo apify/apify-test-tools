@@ -312,8 +312,12 @@ nothing. `test` passes the Actors to vitest as `ACTOR_BUILDS`, in place of any
 `ACTOR_BUILDS` in its own environment. For older lib versions, it also lists each Actor's IDs as `actorName` and
 `actorId`, the names versions before 0.9.0 read. It sets `RUN_PLATFORM_TESTS=1`, which versions before 0.10.0 need to
 run their `describe` blocks, and removes `RUN_ALL_PLATFORM_TESTS`, which would make those versions run the tests of
-every Actor. When it is given Actors but every test is skipped, it logs a warning, since that usually means the tests
-name the Actors differently.
+every Actor.
+
+When `test` is given Actors but no test runs, the report fails with an error, since a run that tested nothing must
+not pass. For any set of given Actors, at least 1 test must be performed, not 1 for each Actor. When none runs, the
+tests usually name the Actors differently, or `--test-files-glob` selects none of their tests. A given Actor none of
+whose tests ran only gets a warning, since an Actor may have no tests in the selected files.
 
 It runs vitest with `--maxConcurrency=20 --fileParallelism --maxWorkers=100`, since platform tests mostly wait on
 Actor runs rather than the CPU, and with the default reporter plus the JSON one the report is read from. These

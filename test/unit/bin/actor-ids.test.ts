@@ -57,10 +57,13 @@ describe('withTestTokens', () => {
         expect(createClient).toHaveBeenCalledTimes(2);
     });
 
-    it('adds the full name and the token to an Actor listed by raw ID, trying each token in the config', async () => {
-        const build = { actorRawId: 'rawP', buildId: 'b1', buildNumber: '0.99.1' };
-        const { result } = await resolve([build]);
-        expect(result).toEqual([{ ...build, actorFullName: 'partner/p', testTokenEnvVar: 'APIFY_TOKEN_PARTNER' }]);
+    it("looks up the raw ID only with the Actor's own token, never another Actor's", async () => {
+        // owner-token can't see partner/p, partner-token can't see owner/a
+        const { result, actor } = await resolve([{ actorFullName: 'partner/p' }]);
+        expect(result).toEqual([
+            { actorFullName: 'partner/p', actorRawId: 'rawP', testTokenEnvVar: 'APIFY_TOKEN_PARTNER' },
+        ]);
+        expect(actor.mock.calls).toEqual([['partner-token', 'partner/p']]);
     });
 
     it('keeps the IDs of a build and does not look them up', async () => {
@@ -72,19 +75,14 @@ describe('withTestTokens', () => {
 
     it('keeps an Actor its token cannot see as listed, instead of failing the run', async () => {
         const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-        const { result } = await resolve([{ actorRawId: 'rawMissing' }, { actorFullName: 'owner/a' }], {
+        const { result } = await resolve([{ actorFullName: 'owner/missing' }, { actorFullName: 'owner/a' }], {
             testTokenEnvVars: new Map([...testTokenEnvVars, ['owner/missing', 'APIFY_TOKEN_OWNER']]),
         });
-        const { result: missing } = await resolve([{ actorFullName: 'owner/missing' }], {
-            testTokenEnvVars: new Map([['owner/missing', 'APIFY_TOKEN_OWNER']]),
-        });
-        expect([...missing, ...result]).toEqual([
+        expect(result).toEqual([
             { actorFullName: 'owner/missing', testTokenEnvVar: 'APIFY_TOKEN_OWNER' },
-            { actorRawId: 'rawMissing' },
             { actorFullName: 'owner/a', actorRawId: 'rawA', testTokenEnvVar: 'APIFY_TOKEN_OWNER' },
         ]);
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('owner/missing not found, or APIFY_TOKEN_OWNER'));
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining('rawMissing not found with any test token'));
         warn.mockRestore();
     });
 
@@ -109,21 +107,19 @@ describe('withTestTokens', () => {
 
     it('looks up and tests the Actors without a token of their own with TESTER_APIFY_TOKEN when it is set', async () => {
         const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-        const { result, actor } = await resolve(
-            [{ actorFullName: 'stranger/x' }, { actorFullName: 'partner/p' }, { actorRawId: 'rawP' }],
-            { env: { TESTER_APIFY_TOKEN: 'partner-token' } },
-        );
+        const { result, actor } = await resolve([{ actorFullName: 'stranger/x' }, { actorFullName: 'partner/p' }], {
+            env: { TESTER_APIFY_TOKEN: 'partner-token' },
+        });
         // Each keeps the token the config names for it, the lib falls back the same way
         expect(result).toEqual([
             { actorFullName: 'stranger/x' },
             { actorFullName: 'partner/p', actorRawId: 'rawP', testTokenEnvVar: 'APIFY_TOKEN_PARTNER' },
-            { actorRawId: 'rawP', actorFullName: 'partner/p', testTokenEnvVar: 'APIFY_TOKEN_PARTNER' },
         ]);
         expect(actor).toHaveBeenCalledWith('partner-token', 'partner/p');
         expect(warn.mock.calls.map(([message]) => message)).toEqual([
             "Actor stranger/x not found, or TESTER_APIFY_TOKEN can't access it. Tests that name it by its raw ID will be skipped.",
             'Actor stranger/x is not in apify-test-tools.config.json, so its tests run with TESTER_APIFY_TOKEN.',
-            'APIFY_TOKEN_PARTNER is not set, so the tests of partner/p, partner/p run with TESTER_APIFY_TOKEN.',
+            'APIFY_TOKEN_PARTNER is not set, so the tests of partner/p run with TESTER_APIFY_TOKEN.',
         ]);
         warn.mockRestore();
     });

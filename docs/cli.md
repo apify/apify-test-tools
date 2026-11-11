@@ -301,17 +301,16 @@ npx apify-test-tools get-actor-configs \
 npx apify-test-tools get-actor-configs --actors john.doe/my-actor | npx apify-test-tools test > test-report.json
 ```
 
-The input is a JSON array of Actors, each given by its full name, its raw ID or both:
-`[{ "actorFullName": "<owner/name>" }]` or `[{ "actorRawId": "<id>" }]`. An Actor's tests run against the build given
-with it (`buildId` and `buildNumber`, as `build` and `build-from-local` print them), or against its default build
-without one. Other fields are ignored, so the output of [`get-actor-configs`](#listing-actors-get-actor-configs) works
+The input is a JSON array of Actors, each given by its full name: `[{ "actorFullName": "<owner/name>" }]`. An Actor's
+tests run against the build given with it (`buildId` and `buildNumber`, as `build` and `build-from-local` print them),
+or against its default build without one. Other fields are ignored, so the output of [`get-actor-configs`](#listing-actors-get-actor-configs) works
 as it is.
 
 Each Actor's tests run with its test token: the environment variable its `testTokenEnvVar` in the config names, which
 is its `tokenEnvVar` unless the config names another. `test` reads the config for it, so the Actors must be listed
-there. It looks up the ID an Actor is listed without with the same token, so its tests run whichever ID they name it
-by. An Actor the token can't see keeps only the ID it was listed with, and a warning names it, so an Actor no test
-uses doesn't stop the run. The same goes for an Actor that isn't in the config or whose token isn't set: a warning
+there. Tests can name an Actor by its full name or its raw ID: `test` looks up the raw ID with the Actor's own token
+when the input doesn't include it. An Actor the token can't see gets a warning instead, so an Actor no test uses
+doesn't stop the run. The same goes for an Actor that isn't in the config or whose token isn't set: a warning
 names it, and its tests fall back to `TESTER_APIFY_TOKEN` for now. Without that either, only its own tests fail. A dry-run plan, empty or invalid input is an error, as with `build`, and so is a
 missing config.
 

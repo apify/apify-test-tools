@@ -149,8 +149,8 @@ export const runTests = async ({
     // In those versions this runs the tests of every Actor, whatever ACTOR_BUILDS lists
     delete env.RUN_ALL_PLATFORM_TESTS;
     const described = actorBuilds.map(
-        ({ actorFullName, actorRawId, buildNumber, testTokenEnvVar }) =>
-            `${actorFullName ?? actorRawId} (${buildNumber ?? 'default build'}, ${testTokenEnvVar ?? 'no own token'})`,
+        ({ actorFullName, buildNumber, testTokenEnvVar }) =>
+            `${actorFullName} (${buildNumber ?? 'default build'}, ${testTokenEnvVar ?? 'no own token'})`,
     );
     logger.info(`Testing ${targets.length} Actor(s): ${described.join(', ') || 'none'}`);
 

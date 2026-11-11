@@ -25,16 +25,15 @@ interface WithTestTokensOptions {
 }
 
 /**
- * Hands each target the env var its tests run with, from the config, and adds the ID it is missing: the raw ID to
- * those listed by full name, e.g. by `get-actor-configs`, and the full name to those listed by raw ID. The lib matches
- * a test to its Actor by the ID the test names, so a target without either ID would skip the tests that name its
- * Actor by the other one. Each Actor is looked up with the token its tests run with: its own test token, or
- * `TESTER_APIFY_TOKEN` when that isn't set.
+ * Hands each target the env var its tests run with, from the config, and adds its raw ID when it was listed without
+ * one, e.g. by `get-actor-configs`. A test names its Actor by its full name or its raw ID, and the lib matches it by
+ * that ID, so without the raw ID a test that names the Actor by it would be skipped. The raw ID is looked up with the
+ * token the Actor's tests run with: its own test token, or `TESTER_APIFY_TOKEN` when that isn't set.
  *
  * Nothing here fails the run: `get-actor-configs` lists every Actor in the repository, also ones no platform test
  * uses. An Actor that isn't in the config, or whose token isn't set, gets a warning, and the lib runs its tests with
- * `TESTER_APIFY_TOKEN`, or fails only them without it. An Actor its token can't see keeps only the ID it was listed
- * with, so a test that names it by that ID still runs and fails on its own.
+ * `TESTER_APIFY_TOKEN`, or fails only them without it. An Actor its token can't see keeps only its full name, so a test
+ * that names it by full name still runs and fails on its own.
  */
 export const withTestTokens = async (
     targets: TestTarget[],
@@ -59,35 +58,15 @@ export const withTestTokens = async (
     const resolved = await Promise.all(
         targets.map(async (target): Promise<ActorBuildTarget> => {
             const { actorFullName, actorRawId } = target;
-            if (actorFullName) {
-                const testTokenEnvVar = testTokenEnvVars.get(actorFullName);
-                const withToken = { ...target, ...(testTokenEnvVar && { testTokenEnvVar }) };
-                if (actorRawId) return withToken;
-                // Without any token there's nothing to look it up with, the missing token is reported below
-                const lookupEnvVar = effectiveEnvVar(testTokenEnvVar);
-                if (!lookupEnvVar) return withToken;
-                const actor = await clientFor(lookupEnvVar).actor(actorFullName).get();
-                if (!actor) warnNotFound(actorFullName, lookupEnvVar, 'its raw ID');
-                return { ...withToken, ...(actor && { actorRawId: actor.id }) };
-            }
-            // The parser lets no target through without either ID. A raw ID doesn't say which token it belongs to,
-            // so each test token in the config that is set gets a try, and then the fallback.
-            const candidates = new Set(
-                [...testTokenEnvVars.values(), FALLBACK_TOKEN_ENV_VAR].filter((tokenEnvVar) => env[tokenEnvVar]),
-            );
-            for (const lookupEnvVar of candidates) {
-                const actor = await clientFor(lookupEnvVar).actor(actorRawId!).get();
-                if (actor) {
-                    const fullName = `${actor.username}/${actor.name}`;
-                    const testTokenEnvVar = testTokenEnvVars.get(fullName);
-                    return { ...target, actorFullName: fullName, ...(testTokenEnvVar && { testTokenEnvVar }) };
-                }
-            }
-            logger.warn(
-                `Actor ${actorRawId} not found with any test token in ${CONFIG_FILE_NAME} that is set, nor with ` +
-                    `${FALLBACK_TOKEN_ENV_VAR}. Tests that name it by its full name will be skipped.`,
-            );
-            return target;
+            const testTokenEnvVar = testTokenEnvVars.get(actorFullName);
+            const withToken = { ...target, ...(testTokenEnvVar && { testTokenEnvVar }) };
+            if (actorRawId) return withToken;
+            // Without any token there's nothing to look it up with, the missing token is reported below
+            const lookupEnvVar = effectiveEnvVar(testTokenEnvVar);
+            if (!lookupEnvVar) return withToken;
+            const actor = await clientFor(lookupEnvVar).actor(actorFullName).get();
+            if (!actor) warnNotFound(actorFullName, lookupEnvVar);
+            return { ...withToken, ...(actor && { actorRawId: actor.id }) };
         }),
     );
 
@@ -95,9 +74,9 @@ export const withTestTokens = async (
     return resolved;
 };
 
-const warnNotFound = (actorId: string, tokenEnvVar: string, missingId: string) => {
+const warnNotFound = (actorFullName: string, tokenEnvVar: string) => {
     logger.warn(
-        `Actor ${actorId} not found, or ${tokenEnvVar} can't access it. Tests that name it by ${missingId} ` +
+        `Actor ${actorFullName} not found, or ${tokenEnvVar} can't access it. Tests that name it by its raw ID ` +
             `will be skipped.`,
     );
 };
@@ -106,15 +85,11 @@ const warnNotFound = (actorId: string, tokenEnvVar: string, missingId: string) =
 const warnAboutMissingTokens = (targets: ActorBuildTarget[], env: NodeJS.ProcessEnv) => {
     const outcome = env[FALLBACK_TOKEN_ENV_VAR] ? `run with ${FALLBACK_TOKEN_ENV_VAR}` : 'will fail';
     const unset = new Map<string, string[]>();
-    for (const { actorFullName, actorRawId, testTokenEnvVar } of targets) {
-        const actorId = (actorFullName ?? actorRawId)!;
+    for (const { actorFullName, testTokenEnvVar } of targets) {
         if (!testTokenEnvVar) {
-            // A raw ID nobody found is already reported where it was looked up
-            if (actorFullName) {
-                logger.warn(`Actor ${actorId} is not in ${CONFIG_FILE_NAME}, so its tests ${outcome}.`);
-            }
+            logger.warn(`Actor ${actorFullName} is not in ${CONFIG_FILE_NAME}, so its tests ${outcome}.`);
         } else if (!env[testTokenEnvVar]) {
-            unset.set(testTokenEnvVar, [...(unset.get(testTokenEnvVar) ?? []), actorId]);
+            unset.set(testTokenEnvVar, [...(unset.get(testTokenEnvVar) ?? []), actorFullName]);
         }
     }
     for (const [tokenEnvVar, actorIds] of unset) {

@@ -7,6 +7,7 @@ import process from 'node:process';
 import { createInterface } from 'node:readline';
 
 import { withActorIds } from './actor-ids.js';
+import { findInstalledLibVersion, isOlderVersion, OLDEST_SUPPORTED_LIB_VERSION } from './lib-compat.js';
 import { logger } from './logger.js';
 import type { TestTarget } from './stdin-input.js';
 import { resolveTestFilesGlob } from './test-files-glob.js';
@@ -89,6 +90,13 @@ export const runTests = async ({
         throw new Error('TESTER_APIFY_TOKEN is not set. The platform tests need it to run the Actors.');
     }
     const vitestBin = await resolveVitestBin(cwd);
+    const libVersion = await findInstalledLibVersion(cwd);
+    if (libVersion && isOlderVersion(libVersion, OLDEST_SUPPORTED_LIB_VERSION)) {
+        logger.warn(
+            `The repository uses apify-test-tools ${libVersion}, older than ${OLDEST_SUPPORTED_LIB_VERSION}, the oldest ` +
+                'version this CLI supports. Its tests may be skipped. Update apify-test-tools in package.json.',
+        );
+    }
     const vitestFilters = await resolveVitestFilters(testFilesGlob, cwd);
     // A test only runs when the ID it names its Actor by is listed, so each Actor gets both its full name and raw ID
     const actorBuilds = await withActorIds(targets);

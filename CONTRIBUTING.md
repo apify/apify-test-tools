@@ -131,27 +131,24 @@ that commit. The consumer's own `node_modules` is left alone, so their tests kee
 - **Lib change** — merge it, then cut a release when you want it out. Consumers pick it up when they update
   `apify-test-tools`.
 
-The CLI and the lib in one job can be different versions now, so the formats between them are a contract: the
+The CLI and the lib in one job can be different versions, so the formats between them are a contract: the
 `ACTOR_BUILDS` JSON that `build` writes and the lib reads, and the vitest JSON report (with the run each test started on its `meta`) that `test` reads. Add
 fields freely; renaming or removing one needs a new major tag.
 
-**The CLI works with every lib version from `OLDEST_SUPPORTED_LIB_VERSION` up** (`bin/lib-compat.ts`, 1.0.0 since
-`workflows-v1`). An older lib may read the contract differently, and a mismatch skips every test while the run still
+**The CLI works with every lib version from `OLDEST_SUPPORTED_LIB_VERSION` up** (`bin/lib-compat.ts`). An
+older lib may read the contract differently, and a mismatch skips every test while the run still
 passes, so `test` refuses a repository whose installed lib is older. Raising the version breaks the callers still on
 the older lib, so it goes with a new major workflows tag. `test/bundle/old-libs.test.ts` checks the bundled `test`
 refuses an older lib and runs the oldest supported one.
 
-`workflows-v0` stays frozen with the shims for libs from 0.2.4 up, for repos that haven't updated their lib yet.
-
-`workflows-v1` moving on every master push means `@workflows-v1` is as live as `@master` was — there's no staging
+`workflows-v1` moving on every master push means `@workflows-v1` is as live as `@master` — there's no staging
 step. What the tag buys you is a `workflows-v2` for breaking workflow changes, so repos migrate one at a time instead
 of all at once, and a way to roll back by pointing the tag at an earlier commit (**Move major version tag**
 workflow). Bump `MAJOR_TAG` in `.github/workflows/_move_major_tag.yaml` to cut the next major; the old tag then
 freezes where it is and keeps working, CLI included, since the bundle is part of the frozen commit.
 
 The tag tracks the **workflows'** contract, not the npm package version. They move independently on purpose: bump it
-when a workflow breaks its callers, not when the package does. `workflows-v1` and the package's 1.0.0 coincide only
-because the v1 workflows need the 1.0 lib. The usage examples in the workflows, README and docs repeat the tag
+when a workflow breaks its callers, not when the package does. The usage examples in the workflows, README and docs repeat the tag
 literally, so update them by hand when you bump it.
 
 ## Testing workflow changes

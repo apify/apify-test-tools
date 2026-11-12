@@ -41,8 +41,8 @@ const resolveVitestBin = async (cwd: string): Promise<string> => {
  * Turns the glob into vitest filters. Vitest filters are parts of a file path, not globs, so the glob is resolved here.
  * The filters are the folders that hold only matched files and the other matched files one by one, so the command
  * line stays short. They go to vitest as absolute paths. Vitest also matches their path relative to the root anywhere
- * in a test file's path, so a copy at `dist/test/platform/a.test.ts` would run too. Vitest 4 and newer no longer
- * exclude `dist` by default, so `test` excludes it, see `runTests`.
+ * in a test file's path, so a copy at `dist/test/platform/a.test.ts` would run too. Vitest doesn't exclude `dist`
+ * by default, so `test` excludes it, see `runTests`.
  */
 const resolveVitestFilters = async (testFilesGlob: string, cwd: string): Promise<string[]> => {
     const { files, paths } = await resolveTestFilesGlob(testFilesGlob, cwd);
@@ -120,7 +120,7 @@ export const runTests = async ({
         '--maxConcurrency=20',
         '--fileParallelism',
         '--maxWorkers=100',
-        // The filters match a compiled copy of the tests too, which vitest no longer excludes on its own since 4.
+        // The filters match a compiled copy of the tests too, which vitest doesn't exclude on its own.
         // Added to the repository's own `exclude`, not in place of it.
         '--exclude=**/dist/**',
     ];

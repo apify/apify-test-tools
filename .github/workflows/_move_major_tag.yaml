@@ -33,15 +33,14 @@ jobs:
             # to it instead of all at once.
             #
             # This tracks the workflows' own contract, not the npm package version — the two move
-            # independently by design. workflows-v1 coincides with the package's 1.0.0 only because
-            # its CLI needs the 1.0 lib.
+            # independently by design.
             #
-            # Deliberately not a bare `v0`. The package releases as `v0.9.0`, `v0.8.6` and so on, and
+            # Deliberately not a bare `v1`. The package releases as `v1.0.0`, `v1.2.3` and so on, and
             # a bare major tag sits in that same namespace: git-cliff hard-errors on it
             # ("unexpected character 'v' while parsing major version number") and only skips it
             # because apify/actions ships `tag_pattern = "v[0-9]+\\."`, whose trailing dot excludes
             # it. Depending on a regex in another repo to keep releases working is not a dependency
-            # worth having, and `v1` beside a package `v1.0.0` would be worse still.
+            # worth having, and a `v1` tag beside a package release `v1.0.0` would be confusing too.
             #
             # The workflows load this repo with `$/`, so they never name the tag. Only the usage
             # examples in the workflows, README and docs do: update them by hand when bumping it.

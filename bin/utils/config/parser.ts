@@ -112,13 +112,6 @@ export const _privates = {
 export function parseResolvedConfigFile(body: Record<string, unknown>): ResolvedActorConfig[] {
     // The repo settings are read by parseRepoSettings, the strategies only see the Actor entries
     const { mode, platformTestsGlob: _platformTestsGlob, ...rest } = body;
-    // The flat format, a top-level `actors` array without a mode, was removed in 1.0
-    if (mode === undefined && 'actors' in rest) {
-        throw new Error(
-            'The config has a top-level "actors" array without "mode", a format apify-test-tools 1.0 no longer reads. ' +
-                'Set "mode": "grouped" and move the Actors into "groups", see the Config file section of the README.',
-        );
-    }
     const strategy = selectStrategy({ mode });
     return strategy.parse(rest);
 }

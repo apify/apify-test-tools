@@ -139,7 +139,7 @@ test('owner/a: fails', () => {
     });
 
     it('fails when --test-files-glob matches no file instead of running every test', () => {
-        // Relative to test/platform, the way the workflows took it before
+        // Relative to test/platform instead of the repo root
         const result = run(['test', '--test-files-glob', 'hourly'], JSON.stringify([build]));
         expect(result.status).toBe(1);
         expect(result.stderr).toContain('No files match --test-files-glob "hourly"');
@@ -176,7 +176,7 @@ test('owner/a: fails', () => {
         expect(result.stderr).not.toContain('[owner/a]: None of its tests ran');
     });
 
-    it('rejects test paths given the old way, as arguments, instead of running every test', () => {
+    it('rejects test paths given as arguments instead of running every test', () => {
         const result = run(['test', 'test/platform/core'], JSON.stringify([build]));
         expect(result.status).toBe(1);
         // The help that comes with it shows --test-files-glob

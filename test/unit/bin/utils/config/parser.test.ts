@@ -65,8 +65,8 @@ describe('selectStrategy', () => {
         expect(selectStrategy({ mode: CONFIG_FILE_STRATEGY.GROUPED })).toBe(GROUPED_PARSER);
     });
 
-    it('rejects the removed legacy mode', () => {
-        expect(() => selectStrategy({ mode: 'legacy' })).toThrow(/mode/);
+    it('rejects an unknown mode', () => {
+        expect(() => selectStrategy({ mode: 'flat' })).toThrow(/mode/);
     });
 
     it('throws on a mode no strategy is registered for', () => {
@@ -210,10 +210,6 @@ describe('parseConfigFile', () => {
         expect(parsed[0].actorFullName).toBe('myteam/shopify');
         expect(parsed[0].tokenEnvVar).toBe('APIFY_TOKEN');
         expect(parsed[0].overrideActorContext).toBeUndefined();
-    });
-
-    it('points a config in the removed flat format, a top-level actors array, at the grouped one', () => {
-        expect(() => parseConfigFile({ actors: [actor()] })).toThrow(/"mode": "grouped"/);
     });
 
     it('surfaces cross-entry violations from verifyConfiguration', () => {

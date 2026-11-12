@@ -455,5 +455,3 @@ side. Changes that would break callers go to a new tag (`@workflows-v2`), and `@
 can migrate when it suits you.
 
 `@workflows-v1` needs `apify-test-tools` 1.0.0 or newer in your `package.json`: the test step fails on an older one.
-`@workflows-v0` stays where it was and keeps working with older libraries, so update the library and the tag
-together.

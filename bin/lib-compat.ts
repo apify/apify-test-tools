@@ -42,8 +42,7 @@ export const assertSupportedLib = async (cwd: string): Promise<void> => {
     if (version && isOlderVersion(version, OLDEST_SUPPORTED_LIB_VERSION)) {
         throw new Error(
             `The repository uses apify-test-tools ${version}, older than ${OLDEST_SUPPORTED_LIB_VERSION}, the oldest ` +
-                'version this CLI supports. Update apify-test-tools in package.json, or call the workflows at ' +
-                '@workflows-v0, which keep supporting it.',
+                'version this CLI supports. Update apify-test-tools in package.json.',
         );
     }
 };

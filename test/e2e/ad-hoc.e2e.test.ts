@@ -10,11 +10,11 @@ vi.hoisted(() => {
 // eslint-disable-next-line import/first
 import { buildActor, defineActor, testActor } from '../../index.js';
 // eslint-disable-next-line import/first
-import { ActorSource } from '../../lib/ad-hoc.js';
+import { ActorSource, inlineMain } from '../../lib/ad-hoc.js';
 // eslint-disable-next-line import/first
 import { projectRoot, token } from './helpers.js';
 
-// The Actor's code. Self-contained by contract: `ActorSource.main` type-checks it on its own.
+// The Actor's code. Self-contained by contract: `inlineMain` type-checks it on its own.
 export const main = async () => {
     const { ApifyClient } = await import('apify-client');
     const client = new ApifyClient({ token: process.env.APIFY_TOKEN });
@@ -23,7 +23,9 @@ export const main = async () => {
 
 describe.runIf(token)('ad-hoc Actor', () => {
     const actor = defineActor('test-tools-e2e-ad-hoc', {
-        source: ActorSource.dirs(path.join(projectRoot, 'test/fixtures/ad-hoc-actor')).main(import.meta.filename, main),
+        source: ActorSource.dirs(path.join(projectRoot, 'test/fixtures/ad-hoc-actor')).with(
+            inlineMain(import.meta.filename, main),
+        ),
         syncDelayMs: 0,
     });
 

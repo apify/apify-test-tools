@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { ActorRun, ApifyClient } from 'apify-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ActorSource } from '../../lib/ad-hoc.js';
+import { ActorSource, inlineMain } from '../../lib/ad-hoc.js';
 import { RunTestResult } from '../../lib/run-test-result.js';
 
 describe('ActorSource', () => {
@@ -54,7 +54,7 @@ describe('ActorSource', () => {
     });
 });
 
-describe('ActorSource.main', { timeout: 60_000 }, () => {
+describe('inlineMain', { timeout: 60_000 }, () => {
     // See test/fixtures/actor-main/README.md.
     const fixtures = path.join(import.meta.dirname, '../fixtures/actor-main');
     const testFile = async (code: string) => {
@@ -83,7 +83,7 @@ describe('ActorSource.main', { timeout: 60_000 }, () => {
             };
             test('x', () => {});
         `);
-        const files = await ActorSource.dirs(dir).main(file, main).files();
+        const files = await ActorSource.dirs(dir).with(inlineMain(file, main)).files();
         const js = files.get('main.js')!.toString();
 
         expect(js).not.toContain('vitest');
@@ -96,7 +96,9 @@ describe('ActorSource.main', { timeout: 60_000 }, () => {
     it('accepts a function declaration and a custom path', async () => {
         const { dir, file } = await testFile(`async function run() { return 1; }`);
         const run = async () => undefined;
-        const files = await ActorSource.dirs(dir).main(file, run, { path: 'src/main.mjs' }).files();
+        const files = await ActorSource.dirs(dir)
+            .with(inlineMain(file, run, { path: 'src/main.mjs' }))
+            .files();
 
         expect(files.get('src/main.mjs')!.toString()).toContain('async function run()');
     });
@@ -106,14 +108,16 @@ describe('ActorSource.main', { timeout: 60_000 }, () => {
             const helper = () => 1;
             export const main = async () => { console.log(helper()); };
         `);
-        await expect(ActorSource.dirs(dir).main(file, main).files()).rejects.toThrow(
+        await expect(ActorSource.dirs(dir).with(inlineMain(file, main)).files()).rejects.toThrow(
             /does not type-check on its own[\s\S]*Cannot find name 'helper'/,
         );
     });
 
     it('fails when the function is not a top-level declaration of the file', async () => {
         const { dir, file } = await testFile(`const other = 1;`);
-        await expect(ActorSource.dirs(dir).main(file, main).files()).rejects.toThrow('No top-level function "main"');
+        await expect(ActorSource.dirs(dir).with(inlineMain(file, main)).files()).rejects.toThrow(
+            'No top-level function "main"',
+        );
     });
 });
 

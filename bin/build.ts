@@ -181,6 +181,26 @@ export class ApifyBuilder {
         return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
     };
 
+    /**
+     * Builds the zipped source as the local-source version, the way `apify push` does: inline SOURCE_FILES are capped
+     * at ~9 MB, so the zip goes through the Actor's source key-value store. `version` adds fields to that version.
+     */
+    buildFromLocalSource = async (
+        zip: Buffer,
+        {
+            actorInfo,
+            version,
+        }: { actorInfo?: ApifyClientTypes.Actor; version?: Partial<ApifyClientTypes.ActorVersion> } = {},
+    ): Promise<BuildData> => {
+        const actorVersion = {
+            ...version,
+            versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
+            tarballUrl: await this.uploadSourceZip(LOCAL_SOURCE_VERSION_NUMBER, zip),
+            sourceType: ActorSourceType.Tarball,
+        } as ApifyClientTypes.ActorVersion;
+        return this.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false, actorInfo);
+    };
+
     waitForBuildToFinish = async (buildId: string): Promise<ApifyClientTypes.Build> => {
         const build = await this.apifyClient.build(buildId).waitForFinish();
         const versionNumber = build.buildNumber;

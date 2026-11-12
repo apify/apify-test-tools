@@ -1,11 +1,4 @@
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-
-import AdmZip from 'adm-zip';
-import type * as ApifyClientTypes from 'apify-client';
-import { ActorSourceType } from 'apify-client';
-
+import { ActorSource, zipFiles } from './actor-source.js';
 import {
     ApifyBuilder,
     assertEnvVarsMatchDefaultVersion,
@@ -14,143 +7,7 @@ import {
     runAndSummarizeBuilds,
 } from './build.js';
 import { logger } from './logger.js';
-import { isPathWithinScope } from './path-utils.js';
-import { collectNonIgnoredFiles } from './source-files.js';
 import type { ActorConfig, BuildData, DryRunPlan } from './types.js';
-import type { SourceFile } from './utils.js';
-import { isOutsideDir, readSourceFile } from './utils.js';
-
-export const collectSourceFiles = async (actorConfig: ActorConfig): Promise<SourceFile[]> => {
-    const repoRoot = process.cwd();
-    const absActorDir = path.resolve(actorConfig.folder.path);
-
-    // Config loading has already resolved dockerContextDir. Keep the raw actor.json contents
-    // for rewriting its path fields if this actor needs a flattened build context.
-    const actorJson = JSON.parse(await fs.readFile(actorConfig.actorJson.file.path, 'utf8')) as Record<string, unknown>;
-    const isMonorepoActor = !actorConfig.folder.contains(actorConfig.dockerContextDir);
-
-    const sourceRoot = isMonorepoActor ? actorConfig.dockerContextDir : actorConfig.folder;
-    const sourceRootAbs = path.resolve(sourceRoot.path);
-    const keptFilePaths = await collectNonIgnoredFiles(sourceRoot, repoRoot);
-
-    if (!isMonorepoActor) {
-        return Promise.all(keptFilePaths.map(async (filePath) => readSourceFile(filePath, sourceRootAbs)));
-    }
-
-    const { tempDir, filePaths } = await flattenMonorepoContext(
-        actorConfig.actorFullName,
-        absActorDir,
-        sourceRootAbs,
-        actorJson,
-        keptFilePaths,
-    );
-    try {
-        return await Promise.all(filePaths.map(async (filePath) => readSourceFile(filePath, tempDir)));
-    } finally {
-        // Only the flattened copy is temporary — never delete the actor's own directory.
-        await fs.rm(tempDir, { recursive: true, force: true });
-    }
-};
-
-// SOURCE_FILES always treats the collected root as the actor root, so we cannot simply
-// collect the actor directory of a monorepo actor — the platform would reject any path
-// escaping it. Fix: create a temporary "flattened" directory where:
-//   - the Docker context's non-ignored files (repo root) are copied to the temp dir root
-//   - the actor's own .actor/ directory (already present within those same non-ignored files)
-//     is overlaid at the temp dir root instead of its original nested position
-//   - actor.json path fields are rewritten to be relative to the new location
-//
-// Result: the collected root IS the Docker context, .actor/ is at that root, and
-// all relative paths (dockerfile, dockerContextDir, changelog) are exactly one
-// level up ("..") instead of three ("../../..").
-export const flattenMonorepoContext = async (
-    actorName: string,
-    absActorDir: string,
-    contextAbsDir: string,
-    actorJson: Record<string, unknown>,
-    keptContextFiles: string[],
-): Promise<{ tempDir: string; filePaths: string[] }> => {
-    logger.info(`[${actorName}]: monorepo actor detected — flattening from Docker context`);
-
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `apify-build-${actorName.replace('/', '_')}-`));
-    const filePaths: string[] = [];
-
-    // Step 1: copy only the files that survived gitignore/secret filtering, preserving their
-    // position relative to the Docker context root.
-    await Promise.all(
-        keptContextFiles.map(async (absFilePath) => {
-            const relPath = path.relative(contextAbsDir, absFilePath);
-            const destPath = path.join(tempDir, relPath);
-            await fs.mkdir(path.dirname(destPath), { recursive: true });
-            await fs.copyFile(absFilePath, destPath);
-            filePaths.push(destPath);
-        }),
-    );
-
-    // Step 2: overlay the actor's own .actor/ directory at the temp dir root. Its files are already
-    // present in keptContextFiles (collectNonIgnoredFiles keeps .actor/ paths unconditionally — see
-    // step 1 above) — pick out this actor's own subset (ignoring any sibling actors' .actor/ folders
-    // that might also appear in the broader context) and hoist each to its position relative to
-    // .actor/ itself, so it lands under tempDir/.actor/ instead of its original nested location.
-    const actorMetaDir = path.join(absActorDir, '.actor');
-    const keptActorFiles = keptContextFiles.filter((absFilePath) => isPathWithinScope(absFilePath, actorMetaDir));
-    await Promise.all(
-        keptActorFiles.map(async (absFilePath) => {
-            const relPath = path.relative(actorMetaDir, absFilePath);
-            const destPath = path.join(tempDir, '.actor', relPath);
-            await fs.mkdir(path.dirname(destPath), { recursive: true });
-            await fs.copyFile(absFilePath, destPath);
-            filePaths.push(destPath);
-        }),
-    );
-
-    // Step 3: rewrite actor.json path fields so they resolve correctly from the new location.
-    // This overwrites the actor.json already copied in step 2 in place, so its path is already
-    // accounted for in filePaths — no need to add it again.
-    await rewriteActorJsonPaths(absActorDir, contextAbsDir, tempDir, actorJson);
-
-    return { tempDir, filePaths };
-};
-
-// Rewrites actor.json path fields so they resolve correctly from the new .actor/ location
-// (one level below the root) instead of the original three-levels-deep location.
-//
-// Algorithm for each path field:
-//   1. Resolve the original value to an absolute path on disk.
-//   2. Compute its position relative to the Docker context root (e.g. repo root).
-//      That relative position is exactly where the file landed inside tempDir,
-//      because we copied contextAbsDir → tempDir in flattenMonorepoContext's step 1.
-//   3. Build the new path from newActorDir to that file in tempDir.
-//
-// Local paths (e.g. "./dataset_schema.json") point inside .actor/ and are left
-// unchanged — .actor/ was copied intact so those paths still resolve correctly.
-export const rewriteActorJsonPaths = async (
-    absActorDir: string,
-    contextAbsDir: string,
-    tempDir: string,
-    actorJson: Record<string, unknown>,
-): Promise<void> => {
-    const originalActorDir = path.join(absActorDir, '.actor');
-    const newActorDir = path.join(tempDir, '.actor');
-    const pathFields = ['dockerfile', 'dockerContextDir', 'changelog', 'readme'] as const;
-    const rewritten = { ...actorJson };
-    for (const field of pathFields) {
-        const value = rewritten[field];
-        if (typeof value !== 'string') continue;
-
-        const absPath = path.resolve(originalActorDir, value);
-
-        // Skip paths that stay inside .actor/ — they don't need rewriting.
-        if (!isOutsideDir(absPath, originalActorDir)) continue;
-
-        // Where does this file live inside the Docker context? That's also where
-        // it lives inside tempDir after the copy in flattenMonorepoContext's step 1.
-        const relativeToContext = path.relative(contextAbsDir, absPath);
-        const newAbsPath = path.join(tempDir, relativeToContext);
-        rewritten[field] = path.relative(newActorDir, newAbsPath);
-    }
-    await fs.writeFile(path.join(newActorDir, 'actor.json'), JSON.stringify(rewritten, null, 4));
-};
 
 type LocalBuildPlan = {
     actorFullName: string;
@@ -184,13 +41,9 @@ export const runBuildsFromLocal = async ({
                     LOCAL_SOURCE_VERSION_NUMBER,
                 );
             }
-            // Zipped and uploaded like `apify push` does, since inline SOURCE_FILES are capped at ~9 MB.
-            const zip = new AdmZip();
-            const sourceFiles = await collectSourceFiles(actorConfig);
-            for (const { name, content } of sourceFiles) {
-                zip.addFile(name, content);
-            }
-            return { actorConfig, actorInfo, fileCount: sourceFiles.length, zipBuffer: zip.toBuffer() };
+            const files = await ActorSource.actor(actorConfig).files();
+            const zipBuffer = zipFiles(files);
+            return { actorConfig, actorInfo, fileCount: files.size, zipBuffer };
         }),
     );
 
@@ -219,11 +72,6 @@ export const runBuildsFromLocal = async ({
 
     return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {
         const { actorInfo, zipBuffer } = preparedByActorFullName.get(actorConfig.actorFullName)!;
-        const actorVersion: ApifyClientTypes.ActorVersion = {
-            versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
-            tarballUrl: await builder.uploadSourceZip(LOCAL_SOURCE_VERSION_NUMBER, zipBuffer),
-            sourceType: ActorSourceType.Tarball,
-        };
-        return builder.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false, actorInfo);
+        return builder.buildFromLocalSource(zipBuffer, { actorInfo });
     });
 };

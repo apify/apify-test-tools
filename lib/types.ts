@@ -1,11 +1,11 @@
 import type { ActorCallOptions } from 'apify-client';
 import type { Assertion, TestOptions } from 'vitest';
 
+/** An Actor the CLI lists in `ACTOR_BUILDS`, with the build to test or, without one, on its default build */
 export type ActorBuild = {
-    buildId: string;
-    actorRawId: string;
-    buildNumber: string;
     actorFullName: string;
+    buildId?: string;
+    buildNumber?: string;
 };
 
 export type RunOptions<T> = {

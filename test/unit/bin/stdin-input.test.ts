@@ -36,8 +36,9 @@ describe('parseBuildInput', () => {
 describe('parseTestTargets', () => {
     const build = { buildId: 'b', actorRawId: 'r', buildNumber: '0.99.1', actorFullName: 'owner/a' };
 
-    it('reads the output of build', () => {
-        expect(parseTestTargets(JSON.stringify([build]))).toStrictEqual([build]);
+    it('reads the output of build, keeping only what the lib reads', () => {
+        const { actorRawId: _actorRawId, ...target } = build;
+        expect(parseTestTargets(JSON.stringify([build]))).toStrictEqual([target]);
         expect(parseTestTargets('[]')).toStrictEqual([]);
     });
 
@@ -46,8 +47,8 @@ describe('parseTestTargets', () => {
         expect(parseTestTargets(JSON.stringify([actorConfig]))).toStrictEqual([{ actorFullName: 'owner/a' }]);
     });
 
-    it('reads an Actor given by its raw ID only', () => {
-        expect(parseTestTargets('[{"actorRawId":"r"}]')).toStrictEqual([{ actorRawId: 'r' }]);
+    it('rejects an Actor given by its raw ID only, since tests name their Actor by its full name', () => {
+        expect(() => parseTestTargets('[{"actorRawId":"r"}]')).toThrow('actorFullName');
     });
 
     it('rejects a dry-run plan, which built nothing', () => {
@@ -57,9 +58,7 @@ describe('parseTestTargets', () => {
     it('rejects empty input and input that is not Actors', () => {
         expect(() => parseTestTargets('')).toThrow('Expected the Actors to test as JSON on stdin, got nothing');
         expect(() => parseTestTargets('{"actors":[]}')).toThrow('is not the Actors to test');
-        expect(() => parseTestTargets('[{"buildNumber":"0.99.1"}]')).toThrow(
-            'An Actor needs actorFullName or actorRawId',
-        );
+        expect(() => parseTestTargets('[{"buildNumber":"0.99.1"}]')).toThrow('actorFullName');
         expect(() => parseTestTargets('{oops')).toThrow('not valid JSON');
     });
 });

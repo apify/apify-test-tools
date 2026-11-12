@@ -3,7 +3,12 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
+import {
+    ACTOR_FULL_NAME_REGEX,
+    DATASET_SYNC_DELAY_MS,
+    DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
+    DEFAULT_TEST_RUN_DURATION_MS,
+} from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
 import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
@@ -23,11 +28,7 @@ try {
     throw new Error(`Failed to parse actor builds: ${err}`);
 }
 
-const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
-    map.set(cfg.actorFullName, cfg);
-    map.set(cfg.actorRawId, cfg);
-    return map;
-}, new Map<string, ActorBuild>());
+const config = new Map(actorBuilds.map((build) => [build.actorFullName, build]));
 
 export { ExpectStatic };
 
@@ -53,31 +54,40 @@ export const describe = (name: string, fn?: SuiteFactory<object>, options: Actor
  * Registers a vitest test for an Actor, which only runs when the Actor is listed in `ACTOR_BUILDS`: against the build
  * listed with it, or its default build without one.
  * `body` gets the test context with the soft `expect` and the full test name.
+ *
+ * @throws when `actorFullName` isn't a full name, so its test file fails to load: a test naming its Actor by another ID
+ * would never match `ACTOR_BUILDS` and would be skipped without a word.
  */
 const defineActorTest = (
-    actorId: string,
+    actorFullName: string,
     testName: string,
     testOptions: ActorTestOptions | undefined,
     body: (context: TestContext, name: string) => Promise<void>,
 ) => {
+    if (!ACTOR_FULL_NAME_REGEX.test(actorFullName)) {
+        throw new Error(
+            `Test "${testName}" names its Actor "${actorFullName}", which is not a full name. Name the Actor ` +
+                'as owner/name, e.g. "apify/web-scraper".',
+        );
+    }
     const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
-    const name = `${actorId}: ${testName}`;
-    vitestTest.runIf(config.has(actorId))(name, options, async (context) => {
+    const name = `${actorFullName}: ${testName}`;
+    vitestTest.runIf(config.has(actorFullName))(name, options, async (context) => {
         await body({ ...context, expect: extendExpect(context.expect) }, name);
     });
 };
 
 /**
- * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
+ * @param actorFullName - The Actor's full name, `owner/name`, e.g. `"apify/web-scraper"`.
  */
 export const testActor = <T>(
-    actorId: string,
+    actorFullName: string,
     testName: string,
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    defineActorTest(actorId, testName, testOptions, async (context) => {
-        await fn({ ...context, run: createStartRunFn(actorId, context) });
+    defineActorTest(actorFullName, testName, testOptions, async (context) => {
+        await fn({ ...context, run: createStartRunFn(actorFullName, context) });
     });
 };
 
@@ -87,17 +97,17 @@ export const testActor = <T>(
  *
  * Using task is just current shortcoming of standby feature but ideally we would use Actor directly
  *
- * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
+ * @param actorFullName - The Actor's full name, `owner/name`, e.g. `"apify/web-scraper"`.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const testStandbyActor = <I = any, O = any>(
-    actorId: string,
+    actorFullName: string,
     testName: string,
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    defineActorTest(actorId, testName, testOptions, async (context, name) => {
-        const standbyTask = await createStandbyTask(actorId, config.get(actorId)?.buildNumber);
+    defineActorTest(actorFullName, testName, testOptions, async (context, name) => {
+        const standbyTask = await createStandbyTask(actorFullName, config.get(actorFullName)?.buildNumber);
 
         // NOTE: we wrap `fn` in try/finally so cleanup (deleting the task) always runs afterwards
         try {
@@ -280,7 +290,7 @@ const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
         task.meta = {
             runId: run.id,
             runLink,
-            actorId: actorConfig?.actorFullName ?? actorId,
+            actorId,
         };
 
         // waiting for dataset and statistics to sync, the Apify platform is only eventually consistent.

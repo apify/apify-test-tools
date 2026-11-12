@@ -134,7 +134,7 @@ describe('requireTestsToRun', () => {
             ]),
             { cwd, exitCode: 0 },
         );
-    const actorA = { actorFullName: 'owner/a', actorRawId: 'rawA' };
+    const actorA = { actorFullName: 'owner/a' };
 
     it('fails a report in which no test ran although Actors were given', () => {
         for (const statuses of [[], ['skipped', 'skipped']] as const) {

@@ -46,6 +46,15 @@ test('owner/a: fails', () => {
 `,
         );
 
+        // The real lib, by path: a test naming its Actor by raw ID fails its file instead of being skipped
+        await mkdir(path.join(repoDir, 'test/raw-id'), { recursive: true });
+        await writeFile(
+            path.join(repoDir, 'test/raw-id/raw-id.test.ts'),
+            `import { describe, testActor } from ${JSON.stringify(path.join(projectRoot, 'index.ts'))};\n\n` +
+                `describe('raw ID', () => {\n` +
+                `    testActor('rawIdOfOwnerA0000', 'by raw ID', async () => {});\n` +
+                `});\n`,
+        );
         await mkdir(path.join(repoDir, 'test/skipped'), { recursive: true });
         await writeFile(
             path.join(repoDir, 'test/skipped/skipped.test.ts'),
@@ -70,8 +79,8 @@ test('owner/a: fails', () => {
         const result = run(['test'], JSON.stringify([build]));
         expect(result.status).toBe(1);
         // Passed on to the lib as ACTOR_BUILDS, the fields in the order test reads them
-        const { actorFullName, buildId, actorRawId, buildNumber } = build;
-        expect(result.stderr).toContain(`ENV ${JSON.stringify([{ actorFullName, buildId, actorRawId, buildNumber }])}`);
+        const { actorFullName, buildId, buildNumber } = build;
+        expect(result.stderr).toContain(`ENV ${JSON.stringify([{ actorFullName, buildId, buildNumber }])}`);
         expect(result.stderr).toContain('1) owner/a: works ... https://console.apify.com/view/runs/run1');
         // Vitest's own output still comes through, without the note about the temporary JSON report
         expect(result.stderr).toContain('Test Files');
@@ -90,18 +99,12 @@ test('owner/a: fails', () => {
     });
 
     it('tests an Actor without a build on its default build', () => {
-        // get-actor-configs lists no raw ID, test looks it up (see actor-ids.test.ts). Given here, it isn't, so
-        // the fake token is never sent to the API.
-        const actorConfig = {
-            actorFullName: 'owner/a',
-            actorRawId: 'raw1',
-            folder: 'actors/a',
-            tokenEnvVar: 'APIFY_TOKEN_OWNER',
-        };
+        // What get-actor-configs prints. No API call is needed, the lib matches the tests by full name.
+        const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' };
         const result = run(['test'], JSON.stringify([actorConfig]));
         expect(result.status).toBe(1);
         // Only the fields the lib reads reach it
-        expect(result.stderr).toContain('ENV [{"actorFullName":"owner/a","actorRawId":"raw1"}]');
+        expect(result.stderr).toContain('ENV [{"actorFullName":"owner/a"}]');
         expect(result.stderr).toContain('Testing 1 Actor(s): owner/a (default build)');
         expect(JSON.parse(result.stdout)).toMatchObject({ success: false, summary: { passed: 1, failed: 1 } });
     });
@@ -135,6 +138,18 @@ test('owner/a: fails', () => {
         expect(result.status).toBe(1);
         expect(result.stderr).toContain('No files match --test-files-glob "hourly"');
         expect(result.stdout).toBe('');
+    });
+
+    it('fails the file of a test that names its Actor by raw ID instead of skipping the test', () => {
+        const result = run(['test', '--test-files-glob', 'test/raw-id/**'], JSON.stringify([build]));
+        expect(result.status).toBe(1);
+        expect(JSON.parse(result.stdout)).toMatchObject({
+            success: false,
+            errors: [
+                expect.stringContaining('names its Actor "rawIdOfOwnerA0000", which is not a full name'),
+                expect.stringContaining('No test ran'),
+            ],
+        });
     });
 
     it('fails when no test ran although Actors were given, instead of passing having tested nothing', () => {

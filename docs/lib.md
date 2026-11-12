@@ -15,10 +15,11 @@ The library reads these when the test file is loaded:
 | `TESTER_APIFY_TOKEN` | Token the tests start runs and read their data with. Without it, every `describe` block is skipped, so a plain `npm test` stays unaffected.                                                                                                                                                            |
 | `ACTOR_BUILDS`       | JSON array of Actors to test, e.g. the builds the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local) print. Only tests of Actors listed here run, against the listed build, or the default build for an Actor listed without one. |
 
-`ACTOR_BUILDS` entries look like this, and are matched to tests by `actorFullName` or `actorRawId`:
+`ACTOR_BUILDS` entries look like this, and are matched to tests by `actorFullName`. Without `buildNumber`, the Actor's
+tests run on its default build:
 
 ```json
-[{ "buildId": "...", "actorRawId": "...", "buildNumber": "1.2.3", "actorFullName": "john.doe/my-actor" }]
+[{ "actorFullName": "john.doe/my-actor", "buildId": "...", "buildNumber": "1.2.3" }]
 ```
 
 ## `describe(name, fn, options?)`
@@ -26,11 +27,11 @@ The library reads these when the test file is loaded:
 Same as vitest's `describe`, but skipped unless `TESTER_APIFY_TOKEN` is set. Its tests
 run concurrently by default. Use it instead of vitest's `describe` for platform tests.
 
-## `testActor(actorId, testName, fn, options?)`
+## `testActor(actorFullName, testName, fn, options?)`
 
-Registers a test for an Actor. `actorId` is the Actor's full name (`owner/name`) or its raw platform ID. The test
-only runs when the Actor is in `ACTOR_BUILDS`. Its name is
-`<actorId>: <testName>`.
+Registers a test for an Actor. `actorFullName` is the Actor's full name, `owner/name`. Anything else, like a raw
+Actor ID, throws, so the test file fails to load instead of the test being skipped. The test only runs when the Actor
+is in `ACTOR_BUILDS`. Its name is `<actorFullName>: <testName>`.
 
 `fn` gets the vitest test context, with `expect` extended by the [custom matchers](#custom-matchers), and a `run`
 function.
@@ -43,13 +44,13 @@ list that may be empty.
 import { describe, testActor } from 'apify-test-tools';
 
 describe('test', () => {
-    testActor(actorId, 'actor test 1', async ({ expect, run }) => {
+    testActor('john.doe/my-actor', 'actor test 1', async ({ expect, run }) => {
         const runResult = await run({ input });
 
         // your checks
     });
 
-    testActor(actorId, 'actor test 2', async ({ expect, run }) => {
+    testActor('john.doe/my-actor', 'actor test 2', async ({ expect, run }) => {
         const runResult = await run({ input });
 
         // your checks
@@ -69,7 +70,7 @@ The fourth argument takes vitest's test options:
 
 ```ts
 testActor(
-    actorId,
+    'john.doe/my-actor',
     'slow actor test',
     async ({ expect, run }) => {
         const runResult = await run({ input });
@@ -99,7 +100,7 @@ link is added to the test as a vitest annotation.
 #### Using prefilled input
 
 ```ts
-testActor(actorId, 'with prefilled input', async ({ expect, run }) => {
+testActor('john.doe/my-actor', 'with prefilled input', async ({ expect, run }) => {
     const runResult = await run({
         prefilledInput: true,
         input: { maxItems: 10 }, // merged on top of the prefilled input
@@ -113,13 +114,13 @@ testActor(actorId, 'with prefilled input', async ({ expect, run }) => {
 Useful for iterating on the checks of a test without waiting for a new run:
 
 ```ts
-testActor(actorId, 'validate existing run', async ({ expect, run }) => {
+testActor('john.doe/my-actor', 'validate existing run', async ({ expect, run }) => {
     const runResult = await run({ runId: 'some-run-id' });
     await expect(runResult).toFinishWith({ datasetItemCount: 100 });
 });
 ```
 
-## `testStandbyActor(actorId, testName, fn, options?)`
+## `testStandbyActor(actorFullName, testName, fn, options?)`
 
 Same as `testActor`, for Actors in standby mode. It creates a temporary task with the build from `ACTOR_BUILDS` (or
 the Actor's standby build) and deletes it after the test. Instead of `run`, `fn` gets `callStandby`, which sends a
@@ -130,7 +131,7 @@ the Actor's standby build) and deletes it after the test. Instead of `run`, `fn`
 import { describe, testStandbyActor } from 'apify-test-tools';
 
 describe('standby tests', () => {
-    testStandbyActor(actorId, 'standby request', async ({ expect, callStandby }) => {
+    testStandbyActor('john.doe/my-actor', 'standby request', async ({ expect, callStandby }) => {
         const { data, status } = await callStandby({
             input: { query: 'test' },
             path: '/search',
@@ -162,7 +163,7 @@ can call them freely.
 | `getRunInfo()`             | The run object, fetched again so it reflects changes after the run finished                              |
 
 ```ts
-testActor(actorId, 'check dataset items', async ({ expect, run }) => {
+testActor('john.doe/my-actor', 'check dataset items', async ({ expect, run }) => {
     const runResult = await run({ input });
 
     const { items } = await runResult.getDataset();

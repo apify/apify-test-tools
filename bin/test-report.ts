@@ -162,13 +162,10 @@ export const logTestReport = ({ summary, tests, errors }: TestReport) => {
 /**
  * Fails a report in which no test ran although Actors were given: a run that tested nothing must not pass, and it
  * usually means the tests name the Actors differently or the glob selects none of their tests. An Actor none of whose
- * tests ran only gets a warning, since an Actor may have no tests in the selected files. Each Actor is matched by the
- * IDs it was given with, as the lib names every test `<actorId>: <name>`.
+ * tests ran only gets a warning, since an Actor may have no tests in the selected files. Each Actor is matched by its
+ * full name, as the lib names every test `<actorFullName>: <name>`.
  */
-export const requireTestsToRun = (
-    report: TestReport,
-    actors: { actorFullName?: string; actorRawId?: string }[],
-): TestReport => {
+export const requireTestsToRun = (report: TestReport, actors: { actorFullName: string }[]): TestReport => {
     if (actors.length === 0) return report;
     const ran = report.tests.filter((test) => test.status !== 'skipped');
     if (ran.length === 0) {
@@ -179,14 +176,13 @@ export const requireTestsToRun = (
                 ...report.errors,
                 `No test ran, although ${actors.length} Actor(s) were given. For any set of given Actors, ` +
                     'at least 1 test must be performed. Check that --test-files-glob selects their tests, and that ' +
-                    'the tests name them by their full name or raw ID.',
+                    'the tests name them by their full name.',
             ],
         };
     }
-    for (const { actorFullName, actorRawId } of actors) {
-        const ids = [actorFullName, actorRawId].filter((id): id is string => !!id);
-        if (!ran.some((test) => ids.some((id) => test.name.includes(`${id}: `)))) {
-            logger.warn(`[${actorFullName ?? actorRawId}]: None of its tests ran`);
+    for (const { actorFullName } of actors) {
+        if (!ran.some((test) => test.name.includes(`${actorFullName}: `))) {
+            logger.warn(`[${actorFullName}]: None of its tests ran`);
         }
     }
     return report;

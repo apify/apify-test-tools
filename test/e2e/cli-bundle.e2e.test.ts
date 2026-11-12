@@ -7,7 +7,6 @@ import process from 'node:process';
 import { ApifyClient } from 'apify-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { OLDEST_SUPPORTED_LIB_VERSION } from '../../bin/lib-compat.js';
 import type { ActorBuild } from './helpers.js';
 import {
     bundlePath,
@@ -193,68 +192,6 @@ describe('sandbox dummies', () => {${actorTests}
         expect(status, stderr).toBe(0);
         expect(stderr).toContain('Skipping notification');
     });
-
-    // A repository can run the newest CLI with an old lib, so the oldest supported one must run the builds too
-    it(
-        `runs the builds through testActor of the oldest supported lib, ${OLDEST_SUPPORTED_LIB_VERSION}`,
-        { timeout: 10 * 60_000 },
-        async () => {
-            expect(builds, 'needs the builds from the earlier test').toBeDefined();
-
-            // Its own repository, whose apify-test-tools is the oldest supported version (a dev dependency alias)
-            const oldLibRepo = await mkdtemp(path.join(os.tmpdir(), 'apify-cli-e2e-old-lib-'));
-            try {
-                await mkdir(path.join(oldLibRepo, 'node_modules'));
-                await symlink(
-                    path.join(projectRoot, 'node_modules/apify-test-tools-oldest'),
-                    path.join(oldLibRepo, 'node_modules/apify-test-tools'),
-                );
-                await symlink(
-                    path.join(projectRoot, 'node_modules/vitest'),
-                    path.join(oldLibRepo, 'node_modules/vitest'),
-                );
-                // The test names the Actors by raw ID and by full name, as old repositories do
-                const actorTests = builds
-                    .map(
-                        ({ actorFullName, actorRawId }, i) => `
-    testActor(${JSON.stringify(i === 0 ? actorRawId : actorFullName)}, 'finishes', async ({ expect, run }) => {
-        const result = await run({ input: {} });
-        expect(result.status).toBe('SUCCEEDED');
-    });`,
-                    )
-                    .join('\n');
-                await mkdir(path.join(oldLibRepo, 'test/platform'), { recursive: true });
-                await writeFile(
-                    path.join(oldLibRepo, 'test/platform/dummies.test.ts'),
-                    `import { describe, testActor } from 'apify-test-tools';
-
-describe('sandbox dummies on the oldest lib', () => {${actorTests}
-});
-`,
-                );
-
-                const tested = await runProcess(process.execPath, [bundlePath, 'test'], {
-                    cwd: oldLibRepo,
-                    env: { ...cliEnv, TESTER_APIFY_TOKEN: token! },
-                    input: JSON.stringify(builds),
-                });
-                expect(tested.status, tested.stderr).toBe(0);
-                const report = JSON.parse(tested.stdout);
-                expect(report).toMatchObject({ success: true, summary: { passed: ACTORS.length, failed: 0 } });
-
-                // Each run used the build piped into `test`, which the report links though the lib records no actorId
-                const client = new ApifyClient({ token });
-                const runBuildIds = await Promise.all(
-                    report.tests.map(
-                        async ({ run }: { run: { runId: string } }) => (await client.run(run.runId).get())?.buildId,
-                    ),
-                );
-                expect(runBuildIds.sort()).toEqual(builds.map((build) => build.buildId).sort());
-            } finally {
-                await rm(oldLibRepo, { recursive: true, force: true });
-            }
-        },
-    );
 
     // Last, so builds from earlier runs of this suite don't pile up in the sandbox.
     it('delete-old-builds keeps the default builds', async () => {

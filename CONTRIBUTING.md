@@ -135,21 +135,13 @@ The CLI and the lib in one job can be different versions now, so the formats bet
 `ACTOR_BUILDS` JSON that `build` writes and the lib reads, and the vitest JSON report (with the run each test started on its `meta`) that `test` reads. Add
 fields freely; renaming or removing one needs a new major tag.
 
-**The CLI must keep working with every lib version from `OLDEST_SUPPORTED_LIB_VERSION` up** (`bin/lib-compat.ts`,
-0.2.4 as of 2026-11). That is the oldest version a consumer repo locks. Old libs read the contract differently, and a
-mismatch skips every test while the run still passes:
+**The CLI works with every lib version from `OLDEST_SUPPORTED_LIB_VERSION` up** (`bin/lib-compat.ts`, 1.0.0 since
+`workflows-v1`). An older lib may read the contract differently, and a mismatch skips every test while the run still
+passes, so `test` refuses a repository whose installed lib is older. Raising the version breaks the callers still on
+the older lib, so it goes with a new major workflows tag. `test/bundle/old-libs.test.ts` checks the bundled `test`
+refuses an older lib and runs the oldest supported one.
 
-- Before 0.9.0, the lib reads the Actor IDs in `ACTOR_BUILDS` as `actorName` and `actorId`, and records a test's run
-  without `actorId`. `test` writes the IDs under both names, and takes the Actor from the test name.
-- Before 0.10.0, the lib's `describe` runs only with `RUN_PLATFORM_TESTS` set, and `RUN_ALL_PLATFORM_TESTS` runs the
-  tests of every Actor. `test` sets the first and removes the second.
-
-`test/bundle/old-libs.test.ts` runs the bundled `test` with the oldest supported lib and with 0.9.0, installed as npm
-aliases (`apify-test-tools-oldest`, `apify-test-tools-0-9-0`). The e2e suite runs real builds through the oldest one.
-`test` warns when a repository uses a lib older than the oldest supported version.
-
-To raise the oldest supported version, first check the `apify-test-tools` version in each consumer repo's lockfile,
-then change the constant and the `apify-test-tools-oldest` alias together. A test checks they match.
+`workflows-v0` stays frozen with the shims for libs from 0.2.4 up, for repos that haven't updated their lib yet.
 
 `workflows-v0` moving on every master push means `@workflows-v0` is as live as `@master` was — there's no staging
 step. What the tag buys you is a `workflows-v1` for breaking workflow changes, so repos migrate one at a time instead

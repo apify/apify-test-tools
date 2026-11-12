@@ -309,10 +309,8 @@ they name it by. An Actor the token can't see keeps only the ID it was listed wi
 Actor no test uses doesn't stop the run. A dry-run plan, empty or invalid input is an error, as with `build`. So is a
 missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the run would pass having tested
 nothing. `test` passes the Actors to vitest as `ACTOR_BUILDS`, in place of any
-`ACTOR_BUILDS` in its own environment. For older lib versions, it also lists each Actor's IDs as `actorName` and
-`actorId`, the names versions before 0.9.0 read. It sets `RUN_PLATFORM_TESTS=1`, which versions before 0.10.0 need to
-run their `describe` blocks, and removes `RUN_ALL_PLATFORM_TESTS`, which would make those versions run the tests of
-every Actor.
+`ACTOR_BUILDS` in its own environment. It needs apify-test-tools 1.0.0 or newer in the repository, and fails on an
+older one, which could skip every test.
 
 When `test` is given Actors but no test runs, the report fails with an error, since a run that tested nothing must
 not pass. For any set of given Actors, at least 1 test must be performed, not 1 for each Actor. When none runs, the

@@ -45,13 +45,10 @@ type VitestStatus = 'passed' | 'failed' | 'skipped' | 'pending' | 'todo' | 'disa
 
 interface VitestAssertionResult {
     fullName: string;
-    /** The test's own name, without its `describe` blocks */
-    title?: string;
     status: VitestStatus;
     duration?: number | null;
     failureMessages: string[] | null;
-    // Lib versions 0.5 to 0.8 record the Actor as actorName, 0.2 not at all
-    meta?: Partial<TestRun> & { actorName?: string };
+    meta?: Partial<TestRun>;
 }
 
 interface VitestFileResult {
@@ -68,14 +65,9 @@ export interface VitestJsonReport {
 
 const firstLine = (text: string) => text.split('\n')[0];
 
-/**
- * The run a test started. Older lib versions record the Actor as `actorName`, or not at all; every version names its
- * tests `<actor>: <name>`, so the title gives it then.
- */
-const toRun = ({ meta, title }: VitestAssertionResult): TestRun | null => {
-    const { runId, runLink } = meta ?? {};
-    const separator = title?.indexOf(': ') ?? -1;
-    const actorId = meta?.actorId ?? meta?.actorName ?? (separator > 0 ? title!.slice(0, separator) : undefined);
+/** The run a test started, which the lib records on the test's `meta` */
+const toRun = ({ meta }: VitestAssertionResult): TestRun | null => {
+    const { runId, runLink, actorId } = meta ?? {};
     return actorId && runId && runLink ? { actorId, runId, runLink } : null;
 };
 

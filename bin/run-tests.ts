@@ -7,7 +7,7 @@ import process from 'node:process';
 import { createInterface } from 'node:readline';
 
 import { withActorIds } from './actor-ids.js';
-import { findInstalledLibVersion, isOlderVersion, OLDEST_SUPPORTED_LIB_VERSION } from './lib-compat.js';
+import { assertSupportedLib } from './lib-compat.js';
 import { logger } from './logger.js';
 import type { TestTarget } from './stdin-input.js';
 import { resolveTestFilesGlob } from './test-files-glob.js';
@@ -90,13 +90,7 @@ export const runTests = async ({
         throw new Error('TESTER_APIFY_TOKEN is not set. The platform tests need it to run the Actors.');
     }
     const vitestBin = await resolveVitestBin(cwd);
-    const libVersion = await findInstalledLibVersion(cwd);
-    if (libVersion && isOlderVersion(libVersion, OLDEST_SUPPORTED_LIB_VERSION)) {
-        logger.warn(
-            `The repository uses apify-test-tools ${libVersion}, older than ${OLDEST_SUPPORTED_LIB_VERSION}, the oldest ` +
-                'version this CLI supports. Its tests may be skipped. Update apify-test-tools in package.json.',
-        );
-    }
+    await assertSupportedLib(cwd);
     const vitestFilters = await resolveVitestFilters(testFilesGlob, cwd);
     // A test only runs when the ID it names its Actor by is listed, so each Actor gets both its full name and raw ID
     const actorBuilds = await withActorIds(targets);
@@ -111,15 +105,7 @@ export const runTests = async ({
     // Vitest writes to a pipe, so it would drop colors that the terminal it ends up in shows
     if (process.stderr.isTTY && env.FORCE_COLOR === undefined && env.NO_COLOR === undefined) env.FORCE_COLOR = '1';
     // The lib runs the tests of the Actors listed here, each on the build given, or on its default build without one
-    // Lib versions before 0.9.0 read the IDs as actorName and actorId, so they are given under both names
-    env.ACTOR_BUILDS = JSON.stringify(
-        actorBuilds.map((build) => ({ ...build, actorName: build.actorFullName, actorId: build.actorRawId })),
-    );
-    // Lib versions before 0.10.0 skip every test in their `describe` unless this is set. Newer versions read
-    // TESTER_APIFY_TOKEN instead and ignore it. It only unlocks `describe`: which tests run still follows ACTOR_BUILDS.
-    env.RUN_PLATFORM_TESTS = '1';
-    // In those versions this runs the tests of every Actor, whatever ACTOR_BUILDS lists
-    delete env.RUN_ALL_PLATFORM_TESTS;
+    env.ACTOR_BUILDS = JSON.stringify(actorBuilds);
     const described = actorBuilds.map(
         ({ actorFullName, actorRawId, buildNumber }) =>
             `${actorFullName ?? actorRawId} (${buildNumber ?? 'default build'})`,

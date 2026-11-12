@@ -5,9 +5,8 @@ import { promisify } from 'node:util';
 
 import AdmZip from 'adm-zip';
 
-import { collectNonIgnoredFiles, collectSourceFiles } from './source-files.js';
+import { collectSourceFiles } from './source-files.js';
 import type { ActorConfig } from './types.js';
-import { RelativeDir } from './utils/path/repo-relative.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -68,17 +67,6 @@ export class ActorSource {
                         const absPath = path.join(entry.parentPath, entry.name);
                         files.set(toPosix(path.relative(dir, absPath)), await readFile(absPath));
                     }
-                }
-            },
-        ]);
-    }
-
-    /** The repository as a platform build would see it: minus gitignored, dockerignored and secret files. */
-    static repo(repoRoot: string): ActorSource {
-        return new ActorSource([
-            async (files) => {
-                for (const absPath of await collectNonIgnoredFiles(RelativeDir.ROOT, repoRoot)) {
-                    files.set(toPosix(path.relative(repoRoot, absPath)), await readFile(absPath));
                 }
             },
         ]);

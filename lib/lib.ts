@@ -3,7 +3,7 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { afterAll, describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { buildActor, type DefinedActor, pruneBuilds, runOptionsOf } from './ad-hoc.js';
+import { buildActor, type DefinedActor, pruneBuilds, runOptionsOf } from './ad-hoc-actor.js';
 import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
@@ -73,7 +73,7 @@ const prunedAfterFile = new Set<string>();
 /**
  * @param actor - The Actor's raw platform ID, its full name (`owner/name`, e.g. `"apify/web-scraper"`), or an Actor
  * from `defineActor`. Such an ad-hoc Actor always runs: it is built from its source on the first `run`, and its builds
- * older than three days are deleted after the file's tests.
+ * and uploaded sources older than three days are deleted after the file's tests.
  */
 export const testActor = <T>(
     actor: string | DefinedActor,

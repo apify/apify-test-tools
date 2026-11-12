@@ -62,6 +62,11 @@
         "vitest": ">=3.2.4",
         "typescript": ">=5"
     },
+    "peerDependenciesMeta": {
+        "typescript": {
+            "optional": true
+        }
+    },
     "scripts": {
         "start": "npm run dist/bin/main.js",
         "start:dev": "cd local-clone && tsx ../bin/main.ts",
@@ -84,10 +89,5 @@
         "*.ts": "eslint"
     },
     "author": "oklinov",
-    "license": "ISC",
-    "peerDependenciesMeta": {
-        "typescript": {
-            "optional": true
-        }
-    }
+    "license": "ISC"
 }

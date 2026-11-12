@@ -10,3 +10,6 @@ dist
 .venv
 .DS_Store
 local-clone
+
+# Scratch files of the inlineMain unit tests
+test/fixtures/actor-main/tmp-*

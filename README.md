@@ -26,7 +26,7 @@ Build, test and release Apify Actors from a Git repository or local source code.
     ```yaml
     jobs:
         buildDevelAndTest:
-            uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
+            uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
             secrets:
                 TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
                 # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
@@ -211,7 +211,7 @@ The workflows take every change straight to production, with tests in between:
 These are GitHub Actions workflows. On another CI platform, build the same flow with the [CLI](docs/cli.md).
 
 Add these files to `.github/workflows` in your repo. They call the reusable workflows in this repo, pinned at the
-`@workflows-v0` major tag — never at `@master`. Every input, the optional Claude workflows, stale issue closer, and how the tag moves are
+`@workflows-v1` major tag — never at `@master`. Every input, the optional Claude workflows, stale issue closer, and how the tag moves are
 in the [Workflow API](docs/workflows.md).
 
 ### `pr-build-devel-test.yaml`
@@ -225,7 +225,7 @@ on:
 
 jobs:
     buildDevelAndTest:
-        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
@@ -247,7 +247,7 @@ on:
 
 jobs:
     buildLatest:
-        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v1
         secrets:
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
             # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
@@ -274,7 +274,7 @@ on:
 
 jobs:
     platformTestsDaily:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
         with:
             test-files-glob: 'test/platform/{daily,daily-without-pr}/**'
         secrets:
@@ -295,7 +295,7 @@ on:
 
 jobs:
     platformTestsHourly:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
         with:
             test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
         secrets:

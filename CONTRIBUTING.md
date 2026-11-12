@@ -89,7 +89,7 @@ The tag is not semver, so `git-cliff` would abort on it. It is skipped only beca
 The action's "Nothing to release" guard resolves to this tag and never fires, so an empty stable
 release fails at `npm publish` instead of erroring cleanly.
 
-Consumers pin `@workflows-v0`, not `@master`. See [Versioning and releases](#versioning-and-releases) below.
+Consumers pin `@workflows-v1`, not `@master`. See [Versioning and releases](#versioning-and-releases) below.
 
 - `npm test` covers the bundle without network (`test/bundle/`). `npm run test:e2e` runs it against
   dummy Actors in an isolated sandbox account (`test/e2e/`) and skips itself unless
@@ -102,7 +102,7 @@ Consumers pin `@workflows-v0`, not `@master`. See [Versioning and releases](#ver
 pushing workflow changes.
 
 The reusable workflows load the composite action with `uses: $/.github/actions/checkout-restore-dependencies`, never
-`apify/apify-test-tools/...@workflows-v0`. `$/` is the
+`apify/apify-test-tools/...@workflows-v1`. `$/` is the
 [self-repository syntax](https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/):
 it resolves to this repo at the commit the workflow was called at. A hardcoded tag would hand a caller pinned to an
 older SHA, or to a branch, the action and CLI from the tag instead of from the commit they asked for.
@@ -118,7 +118,7 @@ The workflows and the npm package live in one repo but ship on their own schedul
 
 | What                                         | Consumers get it through                   | Ships when              |
 | -------------------------------------------- | ------------------------------------------ | ----------------------- |
-| the workflows and the CLI they call          | the `@workflows-v0` tag in `uses:`         | every master push       |
+| the workflows and the CLI they call          | the `@workflows-v1` tag in `uses:`         | every master push       |
 | the lib (`testActor`, `describe`, matchers…) | `apify-test-tools` in their `package.json` | a stable release on npm |
 
 The CLI is bundled with its dependencies into `.github/cli/apify-test-tools.mjs` (`npm run bundle`, run by the
@@ -126,7 +126,7 @@ pre-commit hook and checked in CI), and the setup action runs it from there. Not
 a complete statement: these workflows and this CLI, with the exact dependency versions from `package-lock.json` at
 that commit. The consumer's own `node_modules` is left alone, so their tests keep the lib version they locked.
 
-- **Workflow or CLI change** — merge it. `workflows-v0` moves once checks and tests pass, and it goes live. No
+- **Workflow or CLI change** — merge it. `workflows-v1` moves once checks and tests pass, and it goes live. No
   release needed, even when a workflow starts using a new CLI feature: both are in the same commit.
 - **Lib change** — merge it, then cut a release when you want it out. Consumers pick it up when they update
   `apify-test-tools`.
@@ -143,15 +143,15 @@ refuses an older lib and runs the oldest supported one.
 
 `workflows-v0` stays frozen with the shims for libs from 0.2.4 up, for repos that haven't updated their lib yet.
 
-`workflows-v0` moving on every master push means `@workflows-v0` is as live as `@master` was — there's no staging
-step. What the tag buys you is a `workflows-v1` for breaking workflow changes, so repos migrate one at a time instead
+`workflows-v1` moving on every master push means `@workflows-v1` is as live as `@master` was — there's no staging
+step. What the tag buys you is a `workflows-v2` for breaking workflow changes, so repos migrate one at a time instead
 of all at once, and a way to roll back by pointing the tag at an earlier commit (**Move major version tag**
 workflow). Bump `MAJOR_TAG` in `.github/workflows/_move_major_tag.yaml` to cut the next major; the old tag then
 freezes where it is and keeps working, CLI included, since the bundle is part of the frozen commit.
 
-The tag tracks the **workflows'** contract, not the npm package version. They move independently on purpose, so
-`@workflows-v0` is expected to stay `@workflows-v0` after the package reaches 1.0 — bump it when a workflow breaks
-its callers, not when the package does. The usage examples in the workflows, README and docs repeat the tag
+The tag tracks the **workflows'** contract, not the npm package version. They move independently on purpose: bump it
+when a workflow breaks its callers, not when the package does. `workflows-v1` and the package's 1.0.0 coincide only
+because the v1 workflows need the 1.0 lib. The usage examples in the workflows, README and docs repeat the tag
 literally, so update them by hand when you bump it.
 
 ## Testing workflow changes

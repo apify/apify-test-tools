@@ -5,9 +5,10 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { OLDEST_SUPPORTED_LIB_VERSION } from '../../bin/lib-compat.js';
+import { startFakeApifyApi } from '../helpers/fake-apify-api.js';
 
 // The CLI ships separately from the lib, so a repository can run the newest CLI with an old lib. These run the
 // committed bundle's `test` in a repository that installed an old lib, the way the PR and scheduled workflows run it,
@@ -22,8 +23,13 @@ const OLD_LIBS = [
     { alias: 'apify-test-tools-0-9-0', why: 'the last version that needs RUN_PLATFORM_TESTS' },
 ];
 
-// A raw ID listed with the build, so `test` needs no API call to look it up
-const build = { actorFullName: 'owner/a', actorRawId: 'rawIdOfOwnerA0000', buildId: 'b1', buildNumber: '0.99.1' };
+// `test` looks the raw ID up in a fake API, see beforeAll
+const build = { actorFullName: 'owner/a', buildId: 'b1', buildNumber: '0.99.1' };
+let fakeApi: Awaited<ReturnType<typeof startFakeApifyApi>> | undefined;
+
+beforeAll(async () => {
+    fakeApi = await startFakeApifyApi([{ id: 'rawIdOfOwnerA0000', username: 'owner', name: 'a' }]);
+});
 
 const testFile = `import { describe, testActor } from 'apify-test-tools';
 
@@ -57,6 +63,7 @@ const repoWithLib = async (alias: string) => {
 };
 
 afterAll(async () => {
+    await fakeApi?.close();
     for (const repoDir of repoDirs) await rm(repoDir, { recursive: true, force: true });
 });
 
@@ -70,7 +77,12 @@ describe('test with an old lib', () => {
         const repoDir = await repoWithLib(alias);
         const result = spawnSync(process.execPath, [bundlePath, 'test'], {
             cwd: repoDir,
-            env: { PATH: process.env.PATH ?? '', HOME: os.tmpdir(), TESTER_APIFY_TOKEN: 'fake-token' },
+            env: {
+                PATH: process.env.PATH ?? '',
+                HOME: os.tmpdir(),
+                TESTER_APIFY_TOKEN: 'fake-token',
+                APIFY_API_BASE_URL: fakeApi!.url,
+            },
             input: JSON.stringify([build]),
             encoding: 'utf8',
         });
@@ -93,7 +105,12 @@ describe('test with an old lib', () => {
         const repoDir = await repoWithLib(alias);
         const result = spawnSync(process.execPath, [bundlePath, 'test'], {
             cwd: repoDir,
-            env: { PATH: process.env.PATH ?? '', HOME: os.tmpdir(), APIFY_TOKEN_OWNER: 'fake-token' },
+            env: {
+                PATH: process.env.PATH ?? '',
+                HOME: os.tmpdir(),
+                APIFY_TOKEN_OWNER: 'fake-token',
+                APIFY_API_BASE_URL: fakeApi!.url,
+            },
             input: JSON.stringify([build]),
             encoding: 'utf8',
         });

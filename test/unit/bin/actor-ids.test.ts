@@ -66,11 +66,11 @@ describe('withTestTokens', () => {
         expect(actor.mock.calls).toEqual([['partner-token', 'partner/p']]);
     });
 
-    it('keeps the IDs of a build and does not look them up', async () => {
-        const build = { actorFullName: 'owner/a', buildId: 'b1', actorRawId: 'raw1', buildNumber: '0.99.1' };
-        const { result, createClient } = await resolve([build]);
-        expect(result).toEqual([{ ...build, testTokenEnvVar: 'APIFY_TOKEN_OWNER' }]);
-        expect(createClient).not.toHaveBeenCalled();
+    it('looks up the raw ID of a build too, and keeps its build', async () => {
+        const build = { actorFullName: 'owner/a', buildId: 'b1', buildNumber: '0.99.1' };
+        const { result, actor } = await resolve([build]);
+        expect(result).toEqual([{ ...build, testTokenEnvVar: 'APIFY_TOKEN_OWNER', actorRawId: 'rawA' }]);
+        expect(actor.mock.calls).toEqual([['owner-token', 'owner/a']]);
     });
 
     it('keeps an Actor its token cannot see as listed, instead of failing the run', async () => {

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { startFakeApifyApi } from '../../helpers/fake-apify-api.js';
 import { compileCli } from './compiled-cli.js';
 
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
@@ -14,10 +15,16 @@ const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 let cliPath: string;
 let cleanup: (() => Promise<void>) | undefined;
 let repoDir: string;
+let fakeApi: Awaited<ReturnType<typeof startFakeApifyApi>> | undefined;
 
 // Only what node needs, so the outer vitest's own variables don't reach the inner one. The fixture's tests never call
 // Apify, so any token does.
-const env = { PATH: process.env.PATH ?? '', HOME: os.tmpdir(), APIFY_TOKEN_OWNER: 'fake-token' };
+// `test` looks the Actors' raw IDs up in a fake API, see beforeAll.
+const env: Record<string, string> = {
+    PATH: process.env.PATH ?? '',
+    HOME: os.tmpdir(),
+    APIFY_TOKEN_OWNER: 'fake-token',
+};
 
 const CONFIG = JSON.stringify({
     actors: [
@@ -32,12 +39,19 @@ const run = (args: string[], input = '', cwd = repoDir, runEnv: NodeJS.ProcessEn
 // A test file for the repositories set up inside a test, so they have something to match --test-files-glob
 const PASSING_TEST = `import { test } from 'vitest';\n\ntest('owner/a: works', () => {});\n`;
 
+// As `build` prints it. Its stale raw ID shows that `test` ignores it and looks the raw ID up itself.
 const build = { buildId: 'b1', actorRawId: 'raw1', buildNumber: '0.99.1', actorFullName: 'owner/a' };
+const OWNER_A_RAW_ID = 'rawIdOfOwnerA0000';
 
 // A consumer repository with the vitest it installed: one passing test that started a run, one failing
 describe('test CLI', () => {
     beforeAll(async () => {
         ({ cliPath, cleanup } = await compileCli());
+        fakeApi = await startFakeApifyApi([
+            { id: 'rawIdOfOwnerA0000', username: 'owner', name: 'a' },
+            { id: 'rawIdOfPartnerP00', username: 'partner', name: 'p' },
+        ]);
+        env.APIFY_API_BASE_URL = fakeApi.url;
         repoDir = await mkdtemp(path.join(os.tmpdir(), 'apify-test-cli-'));
         await symlink(path.join(projectRoot, 'node_modules'), path.join(repoDir, 'node_modules'), 'dir');
         await mkdir(path.join(repoDir, 'test/platform'), { recursive: true });
@@ -51,7 +65,7 @@ describe('test CLI', () => {
             `import { describe, testActor } from ${JSON.stringify(path.join(projectRoot, 'index.ts'))};
 
 describe('tokens', () => {
-    for (const actorId of ['owner/a', 'raw1']) {
+    for (const actorId of ['owner/a', 'rawIdOfOwnerA0000']) {
         testActor(actorId, 'gets the client of its token', async ({ expect, apifyClient }) => {
             expect(apifyClient.token).toBe('fake-token');
         }, { retry: 0 });
@@ -108,6 +122,7 @@ test('owner/a: fails', () => {
 
     afterAll(async () => {
         await cleanup?.();
+        await fakeApi?.close();
         if (repoDir) await rm(repoDir, { recursive: true, force: true });
     });
 
@@ -116,16 +131,16 @@ test('owner/a: fails', () => {
         expect(result.status).toBe(1);
         // Passed on to the lib as ACTOR_BUILDS, the fields in the order test reads them, with the env var of the token
         // the config names for the Actor's tests
-        const { actorFullName, buildId, actorRawId, buildNumber } = build;
-        // Also under the names lib versions before 0.9.0 read
+        // The raw ID is the one test looked up. Also under the names lib versions before 0.9.0 read.
+        const { actorFullName, buildId, buildNumber } = build;
         const actorBuild = {
             actorFullName,
             buildId,
-            actorRawId,
             buildNumber,
             testTokenEnvVar: 'APIFY_TOKEN_OWNER',
+            actorRawId: OWNER_A_RAW_ID,
             actorName: actorFullName,
-            actorId: actorRawId,
+            actorId: OWNER_A_RAW_ID,
         };
         expect(result.stderr).toContain(`ENV ${JSON.stringify([actorBuild])}`);
         expect(result.stderr).toContain('Testing 1 Actor(s): owner/a (0.99.1, APIFY_TOKEN_OWNER)');
@@ -147,19 +162,13 @@ test('owner/a: fails', () => {
     });
 
     it('tests an Actor without a build on its default build', () => {
-        // get-actor-configs lists no raw ID, test looks it up (see actor-ids.test.ts). Given here, it isn't, so
-        // the fake token is never sent to the API.
-        const actorConfig = {
-            actorFullName: 'owner/a',
-            actorRawId: 'raw1',
-            folder: 'actors/a',
-            tokenEnvVar: 'APIFY_TOKEN_OWNER',
-        };
+        // As get-actor-configs prints it
+        const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' };
         const result = run(['test'], JSON.stringify([actorConfig]));
         expect(result.status).toBe(1);
         // Only the fields the lib reads reach it
         expect(result.stderr).toContain(
-            'ENV [{"actorFullName":"owner/a","actorRawId":"raw1","testTokenEnvVar":"APIFY_TOKEN_OWNER","actorName":"owner/a","actorId":"raw1"}]',
+            `ENV [{"actorFullName":"owner/a","testTokenEnvVar":"APIFY_TOKEN_OWNER","actorRawId":"${OWNER_A_RAW_ID}","actorName":"owner/a","actorId":"${OWNER_A_RAW_ID}"}]`,
         );
         expect(result.stderr).toContain('Testing 1 Actor(s): owner/a (default build, APIFY_TOKEN_OWNER)');
         expect(JSON.parse(result.stdout)).toMatchObject({ success: false, summary: { passed: 1, failed: 1 } });
@@ -213,7 +222,7 @@ test('owner/a: fails', () => {
     });
 
     it('warns about a given Actor none of whose tests ran, and passes on the tests of the others', () => {
-        const other = { ...build, actorFullName: 'owner/other', actorRawId: 'rawOther', buildId: 'b2' };
+        const other = { ...build, actorFullName: 'owner/other', buildId: 'b2' };
         const result = run(['test', '--test-files-glob', 'test/glob/with-pr/**'], JSON.stringify([build, other]));
         expect(result.status, result.stderr).toBe(0);
         expect(result.stderr).toContain('[owner/other]: None of its tests ran');
@@ -258,11 +267,7 @@ test('owner/a: fails', () => {
     });
 
     it("fails only the tests of the Actors without a token, the lib runs the others with their Actor's token", () => {
-        const targets = [
-            build,
-            { actorFullName: 'stranger/x', actorRawId: 'rawX' },
-            { actorFullName: 'partner/p', actorRawId: 'rawP' },
-        ];
+        const targets = [build, { actorFullName: 'stranger/x' }, { actorFullName: 'partner/p' }];
         const result = run(['test', '--test-files-glob', 'test/lib/**'], JSON.stringify(targets));
         expect(result.status).toBe(1);
         const report = JSON.parse(result.stdout);
@@ -274,7 +279,7 @@ test('owner/a: fails', () => {
             ]),
         );
         expect(failures['tokens owner/a: gets the client of its token']).toBe('');
-        expect(failures['tokens raw1: gets the client of its token']).toBe('');
+        expect(failures['tokens rawIdOfOwnerA0000: gets the client of its token']).toBe('');
         expect(failures['tokens stranger/x: has no token']).toContain(
             'Neither TESTER_APIFY_TOKEN is set. The tests of Actor "stranger/x" need a token.',
         );
@@ -284,11 +289,7 @@ test('owner/a: fails', () => {
     });
 
     it('runs the tests of the Actors without their own token with TESTER_APIFY_TOKEN, the others with their own', () => {
-        const targets = [
-            build,
-            { actorFullName: 'stranger/x', actorRawId: 'rawX' },
-            { actorFullName: 'partner/p', actorRawId: 'rawP' },
-        ];
+        const targets = [build, { actorFullName: 'stranger/x' }, { actorFullName: 'partner/p' }];
         const result = run(['test', '--test-files-glob', 'test/lib/**'], JSON.stringify(targets), repoDir, {
             ...env,
             TESTER_APIFY_TOKEN: 'fallback-token',

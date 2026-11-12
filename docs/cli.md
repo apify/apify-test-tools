@@ -308,9 +308,8 @@ as it is.
 
 Each Actor's tests run with its test token: the environment variable its `testTokenEnvVar` in the config names, which
 is its `tokenEnvVar` unless the config names another. `test` reads the config for it, so the Actors must be listed
-there. Tests can name an Actor by its full name or its raw ID: `test` looks up the raw ID with the Actor's own token
-when the input doesn't include it. An Actor the token can't see gets a warning instead, so an Actor no test uses
-doesn't stop the run. The same goes for an Actor that isn't in the config or whose token isn't set: a warning
+there. Tests can name an Actor by its full name or its raw ID: `test` looks up each Actor's raw ID with its own
+token. An Actor the token can't see gets a warning instead, so an Actor no test uses doesn't stop the run. The same goes for an Actor that isn't in the config or whose token isn't set: a warning
 names it, and its tests fall back to `TESTER_APIFY_TOKEN` for now. Without that either, only its own tests fail. A dry-run plan, empty or invalid input is an error, as with `build`, and so is a
 missing config.
 

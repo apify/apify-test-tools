@@ -1,5 +1,7 @@
 import { ApifyClient } from 'apify-client';
 
+import { APIFY_ENV_VARS } from '@apify/consts';
+
 import { logger } from './logger.js';
 import type { TestTarget } from './stdin-input.js';
 import { CONFIG_FILE_NAME } from './utils/config/load-config.js';
@@ -12,8 +14,9 @@ type ActorGetter = Pick<ApifyClient, 'actor'>;
  */
 export const FALLBACK_TOKEN_ENV_VAR = 'TESTER_APIFY_TOKEN';
 
-/** What the lib gets for each Actor in `ACTOR_BUILDS`: the target, plus the env var its tests run with. */
+/** What the lib gets for each Actor in `ACTOR_BUILDS`: the target, its raw ID, and the env var its tests run with. */
 interface ActorBuildTarget extends TestTarget {
+    actorRawId?: string;
     testTokenEnvVar?: string;
 }
 
@@ -25,10 +28,11 @@ interface WithTestTokensOptions {
 }
 
 /**
- * Hands each target the env var its tests run with, from the config, and adds its raw ID when it was listed without
- * one, e.g. by `get-actor-configs`. A test names its Actor by its full name or its raw ID, and the lib matches it by
- * that ID, so without the raw ID a test that names the Actor by it would be skipped. The raw ID is looked up with the
- * token the Actor's tests run with: its own test token, or `TESTER_APIFY_TOKEN` when that isn't set.
+ * Hands each target the env var its tests run with, from the config, and its raw ID. The CLI knows Actors by full name
+ * only, but a test can name its Actor by its raw ID, and the lib matches it by that ID, so without the raw ID such a
+ * test would be skipped. The raw ID is looked up with the token the Actor's tests run with: its own test token, or
+ * `TESTER_APIFY_TOKEN` when that isn't set. That is one API call per Actor. `APIFY_API_BASE_URL` points it elsewhere
+ * than the Apify API, e.g. to a local one in tests.
  *
  * Nothing here fails the run: `get-actor-configs` lists every Actor in the repository, also ones no platform test
  * uses. An Actor that isn't in the config, or whose token isn't set, gets a warning, and the lib runs its tests with
@@ -40,7 +44,7 @@ export const withTestTokens = async (
     {
         testTokenEnvVars,
         env = process.env,
-        createClient = (token) => new ApifyClient({ token }),
+        createClient = (token) => new ApifyClient({ token, baseUrl: env[APIFY_ENV_VARS.API_BASE_URL] || undefined }),
     }: WithTestTokensOptions,
 ): Promise<ActorBuildTarget[]> => {
     /** The env var the tests of an Actor end up with, as the lib picks it */
@@ -57,10 +61,9 @@ export const withTestTokens = async (
 
     const resolved = await Promise.all(
         targets.map(async (target): Promise<ActorBuildTarget> => {
-            const { actorFullName, actorRawId } = target;
+            const { actorFullName } = target;
             const testTokenEnvVar = testTokenEnvVars.get(actorFullName);
             const withToken = { ...target, ...(testTokenEnvVar && { testTokenEnvVar }) };
-            if (actorRawId) return withToken;
             // Without any token there's nothing to look it up with, the missing token is reported below
             const lookupEnvVar = effectiveEnvVar(testTokenEnvVar);
             if (!lookupEnvVar) return withToken;

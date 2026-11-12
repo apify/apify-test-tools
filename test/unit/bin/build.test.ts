@@ -235,6 +235,7 @@ describe('dry run', () => {
     const startBuild = vi.fn();
     const createVersion = vi.fn();
     const buildClient = vi.fn(() => ({ delete: deleteBuild }));
+    const deleteRecord = vi.fn();
 
     let actorInfo: ApifyClientTypes.Actor;
 
@@ -253,6 +254,18 @@ describe('dry run', () => {
                 build: startBuild,
             }),
             build: buildClient,
+            keyValueStore: () => ({
+                get: async () => ({ id: 'store' }),
+                listKeys: async () => ({
+                    items: [
+                        { key: 'version-0.98-2020-01-01-0123456789abcdef.zip' },
+                        { key: `version-0.98-${new Date().toISOString().slice(0, 10)}-0123456789abcdef.zip` },
+                        // Not written by `uploadSourceZip`, so not ours to judge
+                        { key: 'version-0.98.zip' },
+                    ],
+                }),
+                deleteRecord,
+            }),
         };
         vi.mocked(ApifyClient).mockImplementation(function () {
             return fakeClient;
@@ -334,11 +347,79 @@ describe('dry run', () => {
     it('should not delete old builds', async () => {
         await deleteOldBuilds([actorConfig], { dryRun: true });
         expect(deleteBuild).not.toHaveBeenCalled();
+        expect(deleteRecord).not.toHaveBeenCalled();
     });
 
     it('should delete old builds outside of a dry run', async () => {
         await deleteOldBuilds([actorConfig], { dryRun: false });
         expect(buildClient).toHaveBeenCalledWith('old-build');
         expect(deleteBuild).toHaveBeenCalledTimes(1);
+    });
+
+    it('should delete only the dated source zips that are old', async () => {
+        await deleteOldBuilds([actorConfig], { dryRun: false });
+        expect(deleteRecord.mock.calls).toStrictEqual([['version-0.98-2020-01-01-0123456789abcdef.zip']]);
+    });
+});
+
+describe('buildFromLocalSource', () => {
+    // Retries pause for a random while; no need to sit through it
+    beforeEach(() => {
+        vi.spyOn(Math, 'random').mockReturnValue(0);
+    });
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.clearAllMocks();
+    });
+
+    // The build's own record says which zip it took. `takenUrls` are what successive builds report.
+    const fakeBuilder = (takenUrls: (key: string) => string[]) => {
+        let uploadedKey = '';
+        let started = 0;
+        const abort = vi.fn(async () => undefined);
+        const updateVersion = vi.fn();
+        vi.mocked(ApifyClient).mockImplementation(function () {
+            return {
+                actor: () => ({
+                    get: async () => makeActorInfo({ versions: [{ versionNumber: '0.98' }] } as never),
+                    version: () => ({ update: updateVersion }),
+                    build: async () => ({ id: `build-${++started}`, actId: 'act', buildNumber: `0.98.${started}` }),
+                }),
+                keyValueStores: () => ({ getOrCreate: async () => ({ id: 'store' }) }),
+                keyValueStore: () => ({
+                    setRecord: async ({ key }: { key: string }) => {
+                        uploadedKey = key;
+                    },
+                    getRecordPublicUrl: async (key: string) => `https://api.example/records/${key}?signature=s`,
+                }),
+                build: (id: string) => ({
+                    get: async () => ({
+                        actVersion: { tarballUrl: takenUrls(uploadedKey)[Number(id.split('-')[1]) - 1] },
+                    }),
+                    abort,
+                }),
+            };
+        } as never);
+        return { builder: ApifyBuilder.fromToken('token', ACTOR), abort, updateVersion };
+    };
+
+    it('should build again when a concurrent build pointed the version elsewhere in between', async () => {
+        const { builder, abort, updateVersion } = fakeBuilder((key) => [
+            'https://api.example/records/version-0.98-2026-01-01-ffffffffffffffff.zip?signature=s',
+            `https://api.example/records/${key}?signature=s`,
+        ]);
+
+        const build = await builder.buildFromLocalSource(Buffer.from('zip'));
+
+        expect(build.buildNumber).toBe('0.98.2');
+        expect(updateVersion).toHaveBeenCalledTimes(2);
+        // The build of the other source is of no use to us
+        expect(abort).toHaveBeenCalledTimes(1);
+    });
+
+    it('should give up when the version never stays put', async () => {
+        const { builder } = fakeBuilder(() => Array<string>(10).fill('https://api.example/records/other.zip'));
+
+        await expect(builder.buildFromLocalSource(Buffer.from('zip'))).rejects.toThrow('gave up after 8 attempts');
     });
 });

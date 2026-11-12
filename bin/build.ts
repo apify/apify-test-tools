@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { setTimeout } from 'node:timers/promises';
+
 import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType, ApifyClient } from 'apify-client';
 
@@ -12,6 +15,10 @@ type BuildPrActorOptions = {
     actorInfo: ApifyClientTypes.Actor;
 };
 
+// `build-from-local` zips are only read while their build starts; a week covers looking back at a recent one
+const OLD_SOURCE_ZIP_DAYS = 7;
+// How many times a build from local source is restarted when a concurrent one changes the version under it
+const MAX_LOCAL_BUILD_ATTEMPTS = 8;
 // Fixed version number used to build from local source files, since there is no real version to track.
 export const LOCAL_SOURCE_VERSION_NUMBER = '0.98';
 // Stands for each Actor's default version: the one its default build tag points to
@@ -138,20 +145,52 @@ export class ApifyBuilder {
 
     getDefaultVersionAndTag = async () => resolveDefaultVersion(this.actorFullName, await this.getActorInfo());
 
-    // Mirrors `apify push`: stores the zip in the Actor's `actor-<id>-source` KV store and returns a signed
-    // record URL the builder can download without a token.
-    uploadSourceZip = async (versionNumber: string, zip: Buffer): Promise<string> => {
-        const actorInfo = await this.apifyClient.actor(this.actorFullName).get();
-        if (!actorInfo) throw new Error(`No actor named '${this.actorFullName}' was found on the platform.`);
+    private getSourceStore = async (actorInfo?: ApifyClientTypes.Actor) => {
+        const { id } = actorInfo ?? (await this.getActorInfo());
+        const store = await this.apifyClient.keyValueStores().getOrCreate(`actor-${id}-source`);
+        return this.apifyClient.keyValueStore(store.id);
+    };
 
-        const store = await this.apifyClient.keyValueStores().getOrCreate(`actor-${actorInfo.id}-source`);
-        const storeClient = this.apifyClient.keyValueStore(store.id);
-        const key = `version-${versionNumber}.zip`;
+    // Mirrors `apify push`: stores the zip in the Actor's `actor-<id>-source` KV store and returns a signed
+    // record URL the builder can download without a token. The key carries the day and a hash of the zip, so
+    // concurrent uploads of different sources never overwrite each other and old ones can be told by name.
+    uploadSourceZip = async (
+        versionNumber: string,
+        zip: Buffer,
+        actorInfo?: ApifyClientTypes.Actor,
+    ): Promise<{ key: string; url: string }> => {
+        const storeClient = await this.getSourceStore(actorInfo);
+        const day = new Date().toISOString().slice(0, 10);
+        const hash = createHash('sha256').update(zip).digest('hex').slice(0, 16);
+        const key = `version-${versionNumber}-${day}-${hash}.zip`;
         await storeClient.setRecord({ key, value: zip as never, contentType: 'application/zip' });
 
         const url = new URL(await storeClient.getRecordPublicUrl(key));
         url.searchParams.set('disableRedirect', 'true');
-        return url.toString();
+        return { key, url: url.toString() };
+    };
+
+    /** Deletes the source zips `uploadSourceZip` stored more than `daysBack` days ago. */
+    deleteOldSourceZips = async ({ dryRun, daysBack }: { dryRun: boolean; daysBack: number }): Promise<void> => {
+        // Looked up by name rather than through `getSourceStore`, which would create it: a dry run changes nothing,
+        // and an Actor that was never built from local source has no store to clean.
+        const { id, username } = await this.getActorInfo();
+        const storeClient = this.apifyClient.keyValueStore(`${username}~actor-${id}-source`);
+        if (!(await storeClient.get())) return;
+        const cutoffDay = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const { items } = await storeClient.listKeys({ limit: 1000 });
+        const oldKeys = items
+            .map(({ key }) => key)
+            .filter((key) => {
+                const day = /^version-[\d.]+-(\d{4}-\d{2}-\d{2})-[0-9a-f]+\.zip$/.exec(key)?.[1];
+                return day !== undefined && day < cutoffDay;
+            });
+        logger.info(
+            `[DELETE OLD BUILDS][${this.actorFullName}]: ${dryRun ? '[DRY RUN] Would delete' : 'Deleting'} ${oldKeys.length} ` +
+                `source zips older than ${daysBack} days`,
+        );
+        if (dryRun) return;
+        for (const key of oldKeys) await storeClient.deleteRecord(key);
     };
 
     // Pass actorInfo when the caller already fetched it, to save an API call
@@ -184,6 +223,10 @@ export class ApifyBuilder {
     /**
      * Builds the zipped source as the local-source version, the way `apify push` does: inline SOURCE_FILES are capped
      * at ~9 MB, so the zip goes through the Actor's source key-value store. `version` adds fields to that version.
+     *
+     * A build takes whatever the version points at when it starts, and the version is shared by everyone building
+     * this Actor from local source. So the build's own record of its source is checked afterwards, and the version
+     * is pointed back and built again if somebody else's update got in between.
      */
     buildFromLocalSource = async (
         zip: Buffer,
@@ -192,13 +235,41 @@ export class ApifyBuilder {
             version,
         }: { actorInfo?: ApifyClientTypes.Actor; version?: Partial<ApifyClientTypes.ActorVersion> } = {},
     ): Promise<BuildData> => {
+        const { key, url } = await this.uploadSourceZip(LOCAL_SOURCE_VERSION_NUMBER, zip, actorInfo);
         const actorVersion = {
             ...version,
             versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
-            tarballUrl: await this.uploadSourceZip(LOCAL_SOURCE_VERSION_NUMBER, zip),
+            tarballUrl: url,
             sourceType: ActorSourceType.Tarball,
         } as ApifyClientTypes.ActorVersion;
-        return this.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, actorVersion, false, actorInfo);
+
+        for (let attempt = 1; ; attempt++) {
+            // Only the first attempt can trust the caller's `actorInfo`: after it the version surely exists.
+            const buildData = await this.createVersionAndBuild(
+                LOCAL_SOURCE_VERSION_NUMBER,
+                actorVersion,
+                false,
+                attempt === 1 ? actorInfo : undefined,
+            );
+            const build = (await this.apifyClient.build(buildData.buildId).get()) as
+                | { actVersion?: { tarballUrl?: string } }
+                | undefined;
+            if (build?.actVersion?.tarballUrl?.includes(`/records/${key}`)) return buildData;
+
+            logger.warn(`[${this.actorFullName}]: build ${buildData.buildNumber} took another source, building again`);
+            await this.apifyClient
+                .build(buildData.buildId)
+                .abort()
+                .catch(() => undefined);
+            if (attempt === MAX_LOCAL_BUILD_ATTEMPTS) {
+                throw new Error(
+                    `[${this.actorFullName}] Version ${LOCAL_SOURCE_VERSION_NUMBER} kept being changed by other builds ` +
+                        `from local source, gave up after ${MAX_LOCAL_BUILD_ATTEMPTS} attempts.`,
+                );
+            }
+            // Builders that collided would collide again if they all came straight back, so they spread out.
+            await setTimeout(Math.random() * 2000 * attempt);
+        }
     };
 
     waitForBuildToFinish = async (buildId: string): Promise<ApifyClientTypes.Build> => {
@@ -507,6 +578,8 @@ export const buildActors = async ({ actorConfigs, repoUrl, ...options }: BuildAc
 
 export const deleteOldBuilds = async (actorConfigs: ActorConfig[], { dryRun }: { dryRun: boolean }) => {
     for (const actorConfig of actorConfigs) {
-        await ApifyBuilder.fromActorConfig(actorConfig).deleteOldBuilds({ dryRun });
+        const builder = ApifyBuilder.fromActorConfig(actorConfig);
+        await builder.deleteOldBuilds({ dryRun });
+        await builder.deleteOldSourceZips({ dryRun, daysBack: OLD_SOURCE_ZIP_DAYS });
     }
 };

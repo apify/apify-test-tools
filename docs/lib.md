@@ -325,9 +325,12 @@ An ad-hoc Actor differs from one given by ID in three ways:
   the source is zipped, uploaded and built as version `0.98` of the Actor with that name under the account of
   `TESTER_APIFY_TOKEN`. The Actor is created the first time and kept afterwards, so its runs stay in the Console.
   Every `run` in the process uses that one build.
-- After the file's tests, its builds older than three days are deleted.
+- After the file's tests, its builds and uploaded sources older than three days are deleted.
 
-Two overlapping runs of a suite race on the source upload, so serialize them, e.g. with a CI concurrency group.
+Suites may overlap, e.g. two pull requests testing the same ad-hoc Actors at once. Each upload is stored under a
+name derived from its content, a build that started from another suite's upload is detected and repeated, and
+memory and permissions are passed with every run rather than read from the Actor. The exception is an Actor's very
+first build: two suites creating it at the same moment collide, and one of them fails.
 
 | Export                                                                     | Does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -21,6 +21,7 @@ export { ActorSource, pack, type Pack, type PinOptions, type SourceStep } from '
 const execFileAsync = promisify(execFile);
 
 const BUILD_RETENTION_DAYS = 3;
+const DEFAULT_MEMORY_MBYTES = 256;
 
 /**
  * A step for `ActorSource.with` that makes `fn`, a top-level function of the test file at `filename`, the Actor's
@@ -129,8 +130,6 @@ export interface DefinedActor extends DefineActorOptions {
  * Defines an Actor for `testActor` by its source. It is built from that source on first use, as version `0.98` of
  * the Actor `name` under the account of `TESTER_APIFY_TOKEN`, which is created if it doesn't exist and kept
  * afterwards so its runs stay in the Console.
- *
- * Two overlapping runs of a suite race on the source upload; serialize them (e.g. a CI concurrency group).
  */
 export const defineActor = (name: string, options: DefineActorOptions): DefinedActor => ({ name, ...options });
 
@@ -140,15 +139,21 @@ const build = async (actor: DefinedActor, token: string): Promise<BuildData> => 
     const client = new ApifyClient({ token });
     const zip = await actor.source.zip();
 
-    const settings = {
-        defaultRunOptions: { build: 'latest', memoryMbytes: actor.memory ?? 256, timeoutSecs: 600 },
-        actorPermissionLevel: actor.permissions,
-    };
+    // Created with the current settings for whoever runs it by hand, but never updated: the tests pass them with
+    // every run instead, so suites building the same Actor from different checkouts can't change each other's runs.
     const { username } = await client.user().get();
     const actorFullName = `${username}/${actor.name}`;
-    const existing = await client.actor(actorFullName).get();
-    if (existing) await client.actor(existing.id).update(settings);
-    else await client.actors().create({ name: actor.name, ...settings });
+    if (!(await client.actor(actorFullName).get())) {
+        await client.actors().create({
+            name: actor.name,
+            defaultRunOptions: {
+                build: 'latest',
+                memoryMbytes: actor.memory ?? DEFAULT_MEMORY_MBYTES,
+                timeoutSecs: 600,
+            },
+            actorPermissionLevel: actor.permissions,
+        });
+    }
 
     const builder = ApifyBuilder.fromToken(token, actorFullName);
     const envVars = Object.entries(actor.env ?? {}).map(([name, value]) => ({ name, value, isSecret: true }));
@@ -183,14 +188,19 @@ export const buildActor = async (actor: DefinedActor, token = process.env.TESTER
     return started;
 };
 
-/** Deletes the ad-hoc Actor's builds older than `BUILD_RETENTION_DAYS`. Recent ones stay for comparing runs. */
+/** Deletes the ad-hoc Actor's builds and source zips older than `BUILD_RETENTION_DAYS`. Recent ones stay for comparing runs. */
 export const pruneBuilds = async (actor: DefinedActor, token = process.env.TESTER_APIFY_TOKEN): Promise<void> => {
     // Absent when no test ran the Actor or its build failed; either way there is nothing new to weigh against.
     const started = builds.get(actor.name);
     if (!token || !started) return;
     const { actorFullName } = await started;
-    await ApifyBuilder.fromToken(token, actorFullName).deleteOldBuilds({
-        dryRun: false,
-        daysBack: BUILD_RETENTION_DAYS,
-    });
+    const builder = ApifyBuilder.fromToken(token, actorFullName);
+    await builder.deleteOldBuilds({ dryRun: false, daysBack: BUILD_RETENTION_DAYS });
+    await builder.deleteOldSourceZips({ dryRun: false, daysBack: BUILD_RETENTION_DAYS });
 };
+
+/** What a run of the ad-hoc Actor is started with, instead of relying on the settings stored with the Actor. */
+export const runOptionsOf = (actor: DefinedActor) => ({
+    memory: actor.memory ?? DEFAULT_MEMORY_MBYTES,
+    ...(actor.permissions && { forcePermissionLevel: actor.permissions }),
+});

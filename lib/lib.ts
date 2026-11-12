@@ -1,9 +1,9 @@
-import type { Actor, ActorRun, ActorRunListItem, ActorStandby, Task } from 'apify-client';
+import type { Actor, ActorCallOptions, ActorRun, ActorRunListItem, ActorStandby, Task } from 'apify-client';
 import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { afterAll, describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { buildActor, type DefinedActor, pruneBuilds } from './ad-hoc.js';
+import { buildActor, type DefinedActor, pruneBuilds, runOptionsOf } from './ad-hoc.js';
 import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
@@ -98,7 +98,7 @@ export const testActor = <T>(
             context,
             async () => {
                 const build = await buildActor(actor);
-                return { actorId: build.actorRawId, build };
+                return { actorId: build.actorRawId, build, options: runOptionsOf(actor) };
             },
             actor.syncDelayMs,
         );
@@ -276,7 +276,7 @@ const createStandbyTask = async (actorId: string, buildNumber?: string): Promise
  */
 const createStartRunFn = <T>(
     testContext: TestContext,
-    resolveActor: () => Promise<{ actorId: string; build?: ActorBuild }>,
+    resolveActor: () => Promise<{ actorId: string; build?: ActorBuild; options?: ActorCallOptions }>,
     syncDelayMs = DATASET_SYNC_DELAY_MS,
 ) => {
     const { annotate, task } = testContext;
@@ -291,7 +291,7 @@ const createStartRunFn = <T>(
             return new RunTestResult(apifyClient, run);
         }
 
-        const { actorId, build: actorConfig } = await resolveActor();
+        const { actorId, build: actorConfig, options: actorDefaults } = await resolveActor();
         const build = actorConfig?.buildNumber;
         const buildId = actorConfig?.buildId;
 
@@ -311,7 +311,7 @@ const createStartRunFn = <T>(
             DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
         );
 
-        const actorOptions = { timeout, build, log: null, ...options };
+        const actorOptions = { timeout, build, log: null, ...actorDefaults, ...options };
         const run = await actor.call(actorInput, actorOptions);
 
         const runLink = generateRunLink(run);

@@ -215,6 +215,11 @@ Builds Actors directly from your local files, with no push needed: the sources a
 `actor-<id>-source` key-value store and built as `TARBALL`, like `apify push`. It prints the same build array as
 `build`.
 
+Every upload gets its own record, named after the day and a hash of the zip, so two people building the same
+Actor from local files at once can't overwrite each other's source. If their updates of version `0.98` cross, the
+build that started from the other one's source is aborted and started again.
+[`delete-old-builds`](#deleting-old-builds-delete-old-builds) removes the records after a week.
+
 ```bash
 APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build-from-local --actors john.doe/my-actor
 ```

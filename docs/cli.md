@@ -307,7 +307,8 @@ output of [`get-actor-configs`](#listing-actors-get-actor-configs) works as it i
 missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the run would pass having tested
 nothing. `test` passes the Actors to vitest as `ACTOR_BUILDS`, in place of any
 `ACTOR_BUILDS` in its own environment. It needs apify-test-tools 1.0.0 or newer in the repository, and fails on an
-older one, which could skip every test.
+older one, which could skip every test. It also excludes `**/dist/**`, which vitest 4 and newer no longer exclude by default, so a
+compiled copy of the tests doesn't run next to them. The repository's own `exclude` still applies.
 
 When `test` is given Actors but no test runs, the report fails with an error, since a run that tested nothing must
 not pass. For any set of given Actors, at least 1 test must be performed, not 1 for each Actor. When none runs, the

@@ -46,6 +46,12 @@ test('owner/a: fails', () => {
 `,
         );
 
+        // A compiled copy of the tests, which the filter test/platform/ matches too, and which must not run
+        await mkdir(path.join(repoDir, 'dist/test/platform'), { recursive: true });
+        await writeFile(
+            path.join(repoDir, 'dist/test/platform/a.test.js'),
+            `import { test } from 'vitest';\n\ntest('owner/a: compiled copy', () => {});\n`,
+        );
         // The real lib, by path: a test naming its Actor by raw ID fails its file instead of being skipped
         await mkdir(path.join(repoDir, 'test/raw-id'), { recursive: true });
         await writeFile(
@@ -116,7 +122,7 @@ test('owner/a: fails', () => {
         );
         // The default glob test/platform/** matches every file in test/platform, so vitest gets just that folder
         expect(result.stderr).toMatch(
-            /Running vitest: \S+ run \S+\/test\/platform\/ --reporter=default --reporter=json --reporter=dot --reporter=verbose /,
+            /Running vitest: \S+ run \S+\/test\/platform\/ --reporter=default --reporter=json --reporter=dot --reporter=verbose .* --exclude=\*\*\/dist\/\*\*/,
         );
         expect(JSON.parse(result.stdout)).toMatchObject({ summary: { passed: 1, failed: 1 } });
     });

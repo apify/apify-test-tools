@@ -73,7 +73,7 @@ its static checks run, e.g. with your language's own linter and unit tests.
 npm i -D apify-test-tools
 ```
 
-- Requires `vitest` version `3.2.4` or later (uses [annotate](https://vitest.dev/guide/test-context.html#annotate))
+- Requires Node.js 22.12+, 24 or 26+ and `vitest` 5 or later (uses [annotate](https://vitest.dev/guide/test-context.html#annotate))
 - Make sure `target` and `module` in your `tsconfig.json`'s `compilerOptions` are set to `ES2022`
 - Every Actor must already have at least one build under its default build tag (usually `latest`), built
   from a Git repository version whose URL points to this repository. Build it once manually on the

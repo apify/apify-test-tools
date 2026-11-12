@@ -84,13 +84,18 @@ describe('token wrapper bundle', () => {
         async (tokenEnvVar) => {
             await writeFile(
                 path.join(repoDir, configFileName),
-                JSON.stringify({ actors: [{ folder: 'actors/one', actorFullName: 'example/one', tokenEnvVar }] }),
+                JSON.stringify({
+                    mode: 'grouped',
+                    groups: {
+                        example: { tokenEnvVar, actors: [{ folder: 'actors/one', actorFullName: 'example/one' }] },
+                    },
+                }),
             );
 
             const { status, stdout, stderr } = runWrapper();
             expect(status).toBe(1);
             expect(stdout).toBe('');
-            expect(stderr).toContain('actors[0].tokenEnvVar');
+            expect(stderr).toContain('groups.example.tokenEnvVar');
             expect(stderr).not.toContain('Warning:');
             expect(stderr).not.toContain('Cannot read');
         },

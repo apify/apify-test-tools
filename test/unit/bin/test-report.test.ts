@@ -75,39 +75,6 @@ describe('toTestReport', () => {
         });
     });
 
-    it('reads the Actor of a run from older lib versions, which record it as actorName or not at all', () => {
-        const { runId, runLink } = run;
-        const report = toTestReport(
-            vitestReport([
-                {
-                    name: '/repo/test/platform/a.test.ts',
-                    status: 'passed',
-                    message: '',
-                    assertionResults: [
-                        // 0.5 to 0.8
-                        {
-                            fullName: 'suite: owner/a: works',
-                            title: 'owner/a: works',
-                            status: 'passed',
-                            failureMessages: [],
-                            meta: { runId, runLink, actorName: 'owner/a' },
-                        },
-                        // 0.2, where only the test's title names the Actor, not its describe
-                        {
-                            fullName: 'suite: owner/a: also works',
-                            title: 'owner/a: also works',
-                            status: 'passed',
-                            failureMessages: [],
-                            meta: { runId, runLink },
-                        },
-                    ],
-                },
-            ]),
-            { cwd, exitCode: 0 },
-        );
-        expect(report.tests.map((test) => test.run)).toStrictEqual([run, run]);
-    });
-
     it('reports a test file that failed to load, which has no test to blame', () => {
         const report = toTestReport(
             vitestReport([
@@ -167,7 +134,7 @@ describe('requireTestsToRun', () => {
             ]),
             { cwd, exitCode: 0 },
         );
-    const actorA = { actorFullName: 'owner/a', actorRawId: 'rawA' };
+    const actorA = { actorFullName: 'owner/a' };
 
     it('fails a report in which no test ran although Actors were given', () => {
         for (const statuses of [[], ['skipped', 'skipped']] as const) {

@@ -1,6 +1,6 @@
 name: Move major version tag
 
-# Consumer repos track a floating major tag (`...@workflows-v0`), not `master`. This workflow is what
+# Consumer repos track a floating major tag (`...@workflows-v1`), not `master`. This workflow is what
 # ships: it moves that tag forward. The workflows and the CLI they call (bundled in .github/cli/)
 # live in the same commit, so whatever the tag points at is consistent on its own.
 
@@ -27,24 +27,24 @@ jobs:
             contents: write
         env:
             # The major version consumers pin, e.g.
-            # `uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0`.
+            # `uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1`.
             # Bump this only for a breaking change to a workflow's inputs, secrets or behaviour.
             # The previous tag then stops moving and keeps working, so repos migrate when they get
             # to it instead of all at once.
             #
             # This tracks the workflows' own contract, not the npm package version — the two move
-            # independently by design, so this is expected to outlive the package reaching 1.0.
+            # independently by design.
             #
-            # Deliberately not a bare `v0`. The package releases as `v0.9.0`, `v0.8.6` and so on, and
+            # Deliberately not a bare `v1`. The package releases as `v1.0.0`, `v1.2.3` and so on, and
             # a bare major tag sits in that same namespace: git-cliff hard-errors on it
             # ("unexpected character 'v' while parsing major version number") and only skips it
             # because apify/actions ships `tag_pattern = "v[0-9]+\\."`, whose trailing dot excludes
             # it. Depending on a regex in another repo to keep releases working is not a dependency
-            # worth having, and `v1` beside a package `v1.0.0` would be worse still.
+            # worth having, and a `v1` tag beside a package release `v1.0.0` would be confusing too.
             #
             # The workflows load this repo with `$/`, so they never name the tag. Only the usage
             # examples in the workflows, README and docs do: update them by hand when bumping it.
-            MAJOR_TAG: workflows-v0
+            MAJOR_TAG: workflows-v1
         steps:
             - name: Checkout repository
               uses: actions/checkout@v6

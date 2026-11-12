@@ -7,14 +7,14 @@ the workflow lists, see [Secrets](#secrets):
 ```yaml
 jobs:
     myJob:
-        uses: apify/apify-test-tools/.github/workflows/<workflow>.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/<workflow>.yaml@workflows-v1
         with:
             # inputs, if any
         secrets:
             # the secrets the workflow lists
 ```
 
-Always reference them at the `@workflows-v0` major tag, never at `@master` — see [Versioning](#versioning).
+Always reference them at the `@workflows-v1` major tag, never at `@master` — see [Versioning](#versioning).
 
 They only run on GitHub Actions. On another CI platform, build the same steps with the [CLI](cli.md); each workflow
 The build, release and test workflows below list the CLI commands they run.
@@ -83,7 +83,7 @@ on:
 
 jobs:
     buildDevelAndTest:
-        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
         with:
             # Leaves out the *-without-pr folders, see "Splitting the tests"
             test-files-glob: 'test/platform/{daily,hourly}/**'
@@ -129,7 +129,7 @@ on:
 
 jobs:
     buildLatest:
-        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v1
         with:
             report-slack-channel: '#notif-my-repo'
         secrets:
@@ -171,7 +171,7 @@ on:
 
 jobs:
     platformTestsDaily:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
         with:
             test-files-glob: 'test/platform/{daily,daily-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
@@ -193,7 +193,7 @@ on:
 
 jobs:
     platformTestsHourly:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
         with:
             test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
@@ -253,7 +253,7 @@ on:
 
 jobs:
     review:
-        uses: apify/apify-test-tools/.github/workflows/public_review.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_review.yaml@workflows-v1
         secrets:
             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
@@ -290,7 +290,7 @@ on:
 
 jobs:
     claude:
-        uses: apify/apify-test-tools/.github/workflows/public_claude.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_claude.yaml@workflows-v1
         secrets:
             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
@@ -321,7 +321,7 @@ Secrets: `ANTHROPIC_API_KEY`, `TESTER_APIFY_TOKEN`, and optionally `NPM_TOKEN`, 
 ```yaml
 jobs:
     platformTestsHourly:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
         with:
             test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
@@ -332,7 +332,7 @@ jobs:
     handle-failure:
         needs: platformTestsHourly
         if: ${{ failure() }}
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v1
         secrets:
             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
@@ -360,7 +360,7 @@ jobs:
     staleIssues:
         permissions:
             issues: write
-        uses: apify/apify-test-tools/.github/workflows/public_stale-issues.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_stale-issues.yaml@workflows-v1
         with:
             stale-months: 6
 ```
@@ -441,7 +441,7 @@ The workflows and the vitest library ship separately:
 
 | What                                             | You get it through                        | Updates when                     |
 | ------------------------------------------------ | ----------------------------------------- | -------------------------------- |
-| the workflows and the CLI they run               | the `@workflows-v0` tag in `uses:`        | every change merged to this repo |
+| the workflows and the CLI they run               | the `@workflows-v1` tag in `uses:`        | every change merged to this repo |
 | the library (`testActor`, `describe`, matchers…) | `apify-test-tools` in your `package.json` | you update the package           |
 
 The workflows bring their own copy of the CLI, so they don't use or change the `apify-test-tools` version in your
@@ -450,6 +450,8 @@ The workflows bring their own copy of the CLI, so they don't use or change the `
 Whatever ref you call a workflow at, it runs the setup action and the CLI from that same commit. Pinning a commit SHA
 or pointing at a branch of this repo therefore gets you that commit's workflows as a whole.
 
-`@workflows-v0` always points at the latest workflows, so fixes and new features reach you without any change on your
-side. Changes that would break callers go to a new tag (`@workflows-v1`), and `@workflows-v0` keeps working, so you
+`@workflows-v1` always points at the latest workflows, so fixes and new features reach you without any change on your
+side. Changes that would break callers go to a new tag (`@workflows-v2`), and `@workflows-v1` keeps working, so you
 can migrate when it suits you.
+
+`@workflows-v1` needs `apify-test-tools` 1.0.0 or newer in your `package.json`: the test step fails on an older one.

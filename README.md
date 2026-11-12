@@ -26,7 +26,7 @@ Build, test and release Apify Actors from a Git repository or local source code.
     ```yaml
     jobs:
         buildDevelAndTest:
-            uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
+            uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
             secrets:
                 TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
                 # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
@@ -73,7 +73,7 @@ its static checks run, e.g. with your language's own linter and unit tests.
 npm i -D apify-test-tools
 ```
 
-- Requires `vitest` version `3.2.4` or later (uses [annotate](https://vitest.dev/guide/test-context.html#annotate))
+- Requires Node.js 22.12+, 24 or 26+ and `vitest` 5 or later (uses [annotate](https://vitest.dev/guide/test-context.html#annotate))
 - Make sure `target` and `module` in your `tsconfig.json`'s `compilerOptions` are set to `ES2022`
 - Every Actor must already have at least one build under its default build tag (usually `latest`), built
   from a Git repository version whose URL points to this repository. Build it once manually on the
@@ -185,6 +185,7 @@ their context.
 
 | Field                  | Where          | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ---------------------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mode`                 | top level      | yes      | Always `"grouped"`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `folder`               | Actor          | yes      | Relative path from repo root to the Actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`), the Actor's README/CHANGELOG, and its source. Use `"."` for a single-Actor repo where `.actor/` is at the root.                                                                                                                                                                                                                         |
 | `actorFullName`        | Actor          | yes      | Full Actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the Actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                              |
 | `tokenEnvVar`          | group or Actor | yes      | Name of the environment variable holding the Apify API token that builds the group's Actors. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                   |
@@ -211,7 +212,7 @@ The workflows take every change straight to production, with tests in between:
 These are GitHub Actions workflows. On another CI platform, build the same flow with the [CLI](docs/cli.md).
 
 Add these files to `.github/workflows` in your repo. They call the reusable workflows in this repo, pinned at the
-`@workflows-v0` major tag — never at `@master`. Every input, the optional Claude workflows, stale issue closer, and how the tag moves are
+`@workflows-v1` major tag — never at `@master`. Every input, the optional Claude workflows, stale issue closer, and how the tag moves are
 in the [Workflow API](docs/workflows.md).
 
 ### `pr-build-devel-test.yaml`
@@ -225,7 +226,7 @@ on:
 
 jobs:
     buildDevelAndTest:
-        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
         secrets:
             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
@@ -247,7 +248,7 @@ on:
 
 jobs:
     buildLatest:
-        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v1
         secrets:
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
             # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
@@ -274,7 +275,7 @@ on:
 
 jobs:
     platformTestsDaily:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
         with:
             test-files-glob: 'test/platform/{daily,daily-without-pr}/**'
         secrets:
@@ -295,7 +296,7 @@ on:
 
 jobs:
     platformTestsHourly:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
         with:
             test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
         secrets:

@@ -2,13 +2,13 @@
     "name": "apify-test-tools",
     "version": "0.11.0",
     "type": "module",
-    "description": "TBD",
+    "description": "Tools & lib to test Actors on the Apify platform",
     "repository": {
         "type": "git",
         "url": "https://github.com/apify/apify-test-tools.git"
     },
     "engines": {
-        "node": ">=22.0.0"
+        "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
     },
     "devEngines": {
         "packageManager": {
@@ -21,7 +21,14 @@
         "apify-test-tools": "dist/bin/main.js"
     },
     "types": "./dist/index.d.ts",
-    "main": "./dist/lib/lib.js",
+    "main": "./dist/index.js",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./package.json": "./package.json"
+    },
     "dependencies": {
         "@apify/consts": "^3.0.1",
         "@slack/web-api": "^8.2.0",
@@ -39,9 +46,7 @@
         "@types/node": "^24.0.0",
         "@types/picomatch": "^4.0.3",
         "@types/yargs": "^17.0.33",
-        "apify-test-tools-0-9-0": "npm:apify-test-tools@0.9.0",
-        "apify-test-tools-oldest": "npm:apify-test-tools@0.2.4",
-        "esbuild": "0.25.12",
+        "esbuild": "0.28.2",
         "eslint": "^9.29.0",
         "eslint-config-prettier": "^10.1.5",
         "globals": "^17.0.0",
@@ -52,10 +57,10 @@
         "tsx": "^4.20.3",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.34.1",
-        "vitest": "^3.2.4"
+        "vitest": "^5.0.5"
     },
     "peerDependencies": {
-        "vitest": ">=3.2.4"
+        "vitest": ">=5.0.0"
     },
     "scripts": {
         "start": "npm run dist/bin/main.js",

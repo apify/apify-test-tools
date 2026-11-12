@@ -300,19 +300,15 @@ npx apify-test-tools get-actor-configs \
 npx apify-test-tools get-actor-configs --actors john.doe/my-actor | npx apify-test-tools test > test-report.json
 ```
 
-The input is a JSON array of Actors, each given by its full name, its raw ID or both:
-`[{ "actorFullName": "<owner/name>" }]` or `[{ "actorRawId": "<id>" }]`. An Actor's tests run against the build given
-with it (`buildId` and `buildNumber`, as `build` and `build-from-local` print them), or against its default build
-without one. Other fields are ignored, so the output of [`get-actor-configs`](#listing-actors-get-actor-configs) works
-as it is. `test` looks up the ID an Actor is listed without with `TESTER_APIFY_TOKEN`, so its tests run whichever ID
-they name it by. An Actor the token can't see keeps only the ID it was listed with, and a warning names it, so an
-Actor no test uses doesn't stop the run. A dry-run plan, empty or invalid input is an error, as with `build`. So is a
+The input is a JSON array of Actors, each given by its full name: `[{ "actorFullName": "<owner/name>" }]`, the ID the
+tests name their Actor by. An Actor's tests run against the build given with it (`buildId` and `buildNumber`, as
+`build` and `build-from-local` print them), or against its default build without one. Other fields are ignored, so the
+output of [`get-actor-configs`](#listing-actors-get-actor-configs) works as it is. A dry-run plan, empty or invalid input is an error, as with `build`. So is a
 missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the run would pass having tested
 nothing. `test` passes the Actors to vitest as `ACTOR_BUILDS`, in place of any
-`ACTOR_BUILDS` in its own environment. For older lib versions, it also lists each Actor's IDs as `actorName` and
-`actorId`, the names versions before 0.9.0 read. It sets `RUN_PLATFORM_TESTS=1`, which versions before 0.10.0 need to
-run their `describe` blocks, and removes `RUN_ALL_PLATFORM_TESTS`, which would make those versions run the tests of
-every Actor.
+`ACTOR_BUILDS` in its own environment. It needs apify-test-tools 1.0.0 or newer in the repository, and fails on an
+older one, which could skip every test. It also excludes `**/dist/**`, which vitest doesn't exclude by default, so a
+compiled copy of the tests doesn't run next to them. The repository's own `exclude` still applies.
 
 When `test` is given Actors but no test runs, the report fails with an error, since a run that tested nothing must
 not pass. For any set of given Actors, at least 1 test must be performed, not 1 for each Actor. When none runs, the

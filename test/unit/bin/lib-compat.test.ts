@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { findInstalledLibVersion, isOlderVersion } from '../../../bin/lib-compat.js';
+import { assertSupportedLib, findInstalledLibVersion, isOlderVersion } from '../../../bin/lib-compat.js';
 
 describe('isOlderVersion', () => {
     it.each([
@@ -12,7 +12,8 @@ describe('isOlderVersion', () => {
         ['0.2.4', '0.2.4', false],
         ['0.10.0', '0.9.0', false],
         ['0.9.12', '0.10.0', true],
-        ['1.0.0-beta.1', '0.2.4', false],
+        ['1.0.0-beta.1', '1.0.0', false],
+        ['0.11.0', '1.0.0', true],
     ])('%s is older than %s: %s', (version, than, older) => {
         expect(isOlderVersion(version, than)).toBe(older);
     });
@@ -39,5 +40,11 @@ describe('findInstalledLibVersion', () => {
 
     it('finds none where the lib is not installed', async () => {
         expect(await findInstalledLibVersion(os.tmpdir())).toBeUndefined();
+    });
+});
+
+describe('assertSupportedLib', () => {
+    it('passes where the lib is not installed, e.g. when the tests import it by path', async () => {
+        await expect(assertSupportedLib(os.tmpdir())).resolves.toBeUndefined();
     });
 });

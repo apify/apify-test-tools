@@ -1,15 +1,15 @@
 import type { ActorCallOptions } from 'apify-client';
 import type { Assertion, TestOptions } from 'vitest';
 
+/** An Actor the CLI lists in `ACTOR_BUILDS`, with the build to test or, without one, on its default build */
 export type ActorBuild = {
-    buildId: string;
-    actorRawId: string;
-    buildNumber: string;
     actorFullName: string;
+    buildId?: string;
+    buildNumber?: string;
 };
 
 export type RunOptions<T> = {
-    input: Omit<T, 'actorName'>;
+    input: T;
     options?: Omit<ActorCallOptions, 'timeout'> & {
         /**
          * Timeout for the actor run in seconds. Zero value means there is no timeout.
@@ -106,7 +106,7 @@ export type RunStatus =
     | 'TIMING-OUT'
     | 'TIMED-OUT';
 
-export interface ActorMatchers<R = unknown> {
+export interface ActorMatchers<R extends void | Promise<void> = void> {
     toBeArray: () => R;
     toBeBoolean: () => R;
     toBeEmptyArray: () => R;
@@ -133,7 +133,7 @@ export interface ActorMatchers<R = unknown> {
      */
     toFinishWith: <PpeEvent extends string>(options: ToFinishWithOptions<PpeEvent>) => Promise<R>;
     toStartWith: (prefix: string) => R;
-    hard: <T>(actual: T, message?: string) => Assertion;
+    hard: <T>(actual: T, message?: string) => Assertion<void, T>;
 }
 
 export type ActorTestOptions = Omit<TestOptions, 'retry' | 'timeout'> & {
@@ -155,10 +155,10 @@ export type ActorTestOptions = Omit<TestOptions, 'retry' | 'timeout'> & {
 };
 
 declare module 'vitest' {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type
-    interface Assertion<T = any> extends ActorMatchers<T> {}
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type
-    interface Matchers<T = any> extends ActorMatchers<T> {}
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type, @typescript-eslint/no-unused-vars
+    interface Assertion<R extends void | Promise<void> = void, T = unknown> extends ActorMatchers<R> {}
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type, @typescript-eslint/no-unused-vars
+    interface Matchers<R extends void | Promise<void> = void | Promise<void>, T = unknown> extends ActorMatchers<R> {}
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     interface AsymmetricMatchersContaining extends ActorMatchers {}
 }

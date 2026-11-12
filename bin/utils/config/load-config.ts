@@ -52,9 +52,9 @@ const readConfigFileContents = async (): Promise<Record<string, unknown>> => {
         case 'invalid-json':
             // TODO: support .jsonc
             throw new Error(`Config file "${CONFIG_FILE_NAME}" contains invalid JSON and cannot be parsed.`);
-        // Valid JSON that isn't an object can't carry an "actors" array either.
+        // Valid JSON that isn't an object can't carry a mode and its Actors either.
         case 'not-an-object':
-            throw new Error(`Config file "${CONFIG_FILE_NAME}" must have an "actors" array at the top level.`);
+            throw new Error(`Config file "${CONFIG_FILE_NAME}" must be a JSON object with a "mode".`);
         default:
             throw new Error(
                 `Config file "${CONFIG_FILE_NAME}" not found in the current directory. ` +

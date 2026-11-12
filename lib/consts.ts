@@ -1,4 +1,14 @@
+import { ACTOR_NAME, USERNAME } from '@apify/consts';
+
 import type { ToFinishWithOptionsWithDefaults } from './types.js';
+
+const stripRegexAnchors = (regex: RegExp) => regex.source.replace(/^\^/, '').replace(/\$$/, '');
+
+/** An Actor's full name, `owner/name`, the only ID tests and the config name an Actor by */
+export const ACTOR_FULL_NAME_REGEX = new RegExp(
+    `^${stripRegexAnchors(USERNAME.REGEX)}/${stripRegexAnchors(ACTOR_NAME.REGEX)}$`,
+    USERNAME.REGEX.flags + ACTOR_NAME.REGEX.flags,
+);
 
 export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
     status: 'SUCCEEDED',

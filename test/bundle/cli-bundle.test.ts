@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { groupedConfig } from '../grouped-config.js';
+
 // Runs the committed bundle the composite action ships, not the sources, so these catch anything
 // that only breaks once bundled (a dependency loading code at runtime, a missing shim). Everything
 // here works without tokens or network: read-only commands, dry runs that end up with nothing to
@@ -60,12 +62,12 @@ describe('CLI bundle', () => {
         }
         await writeRepoFile(
             'apify-test-tools.config.json',
-            JSON.stringify({
-                actors: [
+            JSON.stringify(
+                groupedConfig([
                     { folder: 'actors/foo', actorFullName: 'tester/foo', tokenEnvVar: 'FOO_TOKEN' },
                     { folder: 'actors/bar', actorFullName: 'tester/bar', tokenEnvVar: 'BAR_TOKEN' },
-                ],
-            }),
+                ]),
+            ),
         );
         git('add', '-A');
         git('commit', '-q', '-m', 'chore: init');

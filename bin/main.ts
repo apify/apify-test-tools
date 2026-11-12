@@ -162,7 +162,7 @@ const globalOptions = {
 } as const satisfies Record<string, Options>;
 
 await yargs()
-    .scriptName('public-actors-utils')
+    .scriptName('apify-test-tools')
     .options(globalOptions)
     .middleware(middlewares)
     .command(

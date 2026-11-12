@@ -175,7 +175,7 @@ export const logTestReport = ({ summary, tests, errors }: TestReport) => {
  */
 export const requireTestsToRun = (
     report: TestReport,
-    actors: { actorFullName?: string; actorRawId?: string }[],
+    actors: { actorFullName: string; actorRawId?: string }[],
 ): TestReport => {
     if (actors.length === 0) return report;
     const ran = report.tests.filter((test) => test.status !== 'skipped');
@@ -194,7 +194,7 @@ export const requireTestsToRun = (
     for (const { actorFullName, actorRawId } of actors) {
         const ids = [actorFullName, actorRawId].filter((id): id is string => !!id);
         if (!ran.some((test) => ids.some((id) => test.name.includes(`${id}: `)))) {
-            logger.warn(`[${actorFullName ?? actorRawId}]: None of its tests ran`);
+            logger.warn(`[${actorFullName}]: None of its tests ran`);
         }
     }
     return report;

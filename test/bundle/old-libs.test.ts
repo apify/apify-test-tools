@@ -5,9 +5,10 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { OLDEST_SUPPORTED_LIB_VERSION } from '../../bin/lib-compat.js';
+import { startFakeApifyApi } from '../helpers/fake-apify-api.js';
 
 // The CLI ships separately from the lib, so a repository can run the newest CLI with an old lib. These run the
 // committed bundle's `test` in a repository that installed an old lib, the way the PR and scheduled workflows run it,
@@ -22,8 +23,13 @@ const OLD_LIBS = [
     { alias: 'apify-test-tools-0-9-0', why: 'the last version that needs RUN_PLATFORM_TESTS' },
 ];
 
-// A raw ID listed with the build, so `test` needs no API call to look it up
-const build = { actorFullName: 'owner/a', actorRawId: 'rawIdOfOwnerA0000', buildId: 'b1', buildNumber: '0.99.1' };
+// `test` looks the raw ID up in a fake API, see beforeAll
+const build = { actorFullName: 'owner/a', buildId: 'b1', buildNumber: '0.99.1' };
+let fakeApi: Awaited<ReturnType<typeof startFakeApifyApi>> | undefined;
+
+beforeAll(async () => {
+    fakeApi = await startFakeApifyApi([{ id: 'rawIdOfOwnerA0000', username: 'owner', name: 'a' }]);
+});
 
 const testFile = `import { describe, testActor } from 'apify-test-tools';
 
@@ -45,10 +51,19 @@ const repoWithLib = async (alias: string) => {
     await symlink(path.join(projectRoot, 'node_modules/vitest'), path.join(repoDir, 'node_modules/vitest'));
     await mkdir(path.join(repoDir, 'test/platform'), { recursive: true });
     await writeFile(path.join(repoDir, 'test/platform/old.test.ts'), testFile);
+    // `test` reads each Actor's test token from the config
+    await mkdir(path.join(repoDir, 'actors/a'), { recursive: true });
+    await writeFile(
+        path.join(repoDir, 'apify-test-tools.config.json'),
+        JSON.stringify({
+            actors: [{ folder: 'actors/a', actorFullName: 'owner/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' }],
+        }),
+    );
     return repoDir;
 };
 
 afterAll(async () => {
+    await fakeApi?.close();
     for (const repoDir of repoDirs) await rm(repoDir, { recursive: true, force: true });
 });
 
@@ -62,7 +77,12 @@ describe('test with an old lib', () => {
         const repoDir = await repoWithLib(alias);
         const result = spawnSync(process.execPath, [bundlePath, 'test'], {
             cwd: repoDir,
-            env: { PATH: process.env.PATH ?? '', HOME: os.tmpdir(), TESTER_APIFY_TOKEN: 'fake-token' },
+            env: {
+                PATH: process.env.PATH ?? '',
+                HOME: os.tmpdir(),
+                TESTER_APIFY_TOKEN: 'fake-token',
+                APIFY_API_BASE_URL: fakeApi!.url,
+            },
             input: JSON.stringify([build]),
             encoding: 'utf8',
         });
@@ -76,7 +96,26 @@ describe('test with an old lib', () => {
             'old lib suite rawIdOfOwnerA0000: by raw ID': 'passed',
             'old lib suite owner/other: of an Actor not given': 'skipped',
         });
-        // A supported version gets no warning about its age
+        // Such a lib runs every test with TESTER_APIFY_TOKEN, so it is asked to update, though not for its age
+        expect(result.stderr).toContain('Update it to test each Actor with its own token.');
         expect(result.stderr).not.toContain('the oldest version this CLI supports');
+    });
+
+    it.each(OLD_LIBS)('refuses $alias without TESTER_APIFY_TOKEN, the only token it reads', async ({ alias }) => {
+        const repoDir = await repoWithLib(alias);
+        const result = spawnSync(process.execPath, [bundlePath, 'test'], {
+            cwd: repoDir,
+            env: {
+                PATH: process.env.PATH ?? '',
+                HOME: os.tmpdir(),
+                APIFY_TOKEN_OWNER: 'fake-token',
+                APIFY_API_BASE_URL: fakeApi!.url,
+            },
+            input: JSON.stringify([build]),
+            encoding: 'utf8',
+        });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('TESTER_APIFY_TOKEN is not set');
+        expect(result.stdout).toBe('');
     });
 });

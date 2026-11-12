@@ -29,6 +29,7 @@ const actorConfig = (
         actorFullName,
         folder: new ExistingDir(folderPath),
         tokenEnvVar,
+        testTokenEnvVar: tokenEnvVar,
         actorJson: {
             file: new RelativeFile(path.join(folderPath, '.actor/actor.json')),
             dockerContextDir: new RelativeDir(dockerContextDir || '.'),

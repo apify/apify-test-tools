@@ -52,6 +52,7 @@ const actor = (fields: Record<string, unknown> = {}) => ({
     folder: 'actors/shopify',
     actorFullName: 'myteam/shopify',
     tokenEnvVar: 'APIFY_TOKEN',
+    testTokenEnvVar: 'APIFY_TOKEN',
     overrideActorContext: undefined,
     ...fields,
 });
@@ -76,11 +77,12 @@ describe('selectStrategy', () => {
 describe('verifyConfiguration', () => {
     it('resolves the repo root and gets rid of trailing slashes', () => {
         const result = verifyConfiguration([
-            { folder: '.', actorFullName: 'myteam/root', tokenEnvVar: 'APIFY_TOKEN', overrideActorContext: undefined },
+            actor({ folder: '.', actorFullName: 'myteam/root' }),
             {
                 folder: 'actors/shopify/',
                 actorFullName: 'myteam/shopify',
                 tokenEnvVar: 'APIFY_TOKEN',
+                testTokenEnvVar: 'APIFY_TOKEN',
                 overrideActorContext: ['packages/'],
             },
         ]);
@@ -159,6 +161,30 @@ describe('verifyConfiguration', () => {
     });
 });
 
+describe('parseResolvedConfigFile', () => {
+    const grouped = (groupFields: Record<string, unknown>, actorFields: Record<string, unknown> = {}) => ({
+        mode: 'grouped',
+        groups: {
+            myteam: {
+                tokenEnvVar: 'GROUP_TOKEN',
+                ...groupFields,
+                actors: [{ folder: 'actors/a', actorFullName: 'myteam/a', ...actorFields }],
+            },
+        },
+    });
+    const testToken = (body: Record<string, unknown>) => parseResolvedConfigFile(body)[0].testTokenEnvVar;
+
+    it("defaults the test token to the Actor's build token in every mode", () => {
+        expect(testToken({ actors: [actor({ testTokenEnvVar: undefined })] })).toBe('APIFY_TOKEN');
+        expect(testToken(grouped({}))).toBe('GROUP_TOKEN');
+        expect(testToken(grouped({}, { tokenEnvVar: 'FROM_ACTOR' }))).toBe('FROM_ACTOR');
+    });
+
+    it("keeps a group's test token for an Actor that sets only its own build token", () => {
+        expect(testToken(grouped({ testTokenEnvVar: 'TESTER' }, { tokenEnvVar: 'FROM_ACTOR' }))).toBe('TESTER');
+    });
+});
+
 describe('parseConfigFile', () => {
     it('shares strategy resolution with parsing that does not initialize paths', () => {
         const body = { actors: [actor({ folder: 'missing-actor-dir', overrideActorContext: ['../outside'] })] };
@@ -167,6 +193,7 @@ describe('parseConfigFile', () => {
                 actorFullName: 'myteam/shopify',
                 folder: 'missing-actor-dir',
                 tokenEnvVar: 'APIFY_TOKEN',
+                testTokenEnvVar: 'APIFY_TOKEN',
                 overrideActorContext: ['../outside'],
             },
         ]);

@@ -9,6 +9,7 @@ const schema = z.object({
                 folder: z.string(),
                 actorFullName: z.string().regex(ACTOR_FULL_NAME_REGEX),
                 tokenEnvVar: z.string().min(1),
+                testTokenEnvVar: z.string().min(1).optional(),
                 overrideActorContext: z.array(z.string()).optional(),
             }),
         )
@@ -18,5 +19,5 @@ const schema = z.object({
 type LegacyConfig = z.infer<typeof schema>;
 
 export const LEGACY_PARSER = defineStrategy(CONFIG_FILE_STRATEGY.LEGACY, schema, (body: LegacyConfig) =>
-    body.actors.map((x) => ({ overrideActorContext: undefined, ...x })),
+    body.actors.map((x) => ({ testTokenEnvVar: undefined, overrideActorContext: undefined, ...x })),
 );

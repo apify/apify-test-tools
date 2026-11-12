@@ -1,41 +1,101 @@
 import { ApifyClient } from 'apify-client';
 
+import { APIFY_ENV_VARS } from '@apify/consts';
+
 import { logger } from './logger.js';
 import type { TestTarget } from './stdin-input.js';
+import { CONFIG_FILE_NAME } from './utils/config/load-config.js';
 
 type ActorGetter = Pick<ApifyClient, 'actor'>;
 
 /**
- * Adds the ID each target is missing: the raw ID to those listed by full name, e.g. by `get-actor-configs`, and the
- * full name to those listed by raw ID. The lib matches a test to its Actor by the ID the test names, so a target
- * without either ID would skip the tests that name its Actor by the other one.
- *
- * An Actor the token can't see keeps only the ID it was listed with, with a warning, rather than failing the run:
- * `get-actor-configs` lists every Actor in the repository, also ones no platform test uses, such as Actors the tester
- * account was never given access to. A test that names it by the listed ID still runs and fails on its own.
+ * The token the tests of an Actor fall back to when its own isn't set, or it isn't in the config. Kept until every
+ * repository runs a lib that reads `testTokenEnvVar` and every caller passes the Actors' tokens: the lib does the same.
  */
-export const withActorIds = async (
+export const FALLBACK_TOKEN_ENV_VAR = 'TESTER_APIFY_TOKEN';
+
+/** What the lib gets for each Actor in `ACTOR_BUILDS`: the target, its raw ID, and the env var its tests run with. */
+interface ActorBuildTarget extends TestTarget {
+    actorRawId?: string;
+    testTokenEnvVar?: string;
+}
+
+interface WithTestTokensOptions {
+    /** The env var each Actor's tests run with, by full name, as the config resolves it */
+    testTokenEnvVars: Map<string, string>;
+    env?: NodeJS.ProcessEnv;
+    createClient?: (token: string) => ActorGetter;
+}
+
+/**
+ * Hands each target the env var its tests run with, from the config, and its raw ID. The CLI knows Actors by full name
+ * only, but a test can name its Actor by its raw ID, and the lib matches it by that ID, so without the raw ID such a
+ * test would be skipped. The raw ID is looked up with the token the Actor's tests run with: its own test token, or
+ * `TESTER_APIFY_TOKEN` when that isn't set. That is one API call per Actor. `APIFY_API_BASE_URL` points it elsewhere
+ * than the Apify API, e.g. to a local one in tests.
+ *
+ * Nothing here fails the run: `get-actor-configs` lists every Actor in the repository, also ones no platform test
+ * uses. An Actor that isn't in the config, or whose token isn't set, gets a warning, and the lib runs its tests with
+ * `TESTER_APIFY_TOKEN`, or fails only them without it. An Actor its token can't see keeps only its full name, so a test
+ * that names it by full name still runs and fails on its own.
+ */
+export const withTestTokens = async (
     targets: TestTarget[],
-    client: ActorGetter = new ApifyClient({ token: process.env.TESTER_APIFY_TOKEN }),
-): Promise<TestTarget[]> =>
-    Promise.all(
-        targets.map(async (target) => {
-            const { actorFullName, actorRawId } = target;
-            if (actorFullName && actorRawId) return target;
-            // The parser lets no target through without either ID
-            const actorId = (actorFullName ?? actorRawId)!;
-            const actor = await client.actor(actorId).get();
-            if (!actor) {
-                logger.warn(
-                    `Actor ${actorId} not found, or TESTER_APIFY_TOKEN can't access it. Tests that name it by ` +
-                        `${actorFullName ? 'its raw ID' : 'its full name'} will be skipped.`,
-                );
-                return target;
-            }
-            return {
-                ...target,
-                actorFullName: actorFullName ?? `${actor.username}/${actor.name}`,
-                actorRawId: actorRawId ?? actor.id,
-            };
+    {
+        testTokenEnvVars,
+        env = process.env,
+        createClient = (token) => new ApifyClient({ token, baseUrl: env[APIFY_ENV_VARS.API_BASE_URL] || undefined }),
+    }: WithTestTokensOptions,
+): Promise<ActorBuildTarget[]> => {
+    /** The env var the tests of an Actor end up with, as the lib picks it */
+    const effectiveEnvVar = (testTokenEnvVar?: string) => {
+        if (testTokenEnvVar && env[testTokenEnvVar]) return testTokenEnvVar;
+        return env[FALLBACK_TOKEN_ENV_VAR] ? FALLBACK_TOKEN_ENV_VAR : undefined;
+    };
+    const clients = new Map<string, ActorGetter>();
+    const clientFor = (tokenEnvVar: string) => {
+        const token = env[tokenEnvVar]!;
+        if (!clients.has(token)) clients.set(token, createClient(token));
+        return clients.get(token)!;
+    };
+
+    const resolved = await Promise.all(
+        targets.map(async (target): Promise<ActorBuildTarget> => {
+            const { actorFullName } = target;
+            const testTokenEnvVar = testTokenEnvVars.get(actorFullName);
+            const withToken = { ...target, ...(testTokenEnvVar && { testTokenEnvVar }) };
+            // Without any token there's nothing to look it up with, the missing token is reported below
+            const lookupEnvVar = effectiveEnvVar(testTokenEnvVar);
+            if (!lookupEnvVar) return withToken;
+            const actor = await clientFor(lookupEnvVar).actor(actorFullName).get();
+            if (!actor) warnNotFound(actorFullName, lookupEnvVar);
+            return { ...withToken, ...(actor && { actorRawId: actor.id }) };
         }),
     );
+
+    warnAboutMissingTokens(resolved, env);
+    return resolved;
+};
+
+const warnNotFound = (actorFullName: string, tokenEnvVar: string) => {
+    logger.warn(
+        `Actor ${actorFullName} not found, or ${tokenEnvVar} can't access it. Tests that name it by its raw ID ` +
+            `will be skipped.`,
+    );
+};
+
+/** One warning per Actor without a test token in the config, and one per env var that isn't set. */
+const warnAboutMissingTokens = (targets: ActorBuildTarget[], env: NodeJS.ProcessEnv) => {
+    const outcome = env[FALLBACK_TOKEN_ENV_VAR] ? `run with ${FALLBACK_TOKEN_ENV_VAR}` : 'will fail';
+    const unset = new Map<string, string[]>();
+    for (const { actorFullName, testTokenEnvVar } of targets) {
+        if (!testTokenEnvVar) {
+            logger.warn(`Actor ${actorFullName} is not in ${CONFIG_FILE_NAME}, so its tests ${outcome}.`);
+        } else if (!env[testTokenEnvVar]) {
+            unset.set(testTokenEnvVar, [...(unset.get(testTokenEnvVar) ?? []), actorFullName]);
+        }
+    }
+    for (const [tokenEnvVar, actorIds] of unset) {
+        logger.warn(`${tokenEnvVar} is not set, so the tests of ${actorIds.join(', ')} ${outcome}.`);
+    }
+};

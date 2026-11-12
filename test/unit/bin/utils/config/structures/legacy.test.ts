@@ -20,6 +20,17 @@ describe('LEGACY_PARSER', () => {
         expect(LEGACY_PARSER.parse({ mode: 'legacy', actors: [entry()] })).toEqual([entry()]);
     });
 
+    it('passes on the test token an Actor names, and leaves the default to the parser', () => {
+        expect(
+            LEGACY_PARSER.parse({
+                actors: [
+                    entry(),
+                    entry({ folder: 'actors/x', actorFullName: 'myteam/x', testTokenEnvVar: 'TESTER_APIFY_TOKEN' }),
+                ],
+            }).map(({ testTokenEnvVar }) => testTokenEnvVar),
+        ).toEqual([undefined, 'TESTER_APIFY_TOKEN']);
+    });
+
     it('rejects a file with no "actors" array', () => {
         expect(() => LEGACY_PARSER.parse({ notActors: [] })).toThrow(/expected array[\s\S]*at actors/);
     });

@@ -9,7 +9,7 @@ export type ActorBuild = {
 };
 
 export type RunOptions<T> = {
-    input: Omit<T, 'actorName'>;
+    input: T;
     options?: Omit<ActorCallOptions, 'timeout'> & {
         /**
          * Timeout for the actor run in seconds. Zero value means there is no timeout.

@@ -131,8 +131,6 @@ export const testTestActor = <T>(
     });
 };
 
-export const it = testActor;
-
 /**
  * Creates a function that accepts input for a standby actor and sends a request containing the input
  * to the task's standby url.

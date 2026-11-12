@@ -2,7 +2,7 @@
     "name": "apify-test-tools",
     "version": "0.11.0",
     "type": "module",
-    "description": "TBD",
+    "description": "Tools & lib to test Actors on the Apify platform",
     "repository": {
         "type": "git",
         "url": "https://github.com/apify/apify-test-tools.git"
@@ -21,7 +21,14 @@
         "apify-test-tools": "dist/bin/main.js"
     },
     "types": "./dist/index.d.ts",
-    "main": "./dist/lib/lib.js",
+    "main": "./dist/index.js",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./package.json": "./package.json"
+    },
     "dependencies": {
         "@apify/consts": "^3.0.1",
         "@slack/web-api": "^8.2.0",

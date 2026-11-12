@@ -1,8 +1,9 @@
 import type { Actor, ActorRun, ActorRunListItem, ActorStandby, Task } from 'apify-client';
 import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
-import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
+import { afterAll, describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
+import { buildActor, type DefinedActor, pruneBuilds } from './ad-hoc.js';
 import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
@@ -50,8 +51,8 @@ export const describe = (name: string, fn?: SuiteFactory<object>, options: Actor
 };
 
 /**
- * Registers a vitest test for an Actor, which only runs when the Actor is listed in `ACTOR_BUILDS`: against the build
- * listed with it, or its default build without one.
+ * Registers a vitest test for an Actor given by ID, which only runs when the Actor is listed in `ACTOR_BUILDS`:
+ * against the build listed with it, or its default build without one.
  * `body` gets the test context with the soft `expect` and the full test name.
  */
 const defineActorTest = (
@@ -67,17 +68,41 @@ const defineActorTest = (
     });
 };
 
+const prunedAfterFile = new Set<string>();
+
 /**
- * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
+ * @param actor - The Actor's raw platform ID, its full name (`owner/name`, e.g. `"apify/web-scraper"`), or an Actor
+ * from `defineActor`. Such an ad-hoc Actor always runs: it is built from its source on the first `run`, and its builds
+ * older than three days are deleted after the file's tests.
  */
 export const testActor = <T>(
-    actorId: string,
+    actor: string | DefinedActor,
     testName: string,
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
     testOptions?: ActorTestOptions,
 ) => {
-    defineActorTest(actorId, testName, testOptions, async (context) => {
-        await fn({ ...context, run: createStartRunFn(actorId, context) });
+    if (typeof actor === 'string') {
+        defineActorTest(actor, testName, testOptions, async (context) => {
+            const build = config.get(actor);
+            await fn({ ...context, run: createStartRunFn(context, async () => ({ actorId: actor, build })) });
+        });
+        return;
+    }
+
+    if (!prunedAfterFile.has(actor.name)) {
+        prunedAfterFile.add(actor.name);
+        afterAll(async () => pruneBuilds(actor));
+    }
+    vitestTest(`${actor.name}: ${testName}`, { ...DEFAULT_TEST_OPTIONS, ...testOptions }, async (context) => {
+        const run = createStartRunFn<T>(
+            context,
+            async () => {
+                const build = await buildActor(actor);
+                return { actorId: build.actorRawId, build };
+            },
+            actor.syncDelayMs,
+        );
+        await fn({ ...context, expect: extendExpect(context.expect), run });
     });
 };
 
@@ -245,12 +270,17 @@ const createStandbyTask = async (actorId: string, buildNumber?: string): Promise
     }
 };
 
-const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
+/**
+ * `resolveActor` runs on every `run`, so an ad-hoc Actor is built by the first one and not at all by a test that
+ * reuses a run with `runId`.
+ */
+const createStartRunFn = <T>(
+    testContext: TestContext,
+    resolveActor: () => Promise<{ actorId: string; build?: ActorBuild }>,
+    syncDelayMs = DATASET_SYNC_DELAY_MS,
+) => {
     const { annotate, task } = testContext;
-    const actorConfig = config.get(actorId);
-    const build = actorConfig?.buildNumber;
-    const buildId = actorConfig?.buildId;
-    return async (runOptions: RunOptions<T>) => {
+    return async (runOptions: RunOptions<T> = {}) => {
         const { input, options, prefilledInput, runId } = runOptions;
 
         if (runId) {
@@ -261,10 +291,18 @@ const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
             return new RunTestResult(apifyClient, run);
         }
 
-        const actorInput = {
-            ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorId, buildId))),
-            ...input,
-        };
+        const { actorId, build: actorConfig } = await resolveActor();
+        const build = actorConfig?.buildNumber;
+        const buildId = actorConfig?.buildId;
+
+        // Without any input the run gets none, so it has no INPUT record either.
+        const actorInput =
+            input === undefined && !prefilledInput
+                ? undefined
+                : {
+                      ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorId, buildId))),
+                      ...input,
+                  };
 
         const actor = apifyClient.actor(actorId);
         const actorInfo = await actor.get();
@@ -286,7 +324,7 @@ const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
         };
 
         // waiting for dataset and statistics to sync, the Apify platform is only eventually consistent.
-        await sleep(DATASET_SYNC_DELAY_MS);
+        await sleep(syncDelayMs);
 
         return new RunTestResult(apifyClient, run);
     };

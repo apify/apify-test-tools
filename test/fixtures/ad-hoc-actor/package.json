@@ -1,5 +1,5 @@
 {
-    "name": "test-tools-harness-e2e",
+    "name": "test-tools-ad-hoc-e2e",
     "version": "0.0.1",
     "type": "module",
     "dependencies": {

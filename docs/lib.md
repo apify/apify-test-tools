@@ -26,11 +26,11 @@ The library reads these when the test file is loaded:
 Same as vitest's `describe`, but skipped unless `TESTER_APIFY_TOKEN` is set. Its tests
 run concurrently by default. Use it instead of vitest's `describe` for platform tests.
 
-## `testActor(actorId, testName, fn, options?)`
+## `testActor(actor, testName, fn, options?)`
 
-Registers a test for an Actor. `actorId` is the Actor's full name (`owner/name`) or its raw platform ID. The test
-only runs when the Actor is in `ACTOR_BUILDS`. Its name is
-`<actorId>: <testName>`.
+Registers a test for an Actor. `actor` is the Actor's full name (`owner/name`), its raw platform ID, or an
+[ad-hoc Actor](#ad-hoc-actors). Given by name or ID, the test only runs when the
+Actor is in `ACTOR_BUILDS`. Its name is `<actor>: <testName>`.
 
 `fn` gets the vitest test context, with `expect` extended by the [custom matchers](#custom-matchers), and a `run`
 function.
@@ -275,27 +275,25 @@ You can change the tests and re-run them against the same builds.
 `TESTER_APIFY_TOKEN` can be the token of any account with enough memory for the runs. To run only some tests, pass a specific file instead of `test/platform`, or filter by
 name with vitest's `-t <name>` when running vitest directly. See [Running locally](cli.md#running-locally) for the full flow.
 
-## Throwaway Actors for library repositories
+## Ad-hoc Actors
 
-`testActor` tests Actors that already exist on the platform. A library (an SDK, a crawler framework, a shared tools
-package) has no Actors of its own: its tests build throwaway Actors from local source, pinned to the library build
-under test, run them and throw the builds away. That is what the harness does.
+`testActor` also takes an Actor that is not in `apify-test-tools.config.json` and doesn't exist on the platform yet.
+A library (an SDK, a crawler framework, a shared tools package) has no Actors of its own: its tests define them
+from files in the repository, pinned to the library build under test.
 
 ```ts
 // vitest.config.ts: packs the library once per run, outside vitest's worker context
 export default defineConfig({ test: { globalSetup: ['./test/e2e/global-setup.ts'] } });
 
 // test/e2e/global-setup.ts
-import { pack } from 'apify-test-tools/harness';
+import { pack } from 'apify-test-tools/ad-hoc';
 export default async function setup(project: TestProject) {
     project.provide('packs', await pack(process.cwd(), '/tmp/packs')); // `{ recursive: true }` for a workspace
 }
 
 // test/e2e/hello-world.test.ts
-import { useHarness } from 'apify-test-tools';
-import { ActorSource } from 'apify-test-tools/harness';
-
-const { test } = useHarness({ token: process.env.APIFY_TEST_USER_API_TOKEN!, namePrefix: 'my-sdk-e2e' });
+import { defineActor, testActor } from 'apify-test-tools';
+import { ActorSource } from 'apify-test-tools/ad-hoc';
 
 // The Actor's code: a real function of the test file, type-checked and linted like the rest. It's shipped by
 // reading it from disk, so it must be self-contained: `await import()` for dependencies, no outer-scope references.
@@ -306,30 +304,44 @@ export const main = async () => {
     await Actor.exit();
 };
 
-test('pushes data', async ({ expect, createActor, runActor }) => {
-    const source = ActorSource.dirs('test/e2e/actor-base')
+const actor = defineActor('my-sdk-e2e-hello-world', {
+    source: ActorSource.dirs('test/e2e/actor-base')
         .main(import.meta.filename, main)
-        .pin(inject('packs'));
-    const actor = await createActor('hello-world', { source });
-    const result = await runActor(actor);
+        .pin(inject('packs')),
+});
+
+testActor(actor, 'pushes data', async ({ expect, run }) => {
+    const result = await run();
 
     await expect(result).toFinishWith({ datasetItemCount: 1 });
     expect((await result.getDataset()).items).toEqual([{ hello: 'world' }]);
 });
 ```
 
-| Export                                       | Does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pack(cwd, destination, { recursive })`      | Runs `pnpm pack` (`pnpm -r pack` with `recursive`) and returns `{ name, filename }` per tarball. Vitest-free, so it fits `globalSetup`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `ActorSource.dirs(...dirs)`                  | The files under the directories; later directories override earlier ones, so a shared template plus a per-test overlay is one call.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `ActorSource.repo(repoRoot)`                 | The repository the way a platform build would see it: minus gitignored, dockerignored and secret files. For repositories whose Actors build from the repository root.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `.pin(packs, options?)`                      | Adds the tarballs under `packages/` and rewrites `package.json` so both direct and transitive dependencies on those packages resolve to them: `overrides` for npm (default), `pnpm.overrides` with `manager: 'pnpm'`. `only` limits it to some packages.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `.main(filename, fn, { path })`              | Makes `fn`, a top-level function of the test file at `filename` (`import.meta.filename`), the Actor's entry point: written to `path` (default `main.js`) as an ES module that awaits it, transpiled from TypeScript. It must be self-contained — `await import()` for dependencies, nothing from the rest of the file but type-only imports — which is enforced by type-checking the extracted code alone with the project's `tsc` under the nearest `tsconfig.json`; a stray reference fails the test with TS2304.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `useHarness({ token, namePrefix })`          | Binds a harness to the test file: after the file's tests, builds of its Actors older than three days are deleted, so the Console keeps the recent builds and all runs. Returns `test`, vitest's `test` (with `skip`, `skipIf`, `only`) whose context carries the soft, matcher-extended `expect` of [`testActor`](#testactoractorid-testname-fn-options) plus `createActor(label, { source, memory?, env?, permissions? })`, which resolves the source into version `0.0` of the Actor `<namePrefix>-<label>` (created on first use, kept afterwards so its runs stay in the Console), builds it (one retry) and returns its `ActorClient` (`env` becomes secret environment variables of the build; `permissions` is the Actor's permission level, `LIMITED_PERMISSIONS` unless the run must reach storages other than its own), and `runActor(actor, input?, options?)`, which is `actor.call` pinned to that build, plus a [`RunTestResult`](#runtestresult). Two overlapping runs of a suite race on the `0.0` upload, so serialize them (a CI concurrency group). Both are also returned directly, for hooks like `beforeAll`. |
-| `pollUntil(fn, done, { timeout, interval })` | Re-runs `fn` until `done(value)` or the timeout, for eventually consistent storages.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+An ad-hoc Actor differs from one given by ID in three ways:
+
+- Its tests always run, they don't wait for the Actor to be listed in `ACTOR_BUILDS`.
+- The first `run` builds it, the way [`build-from-local`](cli.md#build-from-local-source-build-from-local) does:
+  the source is zipped, uploaded and built as version `0.98` of the Actor with that name under the account of
+  `TESTER_APIFY_TOKEN`. The Actor is created the first time and kept afterwards, so its runs stay in the Console.
+  Every `run` in the process uses that one build.
+- After the file's tests, its builds older than three days are deleted.
+
+Two overlapping runs of a suite race on the source upload, so serialize them, e.g. with a CI concurrency group.
+
+| Export                                                                     | Does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defineActor(name, { source, memory?, env?, permissions?, syncDelayMs? })` | The Actor for `testActor`. `env` becomes secret environment variables of the build, `permissions` is the Actor's permission level (`LIMITED_PERMISSIONS` unless the run must reach storages other than its own). `syncDelayMs` replaces the 20 seconds `run` waits before returning the result; set it to 0 when the tests poll for what they need.                                                                                                                                                                 |
+| `buildActor(actor)`                                                        | Builds the ad-hoc Actor now instead of on the first `run` and returns `{ buildId, buildNumber, actorRawId, actorFullName }`, e.g. to set the Actor's pricing in `beforeAll`.                                                                                                                                                                                                                                                                                                                                        |
+| `pack(cwd, destination, { recursive })`                                    | Runs `pnpm pack` (`pnpm -r pack` with `recursive`) and returns `{ name, filename }` per tarball. Vitest-free, so it fits `globalSetup`.                                                                                                                                                                                                                                                                                                                                                                             |
+| `ActorSource.dirs(...dirs)`                                                | The files under the directories; later directories override earlier ones, so a shared template plus a per-test overlay is one call.                                                                                                                                                                                                                                                                                                                                                                                 |
+| `ActorSource.repo(repoRoot)`                                               | The repository the way a platform build would see it: minus gitignored, dockerignored and secret files. For repositories whose Actors build from the repository root.                                                                                                                                                                                                                                                                                                                                               |
+| `.pin(packs, options?)`                                                    | Adds the tarballs under `packages/` and rewrites `package.json` so both direct and transitive dependencies on those packages resolve to them: `overrides` for npm (default), `pnpm.overrides` with `manager: 'pnpm'`. `only` limits it to some packages.                                                                                                                                                                                                                                                            |
+| `.main(filename, fn, { path })`                                            | Makes `fn`, a top-level function of the test file at `filename` (`import.meta.filename`), the Actor's entry point: written to `path` (default `main.js`) as an ES module that awaits it, transpiled from TypeScript. It must be self-contained — `await import()` for dependencies, nothing from the rest of the file but type-only imports — which is enforced by type-checking the extracted code alone with the project's `tsc` under the nearest `tsconfig.json`; a stray reference fails the test with TS2304. |
+| `pollUntil(fn, done, { timeout, interval })`                               | Re-runs `fn` until `done(value)` or the timeout, for eventually consistent storages.                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 The Dockerfile must copy `packages/` before installing: `COPY package*.json ./`, `COPY packages ./packages`, then
 `npm install`. With pnpm, install without `--frozen-lockfile`: the overrides change the lockfile.
 
-Everything but `useHarness` and `pollUntil` comes from `apify-test-tools/harness`, which doesn't import vitest. `createHarness` there is `useHarness` without the hooks; it returns `cleanup` for
-other runners.
+`pack` and `ActorSource` come from `apify-test-tools/ad-hoc`, which doesn't import vitest and so can be used in
+`globalSetup`.

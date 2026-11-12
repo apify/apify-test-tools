@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { ActorRun, ApifyClient } from 'apify-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ActorSource } from '../../lib/harness.js';
+import { ActorSource } from '../../lib/ad-hoc.js';
 import { RunTestResult } from '../../lib/run-test-result.js';
 
 describe('ActorSource', () => {

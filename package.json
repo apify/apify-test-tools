@@ -24,7 +24,7 @@
     "main": "./dist/index.js",
     "exports": {
         ".": "./dist/index.js",
-        "./harness": "./dist/lib/harness.js"
+        "./ad-hoc": "./dist/lib/ad-hoc.js"
     },
     "dependencies": {
         "@apify/consts": "^3.0.1",

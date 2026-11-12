@@ -1,4 +1,4 @@
 {
     "$schema": "https://unpkg.com/knip@5/schema.json",
-    "entry": ["index.ts", "lib/harness.ts"]
+    "entry": ["index.ts", "lib/ad-hoc.ts"]
 }

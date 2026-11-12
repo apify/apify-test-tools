@@ -6,16 +6,18 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
-import type { ActorCallOptions, ActorClient, ActorVersion } from 'apify-client';
+import AdmZip from 'adm-zip';
+import type { ActorVersion } from 'apify-client';
 import { ActorSourceType, ApifyClient } from 'apify-client';
 import { parseSync } from 'oxc-parser';
 import { transformSync } from 'oxc-transform';
 
 import type { ACTOR_PERMISSION_LEVEL } from '@apify/consts';
 
+import { ApifyBuilder, LOCAL_SOURCE_VERSION_NUMBER } from '../bin/build.js';
 import { collectNonIgnoredFiles } from '../bin/source-files.js';
+import type { BuildData } from '../bin/types.js';
 import { RelativeDir } from '../bin/utils/path/repo-relative.js';
-import { RunTestResult } from './run-test-result.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -27,7 +29,7 @@ export interface Pack {
 
 type SourceFiles = Map<string, Buffer>;
 
-const BUILD_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
+const BUILD_RETENTION_DAYS = 3;
 
 /**
  * Packs the package at `cwd` (every workspace package with `recursive`) into `destination` and lists the tarballs.
@@ -208,113 +210,99 @@ const typeCheckInIsolation = async (filename: string, source: string) => {
     }
 };
 
-const toPlatformFiles = (files: SourceFiles) =>
-    [...files].map(([name, buffer]) => {
-        const text = buffer.toString('utf8');
-        return Buffer.from(text, 'utf8').equals(buffer)
-            ? { name, format: 'TEXT' as const, content: text }
-            : { name, format: 'BASE64' as const, content: buffer.toString('base64') };
-    });
-
-export interface CreateActorOptions {
+export interface DefineActorOptions {
     source: ActorSource;
+    /** Default memory of the Actor's runs, in MB. */
     memory?: number;
     /** Set as secret environment variables of the build. */
     env?: Record<string, string>;
     /** The platform default is `LIMITED_PERMISSIONS`: the run can only touch its own storages. */
     permissions?: ACTOR_PERMISSION_LEVEL;
+    /**
+     * How long `run` waits after the run finishes before handing out the result. Default: the same 20 seconds as
+     * for Actors given by ID. Set to 0 when the tests poll for what they need.
+     */
+    syncDelayMs?: number;
 }
 
-export interface Harness {
-    /** Uploads and builds the scenario's source into the Actor `<namePrefix>-<label>`, creating it the first time. */
-    createActor(label: string, options: CreateActorOptions): Promise<ActorClient>;
-    /** Runs the build `createActor` made and wraps the run in a `RunTestResult`. */
-    runActor(actor: ActorClient, input?: unknown, options?: ActorCallOptions): Promise<RunTestResult>;
-    /** Deletes builds of the Actors `createActor` touched that are older than three days. */
-    cleanup(): Promise<void>;
-}
-
-export interface HarnessOptions {
-    /** Token of the account that owns the test Actors. */
-    token: string;
-    /** Prefix of every Actor name, so they group together in the Console. */
-    namePrefix: string;
+/** An Actor that exists as a source in the repository instead of as an entry in `apify-test-tools.config.json`. */
+export interface DefinedActor extends DefineActorOptions {
+    name: string;
 }
 
 /**
- * Test Actors for library repositories: one Actor per scenario, kept between runs so its history stays in the
- * Console; each run uploads the local source as version `0.0`, builds it, runs against that build and prunes builds
- * older than three days with `cleanup`. `useHarness` from the main entry point wires `cleanup` to vitest; this module stays
- * vitest-free so `pack` can run in `globalSetup`.
+ * Defines an Actor for `testActor` by its source. It is built from that source on first use, as version `0.98` of
+ * the Actor `name` under the account of `TESTER_APIFY_TOKEN`, which is created if it doesn't exist and kept
+ * afterwards so its runs stay in the Console.
  *
- * Two overlapping runs of the suite race on the `0.0` upload; serialize them (e.g. a CI concurrency group).
+ * Two overlapping runs of a suite race on the source upload; serialize them (e.g. a CI concurrency group).
  */
-export const createHarness = ({ token, namePrefix }: HarnessOptions): Harness => {
-    // Checked when first used, not here: `describe.runIf(token)` still runs the suite factory this is called from.
+export const defineActor = (name: string, options: DefineActorOptions): DefinedActor => ({ name, ...options });
+
+const builds = new Map<string, Promise<BuildData>>();
+
+const build = async (actor: DefinedActor, token: string): Promise<BuildData> => {
     const client = new ApifyClient({ token });
-    const builds = new Map<ActorClient, { id: string; buildNumber: string }>();
+    const zip = new AdmZip();
+    for (const [name, content] of await actor.source.files()) zip.addFile(name, content);
 
-    // Recent builds stay so a regression can be compared against the last few runs; the newest is the version's
-    // default and can't be deleted anyway.
-    const cleanup = async () => {
-        const actors = [...builds.keys()];
-        builds.clear();
-        const cutoff = Date.now() - BUILD_RETENTION_MS;
-        await Promise.all(
-            actors.map(async (actor) => {
-                const { items } = await actor.builds().list({ limit: 1000 });
-                await Promise.all(
-                    items
-                        .filter((build) => build.startedAt.getTime() < cutoff)
-                        .map(async (build) => client.build(build.id).delete()),
-                );
-            }),
-        );
+    const settings = {
+        defaultRunOptions: { build: 'latest', memoryMbytes: actor.memory ?? 256, timeoutSecs: 600 },
+        actorPermissionLevel: actor.permissions,
+    };
+    const { username } = await client.user().get();
+    const actorFullName = `${username}/${actor.name}`;
+    const existing = await client.actor(actorFullName).get();
+    if (existing) await client.actor(existing.id).update(settings);
+    else await client.actors().create({ name: actor.name, ...settings });
+
+    const builder = ApifyBuilder.fromToken(token, actorFullName);
+    const version: ActorVersion = {
+        versionNumber: LOCAL_SOURCE_VERSION_NUMBER,
+        buildTag: 'latest',
+        sourceType: ActorSourceType.Tarball,
+        tarballUrl: await builder.uploadSourceZip(LOCAL_SOURCE_VERSION_NUMBER, zip.toBuffer()),
+        envVars: Object.entries(actor.env ?? {}).map(([name, value]) => ({ name, value, isSecret: true })),
     };
 
-    const createActor = async (label: string, { source, memory = 256, env = {}, permissions }: CreateActorOptions) => {
-        if (!token) throw new Error('The harness needs an Apify token');
-        const name = `${namePrefix}-${label}`.replaceAll('_', '-');
-        const version: ActorVersion = {
-            versionNumber: '0.0',
-            buildTag: 'latest',
-            sourceType: ActorSourceType.SourceFiles,
-            sourceFiles: toPlatformFiles(await source.files()),
-            envVars: Object.entries(env).map(([envName, value]) => ({ name: envName, value, isSecret: true })),
-        };
-        const settings = {
-            defaultRunOptions: { build: 'latest', memoryMbytes: memory, timeoutSecs: 600 },
-            actorPermissionLevel: permissions,
-        };
-
-        const { username } = await client.user().get();
-        const existing = await client.actor(`${username}/${name}`).get();
-        let actor: ActorClient;
-        if (existing) {
-            actor = client.actor(existing.id);
-            await Promise.all([actor.update(settings), actor.version('0.0').update(version)]);
-        } else {
-            const { id } = await client.actors().create({ name, ...settings, versions: [version] });
-            actor = client.actor(id);
+    // Platform builds fail spuriously now and then; one retry is cheaper than a red nightly.
+    for (let attempt = 1; ; attempt++) {
+        const buildData = await builder.createVersionAndBuild(LOCAL_SOURCE_VERSION_NUMBER, version, false);
+        try {
+            await builder.waitForBuildToFinish(buildData.buildId);
+            return buildData;
+        } catch (error) {
+            if (attempt === 2) throw error;
         }
+    }
+};
 
-        // Platform builds fail spuriously now and then; one retry is cheaper than a red nightly.
-        for (let attempt = 1; ; attempt++) {
-            const build = await actor.build('0.0');
-            const { status } = await client.build(build.id).waitForFinish({ waitSecs: 1800 });
-            if (status === 'SUCCEEDED') {
-                builds.set(actor, { id: build.id, buildNumber: build.buildNumber });
-                return actor;
-            }
-            if (attempt === 2) throw new Error(`Build of ${name} ${status}: https://api.apify.com/v2/logs/${build.id}`);
-        }
-    };
+/**
+ * Builds the ad-hoc Actor, once per process however many tests ask. `testActor` calls this on the first `run`;
+ * call it directly to reach the Actor before that, e.g. to set its pricing in `beforeAll`.
+ */
+export const buildActor = async (actor: DefinedActor, token = process.env.TESTER_APIFY_TOKEN): Promise<BuildData> => {
+    if (!token) throw new Error(`Building the Actor "${actor.name}" needs TESTER_APIFY_TOKEN`);
+    let started = builds.get(actor.name);
+    if (!started) {
+        // A failed build isn't kept, so a retried test builds again.
+        started = build(actor, token).catch((error: unknown) => {
+            builds.delete(actor.name);
+            throw error;
+        });
+        builds.set(actor.name, started);
+    }
+    return started;
+};
 
-    // Pinned to the build, so a concurrent re-upload of `0.0` can't change what this test runs.
-    const runActor = async (actor: ActorClient, input?: unknown, options?: ActorCallOptions) => {
-        const run = await actor.call(input, { waitSecs: 600, build: builds.get(actor)?.buildNumber, ...options });
-        return new RunTestResult(client, run);
-    };
-
-    return { createActor, runActor, cleanup };
+/** Deletes the ad-hoc Actor's builds older than `BUILD_RETENTION_DAYS`. Recent ones stay for comparing runs. */
+export const pruneBuilds = async (actor: DefinedActor, token = process.env.TESTER_APIFY_TOKEN): Promise<void> => {
+    // Absent when no test ran the Actor or its build failed; either way there is nothing new to weigh against.
+    const started = builds.get(actor.name);
+    if (!token || !started) return;
+    const { actorFullName } = await started;
+    await ApifyBuilder.fromToken(token, actorFullName).deleteOldBuilds({
+        dryRun: false,
+        daysBack: BUILD_RETENTION_DAYS,
+    });
 };

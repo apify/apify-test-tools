@@ -26,7 +26,7 @@ describe('createStartRunFn()', () => {
         } as ActorClient);
 
         // Act
-        await createStartRunFn('123', testContext)({ input: {} });
+        await createStartRunFn(testContext, async () => ({ actorId: '123' }))({ input: {} });
 
         // Assert
         expect(actorCallMock).toHaveBeenCalledTimes(1);
@@ -44,7 +44,7 @@ describe('createStartRunFn()', () => {
         } as ActorClient);
 
         // Act
-        await createStartRunFn('123', testContext)({ input: {} });
+        await createStartRunFn(testContext, async () => ({ actorId: '123' }))({ input: {} });
 
         // Assert
         expect(actorCallMock).toHaveBeenCalledTimes(1);

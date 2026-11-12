@@ -202,6 +202,10 @@ export class ApifyBuilder {
         return build;
     };
 
+    /** For Actors that aren't in the config: `actorFullName` is looked up with `token`. */
+    static fromToken = (token: string, actorFullName: string): ApifyBuilder =>
+        new ApifyBuilder(new ApifyClient({ token }), actorFullName);
+
     static fromActorConfig = (actorConfig: ActorConfig): ApifyBuilder => {
         const { actorFullName, tokenEnvVar } = actorConfig;
         const token = process.env[tokenEnvVar];
@@ -216,7 +220,7 @@ export class ApifyBuilder {
      * Deletes build of all versions. Apify API doesn't allow to delete default build and we explicitly skip it
      * We delete devel builds faster because we used the for every PR until recently so just to get rid of them faster
      */
-    async deleteOldBuilds({ dryRun }: { dryRun: boolean }): Promise<void> {
+    async deleteOldBuilds({ dryRun, daysBack }: { dryRun: boolean; daysBack?: number }): Promise<void> {
         // Even though we don't version our current Actors, if we ever such Actors to GitHub CI, we would accidentally delete old supported versions
         // This hardcoded solution is not ideal, but it should prevent most imaginable cases
         // All currently popular versioned Actors use `version-${number}` format
@@ -258,7 +262,8 @@ export class ApifyBuilder {
         // Deleting default build throws an error, so we skip it
         const { defaultBuildNumber, defaultBuildTag } = resolveDefaultVersion(this.actorFullName, actorInfo);
 
-        const daysAgoUnixProd = Date.now() - DEFAULT_DAYS_BACK_PROD_VERSIONS * 24 * 60 * 60 * 1000;
+        const daysBackProd = daysBack ?? DEFAULT_DAYS_BACK_PROD_VERSIONS;
+        const daysAgoUnixProd = Date.now() - daysBackProd * 24 * 60 * 60 * 1000;
         const daysAgoUnixDevel = Date.now() - DEFAULT_DAYS_BACK_DEVEL * 24 * 60 * 60 * 1000;
 
         // Fixing API client missing buildNumber field
@@ -296,7 +301,7 @@ export class ApifyBuilder {
 
         logger.info(
             `[DELETE OLD BUILDS][${this.actorFullName}]: ${dryRun ? '[DRY RUN] Would delete' : 'Deleting'} ${buildsToDelete.length} ` +
-                `old builds that are non-default and older than 30 days from total ${items.length}`,
+                `old builds that are non-default and older than ${daysBackProd} days from total ${items.length}`,
         );
         if (dryRun) {
             for (const build of buildsToDelete) {

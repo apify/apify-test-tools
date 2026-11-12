@@ -12,8 +12,8 @@ import {
 } from '../../../../../bin/utils/config/parser.js';
 import { CONFIG_FILE_STRATEGY, type ResolvedActorConfig } from '../../../../../bin/utils/config/structures/base.js';
 import { GROUPED_PARSER } from '../../../../../bin/utils/config/structures/grouped.js';
-import { LEGACY_PARSER } from '../../../../../bin/utils/config/structures/legacy.js';
 import { ExistingDir, RelativeDir } from '../../../../../bin/utils/path/repo-relative.js';
+import { groupedConfig } from '../../../../grouped-config.js';
 
 const { selectStrategy, initializePaths, verifyConfiguration: verifyInitializedConfiguration } = _privates;
 const verifyConfiguration = (body: ResolvedActorConfig[]) => {
@@ -57,15 +57,16 @@ const actor = (fields: Record<string, unknown> = {}) => ({
 });
 
 describe('selectStrategy', () => {
-    it('falls back to the legacy strategy when no mode is declared', () => {
-        expect(selectStrategy({})).toBe(LEGACY_PARSER);
+    it('requires a mode', () => {
+        expect(() => selectStrategy({})).toThrow(/mode/);
     });
 
-    it.each([
-        [CONFIG_FILE_STRATEGY.LEGACY, LEGACY_PARSER],
-        [CONFIG_FILE_STRATEGY.GROUPED, GROUPED_PARSER],
-    ])('honours an explicit "%s" mode', (mode, expected) => {
-        expect(selectStrategy({ mode })).toBe(expected);
+    it('honours an explicit mode', () => {
+        expect(selectStrategy({ mode: CONFIG_FILE_STRATEGY.GROUPED })).toBe(GROUPED_PARSER);
+    });
+
+    it('rejects the removed legacy mode', () => {
+        expect(() => selectStrategy({ mode: 'legacy' })).toThrow(/mode/);
     });
 
     it('throws on a mode no strategy is registered for', () => {
@@ -161,7 +162,7 @@ describe('verifyConfiguration', () => {
 
 describe('parseConfigFile', () => {
     it('shares strategy resolution with parsing that does not initialize paths', () => {
-        const body = { actors: [actor({ folder: 'missing-actor-dir', overrideActorContext: ['../outside'] })] };
+        const body = groupedConfig([actor({ folder: 'missing-actor-dir', overrideActorContext: ['../outside'] })]);
         expect(parseResolvedConfigFile(body)).toEqual([
             {
                 actorFullName: 'myteam/shopify',
@@ -174,7 +175,7 @@ describe('parseConfigFile', () => {
     });
 
     it('validates and normalizes paths after resolving the config', () => {
-        const [parsed] = parseConfigFile({ actors: [actor({ folder: './bin/', overrideActorContext: ['test/'] })] });
+        const [parsed] = parseConfigFile(groupedConfig([actor({ folder: './bin/', overrideActorContext: ['test/'] })]));
         expect(parsed.folder).toBeInstanceOf(ExistingDir);
         expect(parsed.folder.path).toBe('bin');
         expect(parsed.overrideActorContext?.[0]).toBeInstanceOf(RelativeDir);
@@ -182,14 +183,14 @@ describe('parseConfigFile', () => {
     });
 
     it('accepts the repo root as an existing directory', () => {
-        expect(parseConfigFile({ actors: [actor({ folder: '' })] })[0].folder.path).toBe('.');
+        expect(parseConfigFile(groupedConfig([actor({ folder: '' })]))[0].folder.path).toBe('.');
     });
 
     it('reports invalid paths at their config fields', () => {
-        expect(() => parseConfigFile({ actors: [actor({ folder: 'missing-actor-dir' })] })).toThrow(/\[0\]\.folder/);
-        expect(() => parseConfigFile({ actors: [actor({ folder: 'package.json' })] })).toThrow(/to be a directory/);
+        expect(() => parseConfigFile(groupedConfig([actor({ folder: 'missing-actor-dir' })]))).toThrow(/\[0\]\.folder/);
+        expect(() => parseConfigFile(groupedConfig([actor({ folder: 'package.json' })]))).toThrow(/to be a directory/);
         expect(() =>
-            parseConfigFile({ actors: [actor({ folder: 'bin', overrideActorContext: ['../outside'] })] }),
+            parseConfigFile(groupedConfig([actor({ folder: 'bin', overrideActorContext: ['../outside'] })])),
         ).toThrow(/\[0\]\.overrideActorContext\[0\]/);
     });
 
@@ -211,39 +212,45 @@ describe('parseConfigFile', () => {
         expect(parsed[0].overrideActorContext).toBeUndefined();
     });
 
+    it('points a config in the removed flat format, a top-level actors array, at the grouped one', () => {
+        expect(() => parseConfigFile({ actors: [actor()] })).toThrow(/"mode": "grouped"/);
+    });
+
     it('surfaces cross-entry violations from verifyConfiguration', () => {
         expect(() =>
-            parseConfigFile({
-                actors: [
+            parseConfigFile(
+                groupedConfig([
                     actor({ actorFullName: 'myteam/actor-a', folder: 'collide/collide' }),
                     actor({ actorFullName: 'myteam/actor-b', folder: 'collide/collide' }),
-                ],
-            }),
+                ]),
+            ),
         ).toThrow(/Duplicate folder/);
     });
 
     it('rejects folders that collide after resolving dot segments', () => {
         expect(() =>
-            parseConfigFile({
-                actors: [
+            parseConfigFile(
+                groupedConfig([
                     actor({ actorFullName: 'myteam/actor-a', folder: 'bin/../test' }),
                     actor({ actorFullName: 'myteam/actor-b', folder: 'test' }),
-                ],
-            }),
+                ]),
+            ),
         ).toThrow('Duplicate folder "test"');
     });
 });
 
 describe('parseRepoSettings', () => {
     it('defaults platformTestsGlob to test/platform/**', () => {
-        expect(parseRepoSettings({ actors: [actor()] })).toStrictEqual({ platformTestsGlob: 'test/platform/**' });
+        expect(parseRepoSettings(groupedConfig([actor()]))).toStrictEqual({ platformTestsGlob: 'test/platform/**' });
     });
 
     it('reads platformTestsGlob next to the Actor entries, in any mode', () => {
-        expect(parseRepoSettings({ platformTestsGlob: 'e2e/**', actors: [actor()] })).toStrictEqual({
+        expect(parseRepoSettings(groupedConfig([actor()], { platformTestsGlob: 'e2e/**' }))).toStrictEqual({
             platformTestsGlob: 'e2e/**',
         });
-        expect(parseConfigFile({ platformTestsGlob: 'e2e/**', actors: [actor({ folder: 'bin' })] })).toHaveLength(1);
+        expect(
+            parseConfigFile(groupedConfig([actor({ folder: 'bin' })], { platformTestsGlob: 'e2e/**' })),
+        ).toHaveLength(1);
     });
 
     it('rejects an empty or non-string platformTestsGlob', () => {

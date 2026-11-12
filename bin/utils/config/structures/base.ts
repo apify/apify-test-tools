@@ -29,7 +29,6 @@ export interface ValidatedActorConfig extends Omit<ResolvedActorConfig, 'folder'
 }
 
 export enum CONFIG_FILE_STRATEGY {
-    LEGACY = 'legacy',
     GROUPED = 'grouped',
 }
 
@@ -53,7 +52,7 @@ export function defineStrategy<T extends Record<string, unknown>, Mode extends C
          * @throws Error if the config file is invalid.
          * @example
          * ```ts
-         * const strategy = defineStrategy(CONFIG_FILE_STRATEGY.LEGACY, schema, resolve);
+         * const strategy = defineStrategy(CONFIG_FILE_STRATEGY.GROUPED, schema, resolve);
          * const resolvedActors = strategy.parse(configFileContents);
          * ```
          *

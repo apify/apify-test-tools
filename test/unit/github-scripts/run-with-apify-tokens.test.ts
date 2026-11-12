@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { groupedConfig } from '../../grouped-config.js';
+
 const SCRIPT = fileURLToPath(new URL('../../../.github/scripts/run-with-apify-tokens.mjs', import.meta.url));
 
 // Three Actors, each with its own token, so a test can leave any of them out.
@@ -42,7 +44,7 @@ const run = (workflowSecrets: Record<string, string>) => {
 describe('run-with-apify-tokens.mjs', () => {
     beforeAll(async () => {
         cwd = await mkdtemp(path.join(os.tmpdir(), 'run-with-apify-tokens-'));
-        await writeFile(path.join(cwd, 'apify-test-tools.config.json'), JSON.stringify(CONFIG));
+        await writeFile(path.join(cwd, 'apify-test-tools.config.json'), JSON.stringify(groupedConfig(CONFIG.actors)));
     });
 
     afterAll(async () => {

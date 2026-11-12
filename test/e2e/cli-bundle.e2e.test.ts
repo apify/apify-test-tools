@@ -7,6 +7,7 @@ import process from 'node:process';
 import { ApifyClient } from 'apify-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { groupedConfig } from '../grouped-config.js';
 import type { ActorBuild } from './helpers.js';
 import {
     bundlePath,
@@ -71,7 +72,7 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
             await writeRepoFile(`${folder}/main.js`, `console.log('dummy ${i + 1}');\n`);
             actors.push({ folder, actorFullName, tokenEnvVar: TOKEN_ENV_VAR });
         }
-        await writeRepoFile('apify-test-tools.config.json', JSON.stringify({ actors }));
+        await writeRepoFile('apify-test-tools.config.json', JSON.stringify(groupedConfig(actors)));
         git('add', '-A');
         git('commit', '-q', '-m', 'chore: init');
         baseSha = git('rev-parse', 'HEAD');

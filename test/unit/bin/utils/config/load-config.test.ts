@@ -12,6 +12,7 @@ import {
 } from '../../../../../bin/utils/config/load-config.js';
 import type { ResolvedActorConfig } from '../../../../../bin/utils/config/structures/base.js';
 import { ExistingDir, ExistingFile, RelativeDir, RelativeFile } from '../../../../../bin/utils/path/repo-relative.js';
+import { groupedConfig } from '../../../../grouped-config.js';
 
 let repoDir: string;
 let originalCwd: string;
@@ -31,7 +32,7 @@ afterEach(async () => {
 
 const emptyActorSelection = { actors: [], ignore: [] };
 
-const validConfig = (actors: object[]) => JSON.stringify({ actors });
+const validConfig = (actors: Record<string, unknown>[]) => JSON.stringify(groupedConfig(actors));
 const actorJson = (fields: Record<string, unknown> = {}) => JSON.stringify(fields);
 
 const writeFiles = async (files: Record<string, string>) =>
@@ -260,14 +261,14 @@ describe('readConfigFile', () => {
 
     it('throws when the config file is not a JSON object', async () => {
         await writeFiles({ [CONFIG_FILE_NAME]: JSON.stringify([{ folder: 'actors/shopify' }]) });
-        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('"actors" array');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('must be a JSON object with a "mode"');
     });
 
     // The wording of a schema failure belongs to the strategy; this only checks that the failure
     // reaches the caller rather than being swallowed on the way out of readConfigFile.
     it('surfaces a schema failure from the parser', async () => {
-        await writeFiles({ [CONFIG_FILE_NAME]: JSON.stringify({ notActors: [] }) });
-        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/at actors/);
+        await writeFiles({ [CONFIG_FILE_NAME]: JSON.stringify({ mode: 'grouped', notGroups: {} }) });
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/at groups/);
     });
 });
 

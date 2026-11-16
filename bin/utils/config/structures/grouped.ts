@@ -14,11 +14,13 @@ const schema = z.object({
                             actorFullName: z.string().regex(ACTOR_FULL_NAME_REGEX),
                             // these allow overrides from stuff set at the group level
                             tokenEnvVar: z.string().min(1).optional(),
+                            testTokenEnvVar: z.string().min(1).optional(),
                             overrideActorContext: z.array(z.string()).optional(),
                         }),
                     )
                     .min(1),
                 tokenEnvVar: z.string().min(1),
+                testTokenEnvVar: z.string().min(1).optional(),
                 overrideActorContext: z.array(z.string()).optional(),
             }),
         )
@@ -32,6 +34,7 @@ export const GROUPED_PARSER = defineStrategy(CONFIG_FILE_STRATEGY.GROUPED, schem
     return entries.flatMap(([_folder, entry]) =>
         entry.actors.map((actor) => ({
             tokenEnvVar: entry.tokenEnvVar,
+            testTokenEnvVar: entry.testTokenEnvVar,
             overrideActorContext: entry.overrideActorContext,
             // last so actor can override stuff from the group
             ...actor,

@@ -1,13 +1,14 @@
 import { logger } from './logger.js';
 import type { Commit } from './types.js';
 import { GitCommandError, runGitCommand } from './utils.js';
+import type { RelativeFile } from './utils/path/repo-relative.js';
 
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
 
 // Lists the changed paths. With rename detection (on by default) a moved file is listed only under its new path,
 // so the Actor whose context it left wouldn't count as changed. --no-renames lists it as deleted and added instead.
-const LIST_CHANGED_PATHS = ['--name-only', '--no-renames'];
+const LIST_CHANGED_PATHS = ['--name-only', '--no-renames', '-z'];
 
 /**
  * Files that differ between two commits, i.e. changed by the commits in the range (fromRef, toRef]. fromRef's own
@@ -20,7 +21,7 @@ export const getChangedFilesBetween = async (fromRef: string, toRef: string) => 
         operation: 'get the list of changed files between commits',
     });
 
-    const changedFiles = changedFilesString.split('\n').filter(Boolean);
+    const changedFiles = changedFilesString.split('\0').filter(Boolean);
     logger.info(`Changed files (up to 50): ${changedFiles.slice(0, 50).join(', ')}`);
     return changedFiles;
 };
@@ -191,36 +192,28 @@ export const resolveReleaseBaseCommit = async (baseCommit: string, head = 'HEAD'
     return sha;
 };
 
-const CHANGELOG_PATH = 'CHANGELOG.md';
-
-/** Returns the lines added to the root CHANGELOG.md between fromRef and toRef, or null if it didn't change. */
+/** Returns additions to the selected Actors' resolved changelogs, or null if none changed. Shared paths count once. */
 export const getChangelogAdditions = async (
     fromRef: string,
     toRef: string,
     changedFiles: string[],
+    changelogFiles: RelativeFile[],
 ): Promise<string | null> => {
-    if (!changedFiles.includes(CHANGELOG_PATH)) {
+    const paths = [...new Set(changelogFiles.map((file) => file.path))].filter((file) => changedFiles.includes(file));
+    if (!paths.length) {
         return null;
     }
-    const diff = await runGitCommand(['diff', fromRef, toRef, '--', CHANGELOG_PATH], {
+    const diff = await runGitCommand(['--literal-pathspecs', 'diff', '--no-renames', fromRef, toRef, '--', ...paths], {
         operation: 'read changelog changes since the last release',
     });
 
     const added: string[] = [];
-    let startedChangelog = false;
+    let inHunk = false;
     for (const line of diff.split('\n')) {
-        // The diff is already limited to the changelog but better to double check
-        if (line.startsWith('+++') && line.toLowerCase().includes(CHANGELOG_PATH.toLowerCase())) {
-            startedChangelog = true;
-            continue;
-        }
-        if (startedChangelog) {
-            if (line.startsWith('diff')) {
-                break;
-            }
-            if (line.startsWith('+')) {
-                added.push(line.slice(1).trim());
-            }
+        if (line.startsWith('diff --git ')) inHunk = false;
+        if (line.startsWith('@@ ')) inHunk = true;
+        if (inHunk && line.startsWith('+')) {
+            added.push(line.slice(1).trim());
         }
     }
     return added.join('\n').trim();

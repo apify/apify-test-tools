@@ -193,6 +193,7 @@ describe('build-from-local helpers', () => {
                     actorFullName: 'owner/actor',
                     folder: new ExistingDir('actors/owner_actor'),
                     tokenEnvVar: 'APIFY_TOKEN',
+                    testTokenEnvVar: 'APIFY_TOKEN',
                     actorJson: {
                         file: new ExistingFile('actors/owner_actor/.actor/actor.json'),
                         dockerContextDir: RelativeDir.ROOT,
@@ -266,6 +267,7 @@ describe('build-from-local helpers', () => {
                             actorFullName: 'owner/actor',
                             folder: new ExistingDir('actors/owner_actor'),
                             tokenEnvVar: 'APIFY_TOKEN_OWNER',
+                            testTokenEnvVar: 'APIFY_TOKEN_OWNER',
                             actorJson: {
                                 file: new ExistingFile('actors/owner_actor/.actor/actor.json'),
                                 dockerContextDir: new RelativeDir('actors/owner_actor'),

@@ -25,8 +25,9 @@ name: 'Platform tests: Claude failure investigation and fix'
 #             test-files-glob: 'test/platform/hourly/**'
 #             report-slack-channel: '#notif-my-repo'
 #         secrets:
-#             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
 #             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+#             CONFIG_SECRETS: |
+#                 { "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}" }
 #
 #     handle-failure:
 #         needs: platformTestsCore
@@ -34,7 +35,8 @@ name: 'Platform tests: Claude failure investigation and fix'
 #         uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v0
 #         secrets:
 #             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-#             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+#             # The token the tests ran the Actors with, so Claude can read the failing run
+#             TESTER_APIFY_TOKEN: ${{ secrets.APIFY_TOKEN_MYTEAM }}
 
 on:
     workflow_call:
@@ -103,7 +105,11 @@ on:
                 description: Claude API key
             TESTER_APIFY_TOKEN:
                 required: true
-                description: Apify token for investigating the failing run — reading it, its log and its storages — and re-running it to measure how often the failure happens.
+                description: >-
+                    Apify token for investigating the failing run — reading it, its log and its storages — and
+                    re-running it to measure how often the failure happens. Runs are private to the account that
+                    started them, so pass the token the tests ran the Actor with: its `testTokenEnvVar` from
+                    apify-test-tools.config.json, which is its `tokenEnvVar` unless the config names another.
             NPM_TOKEN:
                 required: false
                 description: Read-only token for installing private npm packages before Claude runs.

@@ -101,12 +101,12 @@ describe('CLI bundle', () => {
         }
     });
 
-    it('get-actor-configs reads both Actors from the config file', () => {
+    it('get-actor-configs reads both Actors from the config file, each tested with its own token', () => {
         const { status, stdout, stderr } = runCli('get-actor-configs');
         expect(status, stderr).toBe(0);
-        expect(JSON.parse(stdout).map((actor: { actorFullName: string }) => actor.actorFullName)).toEqual([
-            'tester/foo',
-            'tester/bar',
+        expect(JSON.parse(stdout)).toMatchObject([
+            { actorFullName: 'tester/foo', tokenEnvVar: 'FOO_TOKEN', testTokenEnvVar: 'FOO_TOKEN' },
+            { actorFullName: 'tester/bar', tokenEnvVar: 'BAR_TOKEN', testTokenEnvVar: 'BAR_TOKEN' },
         ]);
     });
 
@@ -185,11 +185,11 @@ describe('CLI bundle', () => {
         expect(stderr).toContain('Skipping notification, no --slack-channel passed');
     });
 
-    it('test fails without TESTER_APIFY_TOKEN instead of passing with every test skipped', () => {
+    it('test fails cleanly where the repository has no vitest installed', () => {
         // Every Actor in the config, on its default build, as the scheduled tests pipe them in
         const { status, stdout, stderr } = runCliWithInput(runCli('get-actor-configs').stdout, 'test');
         expect(status).toBe(1);
-        expect(stderr).toContain('TESTER_APIFY_TOKEN is not set');
+        expect(stderr).toContain('vitest is not installed');
         expect(stdout).toBe('');
     });
 

@@ -1,33 +1,70 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
 
-import { withActorIds } from './actor-ids.js';
+import { FALLBACK_TOKEN_ENV_VAR, withTestTokens } from './actor-ids.js';
+import {
+    findInstalledLibVersion,
+    findPackageDir,
+    isOlderVersion,
+    OLDEST_SUPPORTED_LIB_VERSION,
+    readPackageJson,
+} from './lib-compat.js';
 import { logger } from './logger.js';
 import type { TestTarget } from './stdin-input.js';
 import { resolveTestFilesGlob } from './test-files-glob.js';
-import { failedRunReport, logTestReport, type TestReport, toTestReport, type VitestJsonReport } from './test-report.js';
+import {
+    failedRunReport,
+    logTestReport,
+    requireTestsToRun,
+    type TestReport,
+    toTestReport,
+    type VitestJsonReport,
+} from './test-report.js';
+import { CONFIG_FILE_NAME, readTestTokenEnvVars } from './utils/config/load-config.js';
 
 /**
- * Finds the vitest the repository installed, the way Node would resolve it from `cwd`. The CLI ships as a bundle
- * that runs outside the repository's `node_modules`, so the tests keep the vitest (and the lib) version the
- * repository locked. Read from `package.json` because vitest's exports don't expose its bin.
+ * Finds the vitest the repository installed. The CLI ships as a bundle that runs outside the repository's
+ * `node_modules`, so the tests keep the vitest (and the lib) version the repository locked. Read from `package.json`
+ * because vitest's exports don't expose its bin.
  */
 const resolveVitestBin = async (cwd: string): Promise<string> => {
-    for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
-        const packageDir = path.join(dir, 'node_modules', 'vitest');
-        if (existsSync(path.join(packageDir, 'package.json'))) {
-            const { bin } = JSON.parse(await fs.readFile(path.join(packageDir, 'package.json'), 'utf8'));
-            return path.join(packageDir, typeof bin === 'string' ? bin : bin.vitest);
-        }
-        if (path.dirname(dir) === dir) {
-            throw new Error(`vitest is not installed in ${cwd}, install the repository's dependencies first`);
-        }
+    const packageDir = findPackageDir(cwd, 'vitest');
+    if (!packageDir) throw new Error(`vitest is not installed in ${cwd}, install the repository's dependencies first`);
+    const { bin } = await readPackageJson(packageDir);
+    return path.join(packageDir, typeof bin === 'string' ? bin : bin.vitest);
+};
+
+/**
+ * The version of the `ACTOR_BUILDS` format this CLI writes, which the lib declares it reads in its `package.json`.
+ * Version 2 names each Actor's test token instead of one `TESTER_APIFY_TOKEN` for all.
+ */
+const ACTOR_BUILDS_VERSION = 2;
+
+/**
+ * Checks the lib reads the `ACTOR_BUILDS` this CLI writes. An older lib runs every test with `TESTER_APIFY_TOKEN` and
+ * ignores the Actors' own tokens, which is fine while that token is set: a warning says so. Without it, such a lib
+ * skips every test and the run would pass having tested nothing, so that is an error. A repository that doesn't
+ * install the lib where vitest can find it is left alone: its tests can't import it either.
+ */
+const checkLibReadsActorBuilds = async (cwd: string) => {
+    const packageDir = findPackageDir(cwd, 'apify-test-tools');
+    if (!packageDir) return;
+    const { version, apifyTestTools } = await readPackageJson(packageDir);
+    if ((apifyTestTools?.actorBuildsVersion ?? 1) >= ACTOR_BUILDS_VERSION) return;
+    const outdated =
+        `apify-test-tools ${version} installed in this repository runs every test with ${FALLBACK_TOKEN_ENV_VAR}, ` +
+        `not with each Actor's token from ${CONFIG_FILE_NAME}.`;
+    if (!process.env[FALLBACK_TOKEN_ENV_VAR]) {
+        throw new Error(
+            `${outdated} ${FALLBACK_TOKEN_ENV_VAR} is not set, so it would skip every test. Update apify-test-tools ` +
+                `in the repository, or set ${FALLBACK_TOKEN_ENV_VAR}.`,
+        );
     }
+    logger.warn(`${outdated} Update it to test each Actor with its own token.`);
 };
 
 /**
@@ -77,14 +114,19 @@ export const runTests = async ({
     reporters = [],
     cwd = process.cwd(),
 }: RunTestsOptions): Promise<TestReport> => {
-    // Without it the lib skips every platform test, and a run that tested nothing would pass
-    if (!process.env.TESTER_APIFY_TOKEN) {
-        throw new Error('TESTER_APIFY_TOKEN is not set. The platform tests need it to run the Actors.');
-    }
     const vitestBin = await resolveVitestBin(cwd);
+    const libVersion = await findInstalledLibVersion(cwd);
+    if (libVersion && isOlderVersion(libVersion, OLDEST_SUPPORTED_LIB_VERSION)) {
+        logger.warn(
+            `The repository uses apify-test-tools ${libVersion}, older than ${OLDEST_SUPPORTED_LIB_VERSION}, the oldest ` +
+                'version this CLI supports. Its tests may be skipped. Update apify-test-tools in package.json.',
+        );
+    }
     const vitestFilters = await resolveVitestFilters(testFilesGlob, cwd);
-    // A test only runs when the ID it names its Actor by is listed, so each Actor gets both its full name and raw ID
-    const actorBuilds = await withActorIds(targets);
+    await checkLibReadsActorBuilds(cwd);
+    // Each Actor's tests run with the token the config names for it. A test only runs when the ID it names its Actor
+    // by is listed, so each Actor gets both its full name and raw ID.
+    const actorBuilds = await withTestTokens(targets, { testTokenEnvVars: await readTestTokenEnvVars() });
 
     const tempDir = vitestOutputFile ? null : await fs.mkdtemp(path.join(os.tmpdir(), 'apify-test-tools-'));
     const outputFile = path.resolve(cwd, vitestOutputFile ?? path.join(tempDir!, 'vitest-report.json'));
@@ -95,19 +137,20 @@ export const runTests = async ({
     const env = { ...process.env };
     // Vitest writes to a pipe, so it would drop colors that the terminal it ends up in shows
     if (process.stderr.isTTY && env.FORCE_COLOR === undefined && env.NO_COLOR === undefined) env.FORCE_COLOR = '1';
-    // The lib runs the tests of the Actors listed here, each on the build given, or on its default build without one
+    // The lib runs the tests of the Actors listed here, each on the build given, or on its default build without one,
+    // with the token in the env var named with it.
     // Lib versions before 0.9.0 read the IDs as actorName and actorId, so they are given under both names
     env.ACTOR_BUILDS = JSON.stringify(
         actorBuilds.map((build) => ({ ...build, actorName: build.actorFullName, actorId: build.actorRawId })),
     );
     // Lib versions before 0.10.0 skip every test in their `describe` unless this is set. Newer versions read
-    // TESTER_APIFY_TOKEN instead and ignore it. It only unlocks `describe`: which tests run still follows ACTOR_BUILDS.
+    // ACTOR_BUILDS instead and ignore it. It only unlocks `describe`: which tests run still follows ACTOR_BUILDS.
     env.RUN_PLATFORM_TESTS = '1';
     // In those versions this runs the tests of every Actor, whatever ACTOR_BUILDS lists
     delete env.RUN_ALL_PLATFORM_TESTS;
     const described = actorBuilds.map(
-        ({ actorFullName, actorRawId, buildNumber }) =>
-            `${actorFullName ?? actorRawId} (${buildNumber ?? 'default build'})`,
+        ({ actorFullName, buildNumber, testTokenEnvVar }) =>
+            `${actorFullName} (${buildNumber ?? 'default build'}, ${testTokenEnvVar ?? 'no own token'})`,
     );
     logger.info(`Testing ${targets.length} Actor(s): ${described.join(', ') || 'none'}`);
 
@@ -139,15 +182,8 @@ export const runTests = async ({
             logTestReport(report);
             return report;
         }
-        const report = toTestReport(vitestReport, { cwd, exitCode });
+        const report = requireTestsToRun(toTestReport(vitestReport, { cwd, exitCode }), actorBuilds);
         logTestReport(report);
-        const { total, skipped } = report.summary;
-        if (targets.length !== 0 && total !== 0 && skipped === total) {
-            logger.warn(
-                `Every test was skipped, although ${targets.length} Actor(s) were given. Check that the tests name ` +
-                    'these Actors by their full name or raw ID.',
-            );
-        }
         return report;
     } finally {
         if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });

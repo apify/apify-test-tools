@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+<!-- git-cliff-unreleased-start -->
+## 0.11.1 - **not yet released**
+
+### 🚀 Features
+
+- **cli-test:** Fail when no test ran although Actors were given ([#248](https://github.com/apify/apify-test-tools/pull/248)) ([7f5ac67](https://github.com/apify/apify-test-tools/commit/7f5ac67fe7dab6e12fdbd1d21542c78d26d9cd2a)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- Add per-Actor test tokens support - enables server mode testing ([#240](https://github.com/apify/apify-test-tools/pull/240)) ([1081f01](https://github.com/apify/apify-test-tools/commit/1081f01aa471d716e647f1955b3755909d4ee13d)) by [@metalwarrior665](https://github.com/metalwarrior665)
+
+### 🐛 Bug Fixes
+
+- **test/cli-compile:** Handle SIGTERM SIGINT etc without leaving trash behind ([#250](https://github.com/apify/apify-test-tools/pull/250)) ([41d9237](https://github.com/apify/apify-test-tools/commit/41d923769a1747979b6ad3df7765361b69ee9fbc)) by [@JuanGalilea](https://github.com/JuanGalilea)
+- Use actor.json links for change detection and changelogs ([#232](https://github.com/apify/apify-test-tools/pull/232)) ([4498c94](https://github.com/apify/apify-test-tools/commit/4498c9440ce6ab8d80c53b1450f2afb1b746462e)) by [@JuanGalilea](https://github.com/JuanGalilea), closes [#229](https://github.com/apify/apify-test-tools/issues/229)
+
+
+<!-- git-cliff-unreleased-end -->
 ## [0.11.0](https://github.com/apify/apify-test-tools/releases/tag/v0.11.0) (2026-11-10)
 
 ### 🚀 Features

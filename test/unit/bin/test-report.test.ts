@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { toTestReport, type VitestJsonReport } from '../../../bin/test-report.js';
+import { requireTestsToRun, toTestReport, type VitestJsonReport } from '../../../bin/test-report.js';
 
 const cwd = '/repo';
 const run = { actorId: 'owner/a', runId: 'run1', runLink: 'https://console.apify.com/view/runs/run1' };
@@ -75,6 +75,39 @@ describe('toTestReport', () => {
         });
     });
 
+    it('reads the Actor of a run from older lib versions, which record it as actorName or not at all', () => {
+        const { runId, runLink } = run;
+        const report = toTestReport(
+            vitestReport([
+                {
+                    name: '/repo/test/platform/a.test.ts',
+                    status: 'passed',
+                    message: '',
+                    assertionResults: [
+                        // 0.5 to 0.8
+                        {
+                            fullName: 'suite: owner/a: works',
+                            title: 'owner/a: works',
+                            status: 'passed',
+                            failureMessages: [],
+                            meta: { runId, runLink, actorName: 'owner/a' },
+                        },
+                        // 0.2, where only the test's title names the Actor, not its describe
+                        {
+                            fullName: 'suite: owner/a: also works',
+                            title: 'owner/a: also works',
+                            status: 'passed',
+                            failureMessages: [],
+                            meta: { runId, runLink },
+                        },
+                    ],
+                },
+            ]),
+            { cwd, exitCode: 0 },
+        );
+        expect(report.tests.map((test) => test.run)).toStrictEqual([run, run]);
+    });
+
     it('reports a test file that failed to load, which has no test to blame', () => {
         const report = toTestReport(
             vitestReport([
@@ -114,5 +147,42 @@ describe('toTestReport', () => {
         );
         expect(report.success).toBe(true);
         expect(report.summary).toStrictEqual({ total: 1, passed: 0, failed: 0, skipped: 1 });
+    });
+});
+
+describe('requireTestsToRun', () => {
+    const report = (statuses: ('passed' | 'failed' | 'skipped')[]) =>
+        toTestReport(
+            vitestReport([
+                {
+                    name: '/repo/test/platform/a.test.ts',
+                    status: 'passed',
+                    message: '',
+                    assertionResults: statuses.map((status, i) => ({
+                        fullName: `suite owner/a: test ${i}`,
+                        status,
+                        failureMessages: [],
+                    })),
+                },
+            ]),
+            { cwd, exitCode: 0 },
+        );
+    const actorA = { actorFullName: 'owner/a', actorRawId: 'rawA' };
+
+    it('fails a report in which no test ran although Actors were given', () => {
+        for (const statuses of [[], ['skipped', 'skipped']] as const) {
+            const result = requireTestsToRun(report([...statuses]), [actorA]);
+            expect(result.success).toBe(false);
+            expect(result.errors).toStrictEqual([
+                expect.stringContaining('No test ran, although 1 Actor(s) were given'),
+            ]);
+        }
+    });
+
+    it('keeps a report in which a test ran, or that was given no Actors', () => {
+        const ran = report(['passed', 'skipped']);
+        expect(requireTestsToRun(ran, [actorA])).toBe(ran);
+        const skipped = report(['skipped']);
+        expect(requireTestsToRun(skipped, [])).toBe(skipped);
     });
 });

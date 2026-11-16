@@ -584,6 +584,7 @@ describe('getChangedActors', () => {
         expect(await getChangedActors({ filepathsChanged: [linkedFile.path], actorConfigs: [actor], range })).toEqual({
             functional: [],
             cosmetic: [actor],
+            test: [],
         });
     });
 
@@ -597,10 +598,10 @@ describe('getChangedActors', () => {
             };
             const options = { filepathsChanged: [linkedFile.path], actorConfigs: [actor], range };
             vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(true);
-            expect(await getChangedActors(options)).toEqual({ functional: [], cosmetic: [actor] });
+            expect(await getChangedActors(options)).toEqual({ functional: [], cosmetic: [actor], test: [] });
             expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).toHaveBeenCalledWith(range, linkedFile.path);
             vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(false);
-            expect(await getChangedActors(options)).toEqual({ functional: [actor], cosmetic: [] });
+            expect(await getChangedActors(options)).toEqual({ functional: [actor], cosmetic: [], test: [] });
         },
     );
 
@@ -632,7 +633,9 @@ describe('getChangedActors', () => {
                     range,
                 }),
             ).toEqual(
-                field === 'dockerfile' ? { functional: [actor], cosmetic: [] } : { functional: [], cosmetic: [actor] },
+                field === 'dockerfile'
+                    ? { functional: [actor], cosmetic: [], test: [] }
+                    : { functional: [], cosmetic: [actor], test: [] },
             );
         }
     });
@@ -652,10 +655,10 @@ describe('getChangedActors', () => {
         for (const schema of datasetSchemas) {
             const options = { filepathsChanged: [schema.path], actorConfigs: [actor, standaloneActor], range };
             vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(true);
-            expect(await getChangedActors(options)).toEqual({ functional: [], cosmetic: [actor] });
+            expect(await getChangedActors(options)).toEqual({ functional: [], cosmetic: [actor], test: [] });
             expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).toHaveBeenCalledWith(range, schema.path);
             vi.mocked(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).mockResolvedValue(false);
-            expect(await getChangedActors(options)).toEqual({ functional: [actor], cosmetic: [] });
+            expect(await getChangedActors(options)).toEqual({ functional: [actor], cosmetic: [], test: [] });
         }
     });
 
@@ -667,7 +670,7 @@ describe('getChangedActors', () => {
                 actorConfigs: [miniActor],
                 range,
             }),
-        ).toEqual({ functional: [miniActor], cosmetic: [] });
+        ).toEqual({ functional: [miniActor], cosmetic: [], test: [] });
         expect(DiffJsonSchema.isCosmeticOnlyJsonSchemaChange).not.toHaveBeenCalled();
     });
 
@@ -678,7 +681,7 @@ describe('getChangedActors', () => {
                 actorConfigs: [standaloneActor],
                 range,
             }),
-        ).toEqual({ functional: [], cosmetic: [] });
+        ).toEqual({ functional: [], cosmetic: [], test: [] });
     });
 });
 

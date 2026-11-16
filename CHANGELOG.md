@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 ### 🚀 Features
 
 - **cli-test:** Fail when no test ran although Actors were given ([#248](https://github.com/apify/apify-test-tools/pull/248)) ([7f5ac67](https://github.com/apify/apify-test-tools/commit/7f5ac67fe7dab6e12fdbd1d21542c78d26d9cd2a)) by [@metalwarrior665](https://github.com/metalwarrior665)
+- Add per-Actor test tokens support - enables server mode testing ([#240](https://github.com/apify/apify-test-tools/pull/240)) ([1081f01](https://github.com/apify/apify-test-tools/commit/1081f01aa471d716e647f1955b3755909d4ee13d)) by [@metalwarrior665](https://github.com/metalwarrior665)
 
 ### 🐛 Bug Fixes
 

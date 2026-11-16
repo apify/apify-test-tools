@@ -14,6 +14,12 @@ export type Commit = {
     message: string;
 };
 
+/**
+ * A build that already exists and can run an Actor's tests instead of a new one: `default` for the Actor's default
+ * build, or a build of the branch that an earlier PR run made.
+ */
+export type ExistingBuild = 'default' | Omit<BuildData, 'actorFullName'>;
+
 export interface BuildData {
     buildId: string;
     actorRawId: string;

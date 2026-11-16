@@ -3,7 +3,8 @@ import { ActorSourceType, ApifyClient } from 'apify-client';
 
 import { getCurrentBranch, normalizeRepoUrl, resolveRepoUrl } from './git.js';
 import { logger } from './logger.js';
-import type { ActorConfig, BuildData, DryRunPlan } from './types.js';
+import type { BuildTarget } from './stdin-input.js';
+import type { ActorConfig, BuildData, DryRunPlan, ExistingBuild } from './types.js';
 
 type BuildPrActorOptions = {
     versionNumber: string;
@@ -179,6 +180,18 @@ export class ApifyBuilder {
 
         logger.info(`[${this.actorFullName}]: ${id} (${buildNumber})`);
         return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
+    };
+
+    /**
+     * Why an existing build can't run the tests, or undefined when it can: it must still exist (`delete-old-builds`
+     * deletes old ones), have succeeded, and belong to this Actor. Which build to pass is the caller's choice.
+     */
+    whyBuildIsUnusable = async (build: Exclude<ExistingBuild, 'default'>): Promise<string | undefined> => {
+        const found = await this.apifyClient.build(build.buildId).get();
+        if (!found) return `build ${build.buildNumber} (${build.buildId}) no longer exists`;
+        if (found.status !== 'SUCCEEDED') return `build ${build.buildNumber} has status ${found.status}`;
+        if (found.actId !== build.actorRawId) return `build ${build.buildId} belongs to another Actor`;
+        return undefined;
     };
 
     waitForBuildToFinish = async (buildId: string): Promise<ApifyClientTypes.Build> => {
@@ -478,6 +491,74 @@ export const buildActors = async ({ actorConfigs, repoUrl, ...options }: BuildAc
         actorConfigs,
         branch: await getCurrentBranch(),
     });
+};
+
+/** A build that `build` prints: a new or reused one, or `{ actorFullName }` alone for the Actor's default build. */
+type BuildResult = BuildData | { actorFullName: string };
+
+/**
+ * The existing build of each Actor that has one. An Actor listed several times keeps it only when every entry names
+ * the same build: entries that differ, e.g. one without a build, are a conflict, and the Actor is built from scratch.
+ * get-affected-actors never lists an Actor in both functionallyChangedActors and testChangedActors, so a conflict
+ * guards against a bug there (or a hand-made input) that resolves the same Actor differently in the two lists. A new
+ * build is always correct, while reusing the wrong build would test old code.
+ */
+const resolveExistingBuilds = (targets: BuildTarget[]): Map<string, ExistingBuild> => {
+    const entriesByActor = new Map<string, BuildTarget[]>();
+    for (const target of targets) {
+        entriesByActor.set(target.actorFullName, [...(entriesByActor.get(target.actorFullName) ?? []), target]);
+    }
+    const existingBuilds = new Map<string, ExistingBuild>();
+    for (const [actorFullName, entries] of entriesByActor) {
+        const builds = new Set(entries.map(({ build }) => JSON.stringify(build ?? null)));
+        if (builds.size > 1) {
+            logger.info(`[${actorFullName}]: Building, since it is listed with different builds`);
+            continue;
+        }
+        if (entries[0].build) existingBuilds.set(actorFullName, entries[0].build);
+    }
+    return existingBuilds;
+};
+
+/**
+ * Builds the given Actors like `buildActors`, except those listed with an existing `build` (see testChangedActors of
+ * get-affected-actors). Those reuse it: `default` passes through as `{ actorFullName }`, which `test` runs on the
+ * default build, and a stored build passes through while it still exists and succeeded. A stored build that can't be
+ * used any more is replaced by a new build. An Actor listed with different builds, e.g. once without one, is built.
+ */
+export const buildOrReuseActors = async ({
+    targets,
+    actorConfigs,
+    ...options
+}: BuildActorsOptions & { targets: BuildTarget[] }): Promise<BuildResult[] | DryRunPlan<GitBuildPlan>> => {
+    const existingBuilds = resolveExistingBuilds(targets);
+
+    const reused: BuildResult[] = [];
+    const toBuild: ActorConfig[] = [];
+    for (const actorConfig of actorConfigs) {
+        const { actorFullName } = actorConfig;
+        const existing = existingBuilds.get(actorFullName);
+        if (existing === undefined) {
+            toBuild.push(actorConfig);
+        } else if (existing === 'default') {
+            logger.info(`[${actorFullName}]: Not building, the tests run on the default build`);
+            reused.push({ actorFullName });
+        } else {
+            const reason = await ApifyBuilder.fromActorConfig(actorConfig).whyBuildIsUnusable(existing);
+            if (reason) {
+                logger.info(`[${actorFullName}]: Building again, since ${reason}`);
+                toBuild.push(actorConfig);
+            } else {
+                logger.info(`[${actorFullName}]: Not building, reusing build ${existing.buildNumber}`);
+                reused.push({ actorFullName, ...existing });
+            }
+        }
+    }
+
+    const built = await buildActors({ ...options, actorConfigs: toBuild });
+    // A dry run plans only the builds; it logged the reused ones above
+    if (!Array.isArray(built)) return built;
+    return [...reused, ...built];
 };
 
 export const deleteOldBuilds = async (actorConfigs: ActorConfig[], { dryRun }: { dryRun: boolean }) => {

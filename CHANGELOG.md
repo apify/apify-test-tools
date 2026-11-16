@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+<!-- git-cliff-unreleased-start -->
+## 0.11.1 - **not yet released**
+
+### 🚀 Features
+
+- **cli-test:** Fail when no test ran although Actors were given ([#248](https://github.com/apify/apify-test-tools/pull/248)) ([7f5ac67](https://github.com/apify/apify-test-tools/commit/7f5ac67fe7dab6e12fdbd1d21542c78d26d9cd2a)) by [@metalwarrior665](https://github.com/metalwarrior665)
+
+### 🐛 Bug Fixes
+
+- **test/cli-compile:** Handle SIGTERM SIGINT etc without leaving trash behind ([#250](https://github.com/apify/apify-test-tools/pull/250)) ([41d9237](https://github.com/apify/apify-test-tools/commit/41d923769a1747979b6ad3df7765361b69ee9fbc)) by [@JuanGalilea](https://github.com/JuanGalilea)
+
+
+<!-- git-cliff-unreleased-end -->
 ## [0.11.0](https://github.com/apify/apify-test-tools/releases/tag/v0.11.0) (2026-11-10)
 
 ### 🚀 Features

@@ -10,16 +10,19 @@ export const ACTOR_FULL_NAME_REGEX = new RegExp(
     USERNAME.REGEX.flags + ACTOR_NAME.REGEX.flags,
 );
 
+/** Where a Crawlee crawler persists its statistics, unless it was given another id */
+export const DEFAULT_STATISTICS_KEY = 'SDK_CRAWLER_STATISTICS_0';
+
 export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
     status: 'SUCCEEDED',
-    duration: {
-        min: 600, // 0.6 sec
-        max: 600_000, // 10 min
-    },
+    duration: null,
     failedRequests: 0,
-    requestsRetries: { max: 3 },
+    requestsRetries: null,
     maxRetriesPerRequest: null,
-    forbiddenLogs: ['ReferenceError', 'TypeError'],
+    // An error as JavaScript prints it, `TypeError: <message>`, not the word in prose or in a longer name
+    forbiddenLogs: [/\bReferenceError: /, /\bTypeError: /],
+    statisticsKeys: DEFAULT_STATISTICS_KEY,
+    strictChargedEventCounts: false,
 };
 
 /**

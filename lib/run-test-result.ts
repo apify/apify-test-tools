@@ -1,5 +1,6 @@
 import type { ActorRun, ApifyClient, KeyValueStoreClient } from 'apify-client';
 
+import { DEFAULT_STATISTICS_KEY } from './consts.js';
 import type { Dataset, SdkCrawlerStatistics } from './types.js';
 
 /** Items fetched per request, so no single response can exceed Node's string limit on large datasets. */
@@ -28,10 +29,21 @@ export class RunTestResult {
         /**/
     }
 
-    getStatistics = once(async (): Promise<SdkCrawlerStatistics | undefined> => {
-        const record = await this.getKeyValueStoreClient().getRecord('SDK_CRAWLER_STATISTICS_0');
-        return record?.value as SdkCrawlerStatistics | undefined;
-    });
+    private readonly statisticsRecords = new Map<string, () => Promise<SdkCrawlerStatistics | undefined>>();
+
+    /**
+     * The crawler statistics in the record `key` of the default key-value store, or `undefined` without one. A crawler
+     * given its own statistics id, or a second crawler in the same run, persists them under another key.
+     */
+    getStatistics = async (key: string = DEFAULT_STATISTICS_KEY): Promise<SdkCrawlerStatistics | undefined> => {
+        if (!this.statisticsRecords.has(key)) {
+            this.statisticsRecords.set(
+                key,
+                once(async () => (await this.getKeyValueStoreClient().getRecord(key))?.value as SdkCrawlerStatistics),
+            );
+        }
+        return this.statisticsRecords.get(key)!();
+    };
 
     getLog = once(async (): Promise<string> => {
         return (await this.apifyClient.run(this.id).log().get()) as string;

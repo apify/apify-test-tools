@@ -354,7 +354,7 @@ describe('web-scraper', () => {
     testActor('myteam/web-scraper', 'scrapes the start URL', async ({ expect, run }) => {
         const runResult = await run({ input: { startUrls: [{ url: 'https://apify.com' }] } });
 
-        // Status SUCCEEDED, a sane duration, no failed requests, no errors in the log, and the item count
+        // Status SUCCEEDED, no failed requests, no thrown TypeError or ReferenceError in the log, and the item count
         await expect(runResult).toFinishWith({ datasetItemCount: { min: 1, max: 10 } });
 
         const { items } = await runResult.getDataset();

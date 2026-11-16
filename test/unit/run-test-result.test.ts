@@ -41,4 +41,17 @@ describe('RunTestResult', () => {
         expect(items[24_999]).toBe(24_999);
         expect(listItems).toHaveBeenCalledTimes(25);
     });
+
+    it('reads the statistics of the default crawler or of the key given, each once', async () => {
+        const getRecord = vi.fn(async (key: string) => (key === 'missing' ? undefined : { key, value: { key } }));
+        const client = { keyValueStore: () => ({ getRecord }) } as unknown as ApifyClient;
+        const result = new RunTestResult(client, run);
+
+        expect(await result.getStatistics()).toEqual({ key: 'SDK_CRAWLER_STATISTICS_0' });
+        expect(await result.getStatistics('CUSTOM')).toEqual({ key: 'CUSTOM' });
+        expect(await result.getStatistics('missing')).toBeUndefined();
+        await result.getStatistics('CUSTOM');
+
+        expect(getRecord.mock.calls.map(([key]) => key)).toEqual(['SDK_CRAWLER_STATISTICS_0', 'CUSTOM', 'missing']);
+    });
 });

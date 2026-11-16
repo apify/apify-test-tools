@@ -29,28 +29,31 @@ export const listRepoFilePaths = async (repoRoot: string, subDir: string): Promi
 };
 
 /**
- * Given paths relative to the repo root, returns the subset that `git` would exclude because of
+ * Given existing file paths relative to the repo root, returns the subset that `git` would exclude because of
  * .gitignore rules (including nested .gitignore files, `.git/info/exclude`, and global excludes —
- * anything `git` itself respects). Delegating to `git check-ignore` avoids re-implementing gitignore
+ * anything `git` itself respects). Delegating to `git ls-files` avoids re-implementing gitignore
  * pattern matching.
  */
 export const getGitignoredPaths = async (relativePaths: string[], cwd?: string): Promise<Set<string>> => {
     if (relativePaths.length === 0) return new Set();
 
-    // Exit code 1 means none of the given paths are ignored - not an error. Anything else
-    // (e.g. 128 for "not a git repository") is a real failure.
-    return runGitCommand(['check-ignore', '--', ...relativePaths], {
-        cwd,
-        operation: 'check which repository paths are ignored',
-    })
-        .then((output) => new Set(output.split('\n').filter(Boolean)))
-        .catch((error: unknown) => {
-            // exit code 1 means none of the given paths are ignored - not an error
-            if (error instanceof GitCommandError && error.exitCode === 1) {
-                return new Set<string>();
-            }
-            throw error;
-        });
+    const output = await runGitCommand(
+        [
+            '--literal-pathspecs',
+            'ls-files',
+            '--others',
+            '--ignored',
+            '--exclude-standard',
+            '-z',
+            '--',
+            ...relativePaths,
+        ],
+        {
+            cwd,
+            operation: 'check which repository paths are ignored',
+        },
+    );
+    return new Set(output.split('\0').filter(Boolean));
 };
 
 export type SourceFile = { name: string; content: Buffer };

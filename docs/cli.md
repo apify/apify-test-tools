@@ -55,14 +55,25 @@ Every command that changes something (`build`, `build-from-local`, `notify`, `de
 ## Change detection
 
 When a PR is opened or code is pushed, the tool determines which Actors need to be built and tested based on the
-changed files. For each changed file, for each Actor:
+changed files.
 
-1. **Sibling exclusion** — files inside another Actor's `folder` are excluded first. This prevents an Actor with
+Paths in `.actor/actor.json` resolve relative to its `.actor/` directory. When omitted, Dockerfile, README,
+CHANGELOG, and INPUT_SCHEMA paths use the first existing default file in `.actor/`, then in the Actor's folder,
+matching default filenames case insensitively.
+
+For each changed file, for each Actor:
+
+1. **Linked files** — the Actor's resolved `readme` and `changelog` files are cosmetic (only trigger a release
+   build). `actor.json` and linked schema files are checked for cosmetic JSON changes; other changes trigger builds
+   and tests. This covers `input`/`inputSchema`, `output`/`outputSchema`, `webServerSchema`, `storages.dataset`,
+   every `storages.datasets.<alias>`, and `storages.keyValueStore`. Inline schemas are checked as part of
+   `actor.json`. Cosmetic changes include formatting, key ordering, and edits to `title`, `description`, `example`,
+   `enumTitles`, `sectionCaption`, and `sectionDescription`. The resolved `dockerfile` is functional (triggers
+   builds and tests). These dependencies count even outside the Actor's context, inside a sibling Actor's folder,
+   or when ignore rules exclude them. A shared file affects every Actor that links it.
+2. **Sibling exclusion** — other files inside another Actor's `folder` are excluded. This prevents an Actor with
    broad context from being triggered by changes that belong to a sibling Actor.
-2. **CHANGELOG classification** — a `CHANGELOG.md` file is always `cosmetic` (only triggers a release build, not
-   tests), for every Actor, regardless of context or folder. (See
-   [issue #106](https://github.com/apify/apify-test-tools/issues/106).)
-3. **Context matching** — the file must fall within one of the Actor's context paths (`dockerContextDir` from
+3. **Context matching** — other files must fall within one of the Actor's context paths (`dockerContextDir` from
    `actor.json` by default, or `overrideActorContext` from config if set). Files outside every context path are
    skipped.
 4. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it
@@ -79,12 +90,7 @@ changed files. For each changed file, for each Actor:
    run, but it is neither functional nor cosmetic, so a release doesn't build it. Context matching still applies, so
    tests outside an Actor's `dockerContextDir` (e.g. a root `test/` with standalone Actors) need to be listed in its
    `overrideActorContext`; `get-affected-actors` logs a warning for changed test files outside every Actor's context.
-6. **README classification** — a `README.md` file is `cosmetic` (only triggers a release build, not tests) if it
-   lives inside the Actor's own `folder`; otherwise it's ignored entirely, since it isn't documentation for this
-   Actor.
-7. **Cosmetic JSON classification** — `.json` files inside the Actor's own `.actor/` directory with only cosmetic
-   schema changes (whitespace, key ordering) only trigger a release build.
-8. **Functional** — everything else triggers both build and tests.
+6. **Functional** — everything else triggers both build and tests.
 
 ## Finding affected Actors (`get-affected-actors`)
 
@@ -125,6 +131,11 @@ Pass `--base`, `--since`, or both:
 `commits`, `changedFiles` and `changelog` describe the whole range, `--base...HEAD` or `--since..HEAD`: `--since`
 together with `--base` only narrows the Actor lists.
 
+`changelog` combines added lines from the selected Actors' resolved changelog files across that range, counting
+each shared path once. `--actors` and `--ignore` select which Actors' changelogs are considered. It is `null` when
+none of those files changed, and an empty string when they changed without adding lines. Files named
+`CHANGELOG.md` are included only when an Actor resolves its changelog to that path.
+
 The output is a JSON document:
 
 ```json
@@ -133,7 +144,7 @@ The output is a JSON document:
     "head": "<sha of HEAD>",
     "commits": [{ "sha": "…", "author": "…", "date": "…", "message": "…" }],
     "changedFiles": ["src/main.ts", "CHANGELOG.md"],
-    "changelog": "Lines added to CHANGELOG.md, or null",
+    "changelog": "Added lines from resolved changelogs, or null",
     "functionallyChangedActors": [{ "actorFullName": "john.doe/my-actor" }],
     "cosmeticallyChangedActors": [{ "actorFullName": "john.doe/other-actor" }],
     "testChangedActors": [{ "actorFullName": "john.doe/my-actor" }]

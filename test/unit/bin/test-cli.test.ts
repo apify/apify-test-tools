@@ -5,15 +5,13 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
 import { startFakeApifyApi } from '../../helpers/fake-apify-api.js';
-import { compileCli } from './compiled-cli.js';
 
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
-let cliPath: string;
-let cleanup: (() => Promise<void>) | undefined;
+const cliPath = inject('cliPath');
 let repoDir: string;
 let fakeApi: Awaited<ReturnType<typeof startFakeApifyApi>> | undefined;
 
@@ -46,7 +44,6 @@ const OWNER_A_RAW_ID = 'rawIdOfOwnerA0000';
 // A consumer repository with the vitest it installed: one passing test that started a run, one failing
 describe('test CLI', () => {
     beforeAll(async () => {
-        ({ cliPath, cleanup } = await compileCli());
         fakeApi = await startFakeApifyApi([
             { id: 'rawIdOfOwnerA0000', username: 'owner', name: 'a' },
             { id: 'rawIdOfPartnerP00', username: 'partner', name: 'p' },
@@ -121,7 +118,6 @@ test('owner/a: fails', () => {
     });
 
     afterAll(async () => {
-        await cleanup?.();
         await fakeApi?.close();
         if (repoDir) await rm(repoDir, { recursive: true, force: true });
     });

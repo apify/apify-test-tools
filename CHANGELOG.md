@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 ### 🐛 Bug Fixes
 
 - **test/cli-compile:** Handle SIGTERM SIGINT etc without leaving trash behind ([#250](https://github.com/apify/apify-test-tools/pull/250)) ([41d9237](https://github.com/apify/apify-test-tools/commit/41d923769a1747979b6ad3df7765361b69ee9fbc)) by [@JuanGalilea](https://github.com/JuanGalilea)
+- Use actor.json links for change detection and changelogs ([#232](https://github.com/apify/apify-test-tools/pull/232)) ([4498c94](https://github.com/apify/apify-test-tools/commit/4498c9440ce6ab8d80c53b1450f2afb1b746462e)) by [@JuanGalilea](https://github.com/JuanGalilea), closes [#229](https://github.com/apify/apify-test-tools/issues/229)
 
 
 <!-- git-cliff-unreleased-end -->

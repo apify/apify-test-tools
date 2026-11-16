@@ -57,12 +57,8 @@ describe('tokens', () => {
     testActor('owner/a', 'gets the client of its token', async ({ expect, apifyClient }) => {
         expect(apifyClient.token).toBe('fake-token');
     }, { retry: 0 });
-    testActor('stranger/x', 'has no token', async ({ expect, apifyClient }) => {
-        expect(apifyClient.token).toBe('fallback-token');
-    }, { retry: 0 });
-    testActor('partner/p', 'has its token unset', async ({ expect, apifyClient }) => {
-        expect(apifyClient.token).toBe('fallback-token');
-    }, { retry: 0 });
+    testActor('stranger/x', 'has no token', async () => {}, { retry: 0 });
+    testActor('partner/p', 'has its token unset', async () => {}, { retry: 0 });
 });
 `,
         );
@@ -237,20 +233,6 @@ test('owner/a: fails', () => {
         );
     });
 
-    it('warns that the tests of the Actors without their own token run with TESTER_APIFY_TOKEN when it is set', () => {
-        const result = run(['test'], JSON.stringify([build, { ...build, actorFullName: 'stranger/x' }]), repoDir, {
-            ...env,
-            APIFY_TOKEN_OWNER: '',
-            TESTER_APIFY_TOKEN: 'fallback-token',
-        });
-        expect(result.stderr).toContain(
-            'APIFY_TOKEN_OWNER is not set, so the tests of owner/a run with TESTER_APIFY_TOKEN.',
-        );
-        expect(result.stderr).toContain(
-            'Actor stranger/x is not in apify-test-tools.config.json, so its tests run with TESTER_APIFY_TOKEN.',
-        );
-    });
-
     it("fails only the tests of the Actors without a token, the lib runs the others with their Actor's token", () => {
         const targets = [build, { actorFullName: 'stranger/x' }, { actorFullName: 'partner/p' }];
         const result = run(['test', '--test-files-glob', 'test/lib/**'], JSON.stringify(targets));
@@ -265,22 +247,11 @@ test('owner/a: fails', () => {
         );
         expect(failures['tokens owner/a: gets the client of its token']).toBe('');
         expect(failures['tokens stranger/x: has no token']).toContain(
-            'Neither TESTER_APIFY_TOKEN is set. The tests of Actor "stranger/x" need a token.',
+            'ACTOR_BUILDS names no testTokenEnvVar for Actor "stranger/x"',
         );
         expect(failures['tokens partner/p: has its token unset']).toContain(
-            'Neither APIFY_TOKEN_PARTNER nor TESTER_APIFY_TOKEN is set. The tests of Actor "partner/p" need a token.',
+            'APIFY_TOKEN_PARTNER is not set. The tests of Actor "partner/p" need it.',
         );
-    });
-
-    it('runs the tests of the Actors without their own token with TESTER_APIFY_TOKEN, the others with their own', () => {
-        const targets = [build, { actorFullName: 'stranger/x' }, { actorFullName: 'partner/p' }];
-        const result = run(['test', '--test-files-glob', 'test/lib/**'], JSON.stringify(targets), repoDir, {
-            ...env,
-            TESTER_APIFY_TOKEN: 'fallback-token',
-        });
-        expect(result.status, result.stderr).toBe(0);
-        expect(JSON.parse(result.stdout)).toMatchObject({ summary: { total: 3, passed: 3, failed: 0 } });
-        expect(result.stderr).toContain('APIFY_TOKEN_PARTNER is not set, testing with TESTER_APIFY_TOKEN instead.');
     });
 
     it('fails without the config, which names the token each Actor is tested with', async () => {

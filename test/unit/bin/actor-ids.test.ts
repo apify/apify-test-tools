@@ -48,21 +48,4 @@ describe('withTestTokens', () => {
             'APIFY_TOKEN_PARTNER is not set, so the tests of partner/p will fail.',
         ]);
     });
-
-    it('says the Actors without a token of their own run with TESTER_APIFY_TOKEN when it is set', () => {
-        const warn = warnings();
-        const result = withTestTokens([{ actorFullName: 'stranger/x' }, { actorFullName: 'partner/p' }], {
-            testTokenEnvVars,
-            env: { TESTER_APIFY_TOKEN: 'partner-token' },
-        });
-        // Each keeps the token the config names for it, the lib falls back the same way
-        expect(result).toEqual([
-            { actorFullName: 'stranger/x' },
-            { actorFullName: 'partner/p', testTokenEnvVar: 'APIFY_TOKEN_PARTNER' },
-        ]);
-        expect(warn.mock.calls.map(([message]) => message)).toEqual([
-            'Actor stranger/x is not in apify-test-tools.config.json, so its tests run with TESTER_APIFY_TOKEN.',
-            'APIFY_TOKEN_PARTNER is not set, so the tests of partner/p run with TESTER_APIFY_TOKEN.',
-        ]);
-    });
 });

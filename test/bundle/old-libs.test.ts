@@ -46,7 +46,7 @@ const repoWithLibVersion = async (version: string) => {
 const runTest = (cwd: string) =>
     spawnSync(process.execPath, [bundlePath, 'test'], {
         cwd,
-        env: { PATH: process.env.PATH ?? '', HOME: os.tmpdir(), TESTER_APIFY_TOKEN: 'fake-token' },
+        env: { PATH: process.env.PATH ?? '', HOME: os.tmpdir(), APIFY_TOKEN_OWNER: 'fake-token' },
         input: JSON.stringify([build]),
         encoding: 'utf8',
     });

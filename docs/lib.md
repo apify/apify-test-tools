@@ -10,10 +10,9 @@ Requires `vitest` 5 or later as a peer dependency.
 
 The library reads these when the test file is loaded:
 
-| Variable             | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ACTOR_BUILDS`       | JSON array of Actors to test, e.g. the builds the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local) print. Only tests of Actors listed here run, against the listed build, or the default build for an Actor listed without one. Each entry names the env var holding the token its tests run with, see below. Without any Actors, every `describe` block is skipped, so a plain `npm test` stays unaffected. |
-| `TESTER_APIFY_TOKEN` | Fallback token: the tests of an Actor listed in `ACTOR_BUILDS` without its own `testTokenEnvVar`, or whose variable isn't set, run with it. Set on its own, it also enables the `describe` blocks.                                                                                                                                                                                                                                                                                  |
+| Variable       | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ACTOR_BUILDS` | JSON array of Actors to test, e.g. the builds the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local) print. Only tests of Actors listed here run, against the listed build, or the default build for an Actor listed without one. Each entry names the env var holding the token its tests run with, see below. Without any Actors, every `describe` block is skipped, so a plain `npm test` stays unaffected. |
 
 `ACTOR_BUILDS` entries look like this, and are matched to tests by `actorFullName`. Without `buildNumber`, the Actor's
 tests run on its default build:
@@ -32,12 +31,11 @@ tests run on its default build:
 The tests of an Actor start runs and read their data with the token in the environment variable `testTokenEnvVar`
 names. [`test`](cli.md#running-tests-test) fills it in from the Actor's `testTokenEnvVar` in
 `apify-test-tools.config.json`, which is its `tokenEnvVar` unless the config names another. An Actor listed without
-one, or whose variable isn't set, falls back to `TESTER_APIFY_TOKEN`, with a warning. Without that either, it
-fails its own tests, and the other Actors' tests still run.
+one, or whose variable isn't set, fails its own tests, and the other Actors' tests still run.
 
 ## `describe(name, fn, options?)`
 
-Same as vitest's `describe`, but skipped unless `ACTOR_BUILDS` lists any Actors or `TESTER_APIFY_TOKEN` is set. Its tests
+Same as vitest's `describe`, but skipped unless `ACTOR_BUILDS` lists any Actors. Its tests
 run concurrently by default. Use it instead of vitest's `describe` for platform tests.
 
 ## `testActor(actorFullName, testName, fn, options?)`

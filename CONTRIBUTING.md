@@ -195,9 +195,6 @@ Actor tokens unless the config names others: the tests run as the Actor's owner,
 with write access) can run a standby Actor on a non-default build. A repo that wants the tests to hold less can point
 `testTokenEnvVar` at a more restricted token.
 
-The test steps also get `TESTER_APIFY_TOKEN`, and both the CLI and the lib fall back to it for an Actor whose own test
-token isn't set.
-
 A token the config declares but the repo hasn't set is a warning, not a failure: a repo can carry an Actor whose
 token isn't configured and still build fine as long as that Actor never changes, and `apify-test-tools` raises a
 precise error naming the Actor at the point it actually needs the token.

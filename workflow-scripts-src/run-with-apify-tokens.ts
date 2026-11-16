@@ -12,7 +12,7 @@
 // come from the repo's apify-test-tools.config.json, read with apify-test-tools' own parser, so the
 // two can't drift. Everything else in the secrets map (npm, Slack, GitHub, anything else the repo
 // holds) is left out, and WORKFLOW_SECRETS itself is dropped, so the blob never reaches the CLI or
-// anything under node_modules. Variables the step sets itself, like TESTER_APIFY_TOKEN, pass through.
+// anything under node_modules. Variables the step sets itself, like SCRIPTS_PATH, pass through.
 //
 // Each token is looked up in the CONFIG_SECRETS secret first, a JSON object of secret name -> value,
 // and then among the top-level secrets, which is where `secrets: inherit` and the secrets a workflow

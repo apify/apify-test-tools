@@ -319,8 +319,7 @@ output of [`get-actor-configs`](#listing-actors-get-actor-configs) works as it i
 
 Each Actor's tests run with its test token: the environment variable its `testTokenEnvVar` in the config names, which
 is its `tokenEnvVar` unless the config names another. `test` reads the config for it, so the Actors must be listed
-there. An Actor that isn't in the config or whose token isn't set gets a warning, and its tests fall back to
-`TESTER_APIFY_TOKEN`. Without that either, only its own tests fail. A dry-run plan, empty or invalid input is an error,
+there. An Actor that isn't in the config or whose token isn't set gets a warning, and only its own tests fail. A dry-run plan, empty or invalid input is an error,
 as with `build`, and so is a missing config.
 
 `test` passes the Actors to vitest as `ACTOR_BUILDS`, each with its `testTokenEnvVar`, in place of any `ACTOR_BUILDS`

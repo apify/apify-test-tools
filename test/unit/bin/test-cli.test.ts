@@ -5,14 +5,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-
-import { compileCli } from './compiled-cli.js';
+import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
-let cliPath: string;
-let cleanup: (() => Promise<void>) | undefined;
+const cliPath = inject('cliPath');
 let repoDir: string;
 
 // Only what node needs, so the outer vitest's own variables don't reach the inner one. The fixture's tests never call
@@ -27,7 +24,6 @@ const build = { buildId: 'b1', actorRawId: 'raw1', buildNumber: '0.99.1', actorF
 // A consumer repository with the vitest it installed: one passing test that started a run, one failing
 describe('test CLI', () => {
     beforeAll(async () => {
-        ({ cliPath, cleanup } = await compileCli());
         repoDir = await mkdtemp(path.join(os.tmpdir(), 'apify-test-cli-'));
         await symlink(path.join(projectRoot, 'node_modules'), path.join(repoDir, 'node_modules'), 'dir');
         await mkdir(path.join(repoDir, 'test/platform'), { recursive: true });
@@ -72,7 +68,6 @@ test('owner/a: fails', () => {
     });
 
     afterAll(async () => {
-        await cleanup?.();
         if (repoDir) await rm(repoDir, { recursive: true, force: true });
     });
 

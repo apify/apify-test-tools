@@ -47,8 +47,11 @@ describe('parseTestTargets', () => {
         expect(parseTestTargets(JSON.stringify([actorConfig]))).toStrictEqual([{ actorFullName: 'owner/a' }]);
     });
 
-    it('rejects an Actor given by its raw ID only, since tests name their Actor by its full name', () => {
-        expect(() => parseTestTargets('[{"actorRawId":"r"}]')).toThrow('actorFullName');
+    it('rejects an Actor given without its full name, also by its raw ID only', () => {
+        expect(() => parseTestTargets('[{"actorRawId":"rawIdOfOwnerA0000"}]')).toThrow('actorFullName');
+        expect(() => parseTestTargets('[{"actorFullName":"rawIdOfOwnerA0000"}]')).toThrow(
+            "Expected the Actor's full name, as owner/name",
+        );
     });
 
     it('rejects a dry-run plan, which built nothing', () => {

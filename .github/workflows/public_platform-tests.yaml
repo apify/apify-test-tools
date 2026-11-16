@@ -13,14 +13,26 @@ on:
                 type: string
                 default: ''
                 required: false
-        # Only TESTER_APIFY_TOKEN is required, every test needs it. See the Secrets section of docs/workflows.md.
+        # Every secret is optional. The tests run each Actor with its `testTokenEnvVar` from
+        # apify-test-tools.config.json, which is its `tokenEnvVar` unless the config names another. Those names
+        # differ per repo, so the tokens come packed in CONFIG_SECRETS. Actors whose token isn't passed fall back to
+        # TESTER_APIFY_TOKEN. See the Secrets section of docs/workflows.md.
         secrets:
             NPM_TOKEN:
                 required: false
                 description: Read-only token for installing private npm packages.
+            CONFIG_SECRETS:
+                required: false
+                description: >-
+                    JSON object of the secrets apify-test-tools.config.json names, secret name -> value. Here
+                    that is each Actor's `testTokenEnvVar`, its `tokenEnvVar` by default. Passing
+                    `toJSON(secrets)` works too, only the names the config declares are used.
             TESTER_APIFY_TOKEN:
-                required: true
-                description: Apify token the platform tests run Actors with.
+                required: false
+                description: >-
+                    Fallback token for the platform tests: used for Actors whose own test token
+                    (`testTokenEnvVar`, by default `tokenEnvVar`) isn't passed, and for every Actor by a repo
+                    on an apify-test-tools lib older than per-Actor tokens.
             SLACK_BOT_TOKEN:
                 required: false
                 description: Slack token for reporting test results.
@@ -32,25 +44,17 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Setup repository and dependencies
+              id: setup
               # `$/` loads the action from this repo at the commit this workflow was called at, so a caller
               # pinned to a SHA or a branch gets that commit's action and CLI, not whatever the major tag is on.
               uses: $/.github/actions/checkout-restore-dependencies
               with:
                   npm-token: ${{ secrets.NPM_TOKEN }}
+                  config-secrets: ${{ secrets.CONFIG_SECRETS }}
 
-            # Fails here with a clear message rather than deep in vitest. `required: true` alone doesn't
-            # catch it: a caller can list the secret while the repo doesn't have it, and PRs from forks
-            # never get secrets.
-            - name: Check TESTER_APIFY_TOKEN
-              env:
-                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-              run: |
-                  if [ -z "$TESTER_APIFY_TOKEN" ]; then
-                      echo "::error::TESTER_APIFY_TOKEN is empty. Pass it in the secrets: block of the job that calls this workflow."
-                      exit 1
-                  fi
-
-            # Runs the repo's test code and its whole import graph, so it gets the tester token only.
+            # Runs the repo's test code and its whole import graph, so it gets only the tokens the tests run the
+            # Actors with, see run-with-apify-tokens.mjs, and TESTER_APIFY_TOKEN, which the tests fall back to when an
+            # Actor's own token isn't passed.
             # Fails on failing tests, but writes the report anyway for the notification below.
             # Every Actor in the config, on its default build: the one users run
             - name: Test
@@ -58,17 +62,20 @@ jobs:
               # bash rather than the default shell, for pipefail
               shell: bash
               env:
+                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
+                  SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
                   # Passed through the environment and quoted, so the shell doesn't expand the glob itself
                   # An empty input, e.g. from an expression that picks the glob, runs everything, like the default
                   TEST_FILES_GLOB: ${{ inputs.test-files-glob || 'test/platform/**' }}
               run: |
                   apify-test-tools get-actor-configs \
-                    | apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" \
+                    | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" --tokens test \
+                        apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" \
                         --reporter github-actions --vitest-output-file ./test-output.json > test-report.json
 
             # Posts only when the tests failed, but checks the Slack token on every run that has a channel. Runs
-            # whenever the tests did, also after a failure, but not when the token check stopped the job before them.
+            # whenever the tests did, also after a failure, but not when an earlier step stopped the job before them.
             - name: Notify
               if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
               env:

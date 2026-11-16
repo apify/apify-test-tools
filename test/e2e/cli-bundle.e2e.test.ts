@@ -171,7 +171,8 @@ describe('sandbox dummies', () => {${actorTests}
             [bundlePath, 'test', '--test-files-glob', 'test/platform/**'],
             {
                 cwd: repoDir,
-                env: { ...cliEnv, TESTER_APIFY_TOKEN: token! },
+                // Each Actor is tested with the token the config builds it with
+                env: cliEnv,
                 input: JSON.stringify(builds),
             },
         );

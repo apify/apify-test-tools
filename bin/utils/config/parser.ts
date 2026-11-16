@@ -41,6 +41,7 @@ const ValidatedConfigSchema = z.array(
         actorFullName: z.string(),
         folder: ExistingDirSchema,
         tokenEnvVar: z.string(),
+        testTokenEnvVar: z.string(),
         overrideActorContext: z.array(RelativeDirSchema).optional(),
     }),
 );
@@ -113,7 +114,12 @@ export function parseResolvedConfigFile(body: Record<string, unknown>): Resolved
     // The repo settings are read by parseRepoSettings, the strategies only see the Actor entries
     const { mode, platformTestsGlob: _platformTestsGlob, ...rest } = body;
     const strategy = selectStrategy({ mode });
-    return strategy.parse(rest);
+    // Defaults every mode shares, after the mode resolved what an Actor and its group set. A group's test token so
+    // still applies to an Actor that sets only its own tokenEnvVar.
+    return strategy.parse(rest).map((entry) => ({
+        ...entry,
+        testTokenEnvVar: entry.testTokenEnvVar ?? entry.tokenEnvVar,
+    }));
 }
 
 export function parseConfigFile(body: Record<string, unknown>): ValidatedActorConfig[] {

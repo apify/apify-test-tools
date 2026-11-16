@@ -40,20 +40,59 @@ describe('GROUPED_PARSER', () => {
                 tokenEnvVar: 'APIFY_TOKEN_MYTEAM',
                 overrideActorContext: ['packages'],
             },
-            { folder: 'actors/x', actorFullName: 'other/x', tokenEnvVar: 'TOKEN', overrideActorContext: undefined },
+            {
+                folder: 'actors/x',
+                actorFullName: 'other/x',
+                tokenEnvVar: 'TOKEN',
+                overrideActorContext: undefined,
+            },
         ]);
     });
 
     it('ignores the group key entirely', () => {
         expect(GROUPED_PARSER.parse({ groups: { 'not-a-folder-at-all': group() } })).toEqual([
-            { folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN' },
+            {
+                folder: 'actors/shopify',
+                actorFullName: 'myteam/shopify',
+                tokenEnvVar: 'APIFY_TOKEN',
+            },
         ]);
     });
 
     it('allows actors to override some fields', () => {
         expect(
             GROUPED_PARSER.parse({ groups: { myteam: group({ actors: [actor({ tokenEnvVar: 'FROM_ACTOR' })] }) } }),
-        ).toEqual([{ folder: 'actors/shopify', actorFullName: 'myteam/shopify', tokenEnvVar: 'FROM_ACTOR' }]);
+        ).toEqual([
+            {
+                folder: 'actors/shopify',
+                actorFullName: 'myteam/shopify',
+                tokenEnvVar: 'FROM_ACTOR',
+            },
+        ]);
+    });
+
+    it.each([
+        // The default to the build token comes after the modes, see parser.test.ts
+        ['leaves it unset without one', {}, {}, undefined],
+        ['leaves it unset when the Actor sets only its own build token', {}, { tokenEnvVar: 'FROM_ACTOR' }, undefined],
+        ['takes the group test token', { testTokenEnvVar: 'TESTER' }, {}, 'TESTER'],
+        [
+            "takes the group test token over the Actor's own build token",
+            { testTokenEnvVar: 'TESTER' },
+            { tokenEnvVar: 'FROM_ACTOR' },
+            'TESTER',
+        ],
+        [
+            "takes the Actor's test token over the group's",
+            { testTokenEnvVar: 'TESTER' },
+            { testTokenEnvVar: 'ACTOR_TESTER' },
+            'ACTOR_TESTER',
+        ],
+    ])('inherits the test token: %s', (_name, groupFields, actorFields, expected) => {
+        const [parsed] = GROUPED_PARSER.parse({
+            groups: { myteam: group({ ...groupFields, actors: [actor(actorFields)] }) },
+        });
+        expect(parsed.testTokenEnvVar).toBe(expected);
     });
 
     it("returns the entries as written — normalizing is not this layer's job", () => {

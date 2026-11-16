@@ -26,7 +26,7 @@ describe('createStartRunFn()', () => {
         } as ActorClient);
 
         // Act
-        await createStartRunFn('123', testContext)({ input: {} });
+        await createStartRunFn(new ApifyClient({ token: 'fake-token' }), '123', testContext)({ input: {} });
 
         // Assert
         expect(actorCallMock).toHaveBeenCalledTimes(1);
@@ -44,7 +44,7 @@ describe('createStartRunFn()', () => {
         } as ActorClient);
 
         // Act
-        await createStartRunFn('123', testContext)({ input: {} });
+        await createStartRunFn(new ApifyClient({ token: 'fake-token' }), '123', testContext)({ input: {} });
 
         // Assert
         expect(actorCallMock).toHaveBeenCalledTimes(1);

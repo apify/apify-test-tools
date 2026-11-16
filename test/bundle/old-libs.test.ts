@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { OLDEST_SUPPORTED_LIB_VERSION } from '../../bin/lib-compat.js';
+import { groupedConfig } from '../grouped-config.js';
 
 // The CLI ships separately from the lib, so a repository can run the newest CLI with an old lib. A mismatch in what
 // the two pass each other skips every test while the run still passes, so the committed bundle's `test` refuses a lib
@@ -15,7 +16,7 @@ import { OLDEST_SUPPORTED_LIB_VERSION } from '../../bin/lib-compat.js';
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const bundlePath = path.join(projectRoot, '.github/cli/apify-test-tools.mjs');
 
-const build = { actorFullName: 'owner/a', actorRawId: 'rawIdOfOwnerA0000', buildId: 'b1', buildNumber: '0.99.1' };
+const build = { actorFullName: 'owner/a', buildId: 'b1', buildNumber: '0.99.1' };
 
 const repoDirs: string[] = [];
 
@@ -30,6 +31,14 @@ const repoWithLibVersion = async (version: string) => {
     await writeFile(
         path.join(repoDir, 'test/platform/a.test.ts'),
         `import { test } from 'vitest';\n\ntest('owner/a: runs', () => {});\n`,
+    );
+    // `test` reads each Actor's test token from the config
+    await mkdir(path.join(repoDir, 'actors/a'), { recursive: true });
+    await writeFile(
+        path.join(repoDir, 'apify-test-tools.config.json'),
+        JSON.stringify(
+            groupedConfig([{ folder: 'actors/a', actorFullName: 'owner/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' }]),
+        ),
     );
     return repoDir;
 };

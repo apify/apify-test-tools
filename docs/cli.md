@@ -10,18 +10,19 @@ npx apify-test-tools <command> [flags]
 Run every command from the root of the Actor repository; it reads `apify-test-tools.config.json` from there.
 Results are written to stdout as JSON, diagnostics to stderr, so commands can be piped into each other and into `jq`.
 
-| Command                                                               | Does                                                    | Needs                |
-| --------------------------------------------------------------------- | ------------------------------------------------------- | -------------------- |
-| [`get-affected-actors`](#finding-affected-actors-get-affected-actors) | Lists the Actors changed in a commit range              | git only             |
-| [`build`](#building-actors-build)                                     | Builds the Actors given on stdin from the pushed branch | Actor tokens         |
-| [`build-from-local`](#build-from-local-source-build-from-local)       | Builds Actors from local files                          | Actor tokens         |
-| [`test`](#running-tests-test)                                         | Runs the platform tests on the builds given on stdin    | `TESTER_APIFY_TOKEN` |
-| [`notify`](#notifying-notify)                                         | Posts a test report or a release to Slack               | a Slack token        |
-| [`delete-old-builds`](#deleting-old-builds-delete-old-builds)         | Deletes old builds of the Actors                        | Actor tokens         |
-| [`get-actor-configs`](#listing-actors-get-actor-configs)              | Prints the resolved config                              | nothing              |
+| Command                                                               | Does                                                    | Needs         |
+| --------------------------------------------------------------------- | ------------------------------------------------------- | ------------- |
+| [`get-affected-actors`](#finding-affected-actors-get-affected-actors) | Lists the Actors changed in a commit range              | git only      |
+| [`build`](#building-actors-build)                                     | Builds the Actors given on stdin from the pushed branch | Actor tokens  |
+| [`build-from-local`](#build-from-local-source-build-from-local)       | Builds Actors from local files                          | Actor tokens  |
+| [`test`](#running-tests-test)                                         | Runs the platform tests on the builds given on stdin    | test tokens   |
+| [`notify`](#notifying-notify)                                         | Posts a test report or a release to Slack               | a Slack token |
+| [`delete-old-builds`](#deleting-old-builds-delete-old-builds)         | Deletes old builds of the Actors                        | Actor tokens  |
+| [`get-actor-configs`](#listing-actors-get-actor-configs)              | Prints the resolved config                              | nothing       |
 
-"Actor tokens" are the environment variables named by each Actor's `tokenEnvVar` in the config. A command only needs
-the tokens of the Actors it touches.
+"Actor tokens" are the environment variables named by each Actor's `tokenEnvVar` in the config, "test tokens" those
+named by its `testTokenEnvVar`, which default to the Actor tokens. A command only needs the tokens of the Actors it
+touches.
 
 ## Global flags
 
@@ -54,14 +55,25 @@ Every command that changes something (`build`, `build-from-local`, `notify`, `de
 ## Change detection
 
 When a PR is opened or code is pushed, the tool determines which Actors need to be built and tested based on the
-changed files. For each changed file, for each Actor:
+changed files.
 
-1. **Sibling exclusion** — files inside another Actor's `folder` are excluded first. This prevents an Actor with
+Paths in `.actor/actor.json` resolve relative to its `.actor/` directory. When omitted, Dockerfile, README,
+CHANGELOG, and INPUT_SCHEMA paths use the first existing default file in `.actor/`, then in the Actor's folder,
+matching default filenames case insensitively.
+
+For each changed file, for each Actor:
+
+1. **Linked files** — the Actor's resolved `readme` and `changelog` files are cosmetic (only trigger a release
+   build). `actor.json` and linked schema files are checked for cosmetic JSON changes; other changes trigger builds
+   and tests. This covers `input`/`inputSchema`, `output`/`outputSchema`, `webServerSchema`, `storages.dataset`,
+   every `storages.datasets.<alias>`, and `storages.keyValueStore`. Inline schemas are checked as part of
+   `actor.json`. Cosmetic changes include formatting, key ordering, and edits to `title`, `description`, `example`,
+   `enumTitles`, `sectionCaption`, and `sectionDescription`. The resolved `dockerfile` is functional (triggers
+   builds and tests). These dependencies count even outside the Actor's context, inside a sibling Actor's folder,
+   or when ignore rules exclude them. A shared file affects every Actor that links it.
+2. **Sibling exclusion** — other files inside another Actor's `folder` are excluded. This prevents an Actor with
    broad context from being triggered by changes that belong to a sibling Actor.
-2. **CHANGELOG classification** — a `CHANGELOG.md` file is always `cosmetic` (only triggers a release build, not
-   tests), for every Actor, regardless of context or folder. (See
-   [issue #106](https://github.com/apify/apify-test-tools/issues/106).)
-3. **Context matching** — the file must fall within one of the Actor's context paths (`dockerContextDir` from
+3. **Context matching** — other files must fall within one of the Actor's context paths (`dockerContextDir` from
    `actor.json` by default, or `overrideActorContext` from config if set). Files outside every context path are
    skipped.
 4. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it
@@ -78,12 +90,7 @@ changed files. For each changed file, for each Actor:
    run, but it is neither functional nor cosmetic, so a release doesn't build it. Context matching still applies, so
    tests outside an Actor's `dockerContextDir` (e.g. a root `test/` with standalone Actors) need to be listed in its
    `overrideActorContext`; `get-affected-actors` logs a warning for changed test files outside every Actor's context.
-6. **README classification** — a `README.md` file is `cosmetic` (only triggers a release build, not tests) if it
-   lives inside the Actor's own `folder`; otherwise it's ignored entirely, since it isn't documentation for this
-   Actor.
-7. **Cosmetic JSON classification** — `.json` files inside the Actor's own `.actor/` directory with only cosmetic
-   schema changes (whitespace, key ordering) only trigger a release build.
-8. **Functional** — everything else triggers both build and tests.
+6. **Functional** — everything else triggers both build and tests.
 
 ## Finding affected Actors (`get-affected-actors`)
 
@@ -124,6 +131,11 @@ Pass `--base`, `--since`, or both:
 `commits`, `changedFiles` and `changelog` describe the whole range, `--base...HEAD` or `--since..HEAD`: `--since`
 together with `--base` only narrows the Actor lists.
 
+`changelog` combines added lines from the selected Actors' resolved changelog files across that range, counting
+each shared path once. `--actors` and `--ignore` select which Actors' changelogs are considered. It is `null` when
+none of those files changed, and an empty string when they changed without adding lines. Files named
+`CHANGELOG.md` are included only when an Actor resolves its changelog to that path.
+
 The output is a JSON document:
 
 ```json
@@ -132,7 +144,7 @@ The output is a JSON document:
     "head": "<sha of HEAD>",
     "commits": [{ "sha": "…", "author": "…", "date": "…", "message": "…" }],
     "changedFiles": ["src/main.ts", "CHANGELOG.md"],
-    "changelog": "Lines added to CHANGELOG.md, or null",
+    "changelog": "Added lines from resolved changelogs, or null",
     "functionallyChangedActors": [{ "actorFullName": "john.doe/my-actor" }],
     "cosmeticallyChangedActors": [{ "actorFullName": "john.doe/other-actor" }],
     "testChangedActors": [{ "actorFullName": "john.doe/my-actor" }]
@@ -303,12 +315,18 @@ npx apify-test-tools get-actor-configs --actors john.doe/my-actor | npx apify-te
 The input is a JSON array of Actors, each given by its full name: `[{ "actorFullName": "<owner/name>" }]`, the ID the
 tests name their Actor by. An Actor's tests run against the build given with it (`buildId` and `buildNumber`, as
 `build` and `build-from-local` print them), or against its default build without one. Other fields are ignored, so the
-output of [`get-actor-configs`](#listing-actors-get-actor-configs) works as it is. A dry-run plan, empty or invalid input is an error, as with `build`. So is a
-missing `TESTER_APIFY_TOKEN`: without it the lib skips every platform test, and the run would pass having tested
-nothing. `test` passes the Actors to vitest as `ACTOR_BUILDS`, in place of any
-`ACTOR_BUILDS` in its own environment. It needs apify-test-tools 1.0.0 or newer in the repository, and fails on an
-older one, which could skip every test. It also excludes `**/dist/**`, which vitest doesn't exclude by default, so a
-compiled copy of the tests doesn't run next to them. The repository's own `exclude` still applies.
+output of [`get-actor-configs`](#listing-actors-get-actor-configs) works as it is.
+
+Each Actor's tests run with its test token: the environment variable its `testTokenEnvVar` in the config names, which
+is its `tokenEnvVar` unless the config names another. `test` reads the config for it, so the Actors must be listed
+there. An Actor that isn't in the config or whose token isn't set gets a warning, and its tests fall back to
+`TESTER_APIFY_TOKEN`. Without that either, only its own tests fail. A dry-run plan, empty or invalid input is an error,
+as with `build`, and so is a missing config.
+
+`test` passes the Actors to vitest as `ACTOR_BUILDS`, each with its `testTokenEnvVar`, in place of any `ACTOR_BUILDS`
+in its own environment. It needs apify-test-tools 1.0.0 or newer in the repository, and fails on an older one, which
+could skip every test. It also excludes `**/dist/**`, which vitest doesn't exclude by default, so a compiled copy of the
+tests doesn't run next to them. The repository's own `exclude` still applies.
 
 When `test` is given Actors but no test runs, the report fails with an error, since a run that tested nothing must
 not pass. For any set of given Actors, at least 1 test must be performed, not 1 for each Actor. When none runs, the
@@ -428,7 +446,7 @@ Deletes builds older than 30 days of every selected Actor. It never deletes the 
 ## Listing Actors (`get-actor-configs`)
 
 Prints the [config](../README.md#config-file) as the tool resolves it: one entry per Actor, with the group's values
-applied and `actor.json` read. Takes `--actors` and `--ignore`. Useful to check a config change.
+applied, `testTokenEnvVar` defaulted to `tokenEnvVar`, and `actor.json` read. Takes `--actors` and `--ignore`. Useful to check a config change.
 
 ## Running locally
 
@@ -469,5 +487,5 @@ Actors you need to test.
 Then run the tests against the builds with [`test`](#running-tests-test), as often as you like:
 
 ```bash
-TESTER_APIFY_TOKEN=apify_api_yyy npx apify-test-tools test < builds.json
+APIFY_TOKEN_JOHN_DOE=apify_api_xxx npx apify-test-tools test < builds.json
 ```

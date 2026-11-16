@@ -2,6 +2,8 @@ import process from 'node:process';
 
 import z, { prettifyError, type ZodType } from 'zod';
 
+import { ACTOR_FULL_NAME_REGEX } from './utils/config/structures/base.js';
+
 export const readStdin = async (): Promise<string> => {
     // Nothing piped in: fail right away instead of waiting for someone to type
     if (process.stdin.isTTY) {
@@ -60,14 +62,13 @@ export const parseBuildInput = (raw: string) =>
     });
 
 /**
- * What `test` reads: the Actors to test, each with the build to test or, without one, its default build. The builds
- * `build` and `build-from-local` print fit, and so does `get-actor-configs`, whose other fields are ignored. An Actor
- * needs its full name, the ID tests name it by. A dry-run plan is an object on purpose, so it is
- * rejected here rather than tested as if it were built.
+ * What `test` reads: the Actors to test by full name, each with the build to test or, without one, its default build.
+ * The builds `build` and `build-from-local` print fit, and so does `get-actor-configs`, whose other fields are ignored.
+ * A dry-run plan is an object on purpose, so it is rejected here rather than tested as if it were built.
  */
 const testTargetsSchema = z.array(
     z.object({
-        actorFullName: z.string().min(1),
+        actorFullName: z.string().regex(ACTOR_FULL_NAME_REGEX, "Expected the Actor's full name, as owner/name"),
         buildId: z.string().optional(),
         buildNumber: z.string().optional(),
     }),

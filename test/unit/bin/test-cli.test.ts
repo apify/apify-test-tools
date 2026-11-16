@@ -5,32 +5,68 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
-import { compileCli } from './compiled-cli.js';
+import { groupedConfig } from '../../grouped-config.js';
 
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
-let cliPath: string;
-let cleanup: (() => Promise<void>) | undefined;
+const cliPath = inject('cliPath');
 let repoDir: string;
 
 // Only what node needs, so the outer vitest's own variables don't reach the inner one. The fixture's tests never call
 // Apify, so any token does.
-const env = { PATH: process.env.PATH ?? '', HOME: os.tmpdir(), TESTER_APIFY_TOKEN: 'fake-token' };
+const env: Record<string, string> = {
+    PATH: process.env.PATH ?? '',
+    HOME: os.tmpdir(),
+    APIFY_TOKEN_OWNER: 'fake-token',
+};
+
+const CONFIG = JSON.stringify(
+    groupedConfig([
+        { folder: 'actors/a', actorFullName: 'owner/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' },
+        { folder: 'actors/p', actorFullName: 'partner/p', tokenEnvVar: 'APIFY_TOKEN_PARTNER' },
+    ]),
+);
 
 const run = (args: string[], input = '', cwd = repoDir, runEnv: NodeJS.ProcessEnv = env) =>
     spawnSync(cliPath, args, { cwd, encoding: 'utf8', input, env: runEnv, stdio: ['pipe', 'pipe', 'pipe'] });
 
+// A test file for the repositories set up inside a test, so they have something to match --test-files-glob
+const PASSING_TEST = `import { test } from 'vitest';\n\ntest('owner/a: works', () => {});\n`;
+
+// As `build` prints it. `test` leaves out its raw ID, the lib matches the tests by full name.
 const build = { buildId: 'b1', actorRawId: 'raw1', buildNumber: '0.99.1', actorFullName: 'owner/a' };
 
 // A consumer repository with the vitest it installed: one passing test that started a run, one failing
 describe('test CLI', () => {
     beforeAll(async () => {
-        ({ cliPath, cleanup } = await compileCli());
         repoDir = await mkdtemp(path.join(os.tmpdir(), 'apify-test-cli-'));
         await symlink(path.join(projectRoot, 'node_modules'), path.join(repoDir, 'node_modules'), 'dir');
         await mkdir(path.join(repoDir, 'test/platform'), { recursive: true });
+        await mkdir(path.join(repoDir, 'actors/a'), { recursive: true });
+        await mkdir(path.join(repoDir, 'actors/p'), { recursive: true });
+        // Platform tests on the lib from this checkout, kept out of test/platform so the counts above stay the same.
+        // None of them reaches the API.
+        await mkdir(path.join(repoDir, 'test/lib'), { recursive: true });
+        await writeFile(
+            path.join(repoDir, 'test/lib/tokens.test.ts'),
+            `import { describe, testActor } from ${JSON.stringify(path.join(projectRoot, 'index.ts'))};
+
+describe('tokens', () => {
+    testActor('owner/a', 'gets the client of its token', async ({ expect, apifyClient }) => {
+        expect(apifyClient.token).toBe('fake-token');
+    }, { retry: 0 });
+    testActor('stranger/x', 'has no token', async ({ expect, apifyClient }) => {
+        expect(apifyClient.token).toBe('fallback-token');
+    }, { retry: 0 });
+    testActor('partner/p', 'has its token unset', async ({ expect, apifyClient }) => {
+        expect(apifyClient.token).toBe('fallback-token');
+    }, { retry: 0 });
+});
+`,
+        );
+        await writeFile(path.join(repoDir, 'apify-test-tools.config.json'), CONFIG);
         await writeFile(
             path.join(repoDir, 'test/platform/a.test.ts'),
             `import { expect, test } from 'vitest';
@@ -77,16 +113,18 @@ test('owner/a: fails', () => {
     });
 
     afterAll(async () => {
-        await cleanup?.();
         if (repoDir) await rm(repoDir, { recursive: true, force: true });
     });
 
     it('tests the builds on stdin, printing the report on stdout and the vitest output on stderr', () => {
         const result = run(['test'], JSON.stringify([build]));
         expect(result.status).toBe(1);
-        // Passed on to the lib as ACTOR_BUILDS, the fields in the order test reads them
+        // Passed on to the lib as ACTOR_BUILDS, the fields in the order test reads them, with the env var of the token
+        // the config names for the Actor's tests
         const { actorFullName, buildId, buildNumber } = build;
-        expect(result.stderr).toContain(`ENV ${JSON.stringify([{ actorFullName, buildId, buildNumber }])}`);
+        const actorBuild = { actorFullName, buildId, buildNumber, testTokenEnvVar: 'APIFY_TOKEN_OWNER' };
+        expect(result.stderr).toContain(`ENV ${JSON.stringify([actorBuild])}`);
+        expect(result.stderr).toContain('Testing 1 Actor(s): owner/a (0.99.1, APIFY_TOKEN_OWNER)');
         expect(result.stderr).toContain('1) owner/a: works ... https://console.apify.com/view/runs/run1');
         // Vitest's own output still comes through, without the note about the temporary JSON report
         expect(result.stderr).toContain('Test Files');
@@ -105,13 +143,13 @@ test('owner/a: fails', () => {
     });
 
     it('tests an Actor without a build on its default build', () => {
-        // What get-actor-configs prints. No API call is needed, the lib matches the tests by full name.
+        // As get-actor-configs prints it
         const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' };
         const result = run(['test'], JSON.stringify([actorConfig]));
         expect(result.status).toBe(1);
         // Only the fields the lib reads reach it
-        expect(result.stderr).toContain('ENV [{"actorFullName":"owner/a"}]');
-        expect(result.stderr).toContain('Testing 1 Actor(s): owner/a (default build)');
+        expect(result.stderr).toContain('ENV [{"actorFullName":"owner/a","testTokenEnvVar":"APIFY_TOKEN_OWNER"}]');
+        expect(result.stderr).toContain('Testing 1 Actor(s): owner/a (default build, APIFY_TOKEN_OWNER)');
         expect(JSON.parse(result.stdout)).toMatchObject({ success: false, summary: { passed: 1, failed: 1 } });
     });
 
@@ -169,7 +207,7 @@ test('owner/a: fails', () => {
     });
 
     it('warns about a given Actor none of whose tests ran, and passes on the tests of the others', () => {
-        const other = { ...build, actorFullName: 'owner/other', actorRawId: 'rawOther', buildId: 'b2' };
+        const other = { ...build, actorFullName: 'owner/other', buildId: 'b2' };
         const result = run(['test', '--test-files-glob', 'test/glob/with-pr/**'], JSON.stringify([build, other]));
         expect(result.status, result.stderr).toBe(0);
         expect(result.stderr).toContain('[owner/other]: None of its tests ran');
@@ -185,11 +223,79 @@ test('owner/a: fails', () => {
         expect(result.stdout).toBe('');
     });
 
-    it('fails without TESTER_APIFY_TOKEN instead of passing with every test skipped', () => {
-        const result = run(['test'], JSON.stringify([build]), repoDir, { ...env, TESTER_APIFY_TOKEN: '' });
+    it('runs the tests without a token, warning that the tests of the Actors it is missing for will fail', () => {
+        const result = run(['test'], JSON.stringify([build, { ...build, actorFullName: 'stranger/x' }]), repoDir, {
+            ...env,
+            APIFY_TOKEN_OWNER: '',
+        });
+        expect(result.stderr).toContain('APIFY_TOKEN_OWNER is not set, so the tests of owner/a will fail.');
+        expect(result.stderr).toContain(
+            'Actor stranger/x is not in apify-test-tools.config.json, so its tests will fail.',
+        );
+        expect(result.stderr).toContain(
+            'Testing 2 Actor(s): owner/a (0.99.1, APIFY_TOKEN_OWNER), stranger/x (0.99.1, no own token)',
+        );
+    });
+
+    it('warns that the tests of the Actors without their own token run with TESTER_APIFY_TOKEN when it is set', () => {
+        const result = run(['test'], JSON.stringify([build, { ...build, actorFullName: 'stranger/x' }]), repoDir, {
+            ...env,
+            APIFY_TOKEN_OWNER: '',
+            TESTER_APIFY_TOKEN: 'fallback-token',
+        });
+        expect(result.stderr).toContain(
+            'APIFY_TOKEN_OWNER is not set, so the tests of owner/a run with TESTER_APIFY_TOKEN.',
+        );
+        expect(result.stderr).toContain(
+            'Actor stranger/x is not in apify-test-tools.config.json, so its tests run with TESTER_APIFY_TOKEN.',
+        );
+    });
+
+    it("fails only the tests of the Actors without a token, the lib runs the others with their Actor's token", () => {
+        const targets = [build, { actorFullName: 'stranger/x' }, { actorFullName: 'partner/p' }];
+        const result = run(['test', '--test-files-glob', 'test/lib/**'], JSON.stringify(targets));
         expect(result.status).toBe(1);
-        expect(result.stderr).toContain('TESTER_APIFY_TOKEN is not set');
-        expect(result.stdout).toBe('');
+        const report = JSON.parse(result.stdout);
+        expect(report).toMatchObject({ summary: { total: 3, passed: 1, failed: 2, skipped: 0 } });
+        const failures = Object.fromEntries(
+            report.tests.map(({ name, failureMessages }: { name: string; failureMessages: string[] }) => [
+                name,
+                failureMessages.join('\n'),
+            ]),
+        );
+        expect(failures['tokens owner/a: gets the client of its token']).toBe('');
+        expect(failures['tokens stranger/x: has no token']).toContain(
+            'Neither TESTER_APIFY_TOKEN is set. The tests of Actor "stranger/x" need a token.',
+        );
+        expect(failures['tokens partner/p: has its token unset']).toContain(
+            'Neither APIFY_TOKEN_PARTNER nor TESTER_APIFY_TOKEN is set. The tests of Actor "partner/p" need a token.',
+        );
+    });
+
+    it('runs the tests of the Actors without their own token with TESTER_APIFY_TOKEN, the others with their own', () => {
+        const targets = [build, { actorFullName: 'stranger/x' }, { actorFullName: 'partner/p' }];
+        const result = run(['test', '--test-files-glob', 'test/lib/**'], JSON.stringify(targets), repoDir, {
+            ...env,
+            TESTER_APIFY_TOKEN: 'fallback-token',
+        });
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toMatchObject({ summary: { total: 3, passed: 3, failed: 0 } });
+        expect(result.stderr).toContain('APIFY_TOKEN_PARTNER is not set, testing with TESTER_APIFY_TOKEN instead.');
+    });
+
+    it('fails without the config, which names the token each Actor is tested with', async () => {
+        const noConfigRepo = await mkdtemp(path.join(os.tmpdir(), 'apify-test-cli-no-config-'));
+        try {
+            await symlink(path.join(projectRoot, 'node_modules'), path.join(noConfigRepo, 'node_modules'), 'dir');
+            await mkdir(path.join(noConfigRepo, 'test/platform'), { recursive: true });
+            await writeFile(path.join(noConfigRepo, 'test/platform/a.test.ts'), PASSING_TEST);
+            const result = run(['test'], JSON.stringify([build]), noConfigRepo);
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('Config file "apify-test-tools.config.json" not found');
+            expect(result.stdout).toBe('');
+        } finally {
+            await rm(noConfigRepo, { recursive: true, force: true });
+        }
     });
 
     it('fails on empty stdin instead of testing nothing', () => {

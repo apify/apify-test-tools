@@ -1,12 +1,12 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
 
-import { assertSupportedLib } from './lib-compat.js';
+import { withTestTokens } from './actor-ids.js';
+import { assertSupportedLib, findPackageDir, readPackageJson } from './lib-compat.js';
 import { logger } from './logger.js';
 import type { TestTarget } from './stdin-input.js';
 import { resolveTestFilesGlob } from './test-files-glob.js';
@@ -18,23 +18,18 @@ import {
     toTestReport,
     type VitestJsonReport,
 } from './test-report.js';
+import { readTestTokenEnvVars } from './utils/config/load-config.js';
 
 /**
- * Finds the vitest the repository installed, the way Node would resolve it from `cwd`. The CLI ships as a bundle
- * that runs outside the repository's `node_modules`, so the tests keep the vitest (and the lib) version the
- * repository locked. Read from `package.json` because vitest's exports don't expose its bin.
+ * Finds the vitest the repository installed. The CLI ships as a bundle that runs outside the repository's
+ * `node_modules`, so the tests keep the vitest (and the lib) version the repository locked. Read from `package.json`
+ * because vitest's exports don't expose its bin.
  */
 const resolveVitestBin = async (cwd: string): Promise<string> => {
-    for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
-        const packageDir = path.join(dir, 'node_modules', 'vitest');
-        if (existsSync(path.join(packageDir, 'package.json'))) {
-            const { bin } = JSON.parse(await fs.readFile(path.join(packageDir, 'package.json'), 'utf8'));
-            return path.join(packageDir, typeof bin === 'string' ? bin : bin.vitest);
-        }
-        if (path.dirname(dir) === dir) {
-            throw new Error(`vitest is not installed in ${cwd}, install the repository's dependencies first`);
-        }
-    }
+    const packageDir = findPackageDir(cwd, 'vitest');
+    if (!packageDir) throw new Error(`vitest is not installed in ${cwd}, install the repository's dependencies first`);
+    const { bin } = await readPackageJson(packageDir);
+    return path.join(packageDir, typeof bin === 'string' ? bin : bin.vitest);
 };
 
 /**
@@ -84,13 +79,11 @@ export const runTests = async ({
     reporters = [],
     cwd = process.cwd(),
 }: RunTestsOptions): Promise<TestReport> => {
-    // Without it the lib skips every platform test, and a run that tested nothing would pass
-    if (!process.env.TESTER_APIFY_TOKEN) {
-        throw new Error('TESTER_APIFY_TOKEN is not set. The platform tests need it to run the Actors.');
-    }
     const vitestBin = await resolveVitestBin(cwd);
     await assertSupportedLib(cwd);
     const vitestFilters = await resolveVitestFilters(testFilesGlob, cwd);
+    // Each Actor's tests run with the token the config names for it
+    const actorBuilds = withTestTokens(targets, { testTokenEnvVars: await readTestTokenEnvVars() });
 
     const tempDir = vitestOutputFile ? null : await fs.mkdtemp(path.join(os.tmpdir(), 'apify-test-tools-'));
     const outputFile = path.resolve(cwd, vitestOutputFile ?? path.join(tempDir!, 'vitest-report.json'));
@@ -101,10 +94,12 @@ export const runTests = async ({
     const env = { ...process.env };
     // Vitest writes to a pipe, so it would drop colors that the terminal it ends up in shows
     if (process.stderr.isTTY && env.FORCE_COLOR === undefined && env.NO_COLOR === undefined) env.FORCE_COLOR = '1';
-    // The lib runs the tests of the Actors listed here, each on the build given, or on its default build without one
-    env.ACTOR_BUILDS = JSON.stringify(targets);
-    const described = targets.map(
-        ({ actorFullName, buildNumber }) => `${actorFullName} (${buildNumber ?? 'default build'})`,
+    // The lib runs the tests of the Actors listed here, each on the build given, or on its default build without one,
+    // with the token in the env var named with it
+    env.ACTOR_BUILDS = JSON.stringify(actorBuilds);
+    const described = actorBuilds.map(
+        ({ actorFullName, buildNumber, testTokenEnvVar }) =>
+            `${actorFullName} (${buildNumber ?? 'default build'}, ${testTokenEnvVar ?? 'no own token'})`,
     );
     logger.info(`Testing ${targets.length} Actor(s): ${described.join(', ') || 'none'}`);
 
@@ -139,7 +134,7 @@ export const runTests = async ({
             logTestReport(report);
             return report;
         }
-        const report = requireTestsToRun(toTestReport(vitestReport, { cwd, exitCode }), targets);
+        const report = requireTestsToRun(toTestReport(vitestReport, { cwd, exitCode }), actorBuilds);
         logTestReport(report);
         return report;
     } finally {

@@ -28,8 +28,7 @@ Build, test and release Apify Actors from a Git repository or local source code.
         buildDevelAndTest:
             uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
             secrets:
-                TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-                # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
+                # One entry per secret apify-test-tools.config.json names: each `tokenEnvVar` and `testTokenEnvVar`
                 CONFIG_SECRETS: |
                     { "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}" }
     ```
@@ -41,9 +40,9 @@ build your own pipeline, e.g. on a CI platform other than GitHub, or to build an
 
 Builds and platform tests cost time and money, so the tool skips everything a change can't affect:
 
-- **Only affected Actors.** A changed file only counts for the Actors whose build context it falls in, minus their
-  `.dockerignore`. In a monorepo, a change to one Actor doesn't build or test the others.
-- **Cosmetic changes skip tests.** README, CHANGELOG and formatting-only schema changes don't trigger tests on a PR;
+- **Only affected Actors.** A changed file counts for Actors whose context contains it, subject to ignore rules,
+  or whose `actor.json` links it. A shared file linked from `actor.json` affects every Actor that uses it.
+- **Cosmetic changes skip tests.** Linked README/changelog edits and cosmetic schema changes don't trigger tests on a PR;
   they're only rebuilt when released.
 - **Only new changes on a PR.** Each push to a PR retests only the Actors that changed since its last green run, not
   the whole PR again.
@@ -87,7 +86,8 @@ Every repo must have an `apify-test-tools.config.json` file at the root that lis
 ### 3. Set up Actor folders
 
 Each Actor in the config must have a `.actor/actor.json` file. The `dockerContextDir` field in `actor.json` defines
-the build context boundary — this is what the tool uses to decide which files can affect the Actor's build (see
+the build context boundary. Resolved documentation, schema, and Dockerfile links in `actor.json` also count as
+dependencies even outside that context (see
 [Change detection](docs/cli.md#change-detection)).
 
 This example has two Actors that share the code at the repo root, and one standalone Actor with its own code:
@@ -152,7 +152,7 @@ On GitHub, add the [GitHub workflows](#github-workflows) below. On another CI pl
 ## Config file
 
 `apify-test-tools.config.json` lives at the repo root and tells the tool which Actors live in the repo, where they
-are, and which token builds them. Actors are organized into groups, and each group sets the token once for all of its
+are, and which tokens build and test them. Actors are organized into groups, and each group sets the token once for all of its
 Actors:
 
 ```json
@@ -179,6 +179,19 @@ The group key (`myteam` above) is only a label for readability; it doesn't need 
 group needs a `tokenEnvVar` and at least one Actor. Add another group for Actors that need a different token, e.g.
 Actors owned by another account.
 
+The platform tests run each Actor with the same token that builds it, so they run in the account that owns the Actor.
+Only the owner, or an account with write access to the Actor, can run a [standby Actor](docs/lib.md#teststandbyactoractorid-testname-fn-options)
+on a build other than its default one, which is what the tests do on a PR. To test some Actors from another account,
+name its token in `testTokenEnvVar`, on the group or on an Actor:
+
+```json
+"partner": {
+    "tokenEnvVar": "APIFY_TOKEN_PARTNER",
+    "testTokenEnvVar": "TESTER_APIFY_TOKEN",
+    "actors": [{ "folder": "actors/partner-scraper", "actorFullName": "partner/scraper" }]
+}
+```
+
 The orchestrator sets `overrideActorContext` because its tests live outside its own folder: without it, a change to
 only `test/platform/orchestrator` wouldn't test it. The other two already have the whole repo, tests included, as
 their context.
@@ -186,9 +199,10 @@ their context.
 | Field                  | Where          | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ---------------------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `mode`                 | top level      | yes      | Always `"grouped"`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `folder`               | Actor          | yes      | Relative path from repo root to the Actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`), the Actor's README/CHANGELOG, and its source. Use `"."` for a single-Actor repo where `.actor/` is at the root.                                                                                                                                                                                                                         |
+| `folder`               | Actor          | yes      | Relative path from repo root to the Actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`) and its source. Documentation and schemas may be linked from elsewhere through `actor.json`. Use `"."` for a single-Actor repo where `.actor/` is at the root.                                                                                                                                                                           |
 | `actorFullName`        | Actor          | yes      | Full Actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the Actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                              |
 | `tokenEnvVar`          | group or Actor | yes      | Name of the environment variable holding the Apify API token that builds the group's Actors. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                   |
+| `testTokenEnvVar`      | group or Actor | no       | Name of the environment variable holding the Apify API token the platform tests run the Actors with. Defaults to the Actor's `tokenEnvVar`. A group's `testTokenEnvVar` applies to its Actors even when an Actor sets its own `tokenEnvVar`. If the env var is not set, the tests of the Actors that use it fall back to `TESTER_APIFY_TOKEN`, or fail without it.                                                                                                                                     |
 | `platformTestsGlob`    | top level      | no       | Glob from the repo root of the platform tests and their helpers. Default `test/platform/**`. A changed file that matches it is a test change, also when `.dockerignore` lists it: the PR workflow builds and tests the Actor whose context holds it, and a release skips it. See [Change detection](docs/cli.md#change-detection).                                                                                                                                                                     |
 | `overrideActorContext` | group or Actor | no       | Array of paths (relative to repo root) that define which files are relevant to the Actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an Actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The Actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
 
@@ -228,8 +242,7 @@ jobs:
     buildDevelAndTest:
         uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
         secrets:
-            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-            # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
+            # One entry per secret apify-test-tools.config.json names: each `tokenEnvVar` and `testTokenEnvVar`
             CONFIG_SECRETS: |
                 {
                     "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
@@ -251,7 +264,7 @@ jobs:
         uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v1
         secrets:
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-            # One entry per secret apify-test-tools.config.json names, today each `tokenEnvVar`
+            # One entry per secret apify-test-tools.config.json names, here each `tokenEnvVar`
             CONFIG_SECRETS: |
                 {
                     "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
@@ -279,8 +292,13 @@ jobs:
         with:
             test-files-glob: 'test/platform/{daily,daily-without-pr}/**'
         secrets:
-            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+            # One entry per token the tests run with: each `testTokenEnvVar`, by default each `tokenEnvVar`
+            CONFIG_SECRETS: |
+                {
+                    "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
+                    "APIFY_TOKEN_PARTNER": "${{ secrets.APIFY_TOKEN_PARTNER }}"
+                }
 ```
 
 and a few critical tests every hour:
@@ -300,8 +318,12 @@ jobs:
         with:
             test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
         secrets:
-            TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+            CONFIG_SECRETS: |
+                {
+                    "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
+                    "APIFY_TOKEN_PARTNER": "${{ secrets.APIFY_TOKEN_PARTNER }}"
+                }
 ```
 
 ### Secrets
@@ -309,12 +331,13 @@ jobs:
 Set these as repository or organization secrets and pass them in each job's `secrets:` block, as in the examples
 above. The Actor tokens go packed in one JSON object, `CONFIG_SECRETS`, because their names differ per repo:
 
-| Secret                                                                    | Needed for                                                        |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json` | building Actors and deleting their old builds                     |
-| `TESTER_APIFY_TOKEN`                                                      | running the platform tests                                        |
-| `SLACK_BOT_TOKEN`                                                         | announcing releases and reporting scheduled test results to Slack |
-| `NPM_TOKEN`                                                               | optional, installing private npm packages. Use a read-only token  |
+| Secret                                                                       | Needed for                                                                          |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json`    | building Actors and deleting their old builds                                       |
+| the test tokens named by `testTokenEnvVar`, by default the same Actor tokens | running the platform tests                                                          |
+| `TESTER_APIFY_TOKEN`                                                         | optional, the platform tests' fallback for Actors whose own test token isn't passed |
+| `SLACK_BOT_TOKEN`                                                            | announcing releases and reporting scheduled test results to Slack                   |
+| `NPM_TOKEN`                                                                  | optional, installing private npm packages. Use a read-only token                    |
 
 Repos in the `apify` org can pass `secrets: inherit` instead. Each secret only reaches the step that needs it. See
 [Secrets](docs/workflows.md#secrets) for both, and for passing `CONFIG_SECRETS` without listing the tokens.
@@ -341,12 +364,13 @@ describe('web-scraper', () => {
 });
 ```
 
-Platform tests are skipped unless `TESTER_APIFY_TOKEN` is set, so your regular unit test run stays unaffected.
+Platform tests only run on the Actors [`test`](docs/cli.md#running-tests-test) passes to them, each with its
+`testTokenEnvVar` token, so your regular unit test run stays unaffected.
 
 To run them locally against the Actors' current default builds:
 
 ```bash
-npx apify-test-tools get-actor-configs | TESTER_APIFY_TOKEN=<token> npx apify-test-tools test
+npx apify-test-tools get-actor-configs | APIFY_TOKEN_MYTEAM=<token> npx apify-test-tools test
 ```
 
 The [Vitest library API](docs/lib.md) covers everything `toFinishWith` checks, the other matchers, standby Actors,

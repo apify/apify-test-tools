@@ -1,6 +1,6 @@
 {
     "name": "apify-test-tools",
-    "version": "0.11.0",
+    "version": "0.11.1",
     "type": "module",
     "description": "Tools & lib to test Actors on the Apify platform",
     "repository": {

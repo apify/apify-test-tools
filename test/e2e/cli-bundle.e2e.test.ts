@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -171,7 +171,8 @@ describe('sandbox dummies', () => {${actorTests}
             [bundlePath, 'test', '--test-files-glob', 'test/platform/**'],
             {
                 cwd: repoDir,
-                env: { ...cliEnv, TESTER_APIFY_TOKEN: token! },
+                // Each Actor is tested with the token the config builds it with
+                env: cliEnv,
                 input: JSON.stringify(builds),
             },
         );
@@ -224,6 +225,11 @@ describe('sandbox dummies', () => {${actorTests}
                     )
                     .join('\n');
                 await mkdir(path.join(oldLibRepo, 'test/platform'), { recursive: true });
+                // `test` reads each Actor's test token from the config
+                await copyFile(
+                    path.join(repoDir, 'apify-test-tools.config.json'),
+                    path.join(oldLibRepo, 'apify-test-tools.config.json'),
+                );
                 await writeFile(
                     path.join(oldLibRepo, 'test/platform/dummies.test.ts'),
                     `import { describe, testActor } from 'apify-test-tools';

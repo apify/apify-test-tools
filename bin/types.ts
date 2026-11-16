@@ -34,6 +34,8 @@ export interface ActorConfig {
     actorFullName: string;
     folder: ExistingDir;
     tokenEnvVar: string;
+    /** The env var holding the token the platform tests run the Actor with */
+    testTokenEnvVar: string;
     actorJson: ActorJsonPaths;
     dockerContextDir: RelativeDir;
     contextPaths: RelativeDir[];

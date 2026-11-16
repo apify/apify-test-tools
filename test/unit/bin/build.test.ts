@@ -218,6 +218,7 @@ describe('dry run', () => {
             actorFullName: ACTOR,
             folder: new ExistingDir('actors/a'),
             tokenEnvVar: TOKEN_ENV_VAR,
+            testTokenEnvVar: TOKEN_ENV_VAR,
             actorJson: {
                 file: new ExistingFile('actors/a/.actor/actor.json'),
                 dockerContextDir: new RelativeDir('actors/a'),

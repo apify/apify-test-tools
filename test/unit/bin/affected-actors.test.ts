@@ -30,6 +30,7 @@ const actorConfig = (name: string): ActorConfig => {
         actorFullName: `owner/${name}`,
         folder: new ExistingDir(folder),
         tokenEnvVar: 'APIFY_TOKEN',
+        testTokenEnvVar: 'APIFY_TOKEN',
         dockerContextDir: context,
         contextPaths: [context],
         actorJson: { file: new ExistingFile(`${folder}/.actor/actor.json`), dockerContextDir: context, changelog },

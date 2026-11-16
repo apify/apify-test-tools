@@ -6,6 +6,8 @@ export type ActorBuild = {
     actorRawId: string;
     buildNumber: string;
     actorFullName: string;
+    /** The env var holding the token the Actor's tests run with */
+    testTokenEnvVar?: string;
 };
 
 export type RunOptions<T> = {

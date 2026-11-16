@@ -19,21 +19,24 @@ on:
                 default: true
                 required: false
         # Every secret is optional. The ones this workflow reads are declared by name. The secrets that
-        # apify-test-tools.config.json names (e.g. each Actor's `tokenEnvVar`) differ per repo, so they
-        # come packed in CONFIG_SECRETS. See the Secrets section of docs/workflows.md.
+        # apify-test-tools.config.json names (each Actor's `tokenEnvVar` and `testTokenEnvVar`) differ per repo,
+        # so they come packed in CONFIG_SECRETS. See the Secrets section of docs/workflows.md.
         secrets:
             NPM_TOKEN:
                 required: false
                 description: Read-only token for installing private npm packages.
             TESTER_APIFY_TOKEN:
                 required: false
-                description: Apify token the platform tests run Actors with.
+                description: >-
+                    Fallback token for the platform tests: used for Actors whose own test token
+                    (`testTokenEnvVar`, by default `tokenEnvVar`) isn't passed, and for every Actor by a repo
+                    on an apify-test-tools lib older than per-Actor tokens.
             CONFIG_SECRETS:
                 required: false
                 description: >-
                     JSON object of the secrets apify-test-tools.config.json names, secret name -> value.
-                    Today that is each Actor's `tokenEnvVar`. Passing `toJSON(secrets)` works too, only
-                    the names the config declares are used.
+                    That is each Actor's `tokenEnvVar` and `testTokenEnvVar`. Passing `toJSON(secrets)` works
+                    too, only the names the config declares are used.
 
 concurrency:
     group: ${{ github.workflow }}-${{ github.ref }}
@@ -53,18 +56,6 @@ jobs:
                   # Some repos use private npm packages, they need to pass NPM_TOKEN secret to this workflow
                   npm-token: ${{ secrets.NPM_TOKEN }}
                   config-secrets: ${{ secrets.CONFIG_SECRETS }}
-
-            # Fails here with a clear message rather than deep in vitest. `required: true` alone doesn't
-            # catch it: a caller can list the secret while the repo doesn't have it, and PRs from forks
-            # never get secrets.
-            - name: Check TESTER_APIFY_TOKEN
-              env:
-                  TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-              run: |
-                  if [ -z "$TESTER_APIFY_TOKEN" ]; then
-                      echo "::error::TESTER_APIFY_TOKEN is empty. Pass it in the secrets: block of the job that calls this workflow."
-                      exit 1
-                  fi
 
             - name: Pick last validated commit from cache
               id: base_commit
@@ -93,7 +84,7 @@ jobs:
 
             # Cosmetic-only changes need no tests, so only the Actors with functional or platform test changes are
             # built, into the test version 0.99 that users never run.
-            # run-with-apify-tokens.mjs reads the token names from in apify-test-tools.config.json
+            # run-with-apify-tokens.mjs reads the build token names from apify-test-tools.config.json
             # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
             # The library never sees secrets it doesn't need
             - name: Build
@@ -105,20 +96,27 @@ jobs:
                   REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
               run: |
                   jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
-                    | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" apify-test-tools build --version-number 0.99 \
+                    | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" --tokens build \
+                        apify-test-tools build --version-number 0.99 \
                         --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC" \
                     | tee builds.json
 
-            # Runs the repo's test code and its whole import graph, so it gets the tester token only.
+            # Runs the repo's test code and its whole import graph, so it gets only the tokens the tests run the
+            # Actors with: each Actor's `testTokenEnvVar`, which is its `tokenEnvVar` unless the config names another,
+            # and TESTER_APIFY_TOKEN, which the tests fall back to when an Actor's own token isn't passed. A repo on
+            # a lib older than per-Actor tokens runs every test with TESTER_APIFY_TOKEN.
             - name: Test
               env:
+                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+                  SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   # Passed through the environment and quoted, so the shell doesn't expand the glob itself
                   # An empty input, e.g. from an expression that picks the glob, runs everything, like the default
                   TEST_FILES_GLOB: ${{ inputs.test-files-glob || 'test/platform/**' }}
               # The github-actions reporter annotates the PR with the failing tests
               run: |
-                  apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" --reporter github-actions \
+                  node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" --tokens test \
+                    apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" --reporter github-actions \
                     < builds.json > test-report.json
 
             # NOTE: This is an optimization that if we did functional changes and later only cosmetic changes (e.g. dev readme), we will compare changes files only for the last commit. This must run after tests because we want to cache the latest commit only if the tests are successful

@@ -7,7 +7,7 @@ import yargs, { type Options } from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
 import { getAffectedActors } from './affected-actors.js';
-import { buildActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds } from './build.js';
+import { buildOrReuseActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds } from './build.js';
 import { runBuildsFromLocal } from './build-from-local.js';
 import { logger, logLevels } from './logger.js';
 import { notify, notifyOnChoices } from './notify.js';
@@ -55,6 +55,12 @@ const affectedRangeOptions = {
     since: {
         type: 'string',
         describe: 'Only count commits after this one. Ignored with --base if it is not on the branch',
+    },
+    'stored-builds': {
+        type: 'string',
+        describe:
+            'JSON file with the builds earlier runs of the PR made, as build prints them. Actors with only test ' +
+            'changes get theirs in testChangedActors, so build reuses it. A missing file has none',
     },
 } as const satisfies Record<string, Options>;
 
@@ -216,7 +222,8 @@ await yargs()
     )
     .command(
         'build',
-        'Build the Actors listed on stdin, as {"actors": [{"actorFullName": ...}]}, from the checked-out branch',
+        'Build the Actors listed on stdin, as {"actors": [{"actorFullName": ...}]}, from the checked-out branch. ' +
+            'An Actor listed with a "build" (from testChangedActors of get-affected-actors) reuses it while it exists',
         (y) => y.options(buildOptions).options(repoUrlOptions).options(envVarsSyncOptions).options(dryRunOptions),
         async (args) => {
             const input = parseBuildInput(await readStdin());
@@ -224,7 +231,8 @@ await yargs()
             // An empty --actors selects every Actor, but an empty list here means there is nothing to build. The configs
             // are picked by name, so an Actor listed twice (e.g. in two lists of get-affected-actors) is built once
             const actorConfigs = names.length > 0 ? await readConfigFile({ actors: names, ignore: [] }) : [];
-            const builds = await buildActors({
+            const builds = await buildOrReuseActors({
+                targets: input.actors,
                 actorConfigs,
                 versionNumber: args.versionNumber,
                 repoUrl: args.repoUrl,

@@ -5,8 +5,10 @@ than 1.0.0, and the 1.0 library expects what the v1 workflows pass it. Migrate a
 
 1. [Update the packages](#update-the-packages): `apify-test-tools` 1.0, vitest 5 and Node.js
 2. [Convert the config](#convert-the-config) to `"mode": "grouped"`
-3. [Switch the workflows](#switch-the-workflows) to `@workflows-v1`, with `secrets: inherit` or the test tokens in `CONFIG_SECRETS`
-4. [Update the tests](#update-the-tests): Actors by full name, the imports and `toFinishWith`
+3. [Choose the account that runs the tests](#choose-the-account-that-runs-the-tests): the Actor's owner by default, or
+   `TESTER_APIFY_TOKEN` as before
+4. [Switch the workflows](#switch-the-workflows) to `@workflows-v1`, with `secrets: inherit` or the test tokens in `CONFIG_SECRETS`
+5. [Update the tests](#update-the-tests): Actors by full name, the imports and `toFinishWith`
 
 `@workflows-v0` keeps working with the libraries before 1.0, so a repository can stay on it until its PR is merged.
 The [Troubleshooting](#troubleshooting) section maps the errors you may hit to the step that fixes them.
@@ -69,8 +71,50 @@ After:
 Group the Actors by the token that builds them. The group key is only a label. An Actor can still set its own
 `tokenEnvVar` or `overrideActorContext`, which replaces the group's. `platformTestsGlob` stays at the top level.
 
-The tests of each Actor run with its `testTokenEnvVar`, its `tokenEnvVar` unless the config names another, on the group
-or on the Actor. See [Config file](../README.md#config-file).
+See [Config file](../README.md#config-file) for every field.
+
+## Choose the account that runs the tests
+
+This changes who the test runs belong to, without any error to tell you.
+
+Before v1, every platform test ran its Actor with `TESTER_APIFY_TOKEN`. In v1, the tests of each Actor run with its
+`testTokenEnvVar`, which is its `tokenEnvVar` unless the config names another: the token that builds the Actor, usually
+the owner's. So after the migration, by default:
+
+- the test runs start in the owner's account, and their usage counts against it, not against the account of
+  `TESTER_APIFY_TOKEN`;
+- the runs show up among the owner's runs;
+- the Claude investigation workflow needs the owner's token to read a failed run, see
+  [With `secrets: inherit`](#with-secrets-inherit);
+- standby tests can run an Actor's PR build, which only the owner, or an account with write access, can do.
+
+To keep the tests running with `TESTER_APIFY_TOKEN`, set `testTokenEnvVar` on every group. It can't be set for the
+whole config at once:
+
+```json
+{
+    "mode": "grouped",
+    "groups": {
+        "myteam": {
+            "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
+            "testTokenEnvVar": "TESTER_APIFY_TOKEN",
+            "actors": [
+                { "folder": "actors/web-scraper", "actorFullName": "myteam/web-scraper" },
+                { "folder": "actors/email-sender", "actorFullName": "myteam/email-sender" }
+            ]
+        },
+        "partner": {
+            "tokenEnvVar": "APIFY_TOKEN_PARTNER",
+            "testTokenEnvVar": "TESTER_APIFY_TOKEN",
+            "actors": [{ "folder": "actors/partner", "actorFullName": "partner/scraper" }]
+        }
+    }
+}
+```
+
+An Actor can set its own `testTokenEnvVar` too, to run only its tests with another token. With `secrets: inherit`,
+the config is all it takes. With secrets listed by name, pass `TESTER_APIFY_TOKEN` inside `CONFIG_SECRETS`, see
+[Switch the workflows](#switch-the-workflows).
 
 ## Switch the workflows
 
@@ -108,9 +152,9 @@ names it as a `testTokenEnvVar`.
 
 `secrets: inherit` passes `TESTER_APIFY_TOKEN` to `public_platform-tests-claude-investigate-and-fix.yaml` as the
 repository has it. Claude reads the failed run with it, and runs are private to the account that started them, so it
-must be a token of the account the tests ran the Actors with. If the tests now run with another account's token than
-`TESTER_APIFY_TOKEN`, either name `TESTER_APIFY_TOKEN` as the `testTokenEnvVar` in the config, or list the secrets of
-the investigation job by name instead of inheriting them:
+must be a token of the account the tests ran the Actors with. If the tests run as the owner, the default (see
+[Choose the account that runs the tests](#choose-the-account-that-runs-the-tests)), list the secrets of the
+investigation job by name instead of inheriting them:
 
 ```yaml
 handle-failure:
@@ -163,23 +207,11 @@ jobs:
 ```
 
 `public_pr-build-test.yaml` already takes `CONFIG_SECRETS` for the builds. Drop `TESTER_APIFY_TOKEN` there, and make
-sure `CONFIG_SECRETS` also holds any `testTokenEnvVar` that differs from the build tokens.
+sure `CONFIG_SECRETS` also holds any `testTokenEnvVar` that differs from the build tokens. If the tests keep running
+with `TESTER_APIFY_TOKEN`, that means adding `"TESTER_APIFY_TOKEN": "${{ secrets.TESTER_APIFY_TOKEN }}"`.
 
 `public_platform-tests-claude-investigate-and-fix.yaml` still takes `TESTER_APIFY_TOKEN`: there it is the token Claude
 reads and re-runs the failed run with. Keep passing it the token your tests ran the Actors with.
-
-### Testing with `TESTER_APIFY_TOKEN` on purpose
-
-If your tests ran with `TESTER_APIFY_TOKEN` on purpose, e.g. from an account other than the owner's, name it as the
-test token in the config. With `secrets: inherit` that is all, otherwise also pass it in `CONFIG_SECRETS`:
-
-```json
-"partner": {
-    "tokenEnvVar": "APIFY_TOKEN_PARTNER",
-    "testTokenEnvVar": "TESTER_APIFY_TOKEN",
-    "actors": [{ "folder": "actors/partner", "actorFullName": "partner/scraper" }]
-}
-```
 
 ## Update the tests
 

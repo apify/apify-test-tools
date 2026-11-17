@@ -55,6 +55,7 @@ This README covers what you need to get a repo running. The full reference lives
 - [Vitest library API](docs/lib.md) — `testActor`, `testStandbyActor`, `RunTestResult`, matchers, running tests locally
 - [CLI API](docs/cli.md) — every command, change detection, releasing, building locally
 - [Workflow API](docs/workflows.md) — every GitHub workflow, its inputs and secrets, versioning
+- [Migrating to v1](docs/migrating-to-v1.md) — updating a repository from `@workflows-v0` and a library before 1.0
 
 [Contributing](CONTRIBUTING.md)
 

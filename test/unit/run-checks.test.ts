@@ -1,27 +1,42 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { checkRun } from '../../lib/run-checks.js';
 import type { RunTestResult } from '../../lib/run-test-result.js';
 
-const fakeRun = (overrides: { status?: string; log?: string; stats?: object; chargedEventCounts?: object } = {}) =>
-    ({
-        status: overrides.status ?? 'SUCCEEDED',
-        getRunInfo: async () => ({
-            stats: { durationMillis: 5_000 },
-            chargedEventCounts: overrides.chargedEventCounts,
-        }),
+const STATS = { requestsFailed: 0, requestsRetries: 1, requestRetryHistogram: [5, 1] };
+
+interface FakeRun {
+    status?: string;
+    log?: string;
+    durationMillis?: number;
+    /** The statistics records of the run, by key. The default crawler's only, unless given. */
+    statistics?: Record<string, object>;
+    chargedEventCounts?: object;
+}
+
+const fakeRun = ({
+    status = 'SUCCEEDED',
+    log = 'all good',
+    durationMillis = 5_000,
+    statistics = { SDK_CRAWLER_STATISTICS_0: STATS },
+    chargedEventCounts,
+}: FakeRun = {}) => {
+    const getStatistics = vi.fn(async (key: string) => statistics[key]);
+    const run = {
+        status,
+        getRunInfo: async () => ({ stats: { durationMillis }, chargedEventCounts }),
         getDataset: async () => ({ items: new Array(10) }),
-        getStatistics: async () => ({
-            requestsFailed: 0,
-            requestsRetries: 1,
-            requestRetryHistogram: [5, 1],
-            ...overrides.stats,
-        }),
-        getLog: async () => overrides.log ?? 'all good',
-    }) as unknown as RunTestResult;
+        getStatistics,
+        getLog: async () => log,
+    } as unknown as RunTestResult;
+    return Object.assign(run, { getStatistics });
+};
+
+const checks = async (run: RunTestResult, options: Parameters<typeof checkRun>[1]) =>
+    (await checkRun(run, options)).filter(({ pass }) => !pass);
 
 const failures = async (run: RunTestResult, options: Parameters<typeof checkRun>[1]) =>
-    (await checkRun(run, options)).filter(({ pass }) => !pass).map(({ name }) => name);
+    (await checks(run, options)).map(({ name }) => name);
 
 describe('checkRun()', () => {
     it('passes a run matching the defaults', async () => {
@@ -29,7 +44,11 @@ describe('checkRun()', () => {
     });
 
     it('reports every failing check at once', async () => {
-        const run = fakeRun({ status: 'FAILED', log: 'TypeError: x', stats: { requestsFailed: 2 } });
+        const run = fakeRun({
+            status: 'FAILED',
+            log: 'TypeError: x',
+            statistics: { SDK_CRAWLER_STATISTICS_0: { ...STATS, requestsFailed: 2 } },
+        });
         expect(await failures(run, { datasetItemCount: { min: 11 } })).toEqual([
             'status',
             'datasetItemCount',
@@ -39,13 +58,24 @@ describe('checkRun()', () => {
     });
 
     it('disables a check with null', async () => {
-        const run = fakeRun({ stats: { requestsFailed: 2 } });
+        const run = fakeRun({ statistics: { SDK_CRAWLER_STATISTICS_0: { ...STATS, requestsFailed: 2 } } });
         expect(await failures(run, { datasetItemCount: 10, failedRequests: null })).toEqual([]);
     });
 
     it('treats explicitly undefined options as disabled checks', async () => {
-        const options = { datasetItemCount: 10, duration: undefined, maxRetriesPerRequest: undefined };
+        const options = { datasetItemCount: 10, failedRequests: undefined, maxRetriesPerRequest: undefined };
         expect(await failures(fakeRun(), options)).toEqual([]);
+    });
+
+    it('checks the duration and the retries only when asked to', async () => {
+        const run = fakeRun({
+            durationMillis: 1,
+            statistics: { SDK_CRAWLER_STATISTICS_0: { ...STATS, requestsRetries: 50 } },
+        });
+        expect(await failures(run, { datasetItemCount: 10 })).toEqual([]);
+        expect(
+            await failures(run, { datasetItemCount: 10, duration: { min: 600 }, requestsRetries: { max: 3 } }),
+        ).toEqual(['duration', 'requestsRetries']);
     });
 
     it('checks the longest retry chain only when asked to', async () => {
@@ -53,6 +83,104 @@ describe('checkRun()', () => {
             'maxRetriesPerRequest',
         ]);
         expect(await failures(fakeRun(), { datasetItemCount: 10, maxRetriesPerRequest: 1 })).toEqual([]);
+    });
+
+    describe('statistics', () => {
+        it('fails the checks that read a missing record, naming it', async () => {
+            const run = fakeRun({ statistics: {} });
+            const failed = await checks(run, { datasetItemCount: 10, requestsRetries: { max: 3 } });
+            expect(failed).toEqual([
+                {
+                    name: 'failedRequests',
+                    pass: false,
+                    actual: 'no statistics record SDK_CRAWLER_STATISTICS_0',
+                    expected: '0',
+                },
+                {
+                    name: 'requestsRetries',
+                    pass: false,
+                    actual: 'no statistics record SDK_CRAWLER_STATISTICS_0',
+                    expected: '<,3>',
+                },
+            ]);
+        });
+
+        it('reads no statistics when no check needs them, e.g. for an Actor without a crawler', async () => {
+            const run = fakeRun({ statistics: {} });
+            expect(await failures(run, { datasetItemCount: 10, failedRequests: null })).toEqual([]);
+            expect(run.getStatistics).not.toHaveBeenCalled();
+        });
+
+        it('reads the record statisticsKeys names', async () => {
+            const run = fakeRun({ statistics: { SDK_CRAWLER_STATISTICS_1: { ...STATS, requestsFailed: 2 } } });
+            const options = { datasetItemCount: 10, statisticsKeys: 'SDK_CRAWLER_STATISTICS_1' };
+            expect(await failures(run, { ...options, failedRequests: 2 })).toEqual([]);
+            expect(run.getStatistics).toHaveBeenCalledWith('SDK_CRAWLER_STATISTICS_1');
+        });
+
+        it('sums the records of several crawlers', async () => {
+            const run = fakeRun({
+                statistics: {
+                    first: { requestsFailed: 1, requestsRetries: 2, requestRetryHistogram: [5, 2] },
+                    second: { requestsFailed: 2, requestsRetries: 3, requestRetryHistogram: [5, 1, 0, 1] },
+                },
+            });
+            const options = { datasetItemCount: 10, statisticsKeys: ['first', 'second'] };
+            expect(
+                await failures(run, { ...options, failedRequests: 3, requestsRetries: 5, maxRetriesPerRequest: 3 }),
+            ).toEqual([]);
+            expect(await failures(run, { ...options, failedRequests: 2, maxRetriesPerRequest: 2 })).toEqual([
+                'failedRequests',
+                'maxRetriesPerRequest',
+            ]);
+        });
+
+        it('fails when any of several records is missing', async () => {
+            const run = fakeRun();
+            const failed = await checks(run, {
+                datasetItemCount: 10,
+                statisticsKeys: ['SDK_CRAWLER_STATISTICS_0', 'SDK_CRAWLER_STATISTICS_1'],
+            });
+            expect(failed.map(({ actual }) => actual)).toEqual(['no statistics record SDK_CRAWLER_STATISTICS_1']);
+        });
+    });
+
+    describe('forbiddenLogs', () => {
+        it('fails on an error the way JavaScript prints it, quoting the line', async () => {
+            const log =
+                '2026-11-16T10:00:00.000Z ERROR Request failed\nTypeError: Cannot read properties of undefined\n';
+            const failed = await checks(fakeRun({ log }), { datasetItemCount: 10 });
+            expect(failed).toEqual([
+                {
+                    name: 'forbiddenLogs',
+                    pass: false,
+                    actual: '[TypeError: Cannot read properties of undefined]',
+                    expected: 'none of [/\\bReferenceError: /, /\\bTypeError: /]',
+                },
+            ]);
+        });
+
+        it('passes the error names in prose or in longer names by default', async () => {
+            const log = 'Handled a TypeError from the page\nMyTypeError: not a real one\nTypeErrors: none';
+            expect(await failures(fakeRun({ log }), { datasetItemCount: 10 })).toEqual([]);
+        });
+
+        it('takes strings anywhere in a line and regular expressions', async () => {
+            const log = 'INFO all good\nWARN Proxy blocked\nERROR Captcha 3 times';
+            const failed = await checks(fakeRun({ log }), {
+                datasetItemCount: 10,
+                forbiddenLogs: ['blocked', /Captcha \d+ times/],
+            });
+            expect(failed.map(({ actual }) => actual)).toEqual(['[WARN Proxy blocked | ERROR Captcha 3 times]']);
+        });
+
+        it('quotes at most three lines', async () => {
+            const log = Array.from({ length: 5 }, (_, i) => `TypeError: ${i}`).join('\n');
+            const failed = await checks(fakeRun({ log }), { datasetItemCount: 10 });
+            expect(failed.map(({ actual }) => actual)).toEqual([
+                '[TypeError: 0 | TypeError: 1 | TypeError: 2] and 2 more',
+            ]);
+        });
     });
 
     describe('chargedEventCounts', () => {
@@ -63,14 +191,23 @@ describe('checkRun()', () => {
             expect(await failures(run, options)).toEqual([]);
         });
 
-        it('expects unlisted charged events to not happen', async () => {
+        it('checks only the events listed', async () => {
             const options = { datasetItemCount: 10, chargedEventCounts: { start: 1 } as Record<string, number> };
-            expect(await failures(run, options)).toEqual(['chargedEventCounts.item']);
+            expect(await failures(run, options)).toEqual([]);
         });
 
-        it('fails an expected event that was never charged', async () => {
-            const options = { datasetItemCount: 10, chargedEventCounts: { start: 1, item: 7, extra: { min: 0 } } };
+        it('counts an event that was never charged as 0', async () => {
+            const options = { datasetItemCount: 10, chargedEventCounts: { premium: 0, extra: { min: 1 } } };
             expect(await failures(run, options)).toEqual(['chargedEventCounts.extra']);
+        });
+
+        it('fails any charged event not listed in strict mode', async () => {
+            const options = {
+                datasetItemCount: 10,
+                chargedEventCounts: { start: 1 } as Record<string, number>,
+                strictChargedEventCounts: true,
+            };
+            expect(await failures(run, options)).toEqual(['chargedEventCounts.item']);
         });
     });
 });

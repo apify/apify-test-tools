@@ -36,9 +36,9 @@ describe('parseBuildInput', () => {
 describe('parseTestTargets', () => {
     const build = { buildId: 'b', actorRawId: 'r', buildNumber: '0.99.1', actorFullName: 'owner/a' };
 
-    it('reads the output of build, leaving out its raw ID, which test looks up itself', () => {
-        const { actorRawId: _actorRawId, ...withoutRawId } = build;
-        expect(parseTestTargets(JSON.stringify([build]))).toStrictEqual([withoutRawId]);
+    it('reads the output of build, keeping only what the lib reads', () => {
+        const { actorRawId: _actorRawId, ...target } = build;
+        expect(parseTestTargets(JSON.stringify([build]))).toStrictEqual([target]);
         expect(parseTestTargets('[]')).toStrictEqual([]);
     });
 

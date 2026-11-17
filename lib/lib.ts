@@ -3,7 +3,12 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
+import {
+    ACTOR_FULL_NAME_REGEX,
+    DATASET_SYNC_DELAY_MS,
+    DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
+    DEFAULT_TEST_RUN_DURATION_MS,
+} from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
 import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
@@ -23,45 +28,27 @@ try {
     throw new Error(`Failed to parse actor builds: ${err}`);
 }
 
-const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
-    map.set(cfg.actorFullName, cfg);
-    map.set(cfg.actorRawId, cfg);
-    return map;
-}, new Map<string, ActorBuild>());
+const config = new Map(actorBuilds.map((build) => [build.actorFullName, build]));
 
 export { ExpectStatic };
 
 const apifyClients = new Map<string, ApifyClient>();
 
 /**
- * The token the tests fall back to. A CLI older than per-Actor tokens names none, and a caller may not pass the
- * Actors' own tokens yet, so it stays until every repository and caller has moved over.
- */
-const FALLBACK_TOKEN_ENV_VAR = 'TESTER_APIFY_TOKEN';
-const warnedFallbacks = new Set<string>();
-
-/**
  * The client an Actor's tests run with: the token in the env var listed with the Actor in `ACTOR_BUILDS`, which `test`
- * takes from `testTokenEnvVar` in `apify-test-tools.config.json` (the Actor's `tokenEnvVar` by default). Without one,
- * or when it isn't set, `TESTER_APIFY_TOKEN`. It throws inside the test, so an Actor without any token fails only its
- * own tests, and the other Actors' tests still run.
+ * takes from `testTokenEnvVar` in `apify-test-tools.config.json` (the Actor's `tokenEnvVar` by default). It throws
+ * inside the test, so an Actor without its token fails only its own tests, and the other Actors' tests still run.
  */
-const getApifyClient = (actorId: string): ApifyClient => {
-    const testTokenEnvVar = config.get(actorId)?.testTokenEnvVar;
-    let tokenEnvVar = testTokenEnvVar;
-    if (!tokenEnvVar || !process.env[tokenEnvVar]) {
-        tokenEnvVar = FALLBACK_TOKEN_ENV_VAR;
-        if (testTokenEnvVar && !warnedFallbacks.has(testTokenEnvVar) && process.env[FALLBACK_TOKEN_ENV_VAR]) {
-            warnedFallbacks.add(testTokenEnvVar);
-            console.warn(`${testTokenEnvVar} is not set, testing with ${FALLBACK_TOKEN_ENV_VAR} instead.`);
-        }
-    }
-    const token = process.env[tokenEnvVar];
-    if (!token) {
-        const own = testTokenEnvVar ? `${testTokenEnvVar} nor ` : '';
+const getApifyClient = (actorFullName: string): ApifyClient => {
+    const testTokenEnvVar = config.get(actorFullName)?.testTokenEnvVar;
+    if (!testTokenEnvVar) {
         throw new Error(
-            `Neither ${own}${FALLBACK_TOKEN_ENV_VAR} is set. The tests of Actor "${actorId}" need a token.`,
+            `ACTOR_BUILDS names no testTokenEnvVar for Actor "${actorFullName}", so its tests have no token to run with.`,
         );
+    }
+    const token = process.env[testTokenEnvVar];
+    if (!token) {
+        throw new Error(`${testTokenEnvVar} is not set. The tests of Actor "${actorFullName}" need it.`);
     }
     if (!apifyClients.has(token)) apifyClients.set(token, new ApifyClient({ token }));
     return apifyClients.get(token)!;
@@ -77,26 +64,35 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
 
 /**
  * Platform tests only run on the Actors listed in `ACTOR_BUILDS`, so without any we skip them altogether. A plain
- * `npm test` stays unaffected. `TESTER_APIFY_TOKEN` alone still enables them, as it did before per-Actor tokens.
+ * `npm test` stays unaffected.
  */
 export const describe = (name: string, fn?: SuiteFactory<object>, options: ActorTestOptions = DEFAULT_TEST_OPTIONS) => {
-    vitestDescribe.runIf(actorBuilds.length > 0 || !!process.env[FALLBACK_TOKEN_ENV_VAR])(name, options, fn);
+    vitestDescribe.runIf(actorBuilds.length > 0)(name, options, fn);
 };
 
 /**
  * Registers a vitest test for an Actor, which only runs when the Actor is listed in `ACTOR_BUILDS`: against the build
  * listed with it, or its default build without one.
  * `body` gets the test context with the soft `expect` and the full test name.
+ *
+ * @throws when `actorFullName` isn't a full name, so its test file fails to load: a test naming its Actor by another ID
+ * would never match `ACTOR_BUILDS` and would be skipped without a word.
  */
 const defineActorTest = (
-    actorId: string,
+    actorFullName: string,
     testName: string,
     testOptions: ActorTestOptions | undefined,
     body: (context: TestContext, name: string) => Promise<void>,
 ) => {
+    if (!ACTOR_FULL_NAME_REGEX.test(actorFullName)) {
+        throw new Error(
+            `Test "${testName}" names its Actor "${actorFullName}", which is not a full name. Name the Actor ` +
+                'as owner/name, e.g. "apify/web-scraper".',
+        );
+    }
     const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
-    const name = `${actorId}: ${testName}`;
-    vitestTest.runIf(config.has(actorId))(name, options, async (context) => {
+    const name = `${actorFullName}: ${testName}`;
+    vitestTest.runIf(config.has(actorFullName))(name, options, async (context) => {
         await body({ ...context, expect: extendExpect(context.expect) }, name);
     });
 };
@@ -105,17 +101,17 @@ const defineActorTest = (
  * `fn` gets `run`, which starts the Actor, and `apifyClient`, the client with the token the Actor's tests run with,
  * e.g. to read storages the run left elsewhere.
  *
- * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
+ * @param actorFullName - The Actor's full name, `owner/name`, e.g. `"apify/web-scraper"`.
  */
 export const testActor = <T>(
-    actorId: string,
+    actorFullName: string,
     testName: string,
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>>; apifyClient: ApifyClient }>,
     testOptions?: ActorTestOptions,
 ) => {
-    defineActorTest(actorId, testName, testOptions, async (context) => {
-        const apifyClient = getApifyClient(actorId);
-        await fn({ ...context, apifyClient, run: createStartRunFn(apifyClient, actorId, context) });
+    defineActorTest(actorFullName, testName, testOptions, async (context) => {
+        const apifyClient = getApifyClient(actorFullName);
+        await fn({ ...context, apifyClient, run: createStartRunFn(apifyClient, actorFullName, context) });
     });
 };
 
@@ -125,18 +121,18 @@ export const testActor = <T>(
  *
  * Using task is just current shortcoming of standby feature but ideally we would use Actor directly
  *
- * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
+ * @param actorFullName - The Actor's full name, `owner/name`, e.g. `"apify/web-scraper"`.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const testStandbyActor = <I = any, O = any>(
-    actorId: string,
+    actorFullName: string,
     testName: string,
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>>; apifyClient: ApifyClient }>,
     testOptions?: ActorTestOptions,
 ) => {
-    defineActorTest(actorId, testName, testOptions, async (context, name) => {
-        const apifyClient = getApifyClient(actorId);
-        const standbyTask = await createStandbyTask(apifyClient, actorId, config.get(actorId)?.buildNumber);
+    defineActorTest(actorFullName, testName, testOptions, async (context, name) => {
+        const apifyClient = getApifyClient(actorFullName);
+        const standbyTask = await createStandbyTask(apifyClient, actorFullName, config.get(actorFullName)?.buildNumber);
 
         // NOTE: we wrap `fn` in try/finally so cleanup (deleting the task) always runs afterwards
         try {
@@ -173,8 +169,6 @@ export const testTestActor = <T>(
         });
     });
 };
-
-export const it = testActor;
 
 /**
  * Creates a function that accepts input for a standby actor and sends a request containing the input
@@ -334,7 +328,7 @@ const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testCont
         task.meta = {
             runId: run.id,
             runLink,
-            actorId: actorConfig?.actorFullName ?? actorId,
+            actorId,
         };
 
         // waiting for dataset and statistics to sync, the Apify platform is only eventually consistent.

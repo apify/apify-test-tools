@@ -98,7 +98,7 @@ describe('run-with-apify-tokens.mjs', () => {
         expect(stderr).toContain('Passing 3 test token(s) to');
     });
 
-    it('takes a test token the workflow declares by name, e.g. TESTER_APIFY_TOKEN', () => {
+    it('takes a test token the workflow declares by name', () => {
         const { status, stderr, env } = run(
             { CONFIG_SECRETS: JSON.stringify(BUILD_TOKENS), TESTER_TOKEN: 'declared' },
             ['--tokens', 'test'],

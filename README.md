@@ -26,7 +26,7 @@ Build, test and release Apify Actors from a Git repository or local source code.
     ```yaml
     jobs:
         buildDevelAndTest:
-            uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
+            uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
             secrets:
                 # One entry per secret apify-test-tools.config.json names: each `tokenEnvVar` and `testTokenEnvVar`
                 CONFIG_SECRETS: |
@@ -55,6 +55,7 @@ This README covers what you need to get a repo running. The full reference lives
 - [Vitest library API](docs/lib.md) — `testActor`, `testStandbyActor`, `RunTestResult`, matchers, running tests locally
 - [CLI API](docs/cli.md) — every command, change detection, releasing, building locally
 - [Workflow API](docs/workflows.md) — every GitHub workflow, its inputs and secrets, versioning
+- [Migrating to v1](docs/migrating-to-v1.md) — updating a repository from `@workflows-v0` and a library before 1.0
 
 [Contributing](CONTRIBUTING.md)
 
@@ -72,7 +73,7 @@ its static checks run, e.g. with your language's own linter and unit tests.
 npm i -D apify-test-tools
 ```
 
-- Requires `vitest` version `3.2.4` or later (uses [annotate](https://vitest.dev/guide/test-context.html#annotate))
+- Requires Node.js 22.12+, 24 or 26+ and `vitest` 5 or later (uses [annotate](https://vitest.dev/guide/test-context.html#annotate))
 - Make sure `target` and `module` in your `tsconfig.json`'s `compilerOptions` are set to `ES2022`
 - Every Actor must already have at least one build under its default build tag (usually `latest`), built
   from a Git repository version whose URL points to this repository. Build it once manually on the
@@ -180,14 +181,14 @@ group needs a `tokenEnvVar` and at least one Actor. Add another group for Actors
 Actors owned by another account.
 
 The platform tests run each Actor with the same token that builds it, so they run in the account that owns the Actor.
-Only the owner, or an account with write access to the Actor, can run a [standby Actor](docs/lib.md#teststandbyactoractorid-testname-fn-options)
+Only the owner, or an account with write access to the Actor, can run a [standby Actor](docs/lib.md#teststandbyactoractorfullname-testname-fn-options)
 on a build other than its default one, which is what the tests do on a PR. To test some Actors from another account,
 name its token in `testTokenEnvVar`, on the group or on an Actor:
 
 ```json
 "partner": {
     "tokenEnvVar": "APIFY_TOKEN_PARTNER",
-    "testTokenEnvVar": "TESTER_APIFY_TOKEN",
+    "testTokenEnvVar": "APIFY_TOKEN_TESTER",
     "actors": [{ "folder": "actors/partner-scraper", "actorFullName": "partner/scraper" }]
 }
 ```
@@ -198,10 +199,11 @@ their context.
 
 | Field                  | Where          | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ---------------------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mode`                 | top level      | yes      | Always `"grouped"`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `folder`               | Actor          | yes      | Relative path from repo root to the Actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`) and its source. Documentation and schemas may be linked from elsewhere through `actor.json`. Use `"."` for a single-Actor repo where `.actor/` is at the root.                                                                                                                                                                           |
 | `actorFullName`        | Actor          | yes      | Full Actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the Actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                              |
 | `tokenEnvVar`          | group or Actor | yes      | Name of the environment variable holding the Apify API token that builds the group's Actors. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                   |
-| `testTokenEnvVar`      | group or Actor | no       | Name of the environment variable holding the Apify API token the platform tests run the Actors with. Defaults to the Actor's `tokenEnvVar`. A group's `testTokenEnvVar` applies to its Actors even when an Actor sets its own `tokenEnvVar`. If the env var is not set, the tests of the Actors that use it fall back to `TESTER_APIFY_TOKEN` for now, or fail without it.                                                                                                                             |
+| `testTokenEnvVar`      | group or Actor | no       | Name of the environment variable holding the Apify API token the platform tests run the Actors with. Defaults to the Actor's `tokenEnvVar`. A group's `testTokenEnvVar` applies to its Actors even when an Actor sets its own `tokenEnvVar`. If the env var is not set, the tests of the Actors that use it fail.                                                                                                                                                                                      |
 | `platformTestsGlob`    | top level      | no       | Glob from the repo root of the platform tests and their helpers. Default `test/platform/**`. A changed file that matches it is a test change, also when `.dockerignore` lists it: the PR workflow builds and tests the Actor whose context holds it, and a release skips it. See [Change detection](docs/cli.md#change-detection).                                                                                                                                                                     |
 | `overrideActorContext` | group or Actor | no       | Array of paths (relative to repo root) that define which files are relevant to the Actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an Actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The Actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
 
@@ -225,7 +227,7 @@ The workflows take every change straight to production, with tests in between:
 These are GitHub Actions workflows. On another CI platform, build the same flow with the [CLI](docs/cli.md).
 
 Add these files to `.github/workflows` in your repo. They call the reusable workflows in this repo, pinned at the
-`@workflows-v0` major tag — never at `@master`. Every input, the optional Claude workflows, stale issue closer, and how the tag moves are
+`@workflows-v1` major tag — never at `@master`. Every input, the optional Claude workflows, stale issue closer, and how the tag moves are
 in the [Workflow API](docs/workflows.md).
 
 ### `pr-build-devel-test.yaml`
@@ -239,7 +241,7 @@ on:
 
 jobs:
     buildDevelAndTest:
-        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
         secrets:
             # One entry per secret apify-test-tools.config.json names: each `tokenEnvVar` and `testTokenEnvVar`
             CONFIG_SECRETS: |
@@ -260,7 +262,7 @@ on:
 
 jobs:
     buildLatest:
-        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v1
         secrets:
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
             # One entry per secret apify-test-tools.config.json names, here each `tokenEnvVar`
@@ -287,7 +289,7 @@ on:
 
 jobs:
     platformTestsDaily:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
         with:
             test-files-glob: 'test/platform/{daily,daily-without-pr}/**'
         secrets:
@@ -313,7 +315,7 @@ on:
 
 jobs:
     platformTestsHourly:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
         with:
             test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
         secrets:
@@ -330,13 +332,12 @@ jobs:
 Set these as repository or organization secrets and pass them in each job's `secrets:` block, as in the examples
 above. The Actor tokens go packed in one JSON object, `CONFIG_SECRETS`, because their names differ per repo:
 
-| Secret                                                                       | Needed for                                                                                                                                      |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json`    | building Actors and deleting their old builds                                                                                                   |
-| the test tokens named by `testTokenEnvVar`, by default the same Actor tokens | running the platform tests                                                                                                                      |
-| `TESTER_APIFY_TOKEN`                                                         | optional for now, the platform tests' fallback for Actors whose own test token isn't passed, and for repos on a lib older than per-Actor tokens |
-| `SLACK_BOT_TOKEN`                                                            | announcing releases and reporting scheduled test results to Slack                                                                               |
-| `NPM_TOKEN`                                                                  | optional, installing private npm packages. Use a read-only token                                                                                |
+| Secret                                                                       | Needed for                                                        |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| the Actor tokens named by `tokenEnvVar` in `apify-test-tools.config.json`    | building Actors and deleting their old builds                     |
+| the test tokens named by `testTokenEnvVar`, by default the same Actor tokens | running the platform tests                                        |
+| `SLACK_BOT_TOKEN`                                                            | announcing releases and reporting scheduled test results to Slack |
+| `NPM_TOKEN`                                                                  | optional, installing private npm packages. Use a read-only token  |
 
 Repos in the `apify` org can pass `secrets: inherit` instead. Each secret only reaches the step that needs it. See
 [Secrets](docs/workflows.md#secrets) for both, and for passing `CONFIG_SECRETS` without listing the tokens.
@@ -354,7 +355,7 @@ describe('web-scraper', () => {
     testActor('myteam/web-scraper', 'scrapes the start URL', async ({ expect, run }) => {
         const runResult = await run({ input: { startUrls: [{ url: 'https://apify.com' }] } });
 
-        // Status SUCCEEDED, a sane duration, no failed requests, no errors in the log, and the item count
+        // Status SUCCEEDED, no failed requests, no thrown TypeError or ReferenceError in the log, and the item count
         await expect(runResult).toFinishWith({ datasetItemCount: { min: 1, max: 10 } });
 
         const { items } = await runResult.getDataset();

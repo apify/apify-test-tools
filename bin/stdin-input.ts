@@ -77,9 +77,8 @@ export const parseBuildInput = (raw: string) =>
 
 /**
  * What `test` reads: the Actors to test by full name, each with the build to test or, without one, its default build.
- * The builds `build` and `build-from-local` print fit, and so does `get-actor-configs`, whose other fields are ignored,
- * also a raw ID: `test` looks it up itself. A dry-run plan is an object on purpose, so it is rejected here rather than
- * tested as if it were built.
+ * The builds `build` and `build-from-local` print fit, and so does `get-actor-configs`, whose other fields are ignored.
+ * A dry-run plan is an object on purpose, so it is rejected here rather than tested as if it were built.
  */
 const testTargetsSchema = z.array(
     z.object({

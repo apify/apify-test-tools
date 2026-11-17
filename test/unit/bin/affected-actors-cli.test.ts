@@ -6,6 +6,8 @@ import process from 'node:process';
 
 import { afterEach, beforeEach, describe, expect, inject, it } from 'vitest';
 
+import { groupedConfig } from '../../grouped-config.js';
+
 // `get-affected-actors --base` on real git histories. Actors a and c share `src/`, b is standalone.
 // `main` is the base branch and `feature` the PR branch, checked out like in the PR workflow.
 const CONFIG = {
@@ -89,7 +91,10 @@ const writeConfigWithTestsInContext = async (extraContext: string, settings: Rec
             ? { ...actor, overrideActorContext: [...actor.overrideActorContext!, extraContext] }
             : actor,
     );
-    await writeFile(path.join(repoDir, 'apify-test-tools.config.json'), JSON.stringify({ ...settings, actors }));
+    await writeFile(
+        path.join(repoDir, 'apify-test-tools.config.json'),
+        JSON.stringify(groupedConfig(actors, settings)),
+    );
 };
 
 const getAffectedActors = (...args: string[]) => {
@@ -104,7 +109,10 @@ describe('get-affected-actors CLI on real git histories', () => {
     beforeEach(async () => {
         repoDir = await mkdtemp(path.join(os.tmpdir(), 'apify-affected-actors-'));
         git('init', '-q', '-b', 'main');
-        await writeFile(path.join(repoDir, 'apify-test-tools.config.json'), JSON.stringify(CONFIG));
+        await writeFile(
+            path.join(repoDir, 'apify-test-tools.config.json'),
+            JSON.stringify(groupedConfig(CONFIG.actors)),
+        );
         for (const { folder } of CONFIG.actors) {
             await mkdir(path.join(repoDir, folder, '.actor'), { recursive: true });
             await writeFile(

@@ -4,26 +4,25 @@
 import { describe, testActor, testStandbyActor, RunTestResult, ExpectStatic } from 'apify-test-tools';
 ```
 
-Requires `vitest` `3.2.4` or later as a peer dependency.
+Requires `vitest` 5 or later as a peer dependency.
 
 ## Environment variables
 
 The library reads these when the test file is loaded:
 
-| Variable             | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ACTOR_BUILDS`       | JSON array of Actors to test, e.g. the builds the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local) print. Only tests of Actors listed here run, against the listed build, or the default build for an Actor listed without one. Each entry names the env var holding the token its tests run with, see below. Without any Actors, every `describe` block is skipped, so a plain `npm test` stays unaffected. |
-| `TESTER_APIFY_TOKEN` | Fallback token, for now: the tests of an Actor listed in `ACTOR_BUILDS` without its own `testTokenEnvVar`, or whose variable isn't set, run with it. Set on its own, it also enables the `describe` blocks, as before per-Actor tokens.                                                                                                                                                                                                                                             |
+| Variable       | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ACTOR_BUILDS` | JSON array of Actors to test, e.g. the builds the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local) print. Only tests of Actors listed here run, against the listed build, or the default build for an Actor listed without one. Each entry names the env var holding the token its tests run with, see below. Without any Actors, every `describe` block is skipped, so a plain `npm test` stays unaffected. |
 
-`ACTOR_BUILDS` entries look like this, and are matched to tests by `actorFullName` or `actorRawId`:
+`ACTOR_BUILDS` entries look like this, and are matched to tests by `actorFullName`. Without `buildNumber`, the Actor's
+tests run on its default build:
 
 ```json
 [
     {
-        "buildId": "...",
-        "actorRawId": "...",
-        "buildNumber": "1.2.3",
         "actorFullName": "john.doe/my-actor",
+        "buildId": "...",
+        "buildNumber": "1.2.3",
         "testTokenEnvVar": "APIFY_TOKEN_JOHN_DOE"
     }
 ]
@@ -32,19 +31,18 @@ The library reads these when the test file is loaded:
 The tests of an Actor start runs and read their data with the token in the environment variable `testTokenEnvVar`
 names. [`test`](cli.md#running-tests-test) fills it in from the Actor's `testTokenEnvVar` in
 `apify-test-tools.config.json`, which is its `tokenEnvVar` unless the config names another. An Actor listed without
-one, or whose variable isn't set, falls back to `TESTER_APIFY_TOKEN` for now, with a warning. Without that either, it
-fails its own tests, and the other Actors' tests still run.
+one, or whose variable isn't set, fails its own tests, and the other Actors' tests still run.
 
 ## `describe(name, fn, options?)`
 
-Same as vitest's `describe`, but skipped unless `ACTOR_BUILDS` lists any Actors or `TESTER_APIFY_TOKEN` is set. Its tests
+Same as vitest's `describe`, but skipped unless `ACTOR_BUILDS` lists any Actors. Its tests
 run concurrently by default. Use it instead of vitest's `describe` for platform tests.
 
-## `testActor(actorId, testName, fn, options?)`
+## `testActor(actorFullName, testName, fn, options?)`
 
-Registers a test for an Actor. `actorId` is the Actor's full name (`owner/name`) or its raw platform ID. The test
-only runs when the Actor is in `ACTOR_BUILDS`. Its name is
-`<actorId>: <testName>`.
+Registers a test for an Actor. `actorFullName` is the Actor's full name, `owner/name`. Anything else, like a raw
+Actor ID, throws, so the test file fails to load instead of the test being skipped. The test only runs when the Actor
+is in `ACTOR_BUILDS`. Its name is `<actorFullName>: <testName>`.
 
 `fn` gets the vitest test context, with `expect` extended by the [custom matchers](#custom-matchers), a `run`
 function, and `apifyClient`: an `ApifyClient` with the token the Actor's tests run with, e.g. to read storages the run
@@ -58,13 +56,13 @@ list that may be empty.
 import { describe, testActor } from 'apify-test-tools';
 
 describe('test', () => {
-    testActor(actorId, 'actor test 1', async ({ expect, run }) => {
+    testActor('john.doe/my-actor', 'actor test 1', async ({ expect, run }) => {
         const runResult = await run({ input });
 
         // your checks
     });
 
-    testActor(actorId, 'actor test 2', async ({ expect, run }) => {
+    testActor('john.doe/my-actor', 'actor test 2', async ({ expect, run }) => {
         const runResult = await run({ input });
 
         // your checks
@@ -84,7 +82,7 @@ The fourth argument takes vitest's test options:
 
 ```ts
 testActor(
-    actorId,
+    'john.doe/my-actor',
     'slow actor test',
     async ({ expect, run }) => {
         const runResult = await run({ input });
@@ -114,7 +112,7 @@ link is added to the test as a vitest annotation.
 #### Using prefilled input
 
 ```ts
-testActor(actorId, 'with prefilled input', async ({ expect, run }) => {
+testActor('john.doe/my-actor', 'with prefilled input', async ({ expect, run }) => {
     const runResult = await run({
         prefilledInput: true,
         input: { maxItems: 10 }, // merged on top of the prefilled input
@@ -128,13 +126,13 @@ testActor(actorId, 'with prefilled input', async ({ expect, run }) => {
 Useful for iterating on the checks of a test without waiting for a new run:
 
 ```ts
-testActor(actorId, 'validate existing run', async ({ expect, run }) => {
+testActor('john.doe/my-actor', 'validate existing run', async ({ expect, run }) => {
     const runResult = await run({ runId: 'some-run-id' });
     await expect(runResult).toFinishWith({ datasetItemCount: 100 });
 });
 ```
 
-## `testStandbyActor(actorId, testName, fn, options?)`
+## `testStandbyActor(actorFullName, testName, fn, options?)`
 
 Same as `testActor`, for Actors in standby mode. It creates a temporary task with the build from `ACTOR_BUILDS` (or
 the Actor's standby build) and deletes it after the test. Instead of `run`, `fn` gets `callStandby`, which sends a
@@ -149,7 +147,7 @@ it write access to the Actor.
 import { describe, testStandbyActor } from 'apify-test-tools';
 
 describe('standby tests', () => {
-    testStandbyActor(actorId, 'standby request', async ({ expect, callStandby }) => {
+    testStandbyActor('john.doe/my-actor', 'standby request', async ({ expect, callStandby }) => {
         const { data, status } = await callStandby({
             input: { query: 'test' },
             path: '/search',
@@ -169,19 +167,19 @@ It fails if the Actor doesn't support standby mode.
 What `run` returns. Every getter fetches its data on the first call and returns the same result afterwards, so you
 can call them freely.
 
-| Member                     | Returns                                                                                                  |
-| -------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `id`                       | The run ID                                                                                               |
-| `status`                   | The run status when it finished                                                                          |
-| `getDataset<T>()`          | `{ items: T[] }`, every item of the default dataset                                                      |
-| `getLog()`                 | The run log as a string                                                                                  |
-| `getStatistics()`          | The crawler statistics from the `SDK_CRAWLER_STATISTICS_0` record, or `undefined` for non-crawler Actors |
-| `getInput<T>()`            | The `INPUT` record of the default key-value store                                                        |
-| `getKeyValueStoreClient()` | An `apify-client` client for the default key-value store                                                 |
-| `getRunInfo()`             | The run object, fetched again so it reflects changes after the run finished                              |
+| Member                     | Returns                                                                                                         |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `id`                       | The run ID                                                                                                      |
+| `status`                   | The run status when it finished                                                                                 |
+| `getDataset<T>()`          | `{ items: T[] }`, every item of the default dataset                                                             |
+| `getLog()`                 | The run log as a string                                                                                         |
+| `getStatistics(key?)`      | The crawler statistics from the record `key`, by default `SDK_CRAWLER_STATISTICS_0`, or `undefined` without one |
+| `getInput<T>()`            | The `INPUT` record of the default key-value store                                                               |
+| `getKeyValueStoreClient()` | An `apify-client` client for the default key-value store                                                        |
+| `getRunInfo()`             | The run object, fetched again so it reflects changes after the run finished                                     |
 
 ```ts
-testActor(actorId, 'check dataset items', async ({ expect, run }) => {
+testActor('john.doe/my-actor', 'check dataset items', async ({ expect, run }) => {
     const runResult = await run({ input });
 
     const { items } = await runResult.getDataset();
@@ -203,31 +201,41 @@ testActor(actorId, 'check dataset items', async ({ expect, run }) => {
 ## `toFinishWith(options)`
 
 Validates the common run properties in a single call and reports every failed check at once. Only
-`datasetItemCount` is required; the rest have defaults. Numeric checks take an exact number or a range: `{ min }`,
-`{ max }` or `{ min, max }`. Set a check with a default to `null` to skip it.
+`datasetItemCount` is required. Numeric checks take an exact number or a range: `{ min }`, `{ max }` or
+`{ min, max }`. Set a check with a default to `null` to skip it.
 
-| Option                 | Default                           | Checks                                                                                           |
-| ---------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `datasetItemCount`     | required                          | Number of items in the default dataset                                                           |
-| `status`               | `'SUCCEEDED'`                     | Run status                                                                                       |
-| `duration`             | `{ min: 600, max: 600_000 }`      | Run duration in milliseconds (0.6 s to 10 min)                                                   |
-| `failedRequests`       | `0`                               | Failed requests in the crawler statistics                                                        |
-| `requestsRetries`      | `{ max: 3 }`                      | Request retries in the crawler statistics                                                        |
-| `maxRetriesPerRequest` | `null`                            | The most retries any single request needed                                                       |
-| `forbiddenLogs`        | `['ReferenceError', 'TypeError']` | Strings that must not appear in the log                                                          |
-| `chargedEventCounts`   | not checked                       | Pay-per-event counts, per event name. An event you omit is expected to have been charged 0 times |
+| Option                     | Default                                   | Checks                                                                                                                        |
+| -------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `datasetItemCount`         | required                                  | Number of items in the default dataset                                                                                        |
+| `status`                   | `'SUCCEEDED'`                             | Run status                                                                                                                    |
+| `failedRequests`           | `0`                                       | Failed requests in the crawler statistics                                                                                     |
+| `forbiddenLogs`            | `[/\bReferenceError: /, /\bTypeError: /]` | Strings that no log line may contain, or regular expressions that no log line may match. A failure quotes the offending lines |
+| `duration`                 | not checked                               | Run duration in milliseconds                                                                                                  |
+| `requestsRetries`          | not checked                               | Request retries in the crawler statistics, over all requests                                                                  |
+| `maxRetriesPerRequest`     | not checked                               | The most retries any single request needed                                                                                    |
+| `chargedEventCounts`       | not checked                               | Pay-per-event counts, per event name. Only the events listed are checked, and an event that was never charged counts as 0     |
+| `strictChargedEventCounts` | `false`                                   | Also fail on any charged event that `chargedEventCounts` doesn't list                                                         |
+| `statisticsKeys`           | `'SDK_CRAWLER_STATISTICS_0'`              | The key-value store record, or records, with the crawler statistics                                                           |
 
-`failedRequests` and `requestsRetries` come from the crawler statistics, so they fail for an Actor that doesn't
-write them. Set both to `null` for Actors that don't use a Crawlee crawler.
+The default `forbiddenLogs` match a `ReferenceError` or `TypeError` the way JavaScript prints one, `TypeError: <message>`,
+not the word in prose or in a longer name. Your own `forbiddenLogs` replace them.
+
+`failedRequests`, `requestsRetries` and `maxRetriesPerRequest` read the crawler statistics, which a Crawlee crawler
+persists in the record `SDK_CRAWLER_STATISTICS_<id>`: `0` for the first crawler of a run, or the id its statistics were
+given. Give `statisticsKeys` the record of another crawler, or the records of every crawler of a run with several, e.g.
+an adaptive crawler: the checks then read their sum. A record that doesn't exist fails those checks, so set
+`failedRequests: null` for an Actor that doesn't use a Crawlee crawler.
 
 ```ts
 await expect(runResult).toFinishWith({
     datasetItemCount: { min: 80, max: 120 },
     duration: { max: 30 * 60 * 1000 },
+    statisticsKeys: ['SDK_CRAWLER_STATISTICS_0', 'SDK_CRAWLER_STATISTICS_1'],
     chargedEventCounts: {
         'actor-start': 1,
         'place-scraped': { min: 80, max: 120 },
     },
+    strictChargedEventCounts: true,
 });
 ```
 

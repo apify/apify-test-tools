@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GitHubClient } from '../../../workflow-scripts-src/humanize-label.js';
+import type { GitHubClient } from '../../../workflow-scripts-src/humanize-duty.js';
 import {
-    assignHumanizeLabel,
+    assignHumanizeDuty,
     loginFromLabel,
     parseCatchAllOwners,
     pickNextOwner,
     startOwnerIndex,
-} from '../../../workflow-scripts-src/humanize-label.js';
+} from '../../../workflow-scripts-src/humanize-duty.js';
 
 describe('parseCatchAllOwners', () => {
     it('keeps the individual users on the `*` rule, in order', () => {
@@ -91,14 +91,14 @@ describe('pickNextOwner', () => {
 
 describe('loginFromLabel', () => {
     it('reads the login after the prefix, ignoring the prefix case', () => {
-        expect(loginFromLabel('needs-humanize:alice', 'needs-humanize')).toBe('alice');
-        expect(loginFromLabel('Needs-Humanize:alice', 'needs-humanize')).toBe('alice');
+        expect(loginFromLabel('needs-humanize:alice')).toBe('alice');
+        expect(loginFromLabel('Needs-Humanize:alice')).toBe('alice');
     });
 
     it.each([['needs-humanize'], ['needs-humanize:'], ['needs-humanize-later:alice'], ['claude']])(
         'returns nothing for %s',
         (labelName) => {
-            expect(loginFromLabel(labelName, 'needs-humanize')).toBeUndefined();
+            expect(loginFromLabel(labelName)).toBeUndefined();
         },
     );
 });
@@ -153,19 +153,19 @@ function fakeGitHub({
     return { client, created, added };
 }
 
-const run = async (github: GitHubClient, issueNumber = 10) => {
+const run = async (github: GitHubClient, duty = 'label', issueNumber = 10) => {
     const warnings: string[] = [];
-    await assignHumanizeLabel({
+    await assignHumanizeDuty({
         github,
         context: { repo: { owner: 'my-org', repo: 'my-repo' } },
         core: { info: () => undefined, warning: (message) => warnings.push(message) },
-        prefix: 'needs-humanize',
+        duty,
         issueNumber,
     });
     return warnings;
 };
 
-describe('assignHumanizeLabel', () => {
+describe('assignHumanizeDuty', () => {
     const newIssue = { number: 10, created_at: '2026-11-03T00:00:00Z', labels: ['claude'] };
 
     it('labels the owner after the one on the most recently created labeled issue', async () => {
@@ -241,4 +241,16 @@ describe('assignHumanizeLabel', () => {
         ]);
         expect(fake.added).toStrictEqual([]);
     });
+
+    it.each([['label:needs-humanize'], ['Label'], ['field'], [' label']])(
+        'fails on %s, naming the supported value, without labeling',
+        async (duty) => {
+            const fake = fakeGitHub({ files: { '.github/CODEOWNERS': '* @alice' }, labels: [], issues: [newIssue] });
+            await expect(run(fake.client, duty)).rejects.toThrow(
+                `Unsupported humanize_duty '${duty}'. Supported values: 'label'.`,
+            );
+            expect(fake.created).toStrictEqual([]);
+            expect(fake.added).toStrictEqual([]);
+        },
+    );
 });

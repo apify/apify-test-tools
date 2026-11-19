@@ -1,8 +1,9 @@
-// Labels a new issue `<prefix>:<login>` with the developer who rewrites it in plain language.
+// Records which developer rewrites a new issue in plain language, where the `humanize_duty` input says:
+// `label` labels the issue `needs-humanize:<login>`.
 //
 // The developers are the individual users on the `*` rule of the repo's CODEOWNERS, in the order
 // they are listed. Each new issue goes to the developer after the one on the most recently created
-// issue that carries a `<prefix>:` label, so the rotation never depends on labels being removed.
+// issue that carries a `needs-humanize:` label, so the rotation never depends on labels being removed.
 // With no such issue yet, or when that developer is no longer listed, the rotation starts at a
 // developer derived from the repo name, so different repos usually start with different people.
 //
@@ -12,6 +13,7 @@ import { createHash } from 'node:crypto';
 
 export const CODEOWNERS_PATHS = ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'];
 
+const LABEL_PREFIX = 'needs-humanize';
 const LABEL_COLOR = 'fbca04';
 
 const sameLogin = (first: string, second: string) => first.toLowerCase() === second.toLowerCase();
@@ -38,8 +40,8 @@ export function pickNextOwner(owners: string[], lastLogin: string | undefined, r
     return owners[index];
 }
 
-export function loginFromLabel(labelName: string, prefix: string): string | undefined {
-    const labelPrefix = `${prefix}:`;
+export function loginFromLabel(labelName: string): string | undefined {
+    const labelPrefix = `${LABEL_PREFIX}:`;
     if (!labelName.toLowerCase().startsWith(labelPrefix.toLowerCase())) return undefined;
     return labelName.slice(labelPrefix.length) || undefined;
 }
@@ -100,7 +102,7 @@ async function readCodeowners(github: GitHubClient, repo: RepoParams) {
     return undefined;
 }
 
-async function findLastLabelledLogin(github: GitHubClient, repo: RepoParams, prefixLabels: Label[], prefix: string) {
+async function findLastLabeledLogin(github: GitHubClient, repo: RepoParams, prefixLabels: Label[]) {
     let latest: { login: string; createdAt: string } | undefined;
     for (const label of prefixLabels) {
         const { data } = await github.rest.issues.listForRepo({
@@ -112,7 +114,7 @@ async function findLastLabelledLogin(github: GitHubClient, repo: RepoParams, pre
             per_page: 1,
         });
         const [issue] = data;
-        const login = loginFromLabel(label.name, prefix);
+        const login = loginFromLabel(label.name);
         if (issue && login && (!latest || issue.created_at > latest.createdAt)) {
             latest = { login, createdAt: issue.created_at };
         }
@@ -120,46 +122,38 @@ async function findLastLabelledLogin(github: GitHubClient, repo: RepoParams, pre
     return latest?.login;
 }
 
-export async function assignHumanizeLabel({
-    github,
-    context,
-    core,
-    prefix,
-    issueNumber,
-}: {
-    github: GitHubClient;
-    context: { repo: RepoParams };
-    core: Core;
-    prefix: string;
-    issueNumber: number;
-}) {
+type DutyParams = { github: GitHubClient; context: { repo: RepoParams }; core: Core; issueNumber: number };
+
+async function assignHumanizeLabel({ github, context, core, issueNumber }: DutyParams) {
     const { repo } = context;
 
     const codeowners = await readCodeowners(github, repo);
     if (!codeowners) {
-        core.warning(`No CODEOWNERS file at ${CODEOWNERS_PATHS.join(', ')}, so no ${prefix} label is added.`);
+        core.warning(`No CODEOWNERS file at ${CODEOWNERS_PATHS.join(', ')}, so no ${LABEL_PREFIX} label is added.`);
         return;
     }
     const owners = parseCatchAllOwners(codeowners.content);
     if (owners.length === 0) {
-        core.warning(`${codeowners.path} lists no individual users on its \`*\` rule, so no ${prefix} label is added.`);
+        core.warning(
+            `${codeowners.path} lists no individual users on its \`*\` rule, so no ${LABEL_PREFIX} label is added.`,
+        );
         return;
     }
 
     const { data: issue } = await github.rest.issues.get({ ...repo, issue_number: issueNumber });
-    const existing = labelNames(issue).find((name) => loginFromLabel(name, prefix));
+    const existing = labelNames(issue).find((name) => loginFromLabel(name));
     if (existing) {
         core.info(`Issue #${issueNumber} already has ${existing}.`);
         return;
     }
 
     const labels = await github.paginate(github.rest.issues.listLabelsForRepo, { ...repo, per_page: 100 });
-    const prefixLabels = labels.filter((label) => loginFromLabel(label.name, prefix));
-    const lastLogin = await findLastLabelledLogin(github, repo, prefixLabels, prefix);
+    const prefixLabels = labels.filter((label) => loginFromLabel(label.name));
+    const lastLogin = await findLastLabeledLogin(github, repo, prefixLabels);
     const login = pickNextOwner(owners, lastLogin, repo.repo);
 
-    const label = prefixLabels.find((candidate) => sameLogin(loginFromLabel(candidate.name, prefix) ?? '', login));
-    const labelName = label?.name ?? `${prefix}:${login}`;
+    const label = prefixLabels.find((candidate) => sameLogin(loginFromLabel(candidate.name) ?? '', login));
+    const labelName = label?.name ?? `${LABEL_PREFIX}:${login}`;
     if (!label) {
         try {
             await github.rest.issues.createLabel({
@@ -175,7 +169,18 @@ export async function assignHumanizeLabel({
 
     await github.rest.issues.addLabels({ ...repo, issue_number: issueNumber, labels: [labelName] });
     core.info(
-        `Labelled issue #${issueNumber} ${labelName}. Owners on the \`*\` rule of ${codeowners.path}: ` +
+        `Labeled issue #${issueNumber} ${labelName}. Owners on the \`*\` rule of ${codeowners.path}: ` +
             `${owners.join(', ')}. Previous: ${lastLogin ?? 'none'}.`,
     );
+}
+
+const DUTIES = new Map<string, (params: DutyParams) => Promise<void>>([['label', assignHumanizeLabel]]);
+
+export async function assignHumanizeDuty({ duty, ...params }: DutyParams & { duty: string }) {
+    const assign = DUTIES.get(duty);
+    if (!assign) {
+        const supported = [...DUTIES.keys()].map((name) => `'${name}'`).join(', ');
+        throw new Error(`Unsupported humanize_duty '${duty}'. Supported values: ${supported}.`);
+    }
+    await assign(params);
 }

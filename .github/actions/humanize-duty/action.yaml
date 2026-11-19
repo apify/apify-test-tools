@@ -1,13 +1,13 @@
-name: Label who humanizes an issue
+name: Record who humanizes an issue
 description: >-
-    Labels an issue `<prefix>:<login>` with the next developer from the `*` rule of the repo's CODEOWNERS,
-    in turn. See workflow-scripts-src/humanize-label.ts.
+    Records the next developer from the `*` rule of the repo's CODEOWNERS, in turn, as the one who rewrites an
+    issue in plain language. See workflow-scripts-src/humanize-duty.ts.
 inputs:
-    label-prefix:
-        description: Label prefix; the label is `<label-prefix>:<login>`.
+    duty:
+        description: Where the duty is recorded. `label` labels the issue `needs-humanize:<login>`.
         required: true
     issue-number:
-        description: Issue to label.
+        description: Issue to record the duty on.
         required: true
     github-token:
         description: Token that can read the repo's contents and write its issues.
@@ -18,20 +18,20 @@ inputs:
 runs:
     using: 'composite'
     steps:
-        - name: Label the issue
+        - name: Record the duty
           uses: actions/github-script@v9
           env:
-              LABEL_PREFIX: ${{ inputs.label-prefix }}
+              HUMANIZE_DUTY: ${{ inputs.duty }}
               ISSUE_NUMBER: ${{ inputs.issue-number }}
-              SCRIPT_PATH: ${{ github.action_path }}/../../scripts/humanize-label.mjs
+              SCRIPT_PATH: ${{ github.action_path }}/../../scripts/humanize-duty.mjs
           with:
               github-token: ${{ inputs.github-token }}
               script: |
-                  const { assignHumanizeLabel } = await import(process.env.SCRIPT_PATH);
-                  await assignHumanizeLabel({
+                  const { assignHumanizeDuty } = await import(process.env.SCRIPT_PATH);
+                  await assignHumanizeDuty({
                       github,
                       context,
                       core,
-                      prefix: process.env.LABEL_PREFIX,
+                      duty: process.env.HUMANIZE_DUTY,
                       issueNumber: Number(process.env.ISSUE_NUMBER),
                   });

@@ -4,7 +4,7 @@ echo "pre-commit: typechecking, linting, testing, checking code formatting, chec
 # The workflows run the CLI and token wrapper from these bundles, so they ship with every commit
 # that changes their sources or dependencies.
 npm run -s bundle
-git add .github/cli/apify-test-tools.mjs .github/scripts/run-with-apify-tokens.mjs .github/scripts/humanize-label.mjs
+git add .github/cli/apify-test-tools.mjs .github/scripts/run-with-apify-tokens.mjs .github/scripts/humanize-duty.mjs
 
 npm test
 npm run format:check

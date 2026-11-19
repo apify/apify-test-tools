@@ -263,6 +263,7 @@ jobs:
         needs: investigate
         if: inputs.humanize_duty != '' && needs.investigate.outputs.issue_number != ''
         runs-on: ubuntu-latest
+        timeout-minutes: 5
         permissions:
             contents: read
             issues: write
@@ -270,6 +271,7 @@ jobs:
         concurrency:
             group: humanize-duty-${{ github.repository }}
             cancel-in-progress: false
+            queue: max
         steps:
             - name: Record who humanizes the issue
               uses: $/.github/actions/humanize-duty

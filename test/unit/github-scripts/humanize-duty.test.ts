@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GitHubClient } from '../../../workflow-scripts-src/humanize-duty.js';
-import {
-    assignHumanizeDuty,
-    loginFromLabel,
-    parseCatchAllOwners,
-    pickNextOwner,
-    startOwnerIndex,
-} from '../../../workflow-scripts-src/humanize-duty.js';
+import type * as HumanizeDuty from '../../../workflow-scripts-src/humanize-duty.js';
+
+const BUNDLE = new URL('../../../.github/scripts/humanize-duty.mjs', import.meta.url).href;
+
+const { assignHumanizeDuty, loginFromLabel, parseCatchAllOwners, pickNextOwner, startOwnerIndex }: typeof HumanizeDuty =
+    await import(BUNDLE);
 
 describe('parseCatchAllOwners', () => {
     it('keeps the individual users on the `*` rule, in order', () => {
@@ -104,21 +102,34 @@ describe('loginFromLabel', () => {
 });
 
 type FakeIssue = { number: number; created_at: string; labels: string[] };
+type FakeEvent = { issueNumber: number; event: string; created_at: string; label: { name: string } };
 
 const notFound = () => Object.assign(new Error('Not Found'), { status: 404 });
 
+const LABEL_ERROR_ALREADY_EXISTS = Object.assign(new Error('Validation Failed'), {
+    status: 422,
+    response: { data: { errors: [{ resource: 'Label', code: 'already_exists', field: 'name' }] } },
+});
+
+// Labels added through the fake land on the issue with a `labeled` event, timed after every issue was created.
 function fakeGitHub({
     files,
     issues,
     labels,
+    createLabelError,
 }: {
     files: Record<string, string>;
     issues: FakeIssue[];
     labels: string[];
+    createLabelError?: Error;
 }) {
+    const repoIssues = structuredClone(issues);
+    const repoLabels = [...labels];
     const created: string[] = [];
     const added: string[] = [];
-    const client: GitHubClient = {
+    const events: FakeEvent[] = [];
+    const labeledAt = () => new Date(Date.UTC(2026, 11, 1) + events.length * 1000).toISOString();
+    const client: HumanizeDuty.GitHubClient = {
         rest: {
             repos: {
                 getContent: async ({ path }) => {
@@ -128,22 +139,32 @@ function fakeGitHub({
             },
             issues: {
                 get: async ({ issue_number: issueNumber }) => {
-                    const issue = issues.find((candidate) => candidate.number === issueNumber);
+                    const issue = repoIssues.find((candidate) => candidate.number === issueNumber);
                     if (!issue) throw notFound();
                     return { data: issue };
                 },
-                listLabelsForRepo: async () => ({ data: labels.map((name) => ({ name })) }),
+                listLabelsForRepo: async () => ({ data: repoLabels.map((name) => ({ name })) }),
                 listForRepo: async ({ labels: labelName }) => ({
-                    data: issues
+                    data: repoIssues
                         .filter((issue) => issue.labels.includes(labelName))
                         .sort((first, second) => second.created_at.localeCompare(first.created_at))
                         .slice(0, 1),
                 }),
+                listEvents: async ({ issue_number: issueNumber }) => ({
+                    data: events.filter((event) => event.issueNumber === issueNumber),
+                }),
                 createLabel: async ({ name }) => {
+                    if (createLabelError) throw createLabelError;
                     created.push(name);
-                    labels.push(name);
+                    repoLabels.push(name);
                 },
-                addLabels: async ({ labels: names }) => {
+                addLabels: async ({ issue_number: issueNumber, labels: names }) => {
+                    const issue = repoIssues.find((candidate) => candidate.number === issueNumber);
+                    if (!issue) throw notFound();
+                    for (const name of names) {
+                        events.push({ issueNumber, event: 'labeled', created_at: labeledAt(), label: { name } });
+                        issue.labels.push(name);
+                    }
                     added.push(...names);
                 },
             },
@@ -153,7 +174,7 @@ function fakeGitHub({
     return { client, created, added };
 }
 
-const run = async (github: GitHubClient, duty = 'label', issueNumber = 10) => {
+const run = async (github: HumanizeDuty.GitHubClient, duty = 'label', issueNumber = 10) => {
     const warnings: string[] = [];
     await assignHumanizeDuty({
         github,
@@ -168,7 +189,7 @@ const run = async (github: GitHubClient, duty = 'label', issueNumber = 10) => {
 describe('assignHumanizeDuty', () => {
     const newIssue = { number: 10, created_at: '2026-11-03T00:00:00Z', labels: ['claude'] };
 
-    it('labels the owner after the one on the most recently created labeled issue', async () => {
+    it('falls back to when an issue was created for labels without a labeled event', async () => {
         const fake = fakeGitHub({
             files: { '.github/CODEOWNERS': '* @alice @bob @carol' },
             labels: ['needs-humanize:alice', 'needs-humanize:bob'],
@@ -239,6 +260,59 @@ describe('assignHumanizeDuty', () => {
         expect(await run(fake.client)).toStrictEqual([
             '.github/CODEOWNERS lists no individual users on its `*` rule, so no needs-humanize label is added.',
         ]);
+        expect(fake.added).toStrictEqual([]);
+    });
+
+    it('takes turns by when each label was added, not when its issue was created', async () => {
+        const fake = fakeGitHub({
+            files: { '.github/CODEOWNERS': '* @alice @bob @carol' },
+            labels: ['needs-humanize:alice'],
+            issues: [
+                { number: 10, created_at: '2026-11-01T00:00:00Z', labels: ['needs-humanize:alice'] },
+                { number: 11, created_at: '2026-11-02T00:00:00Z', labels: ['claude'] },
+                { number: 12, created_at: '2026-11-03T00:00:00Z', labels: ['claude'] },
+                { number: 13, created_at: '2026-11-04T00:00:00Z', labels: ['claude'] },
+            ],
+        });
+        await run(fake.client, 'label', 12);
+        await run(fake.client, 'label', 11);
+        await run(fake.client, 'label', 13);
+        expect(fake.added).toStrictEqual(['needs-humanize:bob', 'needs-humanize:carol', 'needs-humanize:alice']);
+    });
+
+    it('reads .github/CODEOWNERS before the one in the root', async () => {
+        const fake = fakeGitHub({
+            files: { '.github/CODEOWNERS': '* @alice', CODEOWNERS: '* @bob' },
+            labels: [],
+            issues: [newIssue],
+        });
+        await run(fake.client);
+        expect(fake.added).toStrictEqual(['needs-humanize:alice']);
+    });
+
+    it('adds the label when creating it finds it already exists', async () => {
+        const fake = fakeGitHub({
+            files: { '.github/CODEOWNERS': '* @alice' },
+            labels: [],
+            issues: [newIssue],
+            createLabelError: LABEL_ERROR_ALREADY_EXISTS,
+        });
+        await run(fake.client);
+        expect(fake.added).toStrictEqual(['needs-humanize:alice']);
+    });
+
+    it('fails when creating the label is rejected for another reason', async () => {
+        const invalid = Object.assign(new Error('Validation Failed'), {
+            status: 422,
+            response: { data: { errors: [{ resource: 'Label', code: 'invalid', field: 'name' }] } },
+        });
+        const fake = fakeGitHub({
+            files: { '.github/CODEOWNERS': '* @alice' },
+            labels: [],
+            issues: [newIssue],
+            createLabelError: invalid,
+        });
+        await expect(run(fake.client)).rejects.toBe(invalid);
         expect(fake.added).toStrictEqual([]);
     });
 

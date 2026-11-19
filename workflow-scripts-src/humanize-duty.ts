@@ -2,8 +2,8 @@
 // `label` labels the issue `needs-humanize:<login>`.
 //
 // The developers are the individual users on the `*` rule of the repo's CODEOWNERS, in the order
-// they are listed. Each new issue goes to the developer after the one on the most recently created
-// issue that carries a `needs-humanize:` label, so the rotation never depends on labels being removed.
+// they are listed. Each new issue goes to the developer after the one most recently labeled
+// `needs-humanize:<login>`, so the rotation never depends on labels being removed.
 // With no such issue yet, or when that developer is no longer listed, the rotation starts at a
 // developer derived from the repo name, so different repos usually start with different people.
 //
@@ -16,7 +16,7 @@ export const CODEOWNERS_PATHS = ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEO
 const LABEL_PREFIX = 'needs-humanize';
 const LABEL_COLOR = 'fbca04';
 
-const sameLogin = (first: string, second: string) => first.toLowerCase() === second.toLowerCase();
+const sameIgnoringCase = (first: string, second: string) => first.toLowerCase() === second.toLowerCase();
 
 export function parseCatchAllOwners(codeowners: string): string[] {
     let owners: string[] = [];
@@ -27,7 +27,7 @@ export function parseCatchAllOwners(codeowners: string): string[] {
     }
     return owners
         .map((entry) => entry.slice(1))
-        .filter((login, index, logins) => logins.findIndex((other) => sameLogin(other, login)) === index);
+        .filter((login, index, logins) => logins.findIndex((other) => sameIgnoringCase(other, login)) === index);
 }
 
 export function startOwnerIndex(repoName: string, ownerCount: number): number {
@@ -35,7 +35,7 @@ export function startOwnerIndex(repoName: string, ownerCount: number): number {
 }
 
 export function pickNextOwner(owners: string[], lastLogin: string | undefined, repoName: string): string {
-    const lastIndex = lastLogin === undefined ? -1 : owners.findIndex((owner) => sameLogin(owner, lastLogin));
+    const lastIndex = lastLogin === undefined ? -1 : owners.findIndex((owner) => sameIgnoringCase(owner, lastLogin));
     const index = lastIndex === -1 ? startOwnerIndex(repoName, owners.length) : (lastIndex + 1) % owners.length;
     return owners[index];
 }
@@ -49,6 +49,7 @@ export function loginFromLabel(labelName: string): string | undefined {
 type RepoParams = { owner: string; repo: string };
 type Label = { name: string };
 type Issue = { number: number; created_at: string; labels: (string | { name?: string })[] };
+type IssueEvent = { event: string; created_at: string; label?: { name: string } };
 
 export interface GitHubClient {
     rest: {
@@ -67,6 +68,9 @@ export interface GitHubClient {
                     per_page: number;
                 },
             ): Promise<{ data: Issue[] }>;
+            listEvents(
+                params: RepoParams & { issue_number: number; per_page: number },
+            ): Promise<{ data: IssueEvent[] }>;
             createLabel(params: RepoParams & { name: string; color: string; description: string }): Promise<unknown>;
             addLabels(params: RepoParams & { issue_number: number; labels: string[] }): Promise<unknown>;
         };
@@ -85,6 +89,12 @@ interface Core {
 const hasStatus = (error: unknown, status: number) =>
     typeof error === 'object' && error !== null && 'status' in error && error.status === status;
 
+const isAlreadyExists = (error: unknown) => {
+    if (!hasStatus(error, 422)) return false;
+    const errors = (error as { response?: { data?: { errors?: { code?: string }[] } } }).response?.data?.errors;
+    return errors?.some((detail) => detail.code === 'already_exists') ?? false;
+};
+
 const labelNames = (issue: Issue) =>
     issue.labels.map((label) => (typeof label === 'string' ? label : (label.name ?? '')));
 
@@ -102,8 +112,21 @@ async function readCodeowners(github: GitHubClient, repo: RepoParams) {
     return undefined;
 }
 
+async function findLabeledAt(github: GitHubClient, repo: RepoParams, issue: Issue, labelName: string) {
+    const { data: events } = await github.rest.issues.listEvents({
+        ...repo,
+        issue_number: issue.number,
+        per_page: 100,
+    });
+    const labeledAt = events
+        .filter((event) => event.event === 'labeled' && sameIgnoringCase(event.label?.name ?? '', labelName))
+        .map((event) => event.created_at)
+        .sort();
+    return labeledAt.pop() ?? issue.created_at;
+}
+
 async function findLastLabeledLogin(github: GitHubClient, repo: RepoParams, prefixLabels: Label[]) {
-    let latest: { login: string; createdAt: string } | undefined;
+    let latest: { login: string; labeledAt: string } | undefined;
     for (const label of prefixLabels) {
         const { data } = await github.rest.issues.listForRepo({
             ...repo,
@@ -115,9 +138,9 @@ async function findLastLabeledLogin(github: GitHubClient, repo: RepoParams, pref
         });
         const [issue] = data;
         const login = loginFromLabel(label.name);
-        if (issue && login && (!latest || issue.created_at > latest.createdAt)) {
-            latest = { login, createdAt: issue.created_at };
-        }
+        if (!issue || !login) continue;
+        const labeledAt = await findLabeledAt(github, repo, issue, label.name);
+        if (!latest || labeledAt > latest.labeledAt) latest = { login, labeledAt };
     }
     return latest?.login;
 }
@@ -152,7 +175,7 @@ async function assignHumanizeLabel({ github, context, core, issueNumber }: DutyP
     const lastLogin = await findLastLabeledLogin(github, repo, prefixLabels);
     const login = pickNextOwner(owners, lastLogin, repo.repo);
 
-    const label = prefixLabels.find((candidate) => sameLogin(loginFromLabel(candidate.name) ?? '', login));
+    const label = prefixLabels.find((candidate) => sameIgnoringCase(loginFromLabel(candidate.name) ?? '', login));
     const labelName = label?.name ?? `${LABEL_PREFIX}:${login}`;
     if (!label) {
         try {
@@ -163,7 +186,7 @@ async function assignHumanizeLabel({ github, context, core, issueNumber }: DutyP
                 description: `${login} rewrites this issue in plain language`,
             });
         } catch (error) {
-            if (!hasStatus(error, 422)) throw error;
+            if (!isAlreadyExists(error)) throw error;
         }
     }
 

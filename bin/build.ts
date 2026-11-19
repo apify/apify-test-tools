@@ -1,7 +1,7 @@
 import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType, ApifyClient } from 'apify-client';
 
-import { getCurrentBranch, normalizeRepoUrl, resolveRepoUrl } from './git.js';
+import { getCurrentBranch, getRemoteBranchSha, normalizeRepoUrl, resolveCommitSha, resolveRepoUrl } from './git.js';
 import { logger } from './logger.js';
 import type { BuildTarget } from './stdin-input.js';
 import type { ActorConfig, BuildData, DryRunPlan, ExistingBuild } from './types.js';
@@ -10,7 +10,6 @@ type BuildPrActorOptions = {
     versionNumber: string;
     gitRepoUrl: string;
     actorConfig: ActorConfig;
-    actorInfo: ApifyClientTypes.Actor;
 };
 
 // Fixed version number used to build from local source files, since there is no real version to track.
@@ -22,6 +21,10 @@ export const DEFAULT_VERSION_KEYWORD = 'default';
 const ACTOR_SETUP_REQUIREMENT =
     'Before using apify-test-tools, every Actor needs at least one build under its default build tag (usually "latest"), ' +
     'built from a Git repository version whose URL points to this repository. Build it once manually on the platform.';
+
+// `build` only starts builds, so whatever a version needs is set on the platform, by hand or by a script of your own
+const NEVER_CHANGES_VERSIONS =
+    'apify-test-tools never creates or changes Actor versions, so set it up on the platform.';
 
 /**
  * Finds the Actor's default version: the one whose build the default build tag points to.
@@ -52,11 +55,9 @@ export const resolveDefaultVersion = (actorFullName: string, actorInfo: ApifyCli
 };
 
 /**
- * Guards against building an Actor from a different repository than it is published from, e.g. when the
- * local `origin` remote is a fork or a mirror. Every build overwrites the version's Git URL, so building
- * from the wrong remote would silently repoint the Actor. The default version is the source of truth
- * since it is what users run. Skipped when the repo URL is passed explicitly, which is how you move an
- * Actor to a new repository on purpose.
+ * Guards against building an Actor from a checkout of a different repository than it is published from, e.g. when
+ * the local `origin` remote is a fork or a mirror. The default version is the source of truth since it is what users
+ * run. Skipped when the repo URL is passed explicitly, e.g. while an Actor moves to a new repository.
  */
 export const assertRepoUrlMatchesDefaultVersion = (
     actorFullName: string,
@@ -121,6 +122,122 @@ export const assertEnvVarsMatchDefaultVersion = (
     );
 };
 
+/** The Git URL a version must have to build `branch` of `repoUrl`: `<repository>#<branch>[:<folder>]`. */
+const getVersionGitRepoUrl = (repoUrl: string, branch: string, folder: ActorConfig['folder']): string =>
+    folder.isRoot() ? `${repoUrl}#${branch}` : `${repoUrl}#${branch}:${folder}`;
+
+/**
+ * Splits a version's Git URL, `<repository>#<ref>:<folder>`. The ref and the folder are optional: no ref is the
+ * repository's default branch, and no folder is its root (`.`). The folder loses a leading `./` and trailing slashes.
+ */
+export const parseVersionGitRepoUrl = (gitRepoUrl: string) => {
+    const hashIndex = gitRepoUrl.indexOf('#');
+    const repository = hashIndex === -1 ? gitRepoUrl : gitRepoUrl.slice(0, hashIndex);
+    const fragment = hashIndex === -1 ? '' : gitRepoUrl.slice(hashIndex + 1);
+    const colonIndex = fragment.indexOf(':');
+    const ref = colonIndex === -1 ? fragment : fragment.slice(0, colonIndex);
+    const folder = colonIndex === -1 ? '' : fragment.slice(colonIndex + 1);
+    return {
+        repository,
+        ref: ref || undefined,
+        folder: folder.replace(/^(\.\/)+/, '').replace(/\/+$/, '') || '.',
+    };
+};
+
+/**
+ * `build` doesn't change versions, it only starts builds, so the version must already build the code it is meant to:
+ * from a Git repository, at `repoUrl`, from `branch`, in the Actor's folder. Any difference is an error that names the
+ * URL to set on the platform. The URL form of the repository doesn't matter, see normalizeRepoUrl.
+ */
+export const assertVersionBuildsFromBranch = (
+    actorFullName: string,
+    actorInfo: ApifyClientTypes.Actor,
+    versionNumber: string,
+    { repoUrl, branch, folder }: { repoUrl: string; branch: string; folder: ActorConfig['folder'] },
+) => {
+    const expectedUrl = getVersionGitRepoUrl(repoUrl, branch, folder);
+    const version = actorInfo.versions.find((v) => v.versionNumber === versionNumber);
+    if (!version) {
+        throw new Error(
+            `[${actorFullName}] Version ${versionNumber} doesn't exist. ${NEVER_CHANGES_VERSIONS} Create it once with ` +
+                `source type "${ActorSourceType.GitRepo}" and the Git URL ${expectedUrl}, the same env vars as the default ` +
+                'version, and a build tag users don\'t run (e.g. "test"), never the default build tag.',
+        );
+    }
+    if (version.sourceType !== ActorSourceType.GitRepo) {
+        throw new Error(
+            `[${actorFullName}] Version ${versionNumber} has source type "${version.sourceType}", not ` +
+                `"${ActorSourceType.GitRepo}". ${NEVER_CHANGES_VERSIONS} Change it to the Git URL ${expectedUrl}.`,
+        );
+    }
+    const actual = parseVersionGitRepoUrl(version.gitRepoUrl);
+    const differences = [
+        normalizeRepoUrl(actual.repository) !== normalizeRepoUrl(repoUrl)
+            ? `repository ${actual.repository}, not ${repoUrl}`
+            : undefined,
+        actual.ref !== branch ? `branch ${actual.ref ?? "(the repository's default)"}, not ${branch}` : undefined,
+        actual.folder !== folder.path ? `folder ${actual.folder}, not ${folder.path}` : undefined,
+    ].filter(Boolean);
+    if (differences.length === 0) return;
+
+    // The usual mistake is building the checked-out branch while the version builds a dedicated one
+    const branchHint =
+        actual.ref && actual.ref !== branch && differences.length === 1
+            ? ` To build branch ${actual.ref} instead, push the code to it and pass --branch ${actual.ref}.`
+            : '';
+    throw new Error(
+        `[${actorFullName}] Version ${versionNumber} builds ${version.gitRepoUrl} (${differences.join('; ')}). ` +
+            `${NEVER_CHANGES_VERSIONS} Set its Git URL to ${expectedUrl}.${branchHint}`,
+    );
+};
+
+/**
+ * Guards against a test build reaching users. A build gets the build tag of its version, so a version other than the
+ * default one must not carry the default build tag: building it would move that tag, e.g. `latest`, to untested code.
+ */
+export const assertVersionKeepsDefaultBuildTag = (
+    actorFullName: string,
+    actorInfo: ApifyClientTypes.Actor,
+    versionNumber: string,
+) => {
+    const { defaultVersionNumber, defaultBuildTag } = resolveDefaultVersion(actorFullName, actorInfo);
+    if (versionNumber === defaultVersionNumber) return;
+    const version = actorInfo.versions.find((v) => v.versionNumber === versionNumber);
+    if (version?.buildTag === defaultBuildTag) {
+        throw new Error(
+            `[${actorFullName}] Version ${versionNumber} has the build tag "${defaultBuildTag}", the one users run by ` +
+                `default, so building it would release the build to them. Give the version another build tag on the ` +
+                'platform, e.g. "test".',
+        );
+    }
+};
+
+/**
+ * With a dedicated branch, the builds only build HEAD while the branch on `origin` points at it: from when HEAD was
+ * pushed there until the builder has cloned it. Another run can push to the same branch in between, so this is checked
+ * before the builds start (`when: 'before'`) and again once they have finished (`when: 'after'`). If the branch is at
+ * HEAD both times, every build cloned HEAD.
+ */
+export const assertBranchAtCommit = async (branch: string, commit: string, when: 'before' | 'after') => {
+    const remoteSha = await getRemoteBranchSha(branch);
+    if (remoteSha === commit) return;
+    const push = `git push --force origin HEAD:refs/heads/${branch}`;
+    if (when === 'before') {
+        throw new Error(
+            remoteSha
+                ? `Branch ${branch} on origin is at ${remoteSha}, not at HEAD (${commit}), so the builds wouldn't ` +
+                      `build HEAD. Push HEAD to it first (${push}). If you just did, another run has pushed to it since: ` +
+                      'run again.'
+                : `Branch ${branch} doesn't exist on origin. Push HEAD to it first (${push}).`,
+        );
+    }
+    throw new Error(
+        `Branch ${branch} on origin moved from HEAD (${commit}) to ${remoteSha ?? 'nowhere (deleted)'} while the ` +
+            "Actors were building, most likely because another run pushed to it. The builds may hold that run's code " +
+            'instead of HEAD, so they are not used. Run again.',
+    );
+};
+
 export class ApifyBuilder {
     private constructor(
         private readonly apifyClient: ApifyClient,
@@ -155,6 +272,19 @@ export class ApifyBuilder {
         return url.toString();
     };
 
+    /**
+     * Starts a build of the version as it is configured on the platform, changing nothing on the Actor. Returns the
+     * Actor's raw ID too, so the tests can match the Actor both by ID and by name.
+     */
+    startBuild = async (versionNumber: string, useCache: boolean): Promise<BuildData> => {
+        const { id, actId, buildNumber } = await this.apifyClient
+            .actor(this.actorFullName)
+            .build(versionNumber, { useCache });
+        logger.info(`[${this.actorFullName}]: ${id} (${buildNumber})`);
+        return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
+    };
+
+    // Only `build-from-local` sets the version up itself, since its source is a fresh upload every time.
     // Pass actorInfo when the caller already fetched it, to save an API call
     createVersionAndBuild = async (
         versionNumber: string,
@@ -175,11 +305,7 @@ export class ApifyBuilder {
             await version.update(actorVersion);
         }
 
-        // We also get back actId so the testing actor can both match by actor ID and name
-        const { id, actId, buildNumber } = await actorClient.build(versionNumber, { useCache });
-
-        logger.info(`[${this.actorFullName}]: ${id} (${buildNumber})`);
-        return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
+        return this.startBuild(versionNumber, useCache);
     };
 
     /**
@@ -379,67 +505,76 @@ type RunBuildsOptions = {
     repoUrl: string;
     // False when the repo URL was passed explicitly, see assertRepoUrlMatchesDefaultVersion
     shouldVerifyRepoUrl: boolean;
+    // The branch every version must build from, see assertVersionBuildsFromBranch
     branch: string;
+    // When set, the branch on origin must be at this commit before the builds start and after they finish, see
+    // assertBranchAtCommit
+    expectedCommit?: string;
     dryRun: boolean;
     // See assertEnvVarsMatchDefaultVersion
     requireEnvVarsInSync?: boolean;
 };
 
+/**
+ * Builds the given version of each Actor as it is configured on the platform. Nothing on the Actor is created or
+ * changed: every version must already build `branch` of `repoUrl` from the Actor's folder, which is checked first, for
+ * all Actors before any build starts.
+ */
 export const runBuilds = async ({
     repoUrl,
     shouldVerifyRepoUrl,
     branch,
+    expectedCommit,
     actorConfigs,
     versionNumber,
     dryRun,
     requireEnvVarsInSync = false,
 }: RunBuildsOptions): Promise<BuildData[] | DryRunPlan<GitBuildPlan>> => {
-    // Fetched once per Actor and reused for the checks, the version numbers and the build itself
+    // Fetched once per Actor and reused for the checks and the version numbers
     const buildConfigs: BuildPrActorOptions[] = await Promise.all(
         actorConfigs.map(async (actorConfig) => {
+            const { actorFullName } = actorConfig;
             const actorInfo = await ApifyBuilder.fromActorConfig(actorConfig).getActorInfo();
             const { defaultVersionNumber, defaultBuildTag, defaultVersion } = resolveDefaultVersion(
-                actorConfig.actorFullName,
+                actorFullName,
                 actorInfo,
             );
             // Builds keep the tags their version gives them, so a default version without the default build tag
             // would build fine but leave users on the previous build
             if (versionNumber === DEFAULT_VERSION_KEYWORD && defaultVersion?.buildTag !== defaultBuildTag) {
                 logger.warn(
-                    `[${actorConfig.actorFullName}] Default version ${defaultVersionNumber} has build tag ` +
+                    `[${actorFullName}] Default version ${defaultVersionNumber} has build tag ` +
                         `"${defaultVersion?.buildTag ?? 'none'}", not "${defaultBuildTag}", so users keep running the previous build. ` +
                         'Set the build tag of the version on the platform to change that.',
                 );
             }
             if (shouldVerifyRepoUrl) {
-                assertRepoUrlMatchesDefaultVersion(actorConfig.actorFullName, defaultVersion, repoUrl);
+                assertRepoUrlMatchesDefaultVersion(actorFullName, defaultVersion, repoUrl);
             }
             const targetVersionNumber =
                 versionNumber === DEFAULT_VERSION_KEYWORD ? defaultVersionNumber : versionNumber;
+            assertVersionBuildsFromBranch(actorFullName, actorInfo, targetVersionNumber, {
+                repoUrl,
+                branch,
+                folder: actorConfig.folder,
+            });
+            assertVersionKeepsDefaultBuildTag(actorFullName, actorInfo, targetVersionNumber);
             if (requireEnvVarsInSync) {
-                assertEnvVarsMatchDefaultVersion(
-                    actorConfig.actorFullName,
-                    actorInfo,
-                    defaultVersion,
-                    targetVersionNumber,
-                );
-            }
-
-            // Depending on if these are miniactors or standaloneActors
-            let gitRepoUrl = `${repoUrl}#${branch}`;
-            if (!actorConfig.folder.isRoot()) {
-                gitRepoUrl = `${gitRepoUrl}:${actorConfig.folder}`;
+                assertEnvVarsMatchDefaultVersion(actorFullName, actorInfo, defaultVersion, targetVersionNumber);
             }
             return {
                 actorConfig,
-                actorInfo,
-                gitRepoUrl,
+                gitRepoUrl: getVersionGitRepoUrl(repoUrl, branch, actorConfig.folder),
                 versionNumber: targetVersionNumber,
             };
         }),
     );
 
-    // Everything above only reads, so a dry run has checked what the real run would, short of writing
+    if (expectedCommit) {
+        await assertBranchAtCommit(branch, expectedCommit, 'before');
+    }
+
+    // Everything above only reads, so a dry run has checked what the real run would, short of building
     if (dryRun) {
         logger.info('[DRY RUN] Would build:');
         const builds = buildConfigs.map((buildConfig) => ({
@@ -453,33 +588,34 @@ export const runBuilds = async ({
         return { dryRun: true, builds };
     }
 
-    const buildConfigsByActorFullName = new Map(
-        buildConfigs.map((buildConfig) => [buildConfig.actorConfig.actorFullName, buildConfig]),
+    const versionNumbersByActorFullName = new Map(
+        buildConfigs.map((buildConfig) => [buildConfig.actorConfig.actorFullName, buildConfig.versionNumber]),
     );
 
-    return runAndSummarizeBuilds(actorConfigs, 'BUILDS', async (actorConfig, builder) => {
-        const buildConfig = buildConfigsByActorFullName.get(actorConfig.actorFullName)!;
-        // No buildTag: the version keeps the one it has, so its build gets the tag the version already gives it
-        const actorVersion: ApifyClientTypes.ActorVersion = {
-            versionNumber: buildConfig.versionNumber,
-            gitRepoUrl: buildConfig.gitRepoUrl,
-            sourceType: ActorSourceType.GitRepo,
-        };
-        // Always with the Docker cache: CI always asked for it, and a clean build can still be started on the platform
-        return builder.createVersionAndBuild(buildConfig.versionNumber, actorVersion, true, buildConfig.actorInfo);
-    });
+    // Always with the Docker cache: CI always asked for it, and a clean build can still be started on the platform
+    const builds = await runAndSummarizeBuilds(actorConfigs, 'BUILDS', async (actorConfig, builder) =>
+        builder.startBuild(versionNumbersByActorFullName.get(actorConfig.actorFullName)!, true),
+    );
+
+    if (expectedCommit) {
+        await assertBranchAtCommit(branch, expectedCommit, 'after');
+    }
+    return builds;
 };
 
-type BuildActorsOptions = Omit<RunBuildsOptions, 'repoUrl' | 'shouldVerifyRepoUrl' | 'branch'> & {
+type BuildActorsOptions = Omit<RunBuildsOptions, 'repoUrl' | 'shouldVerifyRepoUrl' | 'branch' | 'expectedCommit'> & {
     // Defaults to the `origin` remote, see resolveRepoUrl
     repoUrl?: string;
+    // A branch HEAD was pushed to, e.g. a test branch the versions build from. Defaults to the checked-out branch
+    branch?: string;
 };
 
 /**
- * Builds exactly the given Actors from the checked-out Git branch, as it is on the remote. Fails on a detached HEAD,
- * where there is no branch to build. Used by `build` and the commands built on top of it.
+ * Builds exactly the given Actors from a branch as it is on the remote: the checked-out one, which fails on a detached
+ * HEAD where there is none, or the given one. A given branch must hold HEAD on origin before and after the builds, see
+ * assertBranchAtCommit. Used by `build` and the commands built on top of it.
  */
-export const buildActors = async ({ actorConfigs, repoUrl, ...options }: BuildActorsOptions) => {
+export const buildActors = async ({ actorConfigs, repoUrl, branch, ...options }: BuildActorsOptions) => {
     if (actorConfigs.length === 0) {
         logger.info('No Actors to build');
         // Still the dry-run shape in a dry run, so it can't pass for a real (empty) result
@@ -489,7 +625,9 @@ export const buildActors = async ({ actorConfigs, repoUrl, ...options }: BuildAc
         ...options,
         ...(await resolveRepoUrl(repoUrl)),
         actorConfigs,
-        branch: await getCurrentBranch(),
+        ...(branch === undefined
+            ? { branch: await getCurrentBranch() }
+            : { branch, expectedCommit: await resolveCommitSha('HEAD') }),
     });
 };
 

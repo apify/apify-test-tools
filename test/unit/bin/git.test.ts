@@ -6,6 +6,7 @@ import {
     getChangelogAdditions,
     getCommitsBetween,
     getCurrentBranch,
+    getRemoteBranchSha,
     getRepoName,
     normalizeRepoUrl,
     resolveCommitSha,
@@ -95,6 +96,26 @@ describe('getCurrentBranch', () => {
     it('should throw on a detached HEAD', async () => {
         vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('HEAD');
         await expect(getCurrentBranch()).rejects.toThrow('HEAD is detached');
+    });
+});
+
+describe('getRemoteBranchSha', () => {
+    beforeEach(() => vi.restoreAllMocks());
+
+    it('asks origin for the exact branch and returns its commit', async () => {
+        const gitCommandSpy = vi
+            .spyOn(Utils, 'runGitCommand')
+            .mockResolvedValue('0123456789abcdef0123456789abcdef01234567\trefs/heads/test');
+        await expect(getRemoteBranchSha('test')).resolves.toBe('0123456789abcdef0123456789abcdef01234567');
+        expect(gitCommandSpy).toHaveBeenCalledExactlyOnceWith(
+            ['ls-remote', '--heads', 'origin', 'refs/heads/test'],
+            expect.anything(),
+        );
+    });
+
+    it('returns undefined when the branch does not exist on origin', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('');
+        await expect(getRemoteBranchSha('test')).resolves.toBeUndefined();
     });
 });
 

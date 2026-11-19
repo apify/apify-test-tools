@@ -8,11 +8,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import {
     ApifyBuilder,
+    assertBranchAtCommit,
     assertEnvVarsMatchDefaultVersion,
     assertRepoUrlMatchesDefaultVersion,
+    assertVersionBuildsFromBranch,
+    assertVersionKeepsDefaultBuildTag,
     buildActors,
     buildOrReuseActors,
     deleteOldBuilds,
+    parseVersionGitRepoUrl,
     resolveDefaultVersion,
     runBuilds,
 } from '../../../bin/build.js';
@@ -29,6 +33,19 @@ vi.mock('apify-client', async (importOriginal) => {
 
 const ACTOR = 'owner/actor';
 const REPO_URL = 'git@github.com:owner/repo';
+
+// A version that builds `ref` of REPO_URL, from the repository root unless a folder is given
+const gitVersion = (
+    versionNumber: string,
+    ref: string,
+    folder?: string,
+    extra: Pick<ApifyClientTypes.ActorVersionGitRepo, 'buildTag' | 'envVars'> = {},
+): ApifyClientTypes.ActorVersion => ({
+    versionNumber,
+    sourceType: ActorSourceType.GitRepo,
+    gitRepoUrl: `${REPO_URL}#${ref}${folder ? `:${folder}` : ''}`,
+    ...extra,
+});
 
 const makeActorInfo = (overrides: Partial<ApifyClientTypes.Actor> = {}): ApifyClientTypes.Actor =>
     ({
@@ -92,13 +109,14 @@ describe('assertRepoUrlMatchesDefaultVersion', () => {
 
 describe('runBuilds version number', () => {
     // Only the name and folder of the Actor matter here, the builder is stubbed
-    const actorConfig = { actorFullName: ACTOR, folder: { isRoot: () => true } } as unknown as ActorConfig;
+    const actorConfig = { actorFullName: ACTOR, folder: RelativeDir.ROOT } as unknown as ActorConfig;
+    const versions = [gitVersion('0.1', 'master'), gitVersion('0.99', 'master')];
     // Restored after each test, so the stub never reaches the tests that run the real builder
     afterEach(() => {
         vi.mocked(ApifyBuilder.fromActorConfig).mockRestore();
     });
 
-    const dryRunBuild = async (versionNumber: string, actorInfo = makeActorInfo()) => {
+    const dryRunBuild = async (versionNumber: string, actorInfo = makeActorInfo({ versions })) => {
         vi.spyOn(ApifyBuilder, 'fromActorConfig').mockReturnValue({
             getActorInfo: async () => actorInfo,
         } as unknown as ApifyBuilder);
@@ -131,8 +149,8 @@ describe('runBuilds version number', () => {
 
     it('does not warn when the default version gives its builds the default build tag', async () => {
         const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-        const versions = [{ versionNumber: '0.1', buildTag: 'latest', sourceType: ActorSourceType.GitRepo }];
-        await dryRunBuild('default', makeActorInfo({ versions } as Partial<ApifyClientTypes.Actor>));
+        const tagged = [gitVersion('0.1', 'master', undefined, { buildTag: 'latest' })];
+        await dryRunBuild('default', makeActorInfo({ versions: tagged }));
         expect(warnSpy).not.toHaveBeenCalled();
     });
 });
@@ -242,7 +260,9 @@ describe('dry run', () => {
 
     beforeEach(() => {
         vi.stubEnv(TOKEN_ENV_VAR, 'token');
-        actorInfo = makeActorInfo();
+        actorInfo = makeActorInfo({
+            versions: [gitVersion('0.1', 'master', 'actors/a'), gitVersion('0.99', 'feature', 'actors/a')],
+        });
         const fakeClient = {
             actor: () => ({
                 get: async () => actorInfo,
@@ -277,7 +297,7 @@ describe('dry run', () => {
             requireEnvVarsInSync,
         });
 
-    it('should return a build plan without creating versions or builds', async () => {
+    it('should return a build plan without changing versions or starting builds', async () => {
         expect(await runDryBuilds()).toEqual({
             dryRun: true,
             builds: [
@@ -314,12 +334,8 @@ describe('dry run', () => {
         beforeEach(() => {
             actorInfo = makeActorInfo({
                 versions: [
-                    {
-                        versionNumber: '0.1',
-                        sourceType: ActorSourceType.GitRepo,
-                        gitRepoUrl: REPO_URL,
-                        envVars: [{ name: 'API_KEY', isSecret: true }],
-                    },
+                    gitVersion('0.1', 'master', 'actors/a', { envVars: [{ name: 'API_KEY', isSecret: true }] }),
+                    gitVersion('0.99', 'feature', 'actors/a'),
                 ],
             });
         });
@@ -348,7 +364,7 @@ describe('dry run', () => {
 describe('buildOrReuseActors', () => {
     const TOKEN_ENV_VAR = 'APIFY_TOKEN_REUSE';
     const config = (actorFullName: string) =>
-        ({ actorFullName, tokenEnvVar: TOKEN_ENV_VAR, folder: { isRoot: () => true } }) as unknown as ActorConfig;
+        ({ actorFullName, tokenEnvVar: TOKEN_ENV_VAR, folder: RelativeDir.ROOT }) as unknown as ActorConfig;
     const stored = { buildId: 'b1', actorRawId: 'raw-a', buildNumber: '0.99.4' };
     let builds: Record<string, unknown>;
 
@@ -357,7 +373,10 @@ describe('buildOrReuseActors', () => {
         builds = { b1: { status: 'SUCCEEDED', actId: 'raw-a', buildNumber: '0.99.4' } };
         vi.mocked(ApifyClient).mockImplementation(function () {
             return {
-                actor: () => ({ get: async () => makeActorInfo() }),
+                actor: () => ({
+                    get: async () =>
+                        makeActorInfo({ versions: [gitVersion('0.1', 'master'), gitVersion('0.99', 'feature')] }),
+                }),
                 build: (id: string) => ({ get: async () => builds[id] }),
             };
         } as never);
@@ -434,5 +453,236 @@ describe('buildOrReuseActors', () => {
         await expect(
             planned([{ actorFullName: 'owner/a', build: 'default' }, { actorFullName: 'owner/a' }]),
         ).resolves.toStrictEqual(['owner/a']);
+    });
+});
+
+describe('parseVersionGitRepoUrl', () => {
+    it.each([
+        ['git@github.com:o/r#test:actors/a', { repository: 'git@github.com:o/r', ref: 'test', folder: 'actors/a' }],
+        ['git@github.com:o/r#test', { repository: 'git@github.com:o/r', ref: 'test', folder: '.' }],
+        ['git@github.com:o/r', { repository: 'git@github.com:o/r', ref: undefined, folder: '.' }],
+        [
+            'https://github.com/o/r#feature/x:./actors/a/',
+            { repository: 'https://github.com/o/r', ref: 'feature/x', folder: 'actors/a' },
+        ],
+        ['git@github.com:o/r#:actors/a', { repository: 'git@github.com:o/r', ref: undefined, folder: 'actors/a' }],
+    ])('splits %s', (url, expected) => {
+        expect(parseVersionGitRepoUrl(url)).toStrictEqual(expected);
+    });
+});
+
+describe('assertVersionBuildsFromBranch', () => {
+    const folder = new RelativeDir('actors/a');
+    const check = (versions: ApifyClientTypes.ActorVersion[], branch = 'test', repoUrl = REPO_URL) =>
+        assertVersionBuildsFromBranch(ACTOR, makeActorInfo({ versions }), '0.99', { repoUrl, branch, folder });
+
+    it('passes when the version builds the branch, whatever the form of the repository URL', () => {
+        expect(() =>
+            check([gitVersion('0.99', 'test', 'actors/a')], 'test', 'https://github.com/owner/repo.git'),
+        ).not.toThrow();
+    });
+
+    it('passes for an Actor at the repository root, with or without a folder in the URL', () => {
+        const atRoot = (versions: ApifyClientTypes.ActorVersion[]) =>
+            assertVersionBuildsFromBranch(ACTOR, makeActorInfo({ versions }), '0.99', {
+                repoUrl: REPO_URL,
+                branch: 'test',
+                folder: RelativeDir.ROOT,
+            });
+        expect(() => atRoot([gitVersion('0.99', 'test')])).not.toThrow();
+        expect(() => atRoot([gitVersion('0.99', 'test', '.')])).not.toThrow();
+    });
+
+    it('asks to create a missing version, with the Git URL to give it', () => {
+        expect(() => check([])).toThrow(
+            `Version 0.99 doesn't exist. apify-test-tools never creates or changes Actor versions`,
+        );
+        expect(() => check([])).toThrow(`${REPO_URL}#test:actors/a`);
+    });
+
+    it('throws for a version not built from a Git repository', () => {
+        expect(() =>
+            check([{ versionNumber: '0.99', sourceType: ActorSourceType.SourceFiles, sourceFiles: [] }]),
+        ).toThrow('has source type "SOURCE_FILES"');
+    });
+
+    it('names the branch to pass when the version builds another branch', () => {
+        expect(() => check([gitVersion('0.99', 'test', 'actors/a')], 'feature')).toThrow(
+            'branch test, not feature). apify-test-tools never creates or changes Actor versions, so set it up on the ' +
+                `platform. Set its Git URL to ${REPO_URL}#feature:actors/a. To build branch test instead, push the code ` +
+                'to it and pass --branch test.',
+        );
+    });
+
+    it('throws when the version builds another folder', () => {
+        expect(() => check([gitVersion('0.99', 'test', 'actors/b')])).toThrow('folder actors/b, not actors/a');
+    });
+
+    it('throws when the version builds another repository', () => {
+        expect(() => check([gitVersion('0.99', 'test', 'actors/a')], 'test', 'git@github.com:fork/repo')).toThrow(
+            `repository ${REPO_URL}, not git@github.com:fork/repo`,
+        );
+    });
+
+    it("throws when the version builds the repository's default branch", () => {
+        const version = { ...gitVersion('0.99', 'test'), gitRepoUrl: `${REPO_URL}#:actors/a` };
+        expect(() => check([version])).toThrow("branch (the repository's default), not test");
+    });
+});
+
+describe('assertVersionKeepsDefaultBuildTag', () => {
+    const check = (versionNumber: string, versions: ApifyClientTypes.ActorVersion[]) =>
+        assertVersionKeepsDefaultBuildTag(ACTOR, makeActorInfo({ versions }), versionNumber);
+
+    it('throws for a test version with the default build tag, which would release its builds', () => {
+        expect(() =>
+            check('0.99', [gitVersion('0.1', 'master'), gitVersion('0.99', 'test', undefined, { buildTag: 'latest' })]),
+        ).toThrow('Version 0.99 has the build tag "latest"');
+    });
+
+    it('passes for a test version with another build tag or none', () => {
+        expect(() =>
+            check('0.99', [gitVersion('0.1', 'master'), gitVersion('0.99', 'test', undefined, { buildTag: 'test' })]),
+        ).not.toThrow();
+        expect(() => check('0.99', [gitVersion('0.1', 'master'), gitVersion('0.99', 'test')])).not.toThrow();
+    });
+
+    it('passes for the default version, whose builds are meant for users', () => {
+        expect(() => check('0.1', [gitVersion('0.1', 'master', undefined, { buildTag: 'latest' })])).not.toThrow();
+    });
+});
+
+describe('assertBranchAtCommit', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('passes while the branch is at the commit', async () => {
+        vi.spyOn(Git, 'getRemoteBranchSha').mockResolvedValue('abc');
+        await expect(assertBranchAtCommit('test', 'abc', 'before')).resolves.toBeUndefined();
+        await expect(assertBranchAtCommit('test', 'abc', 'after')).resolves.toBeUndefined();
+    });
+
+    it('asks to push HEAD when the branch is elsewhere before the builds', async () => {
+        vi.spyOn(Git, 'getRemoteBranchSha').mockResolvedValue('other');
+        await expect(assertBranchAtCommit('test', 'abc', 'before')).rejects.toThrow(
+            'Branch test on origin is at other, not at HEAD (abc)',
+        );
+    });
+
+    it('asks to push HEAD when the branch does not exist', async () => {
+        vi.spyOn(Git, 'getRemoteBranchSha').mockResolvedValue(undefined);
+        await expect(assertBranchAtCommit('test', 'abc', 'before')).rejects.toThrow(
+            "Branch test doesn't exist on origin. Push HEAD to it first (git push --force origin HEAD:refs/heads/test)",
+        );
+    });
+
+    it('rejects the builds when the branch moved while they built', async () => {
+        vi.spyOn(Git, 'getRemoteBranchSha').mockResolvedValue('other');
+        await expect(assertBranchAtCommit('test', 'abc', 'after')).rejects.toThrow(
+            'Branch test on origin moved from HEAD (abc) to other while the Actors were building',
+        );
+    });
+});
+
+describe('runBuilds', () => {
+    const TOKEN_ENV_VAR = 'APIFY_TOKEN_RUN';
+    const actorConfig = { actorFullName: ACTOR, tokenEnvVar: TOKEN_ENV_VAR, folder: RelativeDir.ROOT } as ActorConfig;
+    const startBuild = vi.fn(async () => ({ id: 'new-build', actId: 'raw-id', buildNumber: '0.99.7' }));
+    const createVersion = vi.fn();
+    const updateVersion = vi.fn();
+
+    beforeEach(() => {
+        vi.stubEnv(TOKEN_ENV_VAR, 'token');
+        vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+        vi.mocked(ApifyClient).mockImplementation(function () {
+            return {
+                actor: () => ({
+                    get: async () =>
+                        makeActorInfo({ versions: [gitVersion('0.1', 'master'), gitVersion('0.99', 'test')] }),
+                    versions: () => ({ create: createVersion }),
+                    version: () => ({ update: updateVersion }),
+                    build: startBuild,
+                }),
+                build: () => ({ waitForFinish: async () => ({ status: 'SUCCEEDED', buildNumber: '0.99.7' }) }),
+            };
+        } as never);
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.restoreAllMocks();
+        vi.clearAllMocks();
+    });
+
+    const run = async (options: Partial<Parameters<typeof runBuilds>[0]> = {}) =>
+        runBuilds({
+            actorConfigs: [actorConfig],
+            versionNumber: '0.99',
+            repoUrl: REPO_URL,
+            shouldVerifyRepoUrl: true,
+            branch: 'test',
+            dryRun: false,
+            ...options,
+        });
+
+    it('only starts a build of the version, without changing the Actor', async () => {
+        await expect(run()).resolves.toStrictEqual([
+            { buildId: 'new-build', actorRawId: 'raw-id', buildNumber: '0.99.7', actorFullName: ACTOR },
+        ]);
+        expect(startBuild).toHaveBeenCalledWith('0.99', { useCache: true });
+        expect(createVersion).not.toHaveBeenCalled();
+        expect(updateVersion).not.toHaveBeenCalled();
+    });
+
+    it('starts no build when a version builds another branch', async () => {
+        await expect(run({ branch: 'feature' })).rejects.toThrow('pass --branch test');
+        expect(startBuild).not.toHaveBeenCalled();
+    });
+
+    it('checks the branch is at the expected commit before and after the builds', async () => {
+        const remoteSha = vi.spyOn(Git, 'getRemoteBranchSha').mockResolvedValue('head-sha');
+        await expect(run({ expectedCommit: 'head-sha' })).resolves.toHaveLength(1);
+        expect(remoteSha).toHaveBeenCalledTimes(2);
+        expect(remoteSha).toHaveBeenCalledWith('test');
+    });
+
+    it('starts no build when the branch is not at the expected commit', async () => {
+        vi.spyOn(Git, 'getRemoteBranchSha').mockResolvedValue('other-sha');
+        await expect(run({ expectedCommit: 'head-sha' })).rejects.toThrow('not at HEAD (head-sha)');
+        expect(startBuild).not.toHaveBeenCalled();
+    });
+
+    it('also checks the branch in a dry run, which reads it only once', async () => {
+        const remoteSha = vi.spyOn(Git, 'getRemoteBranchSha').mockResolvedValue('head-sha');
+        await expect(run({ expectedCommit: 'head-sha', dryRun: true })).resolves.toMatchObject({ dryRun: true });
+        expect(remoteSha).toHaveBeenCalledTimes(1);
+        expect(startBuild).not.toHaveBeenCalled();
+    });
+
+    it('fails when the branch moved while the Actors were building', async () => {
+        vi.spyOn(Git, 'getRemoteBranchSha').mockResolvedValueOnce('head-sha').mockResolvedValueOnce('other-sha');
+        await expect(run({ expectedCommit: 'head-sha' })).rejects.toThrow('moved from HEAD (head-sha) to other-sha');
+    });
+
+    it('builds a given branch at HEAD, and the checked-out branch without a commit check', async () => {
+        const currentBranch = vi.spyOn(Git, 'getCurrentBranch').mockResolvedValue('test');
+        vi.spyOn(Git, 'resolveCommitSha').mockResolvedValue('head-sha');
+        const remoteSha = vi.spyOn(Git, 'getRemoteBranchSha').mockResolvedValue('head-sha');
+
+        await buildActors({
+            actorConfigs: [actorConfig],
+            versionNumber: '0.99',
+            repoUrl: REPO_URL,
+            branch: 'test',
+            dryRun: false,
+        });
+        expect(currentBranch).not.toHaveBeenCalled();
+        expect(remoteSha).toHaveBeenCalledTimes(2);
+
+        remoteSha.mockClear();
+        await buildActors({ actorConfigs: [actorConfig], versionNumber: '0.99', repoUrl: REPO_URL, dryRun: false });
+        expect(currentBranch).toHaveBeenCalled();
+        expect(remoteSha).not.toHaveBeenCalled();
     });
 });

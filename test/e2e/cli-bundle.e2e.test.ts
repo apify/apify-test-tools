@@ -29,7 +29,9 @@ import {
 //
 // Runs with `npm run test:e2e`, kept out of `npm test`. Skipped without the token, e.g. on fork PRs.
 const ACTORS = ['test-tools-testing-sandbox/dummy-for-testing-1', 'test-tools-testing-sandbox/dummy-for-testing-2'];
-// Only used as the source URL in dry-run plans; nothing is cloned from it.
+// Only used as the repository the dry runs expect the versions to build; nothing is cloned from it. No version builds
+// it, so the dry runs show the version check against the real Actors. Successful git builds are in
+// git-build-release.e2e.test.ts.
 const REPO_URL = 'https://github.com/apify/apify-test-tools-e2e-fixture';
 
 let repoDir: string;
@@ -87,7 +89,7 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         if (repoDir) await rm(repoDir, { recursive: true, force: true });
     });
 
-    it('build --dry-run plans a test build of the Actors it is given', async () => {
+    it("build --dry-run checks the real Actor's test version and names the Git URL it needs", async () => {
         const { status, stdout, stderr } = await runCliWithInput(
             JSON.stringify({ actors: [{ actorFullName: ACTORS[0] }] }),
             'build',
@@ -97,16 +99,13 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
             REPO_URL,
             '--dry-run',
         );
-        expect(status, stderr).toBe(0);
-        expect(JSON.parse(stdout)).toEqual({
-            dryRun: true,
-            builds: [
-                { actorFullName: ACTORS[0], versionNumber: '0.99', gitRepoUrl: `${REPO_URL}#feature:actors/dummy-1` },
-            ],
-        });
+        expect(status, stderr).toBe(1);
+        expect(stdout).toBe('');
+        expect(stderr).toContain(`[${ACTORS[0]}] Version 0.99`);
+        expect(stderr).toContain(`${REPO_URL}#feature:actors/dummy-1`);
     });
 
-    it('a release pipeline plans a build of the default version of every changed Actor', async () => {
+    it('a release pipeline checks the default version of every changed Actor', async () => {
         const affected = await runCli('get-affected-actors', '--since', baseSha);
         expect(affected.status, affected.stderr).toBe(0);
         const { functionallyChangedActors, cosmeticallyChangedActors } = JSON.parse(affected.stdout);
@@ -120,10 +119,10 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
             REPO_URL,
             '--dry-run',
         );
-        expect(status, stderr).toBe(0);
-        expect(stderr).toContain(
-            `[DRY RUN] Would build:\n  ${ACTORS[0]} (0.0) from ${REPO_URL}#feature:actors/dummy-1`,
-        );
+        // Version 0.0 is the default version, resolved from the default build tag
+        expect(status, stderr).toBe(1);
+        expect(stderr).toContain(`[${ACTORS[0]}] Version 0.0 builds`);
+        expect(stderr).toContain(`Set its Git URL to ${REPO_URL}#feature:actors/dummy-1`);
     });
 
     it('build-from-local --dry-run plans both Actors from the working tree', async () => {

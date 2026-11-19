@@ -18,13 +18,17 @@ import { gitEnv, runCli as runCliIn, runCliWithInput as runCliWithInputIn, token
 // with `e2e/feature` checked out and compare it with `origin/e2e/base`. The release pipeline rebuilds
 // dummy-for-testing-1 under `latest` on every run, which is fine for a sandbox Actor nobody else uses.
 //
+// `build` never changes versions, so the Actor's test version 0.99 and its default version 0.0 are set up on the
+// platform to build BUILD_SOURCE. The PR workflow's dedicated test branch isn't exercised here: pushing to the fixture
+// repository from a test would race with other runs. Unit tests cover `--branch`.
+//
 // Runs with `npm run test:e2e`, kept out of `npm test`. Skipped without the token, e.g. on fork PRs.
 const FIXTURE_REPO = 'https://github.com/apify-store/testing-repo-for-github-actions';
 const BASE_BRANCH = 'e2e/base';
 const FEATURE_BRANCH = 'e2e/feature';
 const CHANGED_ACTOR = 'test-tools-testing-sandbox/dummy-for-testing-1';
 const CHANGED_ACTOR_FOLDER = 'actors/dummy-for-testing-1';
-// The CLI builds from the SSH form of the origin URL, which is what lets a deploy key work.
+// What both versions are set up to build, in the SSH form of the origin URL, which is what lets a deploy key work.
 const BUILD_SOURCE = `git@github.com:apify-store/testing-repo-for-github-actions#${FEATURE_BRANCH}:${CHANGED_ACTOR_FOLDER}`;
 
 let repoDir: string;
@@ -81,7 +85,7 @@ describe.runIf(token)('CLI bundle building a real repository', { timeout: 2 * 60
             { actorFullName: CHANGED_ACTOR, buildNumber: expect.stringMatching(/^0\.99\.\d+$/) },
         ]);
 
-        // The version builds the checked-out branch, as it is on the remote.
+        // The version still builds the checked-out branch: build only started a build of it.
         expect(await versionSource('0.99')).toBe(BUILD_SOURCE);
         expect((await client.build(builds[0].buildId).get())?.status).toBe('SUCCEEDED');
     });
@@ -102,7 +106,7 @@ describe.runIf(token)('CLI bundle building a real repository', { timeout: 2 * 60
         expect(status, stderr).toBe(0);
         expect(stderr).toMatch(new RegExp(`\\[${CHANGED_ACTOR}\\]: 0\\.0\\.\\d+`));
 
-        // Releasing builds the default version from the branch being released.
+        // The default version still builds the branch being released: build only started a build of it.
         expect(await versionSource('0.0')).toBe(BUILD_SOURCE);
 
         // Without a channel the announcement is skipped, so it needs no Slack token

@@ -73,8 +73,8 @@ export const parseCommit = (commitString: string): Commit => {
 };
 
 /**
- * Returns the currently checked-out branch. Builds point the Actor version at this branch,
- * so a detached HEAD (no branch to point at) is an error rather than a guess.
+ * Returns the currently checked-out branch, the one `build` builds unless it is given another. A detached HEAD
+ * (no branch to build) is an error rather than a guess.
  */
 export const getCurrentBranch = async (): Promise<string> => {
     const branch = await runGitCommand(['rev-parse', '--abbrev-ref', 'HEAD'], {
@@ -93,6 +93,18 @@ export const resolveCommitSha = async (ref: string): Promise<string> =>
     runGitCommand(['rev-parse', '--verify', `${ref}^{commit}`], { operation: `resolve ${ref} to a commit` });
 
 /**
+ * The commit a branch points to on the `origin` remote right now, asked from the remote itself rather than read from
+ * the local remote-tracking ref, which is only as fresh as the last fetch. Undefined when the branch doesn't exist.
+ */
+export const getRemoteBranchSha = async (branch: string): Promise<string | undefined> => {
+    // The full ref name, so `test` doesn't also match e.g. `refs/heads/feature/test`
+    const output = await runGitCommand(['ls-remote', '--heads', 'origin', `refs/heads/${branch}`], {
+        operation: `look up branch ${branch} on origin`,
+    });
+    return output.split(/\s+/)[0] || undefined;
+};
+
+/**
  * Reads the repository URL from the `origin` remote, rewritten to the SSH form the Apify platform
  * uses for Git repo sources, e.g. git@github.com:apify-store/google-maps
  */
@@ -104,9 +116,9 @@ const getOriginRepoUrl = async (): Promise<string> => {
 };
 
 /**
- * Picks the repo URL to build from. By default it's the `origin` remote, and runBuilds then checks it against
- * each Actor's default version, so a fork or mirror remote can't repoint a published Actor. An explicit
- * --repo-url skips that check: passing it is how you move an Actor to another repository on purpose.
+ * Picks the repository the built versions must build from. By default it's the `origin` remote, and runBuilds also
+ * checks it against each Actor's default version, so a fork or mirror remote can't build the wrong code. An explicit
+ * --repo-url skips that check, e.g. while an Actor moves to another repository and its versions point at both.
  */
 export const resolveRepoUrl = async (explicitRepoUrl: string | undefined) => ({
     repoUrl: explicitRepoUrl ?? (await getOriginRepoUrl()),

@@ -10,15 +10,15 @@ npx apify-test-tools <command> [flags]
 Run every command from the root of the Actor repository; it reads `apify-test-tools.config.json` from there.
 Results are written to stdout as JSON, diagnostics to stderr, so commands can be piped into each other and into `jq`.
 
-| Command                                                               | Does                                                    | Needs         |
-| --------------------------------------------------------------------- | ------------------------------------------------------- | ------------- |
-| [`get-affected-actors`](#finding-affected-actors-get-affected-actors) | Lists the Actors changed in a commit range              | git only      |
-| [`build`](#building-actors-build)                                     | Builds the Actors given on stdin from the pushed branch | Actor tokens  |
-| [`build-from-local`](#build-from-local-source-build-from-local)       | Builds Actors from local files                          | Actor tokens  |
-| [`test`](#running-tests-test)                                         | Runs the platform tests on the builds given on stdin    | test tokens   |
-| [`notify`](#notifying-notify)                                         | Posts a test report or a release to Slack               | a Slack token |
-| [`delete-old-builds`](#deleting-old-builds-delete-old-builds)         | Deletes old builds of the Actors                        | Actor tokens  |
-| [`get-actor-configs`](#listing-actors-get-actor-configs)              | Prints the resolved config                              | nothing       |
+| Command                                                               | Does                                                  | Needs         |
+| --------------------------------------------------------------------- | ----------------------------------------------------- | ------------- |
+| [`get-affected-actors`](#finding-affected-actors-get-affected-actors) | Lists the Actors changed in a commit range            | git only      |
+| [`build`](#building-actors-build)                                     | Builds the Actors given on stdin from a pushed branch | Actor tokens  |
+| [`build-from-local`](#build-from-local-source-build-from-local)       | Builds Actors from local files                        | Actor tokens  |
+| [`test`](#running-tests-test)                                         | Runs the platform tests on the builds given on stdin  | test tokens   |
+| [`notify`](#notifying-notify)                                         | Posts a test report or a release to Slack             | a Slack token |
+| [`delete-old-builds`](#deleting-old-builds-delete-old-builds)         | Deletes old builds of the Actors                      | Actor tokens  |
+| [`get-actor-configs`](#listing-actors-get-actor-configs)              | Prints the resolved config                            | nothing       |
 
 "Actor tokens" are the environment variables named by each Actor's `tokenEnvVar` in the config, "test tokens" those
 named by its `testTokenEnvVar`, which default to the Actor tokens. A command only needs the tokens of the Actors it
@@ -44,8 +44,9 @@ Every command that changes something (`build`, `build-from-local`, `notify`, `de
 - **Changes nothing.** No versions or builds are created, nothing is uploaded or deleted, and no Slack message is
   posted.
 - **Does every read and check the real run does**, so it fails wherever the real run would: change detection, the
-  Apify token and Actor lookup, the [repository check](#repository-check), collecting and zipping local sources, and
-  the Slack token (verified with Slack's read-only `auth.test`).
+  Apify token and Actor lookup, the [version check](#version-check) and the [repository check](#repository-check),
+  that a branch passed with `--branch` is at `HEAD`, collecting and zipping local sources, and the Slack token
+  (verified with Slack's read-only `auth.test`).
 - **Needs the same tokens as the real run.** Read-only tokens are enough, since nothing is written. A dry run can't
   tell whether a token is also allowed to write, because the Apify API has no dry-run mode of its own.
 - **Prints a plan, not results.** Logs start with `[DRY RUN] Would …`. `build` and `build-from-local` write
@@ -184,11 +185,22 @@ An Actor in `testChangedActors` gets the existing `build` that can run its tests
 
 ## Building Actors (`build`)
 
-`build` builds exactly the Actors it is given on stdin, from the checked-out branch as it is on the remote, and
-prints the builds as the same JSON array `build-from-local` prints. An Actor listed twice is built once, so the lists
-of `get-affected-actors` can be joined without removing duplicates first. A detached HEAD is an error, since there is
-no branch to build from. It doesn't look at git history: which Actors to build is up to you, usually picked from the
-output of [`get-affected-actors`](#finding-affected-actors-get-affected-actors).
+`build` builds exactly the Actors it is given on stdin, from a branch as it is on the remote, and prints the builds as
+the same JSON array `build-from-local` prints. An Actor listed twice is built once, so the lists of
+`get-affected-actors` can be joined without removing duplicates first. It doesn't look at git history: which Actors to
+build is up to you, usually picked from the output of
+[`get-affected-actors`](#finding-affected-actors-get-affected-actors).
+
+`build` only starts builds. It never creates or changes an Actor version, so its token needs no permission to change
+the Actor: each version must already build the branch, see [Version check](#version-check). The branch is the
+checked-out one (a detached HEAD is an error, since there is none), or the one `--branch` names:
+
+- **Without `--branch`** it builds the checked-out branch, e.g. `master` for a release, whose default versions build
+  `master`.
+- **With `--branch`** it builds a branch you pushed `HEAD` to, e.g. the `test` branch a test version builds. Because
+  others can push to the same branch, `build` then checks that the branch on `origin` is at `HEAD` before it starts
+  the builds, and again once they have finished: if the branch moved in between, the builds may have cloned someone
+  else's code, so `build` fails instead of printing them.
 
 An Actor listed with a `build`, as `testChangedActors` of
 [`get-affected-actors`](#finding-affected-actors-get-affected-actors) gives it, is not built:
@@ -205,9 +217,10 @@ The output then lists every build to test, new and reused, so it goes straight t
 
 ```bash
 # A PR: the Actors whose code or platform tests the branch changed, built into the test version, or reused
+git push --force origin HEAD:refs/heads/test
 npx apify-test-tools get-affected-actors --base origin/master --stored-builds pr-builds.json \
   | jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' \
-  | npx apify-test-tools build --version-number 0.99
+  | npx apify-test-tools build --version-number 0.99 --branch test
 
 # A release: every Actor changed since the last release, into the version users run
 npx apify-test-tools get-affected-actors --since <sha> \
@@ -215,7 +228,8 @@ npx apify-test-tools get-affected-actors --since <sha> \
   | npx apify-test-tools build --version-number default
 
 # One Actor, whatever changed
-echo '{ "actors": [{ "actorFullName": "john.doe/my-actor" }] }' | npx apify-test-tools build --version-number 0.99
+echo '{ "actors": [{ "actorFullName": "john.doe/my-actor" }] }' \
+  | npx apify-test-tools build --version-number 0.99 --branch test
 ```
 
 The input is `{ "actors": [{ "actorFullName": "<owner/name>" }] }`, each Actor with an optional `build` (see above);
@@ -227,7 +241,8 @@ its own (the default shell has no `pipefail`).
 | Flag                         | Default             | Meaning                                                                                                                |
 | ---------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `--version-number`           | required            | Version to build, like `0.99`, or `default` for each Actor's default version (the one its default build tag points to) |
-| `--repo-url`                 | the `origin` remote | Repository to build from, see [Repository check](#repository-check)                                                    |
+| `--branch`                   | the checked-out one | Branch the versions build from, where you pushed `HEAD`. It must be at `HEAD` on `origin` before and after the builds  |
+| `--repo-url`                 | the `origin` remote | Repository the versions must build from, see [Repository check](#repository-check)                                     |
 | `--require-env-vars-in-sync` | `false`             | Fail unless the built version's env var names match the default version's, see [Env var check](#env-var-check)         |
 | `--dry-run`                  | `false`             | See [Dry runs](#dry-runs---dry-run)                                                                                    |
 
@@ -243,26 +258,41 @@ name alone:
 
 `build` never sets or changes build tags. A build gets the tag its version is configured with on the platform, so
 building the default version moves its tag (usually `latest`) to the new build, and building a version without a
-tag leaves every tag where it is. Builds always use the Docker cache.
+tag leaves every tag where it is. A version other than the default one that has the default build tag is an error,
+since building it would release untested code to users. Builds always use the Docker cache.
+
+### Version check
+
+Before starting any build, `build` checks the version it builds of every Actor, and fails with the Git URL to set when
+it isn't set up to build the branch:
+
+- The version exists and its source type is Git repository.
+- Its Git URL, `<repository>#<branch>:<folder>`, names the repository (see [Repository check](#repository-check)), the
+  branch being built, and the Actor's `folder` from the config. An Actor at the repository root has no `:<folder>`.
+
+So the test version `0.99` of an Actor in `actors/web-scraper` builds `git@github.com:myteam/my-repo#test:actors/web-scraper`,
+and its default version `git@github.com:myteam/my-repo#master:actors/web-scraper`. Set them up once on the platform,
+see [Setting up the versions](workflows.md#setting-up-the-versions). A dry run checks them too.
 
 ### Repository check
 
-`build` points each Actor's version at the `origin` remote. Because a build overwrites the version's Git URL,
-building from a fork or a mirror would repoint the Actor. So, before building, the remote is compared with the Git
-URL of the Actor's default version (the one its default build tag points to), and the command fails if they differ
-or if the default version isn't built from a Git repository. The URL form doesn't matter
+The platform builds the repository a version's Git URL names, not your checkout. So before building, the `origin`
+remote is compared with the Git URL of the version being built, and with that of the Actor's default version (the
+one its default build tag points to), which users run. The command fails if they differ, e.g. when `origin` is a fork
+or a mirror, or if the default version isn't built from a Git repository. The URL form doesn't matter
 (`https://github.com/org/repo` equals `git@github.com:org/repo.git`).
 
-To build from a different repository on purpose, e.g. when moving an Actor, pass `--repo-url`. That skips the check.
+To check against another repository, pass `--repo-url`: the version being built must then name it, and the default
+version isn't checked, e.g. while an Actor moves to a new repository.
 
 ### Env var check
 
 Tests should run the Actor with the same env vars users run it with. Pass `--require-env-vars-in-sync` to `build` or
 `build-from-local` to compare the env vars of the version they build (e.g. `0.99`, or `0.98` for `build-from-local`)
 with those of the default version, and fail if a name is missing or extra. Only names are compared, since the API
-doesn't return secret values. A version that doesn't exist yet counts as having no env vars, so if the default
-version has any, create the test version on the platform with the same env vars first. A dry run checks the env vars
-too.
+doesn't return secret values. For `build-from-local`, which creates its version, a version that doesn't exist yet
+counts as having no env vars, so if the default version has any, create the version on the platform with the same
+env vars first. A dry run checks the env vars too.
 
 The CLI leaves it off by default, so a one-off build, e.g. of a debug branch, isn't held up by it.
 [`public_pr-build-test.yaml`](workflows.md#public_pr-build-testyaml) turns it on by default; set its
@@ -272,7 +302,8 @@ The CLI leaves it off by default, so a one-off build, e.g. of a debug branch, is
 
 Builds Actors directly from your local files, with no push needed: the sources are zipped into the Actor's
 `actor-<id>-source` key-value store and built as `TARBALL`, like `apify push`. It prints the same build array as
-`build`.
+`build`. Unlike `build`, it points version `0.98` at the uploaded sources itself, creating the version if needed, so
+its token must be allowed to change the Actor.
 
 ```bash
 APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build-from-local --actors john.doe/my-actor
@@ -341,7 +372,7 @@ the repository locked) on the Actors it is given on stdin, and prints a report o
 
 ```bash
 # A PR: test what was just built
-... | npx apify-test-tools build --version-number 0.99 | npx apify-test-tools test > test-report.json
+... | npx apify-test-tools build --version-number 0.99 --branch test | npx apify-test-tools test > test-report.json
 
 # Scheduled tests: every Actor in the config, on its default build
 npx apify-test-tools get-actor-configs \
@@ -508,21 +539,24 @@ APIFY_TOKEN_JOHN_DOE=apify_api_xxx \
 
 To build from git, like CI does:
 
-1. Switch to a dummy branch that you will push and can later delete
+1. Check out the branch with your changes
 2. `npm i apify-test-tools@latest -D`
-3. Push your code (changes you want to test)
+3. Push it to the test branch that the test version `0.99` builds (see
+   [Setting up the versions](workflows.md#setting-up-the-versions)). CI pushes there too, so a PR's run can replace
+   your code, and yours a PR's: `build` then fails, and running it again is enough.
 4. Build the Actors on Apify (with your new code)
 5. Run tests against those builds. You can change tests and run on the same builds.
 
 ```bash
+git push --force origin HEAD:refs/heads/test
 npx apify-test-tools get-affected-actors --base origin/master \
     | jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' \
-    | APIFY_TOKEN_JOHN_DOE=apify_api_xxx npx apify-test-tools build --version-number 0.99 > builds.json
+    | APIFY_TOKEN_JOHN_DOE=apify_api_xxx npx apify-test-tools build --version-number 0.99 --branch test > builds.json
 ```
 
-Run it with your dummy branch checked out: it builds the Actors that branch changed functionally, from the branch as
-it is on the remote, into the test version `0.99`. Add `--dry-run` to `build` to print the plan (the version and Git
-URL each Actor would be built from) first, and update `--base` to the branch you compare against. Tests only run for
+It builds the Actors your branch changed functionally, from the test branch as it is on the remote, into the test
+version `0.99`. Add `--dry-run` to `build` to print the plan (the version and Git URL each Actor would be built from)
+first, and update `--base` to the branch you compare against. Tests only run for
 Actors in `ACTOR_BUILDS`, so the `jq` filter also passes the Actors whose platform tests changed. Those whose code the
 branch didn't change run on their default build, the others are built.
 

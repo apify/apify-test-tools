@@ -18,6 +18,12 @@ on:
                 type: boolean
                 default: true
                 required: false
+            # The branch version 0.99 of every Actor builds. The PR's code is pushed there before the build. See
+            # "Setting up the versions" in docs/workflows.md
+            test-branch:
+                type: string
+                default: 'test'
+                required: false
         # Every secret is optional. The ones this workflow reads are declared by name. The secrets that
         # apify-test-tools.config.json names (each Actor's `tokenEnvVar` and `testTokenEnvVar`) differ per repo,
         # so they come packed in CONFIG_SECRETS. See the Secrets section of docs/workflows.md.
@@ -46,6 +52,10 @@ jobs:
     platformTest:
         if: ${{ !inputs.skip-platform-tests }}
         runs-on: ubuntu-latest
+        # To push the PR's code to the test branch. The caller's job must grant it too: a called workflow can't get
+        # more than its caller has
+        permissions:
+            contents: write
         steps:
             - name: Setup repository and dependencies
               id: setup
@@ -87,9 +97,24 @@ jobs:
                   # default build, or the build an earlier run of this PR made and stored in pr-builds.json
                   apify-test-tools get-affected-actors "${args[@]}" --stored-builds pr-builds.json > affected.json
 
-            # Functional changes are built into the test version 0.99 that users never run. Actors with only test
-            # changes reuse the build listed with them while it still exists, and are built otherwise. Cosmetic-only
-            # changes need no tests. The output lists every build to test, new and reused.
+            # Version 0.99 of every Actor builds the test branch, so the code to test goes there first. The checkout
+            # kept the job's GITHUB_TOKEN, so it can push. Other PRs push to the same branch, so `build` checks it is
+            # still at HEAD once its builds have finished, and fails rather than test another PR's code.
+            # Skipped when there is nothing to build or test, so a run with nothing to do doesn't move the branch.
+            - name: Push to the test branch
+              env:
+                  TEST_BRANCH: ${{ inputs.test-branch }}
+              run: |
+                  if jq -e '(.functionallyChangedActors + .testChangedActors) | length == 0' affected.json > /dev/null; then
+                      echo "No Actors to build or test, not pushing"
+                      exit 0
+                  fi
+                  git push --force origin "HEAD:refs/heads/$TEST_BRANCH"
+
+            # Functional changes are built into the test version 0.99 that users never run. `build` only starts the
+            # builds: it never changes the Actors, so their 0.99 must already build the test branch. Actors with only
+            # test changes reuse the build listed with them while it still exists, and are built otherwise.
+            # Cosmetic-only changes need no tests. The output lists every build to test, new and reused.
             # run-with-apify-tokens.mjs reads the build token names from apify-test-tools.config.json
             # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
             # The library never sees secrets it doesn't need
@@ -100,10 +125,11 @@ jobs:
                   WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
+                  TEST_BRANCH: ${{ inputs.test-branch }}
               run: |
                   jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
                     | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" --tokens build \
-                        apify-test-tools build --version-number 0.99 \
+                        apify-test-tools build --version-number 0.99 --branch "$TEST_BRANCH" \
                         --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC" \
                     | tee builds.json
 
@@ -145,6 +171,8 @@ jobs:
     unitTest:
         # TODO: only run on changes to code
         runs-on: ubuntu-latest
+        permissions:
+            contents: read
         steps:
             - name: Setup repository and dependencies
               # `$/` loads the action from this repo at the commit this workflow was called at, so a caller

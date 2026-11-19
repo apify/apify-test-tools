@@ -3,7 +3,7 @@ import { inspect } from 'node:util';
 import type { Assertion, ExpectStatic } from 'vitest';
 
 import { checkRun } from './run-checks.js';
-import type { RunTestResult } from './run-test-result.js';
+import type { RunOutcome } from './run-test-result.js';
 import type { ToFinishWithOptions } from './types.js';
 
 /** Matchers that only check the type or shape of a value. */
@@ -48,7 +48,7 @@ export const extendExpect = (expect: ExpectStatic): ExpectStatic => {
             };
         },
         toFinishWith: async <PpeEvent extends string>(
-            received: RunTestResult,
+            received: RunOutcome,
             userOptions: ToFinishWithOptions<PpeEvent>,
         ) => {
             const checks = await checkRun(received, userOptions);

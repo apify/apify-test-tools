@@ -27,3 +27,9 @@ export const DEFAULT_TEST_ACTOR_TIMEOUT_SECS = DEFAULT_TEST_RUN_DURATION_MS / 10
  * - Super rarely the platform is still not synced even after 10s, so 20s should be sufficient practically always.
  */
 export const DATASET_SYNC_DELAY_MS = 20 * 1000; // 20 seconds
+
+/**
+ * Decides where `run({ runtime: 'local' })` executes: `machine` (the default) starts the Actor as a process of the
+ * machine running the tests, `platform` hands it to the Apify platform, inside the Actor's own image.
+ */
+export const LOCAL_RUNS_ON_ENV_VAR = 'APIFY_LOCAL_RUNS_ON';

@@ -20,10 +20,25 @@ const once = <T>(fn: () => Promise<T>): (() => Promise<T>) => {
     };
 };
 
+/** What `toFinishWith` and the other matchers need from a finished run, wherever it ran. */
+export interface RunOutcome {
+    readonly status: string;
+    getRunInfo(): Promise<{ stats: { durationMillis: number }; chargedEventCounts?: Record<string, number> }>;
+    getDataset<T>(): Promise<Dataset<T>>;
+    getStatistics(): Promise<SdkCrawlerStatistics | undefined>;
+    getLog(): Promise<string>;
+}
+
 /** Crawlee v3 writes `SDK_CRAWLER_STATISTICS_<n>`, v4 `CRAWLEE_CRAWLER_STATISTICS_<n>`. */
 const STATISTICS_KEY_PREFIXES = ['SDK_CRAWLER_STATISTICS_', 'CRAWLEE_CRAWLER_STATISTICS_'];
 
-export class RunTestResult {
+/** A crawler that replaces its statistics (adaptive Playwright) lands on the next `<n>`, so the highest one is the live record. */
+export const pickStatisticsKey = (keys: string[]): string | undefined =>
+    keys
+        .filter((key) => /^(SDK|CRAWLEE)_CRAWLER_STATISTICS_\d+$/.test(key))
+        .sort((a, b) => Number(b.slice(b.lastIndexOf('_') + 1)) - Number(a.slice(a.lastIndexOf('_') + 1)))[0];
+
+export class RunTestResult implements RunOutcome {
     constructor(
         private readonly apifyClient: ApifyClient,
         private readonly run: ActorRun,
@@ -31,15 +46,11 @@ export class RunTestResult {
         /**/
     }
 
-    /** A crawler that replaces its statistics (adaptive Playwright) lands on the next `<n>`, so the highest one is the live record. */
     getStatistics = once(async (): Promise<SdkCrawlerStatistics | undefined> => {
         const store = this.getKeyValueStoreClient();
         // Listed by prefix: a plain listing stops at 1000 keys, which a store with many records would fill first.
         const pages = await Promise.all(STATISTICS_KEY_PREFIXES.map(async (prefix) => store.listKeys({ prefix })));
-        const [key] = pages
-            .flatMap(({ items }) => items.map(({ key: name }) => name))
-            .filter((name) => /_\d+$/.test(name))
-            .sort((x, y) => Number(y.slice(y.lastIndexOf('_') + 1)) - Number(x.slice(x.lastIndexOf('_') + 1)));
+        const key = pickStatisticsKey(pages.flatMap(({ items }) => items.map(({ key: name }) => name)));
         if (!key) return undefined;
         return (await store.getRecord(key))?.value as SdkCrawlerStatistics | undefined;
     });

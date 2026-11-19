@@ -332,6 +332,46 @@ name derived from its content, a build that started from another suite's upload 
 memory and permissions are passed with every run rather than read from the Actor. The exception is an Actor's very
 first build: two suites creating it at the same moment collide, and one of them fails.
 
+### Running locally
+
+`run({ runtime: 'local' })` runs the ad-hoc Actor the way it would on somebody's machine: with the SDK's local
+storage and a plain environment, i.e. without the `ACTOR_*` and `APIFY_*` variables the platform sets. Variables
+from `defineActor`'s `env` stay, and so do the browser paths the Actor images define. That covers what a platform
+run can't: the SDK off the platform.
+
+```ts
+describe.each(['platform', 'local'] as const)('on %s', (runtime) => {
+    testActor(actor, 'pushes data', async ({ expect, run }) => {
+        const result = await run({ runtime });
+
+        await expect(result).toFinishWith({ datasetItemCount: 1 });
+        expect((await result.getDataset()).items).toEqual([{ hello: 'world' }]);
+    });
+});
+```
+
+Where a local run executes is decided outside the test, by the `APIFY_LOCAL_RUNS_ON` environment variable:
+
+|                   | `machine` (default)                                                                                                                                     | `platform`                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Where             | A process of the machine running the tests                                                                                                              | A platform run, in the Actor's own image                                                |
+| Setup             | The source is written to a temporary directory and installed once per test file, with pnpm when `package.json` has `pnpm.overrides`, with npm otherwise | A second build of the Actor, whose start command is a launcher around the original one  |
+| Needs             | Whatever the Actor needs: Node.js, a browser for a browser Actor. No token, no build                                                                    | `TESTER_APIFY_TOKEN`, like a platform run                                               |
+| Result comes from | The run's storage directory                                                                                                                             | The run's default dataset and key-value store, where the launcher copies the local ones |
+| Options           | `input`, `options.timeout` (seconds, 600 by default)                                                                                                    | All of them                                                                             |
+
+- **The result** is whatever `toFinishWith` needs, wherever the run happened: `status`, `getDataset()`,
+  `getStatistics()`, `getLog()` and `getRunInfo()` for the duration. A test that sticks to those passes in both
+  places. Anything beyond them depends on the place.
+- Nothing is charged off the platform, so `chargedEventCounts` can't be asserted on a local run.
+- On the platform, only the default dataset and the default key-value store come back. Named storages and request
+  queues stay in the container.
+- The local storage is read with `@crawlee/fs-storage-native`, the library Crawlee 4 writes it with, in the version
+  this package depends on. The build for local runs on the platform gets it as one more dependency of the Actor,
+  under the alias `apify-test-tools-storage`, so it doesn't replace the copy the Actor's own dependencies resolve.
+- On this machine, a run that doesn't succeed gets the end of its log attached to the test as an annotation.
+- The Actor has to start with `npm start` and exit when it's done.
+
 | Export                                                                     | Does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `defineActor(name, { source, memory?, env?, permissions?, syncDelayMs? })` | The Actor for `testActor`. `env` becomes secret environment variables of the build, `permissions` is the Actor's permission level (`LIMITED_PERMISSIONS` unless the run must reach storages other than its own). `syncDelayMs` replaces the 20 seconds `run` waits before returning the result; set it to 0 when the tests poll for what they need.                                                                                                                                                                             |

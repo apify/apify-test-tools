@@ -322,13 +322,23 @@ Optional. Call it after a failed platform test job. It runs in two phases:
 Scheduled runs use a `GITHUB_TOKEN` that cannot trigger other workflows, so the fix phase is a direct job
 dependency rather than a label-triggered run of `public_claude.yaml`.
 
-| Input                | Type   | Default    | Description                                                                                                                                              |
-| -------------------- | ------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`              | string | `sonnet`   | Claude model for both phases                                                                                                                             |
-| `effort`             | string | `''`       | Claude effort level (`low`, `medium`, `high`, `xhigh`, `max`). Empty uses the Claude Code default                                                        |
-| `max_flakiness_runs` | number | `200`      | The most times Claude may re-run the failing Actor run to measure how often the failure happens                                                          |
-| `investigate_prompt` | string | (built in) | Prompt for the investigation phase. Override to change how issues are investigated, titled and described                                                 |
-| `priority_prompt`    | string | (built in) | Prompt for setting a new issue's Priority field from its impact and flakiness. Override to change how priority is judged, e.g. to set revenue thresholds |
+| Input                   | Type   | Default    | Description                                                                                                                                              |
+| ----------------------- | ------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`                 | string | `sonnet`   | Claude model for both phases                                                                                                                             |
+| `effort`                | string | `''`       | Claude effort level (`low`, `medium`, `high`, `xhigh`, `max`). Empty uses the Claude Code default                                                        |
+| `max_flakiness_runs`    | number | `200`      | The most times Claude may re-run the failing Actor run to measure how often the failure happens                                                          |
+| `investigate_prompt`    | string | (built in) | Prompt for the investigation phase. Override to change how issues are investigated, titled and described                                                 |
+| `priority_prompt`       | string | (built in) | Prompt for setting a new issue's Priority field from its impact and flakiness. Override to change how priority is judged, e.g. to set revenue thresholds |
+| `humanize_label_prefix` | string | `''`       | Labels each new issue `<prefix>:<login>` with the developer who rewrites it in plain language. Off when empty                                            |
+
+With `humanize_label_prefix` set, e.g. to `needs-humanize`, each new issue gets a label like `needs-humanize:alice`.
+The developers are the individual users on the `*` rule of the repo's CODEOWNERS (`.github/CODEOWNERS`, `CODEOWNERS`
+or `docs/CODEOWNERS`), in the order listed; teams and emails are skipped. They take turns: the next issue goes to
+the developer after the one on the most recently created issue with a `<prefix>:` label. The first issue, or one
+after that developer left CODEOWNERS, goes to a developer picked from the repo name, so repos don't all start with
+the same person. Labels are never removed, and the turn doesn't depend on them being removed. Without CODEOWNERS or
+any individual user on its `*` rule, the job logs a warning and adds no label. It uses `GITHUB_TOKEN` and needs no
+extra setup.
 
 Secrets: `ANTHROPIC_API_KEY`, `TESTER_APIFY_TOKEN`, and optionally `NPM_TOKEN`, `REDASH_API_KEY` and `AGENT_SKILLS_INTERNAL_GITHUB_TOKEN`.
 

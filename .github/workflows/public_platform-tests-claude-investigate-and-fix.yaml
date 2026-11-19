@@ -12,6 +12,10 @@ name: 'Platform tests: Claude failure investigation and fix'
 #   2. fix: Runs only when investigate created a new issue. Claude reads the issue,
 #      implements a fix, and opens a PR. On success, adds a "claude:done" label to the issue.
 #
+# With `humanize_label_prefix` set, a new issue is also labeled `<prefix>:<login>` with the developer
+# who rewrites it in plain language: the next individual user on the `*` rule of the repo's CODEOWNERS,
+# in turn. It runs in its own job, one at a time per repo, so it never holds up the investigate or fix phase.
+#
 # Note: this workflow is intended to be called from a scheduled workflow. Scheduled runs use
 # GITHUB_TOKEN with reduced permissions that cannot trigger other workflow runs. For this reason
 # the PR phase is chained as a direct job dependency rather than relying on a label-based trigger.
@@ -99,6 +103,11 @@ on:
 
                     Priority is an organization-level issue field. If the revenue actually at risk can't be determined, e.g. the Impact section says "Cannot be determined", leave Priority unset, unless the relative severity is Invisible to the user or Test.
                 description: Prompt given to Claude for setting a new issue's Priority field from its impact and flakiness. Override to customize how priority is judged, e.g. to set revenue thresholds.
+            humanize_label_prefix:
+                required: false
+                type: string
+                default: ''
+                description: Labels each new issue `<prefix>:<login>` with the developer who rewrites it in plain language, taking turns through the individual users on the `*` rule of the repo's CODEOWNERS. Off when empty.
         secrets:
             ANTHROPIC_API_KEY:
                 required: true
@@ -248,6 +257,24 @@ jobs:
                           issue_number: parseInt('${{ steps.issue.outputs.number }}'),
                           labels: ["claude"],
                       });
+
+    humanize-label:
+        needs: investigate
+        if: inputs.humanize_label_prefix != '' && needs.investigate.outputs.issue_number != ''
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            issues: write
+        # Two issues labeled at once would pick the same developer.
+        concurrency:
+            group: humanize-label-${{ github.repository }}
+            cancel-in-progress: false
+        steps:
+            - name: Label who humanizes the issue
+              uses: $/.github/actions/humanize-label
+              with:
+                  label-prefix: ${{ inputs.humanize_label_prefix }}
+                  issue-number: ${{ needs.investigate.outputs.issue_number }}
 
     fix:
         needs: investigate

@@ -7,14 +7,14 @@ the workflow lists, see [Secrets](#secrets):
 ```yaml
 jobs:
     myJob:
-        uses: apify/apify-test-tools/.github/workflows/<workflow>.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/<workflow>.yaml@workflows-v0
         with:
             # inputs, if any
         secrets:
             # the secrets the workflow lists
 ```
 
-Always reference them at the `@workflows-v1` major tag, never at `@master` — see [Versioning](#versioning).
+Always reference them at the `@workflows-v0` major tag, never at `@master` — see [Versioning](#versioning).
 
 They only run on GitHub Actions. On another CI platform, build the same steps with the [CLI](cli.md); each workflow
 The build, release and test workflows below list the CLI commands they run.
@@ -41,17 +41,14 @@ Validates a pull request. It runs two jobs in parallel.
 1. Finds the affected Actors with [`get-affected-actors`](cli.md#finding-affected-actors-get-affected-actors),
    comparing the PR branch with its base branch. Changed files that match `platformTestsGlob` in the config file
    (default `test/platform/**`) are test changes, also when `.dockerignore` lists them.
-2. Force-pushes the PR's code to the test branch (`test-branch`, by default `test`), unless there is nothing to build
-   or test.
-3. Builds the Actors with functional changes into the test version `0.99` with
-   [`build`](cli.md#building-actors-build), which only starts the builds: each Actor's `0.99` must already build the
-   test branch, see [Setting up the versions](#setting-up-the-versions). Actors with only test changes are not built:
-   they are tested on their default build when the branch didn't change their code, or on the build an earlier run of
-   the PR made, while that build still exists. Cosmetic-only changes (README, CHANGELOG, schema formatting) need no
-   tests, so they're not built.
-4. Runs [`test`](cli.md#running-tests-test) on the files that match `test-files-glob`, with the new and reused builds,
+2. Builds the Actors with functional changes into the test version `0.99` with
+   [`build`](cli.md#building-actors-build), from the PR's branch, or from the test branch with
+   [`test-branch`](#building-with-tokens-that-cant-change-actors). Actors with only test changes are not built: they are tested on their
+   default build when the branch didn't change their code, or on the build an earlier run of the PR made, while that
+   build still exists. Cosmetic-only changes (README, CHANGELOG, schema formatting) need no tests, so they're not built.
+3. Runs [`test`](cli.md#running-tests-test) on the files that match `test-files-glob`, with the new and reused builds,
    so only the tests of those Actors run, each Actor with its test token. Failing tests are annotated on the PR.
-5. On success, caches the tested commit as the "last validated commit", together with the builds the PR tested. The
+4. On success, caches the tested commit as the "last validated commit", together with the builds the PR tested. The
    next push to the PR then only builds and tests the Actors that changed since it (see `--since` in
    [`get-affected-actors`](cli.md#finding-affected-actors-get-affected-actors)). If GitHub evicts the cache, the
    next push checks and builds the whole branch again.
@@ -69,26 +66,55 @@ Validates a pull request. It runs two jobs in parallel.
 In a repo whose Actors aren't written in JavaScript or TypeScript, define the `build-check`, `lint` and `test`
 scripts, e.g. to run your language's own checks: without them, the TypeScript, Lint and Test checks fail.
 
-| Input                      | Type    | Default            | Description                                                                                                                 |
-| -------------------------- | ------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `skip-platform-tests`      | boolean | `false`            | Skip the `platformTest` job and run the static checks only                                                                  |
-| `test-files-glob`          | string  | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests) |
-| `require-env-vars-in-sync` | boolean | `true`             | Fail the build unless the env var names of `0.99` match the default version's, see [Env var check](cli.md#env-var-check)    |
-| `test-branch`              | string  | `test`             | The branch `0.99` of every Actor builds, see [Setting up the versions](#setting-up-the-versions)                            |
+| Input                      | Type    | Default            | Description                                                                                                                                |
+| -------------------------- | ------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `skip-platform-tests`      | boolean | `false`            | Skip the `platformTest` job and run the static checks only                                                                                 |
+| `test-files-glob`          | string  | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests)                |
+| `require-env-vars-in-sync` | boolean | `true`             | Fail the build unless the env var names of `0.99` match the default version's, see [Env var check](cli.md#env-var-check)                   |
+| `test-branch`              | string  | `''`               | Opt-in: a branch that `0.99` builds, so the Actor tokens needn't change Actors, see [below](#building-with-tokens-that-cant-change-actors) |
 
 Secrets: the Actor and test tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`. With `skip-platform-tests`, only
 `NPM_TOKEN`. The build gets each Actor's `tokenEnvVar`, the tests its `testTokenEnvVar`, which is the same token unless
 the config names another. `TESTER_APIFY_TOKEN`, if passed, is the fallback for now: the tests of an Actor whose own
-test token isn't passed run with it, and a repo on a lib older than per-Actor tokens runs every test with it. The
-build token only needs to start builds, since nothing changes the Actors.
+test token isn't passed run with it, and a repo on a lib older than per-Actor tokens runs every test with it.
 
-Permissions: the `platformTest` job pushes to the test branch with the job's `GITHUB_TOKEN`, so it asks for
-`contents: write`. Grant it in the calling job, as in the example below: a called workflow gets no more than its
-caller has, and GitHub refuses to start the workflow otherwise, even with `skip-platform-tests`.
+A new push to the same PR cancels the run in progress.
 
-A new push to the same PR cancels the run in progress. Runs of different PRs share the test branch: when another run
-pushes to it before this run's builds have cloned it, `build` fails instead of testing the other PR's code (see
-[`--branch`](cli.md#building-actors-build)). Re-run the job.
+### Building with tokens that can't change Actors
+
+By default `0.99` builds the PR's own branch, so every build points it at that branch first, and the Actor tokens must
+be allowed to change the Actors. To use tokens that may only build them, opt in with a fixed test branch:
+
+1. **Create the branch**, e.g. `git push origin master:refs/heads/test`. Each run force-pushes the PR's code to it, so
+   let branch rules allow force-pushes to it, and don't commit to it by hand. Pushes made with `GITHUB_TOKEN` don't
+   trigger workflows.
+2. **Point each Actor's `0.99` at it** once, with a token that can change the Actor: Git URL
+   `<repository>#test:<folder>`, e.g. `git@github.com:myteam/my-repo#test:actors/web-scraper`, with the default
+   version's env vars and a build tag users don't run. Running the workflow once with such tokens does the same.
+   The [dry run](cli.md#building-with-tokens-that-cant-change-actors) lists the versions not set up yet.
+3. **Pass `test-branch: test`, and grant `contents: write`** to the calling job:
+
+```yaml
+jobs:
+    buildDevelAndTest:
+        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
+        permissions:
+            contents: write
+        with:
+            test-branch: test
+        secrets:
+            CONFIG_SECRETS: |
+                { "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}" }
+```
+
+The push runs in a separate `pushTestBranch` job that runs nothing from the repository, so the token that can push
+never reaches `npm ci` or the tests, which get `contents: read`. Runs of different PRs share the branch: when another
+run pushes to it before this run's builds have cloned it, the build fails instead of testing the other PR's code.
+Re-run the job.
+
+The [release workflow](#public_push-build-latestyaml) needs no opt-in: each default version already builds `master`
+after its first release, so it is only built. The Actor tokens the release uses then also only need to build the
+Actors, except that its `delete-old-builds` step deletes builds.
 
 ```yaml
 name: PR Test
@@ -99,10 +125,7 @@ on:
 
 jobs:
     buildDevelAndTest:
-        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
-        # To push the PR's code to the test branch
-        permissions:
-            contents: write
+        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
         with:
             # Leaves out the *-without-pr folders, see "Splitting the tests"
             test-files-glob: 'test/platform/{daily,hourly}/**'
@@ -123,8 +146,8 @@ Releases the Actors a push changed. Skipped when the head commit message contain
 1. `get-affected-actors --since ${{ github.event.before }}` finds everything the push changed. See
    [Releasing Actors](cli.md#releasing-actors) for how the released range is determined.
 2. `build --version-number default` builds both the functionally and the cosmetically changed Actors into their
-   default version, the one users run, which must already build the pushed branch (see
-   [Setting up the versions](#setting-up-the-versions)). A push that only changes platform tests builds nothing.
+   default version, the one users run, pointing it at the pushed branch first unless it already builds it. A push
+   that only changes platform tests builds nothing.
 3. [`notify`](cli.md#notifying-notify) posts the release (its changelog additions and its commits, linked to
    GitHub) to the report channel. It posts nothing when the push brought no new commits.
 4. `delete-old-builds` deletes old builds of every Actor in the config (see
@@ -148,7 +171,7 @@ on:
 
 jobs:
     buildLatest:
-        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
         with:
             report-slack-channel: '#notif-my-repo'
         secrets:
@@ -193,7 +216,7 @@ on:
 
 jobs:
     platformTestsDaily:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: 'test/platform/{daily,daily-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
@@ -219,7 +242,7 @@ on:
 
 jobs:
     platformTestsHourly:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
@@ -283,7 +306,7 @@ on:
 
 jobs:
     review:
-        uses: apify/apify-test-tools/.github/workflows/public_review.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/public_review.yaml@workflows-v0
         secrets:
             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
@@ -320,7 +343,7 @@ on:
 
 jobs:
     claude:
-        uses: apify/apify-test-tools/.github/workflows/public_claude.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/public_claude.yaml@workflows-v0
         secrets:
             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
@@ -354,7 +377,7 @@ failing Actor with: its `testTokenEnvVar`, which is its `tokenEnvVar` unless the
 ```yaml
 jobs:
     platformTestsHourly:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
             report-slack-channel: '#notif-my-repo'
@@ -369,7 +392,7 @@ jobs:
     handle-failure:
         needs: platformTestsHourly
         if: ${{ failure() }}
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v0
         secrets:
             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
             # The token the tests ran the Actors with, so Claude can read the failing run
@@ -398,7 +421,7 @@ jobs:
     staleIssues:
         permissions:
             issues: write
-        uses: apify/apify-test-tools/.github/workflows/public_stale-issues.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/public_stale-issues.yaml@workflows-v0
         with:
             stale-months: 6
 ```
@@ -475,43 +498,13 @@ one from its group. An empty name or a missing required `tokenEnvVar` fails duri
 The `unitTest` job runs static checks and needs `NPM_TOKEN` only. No job runs `npm ci` or `pnpm install` with Apify
 or Slack credentials in scope, so a postinstall script in the dependency tree cannot read them.
 
-## Setting up the versions
-
-`build` only starts builds of versions as they are set up on the platform: it never creates or changes an Actor
-version, so the Actor tokens in CI need no permission to change the Actors' settings or versions. Set the versions up once per Actor, on the
-platform or with a script of your own, and once per repository the test branch:
-
-1. **The test branch.** Create it from `master`, e.g. `git push origin master:refs/heads/test`. CI force-pushes each
-   PR's code to it, so exclude it from branch protection and rulesets that block force-pushes, and don't commit to
-   it by hand. Pushes made with `GITHUB_TOKEN` don't trigger workflows, so it starts no other runs.
-2. **The default version** (the one the default build tag points to) builds `master`: Git URL
-   `<repository>#master:<folder>`, e.g. `git@github.com:myteam/my-repo#master:actors/web-scraper`, or
-   `<repository>#master` for an Actor at the repository root. Actors that CI already released have this URL.
-3. **The test version `0.99`** builds the test branch: Git URL `<repository>#test:<folder>`, the same env vars as the
-   default version (see [Env var check](cli.md#env-var-check)), and a build tag users don't run, e.g. `test`. `build`
-   refuses a test version with the default build tag, since its builds would reach users.
-
-`<folder>` is the Actor's `folder` from `apify-test-tools.config.json`. Before building, `build` checks the version's
-repository, branch and folder and fails with the URL to set when one differs, so a dry run of every Actor shows what
-is missing. `--branch` also checks that the test branch is at your `HEAD`, so run it with `master` checked out right
-after creating the branch:
-
-```bash
-# The test versions
-npx apify-test-tools get-actor-configs | jq '{ actors: . }' \
-  | npx apify-test-tools build --version-number 0.99 --branch test --dry-run
-# The default versions
-npx apify-test-tools get-actor-configs | jq '{ actors: . }' \
-  | npx apify-test-tools build --version-number default --dry-run
-```
-
 ## Versioning
 
 The workflows and the vitest library ship separately:
 
 | What                                             | You get it through                        | Updates when                     |
 | ------------------------------------------------ | ----------------------------------------- | -------------------------------- |
-| the workflows and the CLI they run               | the `@workflows-v1` tag in `uses:`        | every change merged to this repo |
+| the workflows and the CLI they run               | the `@workflows-v0` tag in `uses:`        | every change merged to this repo |
 | the library (`testActor`, `describe`, matchers…) | `apify-test-tools` in your `package.json` | you update the package           |
 
 The workflows bring their own copy of the CLI, so they don't use or change the `apify-test-tools` version in your
@@ -520,17 +513,6 @@ The workflows bring their own copy of the CLI, so they don't use or change the `
 Whatever ref you call a workflow at, it runs the setup action and the CLI from that same commit. Pinning a commit SHA
 or pointing at a branch of this repo therefore gets you that commit's workflows as a whole.
 
-`@workflows-v1` always points at the latest workflows, so fixes and new features reach you without any change on your
-side. Changes that would break callers go to a new tag (`@workflows-v2`), and `@workflows-v1` keeps working, so you
+`@workflows-v0` always points at the latest workflows, so fixes and new features reach you without any change on your
+side. Changes that would break callers go to a new tag (`@workflows-v1`), and `@workflows-v0` keeps working, so you
 can migrate when it suits you.
-
-### Moving from `@workflows-v0`
-
-`@workflows-v0` pointed each Actor's `0.99` at the PR's own branch and its default version at `master` on every
-build, which needs an Actor token allowed to change the Actor. `@workflows-v1` changes nothing on the Actors, so:
-
-1. Set up the test branch and the versions, see [Setting up the versions](#setting-up-the-versions). The `0.99` of
-   each Actor still builds the branch of the last PR that changed it, so change its Git URL to the test branch.
-2. Grant `permissions: contents: write` to the job that calls `public_pr-build-test.yaml`.
-3. Change `@workflows-v0` to `@workflows-v1` in every `uses:` line. The Actor tokens then no longer need permission to
-   change the Actors' settings or versions.

@@ -18,11 +18,13 @@ on:
                 type: boolean
                 default: true
                 required: false
-            # The branch version 0.99 of every Actor builds. The PR's code is pushed there before the build. See
-            # "Setting up the versions" in docs/workflows.md
+            # Opt-in. A branch, e.g. `test`, that each Actor's version 0.99 builds: the PR's code is pushed there and
+            # 0.99 is built as it is, so the Actor tokens only need to build the Actors, not change them. Needs
+            # `contents: write` from the caller. Empty builds 0.99 from the PR's own branch, pointing it there first.
+            # See "Building with tokens that can't change Actors" in docs/workflows.md
             test-branch:
                 type: string
-                default: 'test'
+                default: ''
                 required: false
         # Every secret is optional. The ones this workflow reads are declared by name. The secrets that
         # apify-test-tools.config.json names (each Actor's `tokenEnvVar` and `testTokenEnvVar`) differ per repo,
@@ -49,13 +51,39 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    platformTest:
-        if: ${{ !inputs.skip-platform-tests }}
+    # Its own job, so the token that can push never shares a machine with `npm ci` or the repo's tests, which could
+    # read it from the checkout's git config or the runner's memory. It runs nothing from the repo.
+    # No `permissions`: it gets the caller's, which must include `contents: write`. Asking for it here would refuse
+    # to start the whole workflow for callers that don't use a test branch and don't grant it.
+    pushTestBranch:
+        if: ${{ !inputs.skip-platform-tests && inputs.test-branch != '' }}
         runs-on: ubuntu-latest
-        # To push the PR's code to the test branch. The caller's job must grant it too: a called workflow can't get
-        # more than its caller has
+        steps:
+            - name: Checkout the PR branch
+              uses: actions/checkout@v5
+              with:
+                  # The PR's branch rather than GitHub's merge commit, like the setup action checks out
+                  ref: ${{ github.head_ref || github.ref }}
+
+            # `build --branch` checks the branch is still at this commit after its builds, so a run of another PR
+            # pushing to it in between fails that build instead of testing the other PR's code
+            - name: Push to the test branch
+              env:
+                  TEST_BRANCH: ${{ inputs.test-branch }}
+              run: |
+                  git push --force origin "HEAD:refs/heads/$TEST_BRANCH" || {
+                      echo "::error::Pushing to $TEST_BRANCH failed. The calling job must grant 'permissions: contents: write', and branch rules must allow force-pushes to $TEST_BRANCH."
+                      exit 1
+                  }
+
+    platformTest:
+        needs: pushTestBranch
+        # `!cancelled()` so that it still runs when pushTestBranch is skipped, which a plain `needs` doesn't
+        if: ${{ !cancelled() && !inputs.skip-platform-tests && needs.pushTestBranch.result != 'failure' }}
+        runs-on: ubuntu-latest
+        # Nothing here writes to the repository. Lower than the caller's, which a called workflow may always ask for
         permissions:
-            contents: write
+            contents: read
         steps:
             - name: Setup repository and dependencies
               id: setup
@@ -97,24 +125,10 @@ jobs:
                   # default build, or the build an earlier run of this PR made and stored in pr-builds.json
                   apify-test-tools get-affected-actors "${args[@]}" --stored-builds pr-builds.json > affected.json
 
-            # Version 0.99 of every Actor builds the test branch, so the code to test goes there first. The checkout
-            # kept the job's GITHUB_TOKEN, so it can push. Other PRs push to the same branch, so `build` checks it is
-            # still at HEAD once its builds have finished, and fails rather than test another PR's code.
-            # Skipped when there is nothing to build or test, so a run with nothing to do doesn't move the branch.
-            - name: Push to the test branch
-              env:
-                  TEST_BRANCH: ${{ inputs.test-branch }}
-              run: |
-                  if jq -e '(.functionallyChangedActors + .testChangedActors) | length == 0' affected.json > /dev/null; then
-                      echo "No Actors to build or test, not pushing"
-                      exit 0
-                  fi
-                  git push --force origin "HEAD:refs/heads/$TEST_BRANCH"
-
-            # Functional changes are built into the test version 0.99 that users never run. `build` only starts the
-            # builds: it never changes the Actors, so their 0.99 must already build the test branch. Actors with only
-            # test changes reuse the build listed with them while it still exists, and are built otherwise.
-            # Cosmetic-only changes need no tests. The output lists every build to test, new and reused.
+            # Functional changes are built into the test version 0.99 that users never run, from the test branch when
+            # there is one, else from the PR's branch. `build` changes 0.99 only when it doesn't build that branch yet. Actors with only test
+            # changes reuse the build listed with them while it still exists, and are built otherwise. Cosmetic-only
+            # changes need no tests. The output lists every build to test, new and reused.
             # run-with-apify-tokens.mjs reads the build token names from apify-test-tools.config.json
             # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.
             # The library never sees secrets it doesn't need
@@ -127,9 +141,11 @@ jobs:
                   REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
                   TEST_BRANCH: ${{ inputs.test-branch }}
               run: |
+                  branch_args=()
+                  [ -n "$TEST_BRANCH" ] && branch_args=(--branch "$TEST_BRANCH")
                   jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
                     | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" --tokens build \
-                        apify-test-tools build --version-number 0.99 --branch "$TEST_BRANCH" \
+                        apify-test-tools build --version-number 0.99 "${branch_args[@]}" \
                         --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC" \
                     | tee builds.json
 

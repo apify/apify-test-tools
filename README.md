@@ -15,10 +15,9 @@ Build, test and release Apify Actors from a Git repository or local source code.
    can build your own pipeline on it in any CI:
 
     ```bash
-    git push --force origin HEAD:refs/heads/test
     npx apify-test-tools get-affected-actors --base origin/master \
       | jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' \
-      | npx apify-test-tools build --version-number 0.99 --branch test
+      | npx apify-test-tools build --version-number 0.99
     ```
 
 3. **Ready-made GitHub Actions workflows** built on the CLI and the library, so a GitHub repo needs only a few lines
@@ -27,7 +26,7 @@ Build, test and release Apify Actors from a Git repository or local source code.
     ```yaml
     jobs:
         buildDevelAndTest:
-            uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
+            uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
             secrets:
                 # One entry per secret apify-test-tools.config.json names: each `tokenEnvVar` and `testTokenEnvVar`
                 CONFIG_SECRETS: |
@@ -78,10 +77,9 @@ npm i -D apify-test-tools
 - Every Actor must already have at least one build under its default build tag (usually `latest`), built
   from a Git repository version whose URL points to this repository. Build it once manually on the
   platform before CI takes over. See [Repository check](docs/cli.md#repository-check).
-- The tooling only starts builds and never creates or changes Actor versions, so its token needs no permission to
-  change the Actor. Set the versions up once on the platform instead: the default version builds `master`, and the
-  test version `0.99` builds the `test` branch. See
-  [Setting up the versions](docs/workflows.md#setting-up-the-versions).
+- By default the Actor tokens must be allowed to change the Actors, since PR builds point the test version `0.99` at
+  each PR's branch. To use tokens that may only build them, opt in to a fixed test branch, see
+  [Building with tokens that can't change Actors](docs/workflows.md#building-with-tokens-that-cant-change-actors).
 
 ### 2. Create the config file
 
@@ -219,9 +217,8 @@ No two Actors may share a `folder`, and no two entries may point at the same `ac
 
 The workflows take every change straight to production, with tests in between:
 
-- **Every push to a PR** pushes the PR's code to the `test` branch, builds the Actors the PR changes into a test
-  version (`0.99`) that builds that branch and that users never run, and runs their platform tests against those
-  builds. Only the Actors whose files changed are built and tested, and a later
+- **Every push to a PR** builds the Actors the PR changes into a test version (`0.99`) that users never run, and runs
+  their platform tests against those builds. Only the Actors whose files changed are built and tested, and a later
   push only re-tests what changed since the last green run.
 - **Every merge to `master`** builds the changed Actors into their default version (`latest`), which is what users
   run, and announces the release on Slack. There is no separate release step.
@@ -231,7 +228,7 @@ The workflows take every change straight to production, with tests in between:
 These are GitHub Actions workflows. On another CI platform, build the same flow with the [CLI](docs/cli.md).
 
 Add these files to `.github/workflows` in your repo. They call the reusable workflows in this repo, pinned at the
-`@workflows-v1` major tag — never at `@master`. Every input, the optional Claude workflows, stale issue closer, and how the tag moves are
+`@workflows-v0` major tag — never at `@master`. Every input, the optional Claude workflows, stale issue closer, and how the tag moves are
 in the [Workflow API](docs/workflows.md).
 
 ### `pr-build-devel-test.yaml`
@@ -245,10 +242,7 @@ on:
 
 jobs:
     buildDevelAndTest:
-        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v1
-        # To push the PR's code to the test branch
-        permissions:
-            contents: write
+        uses: apify/apify-test-tools/.github/workflows/public_pr-build-test.yaml@workflows-v0
         secrets:
             # One entry per secret apify-test-tools.config.json names: each `tokenEnvVar` and `testTokenEnvVar`
             CONFIG_SECRETS: |
@@ -269,7 +263,7 @@ on:
 
 jobs:
     buildLatest:
-        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/public_push-build-latest.yaml@workflows-v0
         secrets:
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
             # One entry per secret apify-test-tools.config.json names, here each `tokenEnvVar`
@@ -296,7 +290,7 @@ on:
 
 jobs:
     platformTestsDaily:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: 'test/platform/{daily,daily-without-pr}/**'
         secrets:
@@ -322,7 +316,7 @@ on:
 
 jobs:
     platformTestsHourly:
-        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v1
+        uses: apify/apify-test-tools/.github/workflows/public_platform-tests.yaml@workflows-v0
         with:
             test-files-glob: 'test/platform/{hourly,hourly-without-pr}/**'
         secrets:

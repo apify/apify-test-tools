@@ -52,7 +52,8 @@ jobs:
 
             # A release ships cosmetic changes too (README, input schema descriptions), so both lists are built,
             # into each Actor's default version: the one its default build tag points to, which users run.
-            # `build` never changes the Actors, so each default version must already build this branch.
+            # A default version that already builds this branch is only built, so a token that may only build the
+            # Actors is enough once the default versions build it. Otherwise `build` points them here first.
             # testChangedActors is left out: a change to platform tests alone needs no release.
             # run-with-apify-tokens.mjs reads the build token names from apify-test-tools.config.json
             # and hands the build those secrets and nothing else, so the tokens stay in this one command instead of the whole job.

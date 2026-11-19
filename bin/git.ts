@@ -116,9 +116,9 @@ const getOriginRepoUrl = async (): Promise<string> => {
 };
 
 /**
- * Picks the repository the built versions must build from. By default it's the `origin` remote, and runBuilds also
- * checks it against each Actor's default version, so a fork or mirror remote can't build the wrong code. An explicit
- * --repo-url skips that check, e.g. while an Actor moves to another repository and its versions point at both.
+ * Picks the repo URL to build from. By default it's the `origin` remote, and runBuilds then checks it against
+ * each Actor's default version, so a fork or mirror remote can't repoint a published Actor. An explicit
+ * --repo-url skips that check: passing it is how you move an Actor to another repository on purpose.
  */
 export const resolveRepoUrl = async (explicitRepoUrl: string | undefined) => ({
     repoUrl: explicitRepoUrl ?? (await getOriginRepoUrl()),

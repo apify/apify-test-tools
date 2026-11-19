@@ -29,14 +29,11 @@ const middlewares = [(args: { logLevel: (typeof logLevels)[number] }) => logger.
  */
 
 /**
- * The repository the versions must build from. Defaults to the `origin` remote, which is then also checked against
- * each Actor's default version. Passing it explicitly skips that check (see assertRepoUrlMatchesDefaultVersion).
+ * Where to build the Actors from. Defaults to the `origin` remote, which is then checked against each
+ * Actor's default version. Passing it explicitly skips that check (see assertRepoUrlMatchesDefaultVersion).
  */
 const repoUrlOptions = {
-    'repo-url': {
-        type: 'string',
-        describe: 'Repository the versions must build from. Defaults to the origin remote',
-    },
+    'repo-url': { type: 'string' },
 } as const satisfies Record<string, Options>;
 
 /**
@@ -98,8 +95,8 @@ const buildOptions = {
     branch: {
         type: 'string',
         describe:
-            'Branch the versions build from, where HEAD was pushed, e.g. a test branch. Defaults to the checked-out ' +
-            'branch. A given branch must be at HEAD on origin before and after the builds',
+            'Branch to build, where HEAD was pushed, e.g. a test branch. Defaults to the checked-out branch. A given ' +
+            'branch must be at HEAD on origin before and after the builds',
     },
 } as const satisfies Record<string, Options>;
 
@@ -231,9 +228,9 @@ await yargs()
     )
     .command(
         'build',
-        'Build the version of each Actor listed on stdin, as {"actors": [{"actorFullName": ...}]}, as it is set up on ' +
-            'the platform, after checking it builds the branch. Never changes the Actor. An Actor listed with a ' +
-            '"build" (from testChangedActors of get-affected-actors) reuses it while it exists',
+        'Build the Actors listed on stdin, as {"actors": [{"actorFullName": ...}]}, from a pushed branch. A version that ' +
+            'doesn\'t build the branch yet is pointed at it first. An Actor listed with a "build" (from ' +
+            'testChangedActors of get-affected-actors) reuses it while it exists',
         (y) => y.options(buildOptions).options(repoUrlOptions).options(envVarsSyncOptions).options(dryRunOptions),
         async (args) => {
             const input = parseBuildInput(await readStdin());

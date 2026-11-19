@@ -10,6 +10,9 @@ type BuildPrActorOptions = {
     versionNumber: string;
     gitRepoUrl: string;
     actorConfig: ActorConfig;
+    actorInfo: ApifyClientTypes.Actor;
+    // Why the version must be changed before the build, see describeVersionMismatch
+    versionMismatch: string | undefined;
 };
 
 // Fixed version number used to build from local source files, since there is no real version to track.
@@ -21,10 +24,6 @@ export const DEFAULT_VERSION_KEYWORD = 'default';
 const ACTOR_SETUP_REQUIREMENT =
     'Before using apify-test-tools, every Actor needs at least one build under its default build tag (usually "latest"), ' +
     'built from a Git repository version whose URL points to this repository. Build it once manually on the platform.';
-
-// `build` only starts builds, so whatever a version needs is set on the platform, by hand or by a script of your own
-const NEVER_CHANGES_VERSIONS =
-    'apify-test-tools never creates or changes Actor versions, so set it up on the platform.';
 
 /**
  * Finds the Actor's default version: the one whose build the default build tag points to.
@@ -55,9 +54,11 @@ export const resolveDefaultVersion = (actorFullName: string, actorInfo: ApifyCli
 };
 
 /**
- * Guards against building an Actor from a checkout of a different repository than it is published from, e.g. when
- * the local `origin` remote is a fork or a mirror. The default version is the source of truth since it is what users
- * run. Skipped when the repo URL is passed explicitly, e.g. while an Actor moves to a new repository.
+ * Guards against building an Actor from a different repository than it is published from, e.g. when the
+ * local `origin` remote is a fork or a mirror. A build points the version at the repository it builds, so building
+ * from the wrong remote would silently repoint the Actor. The default version is the source of truth
+ * since it is what users run. Skipped when the repo URL is passed explicitly, which is how you move an
+ * Actor to a new repository on purpose.
  */
 export const assertRepoUrlMatchesDefaultVersion = (
     actorFullName: string,
@@ -145,31 +146,20 @@ export const parseVersionGitRepoUrl = (gitRepoUrl: string) => {
 };
 
 /**
- * `build` doesn't change versions, it only starts builds, so the version must already build the code it is meant to:
- * from a Git repository, at `repoUrl`, from `branch`, in the Actor's folder. Any difference is an error that names the
- * URL to set on the platform. The URL form of the repository doesn't matter, see normalizeRepoUrl.
+ * Why the version doesn't build `branch` of `repoUrl` from the Actor's folder, or undefined when it does: it exists, is
+ * built from a Git repository, and its Git URL names that repository (in any URL form, see normalizeRepoUrl), branch
+ * and folder. `build` changes a version only when this finds a reason, so a token that can't change Actors can build
+ * versions that are set up in advance.
  */
-export const assertVersionBuildsFromBranch = (
-    actorFullName: string,
+export const describeVersionMismatch = (
     actorInfo: ApifyClientTypes.Actor,
     versionNumber: string,
     { repoUrl, branch, folder }: { repoUrl: string; branch: string; folder: ActorConfig['folder'] },
-) => {
-    const expectedUrl = getVersionGitRepoUrl(repoUrl, branch, folder);
+): string | undefined => {
     const version = actorInfo.versions.find((v) => v.versionNumber === versionNumber);
-    if (!version) {
-        throw new Error(
-            `[${actorFullName}] Version ${versionNumber} doesn't exist. ${NEVER_CHANGES_VERSIONS} Create it once with ` +
-                `source type "${ActorSourceType.GitRepo}" and the Git URL ${expectedUrl}, the same env vars as the default ` +
-                'version, and a build tag users don\'t run (e.g. "test"), never the default build tag.',
-        );
-    }
-    if (version.sourceType !== ActorSourceType.GitRepo) {
-        throw new Error(
-            `[${actorFullName}] Version ${versionNumber} has source type "${version.sourceType}", not ` +
-                `"${ActorSourceType.GitRepo}". ${NEVER_CHANGES_VERSIONS} Change it to the Git URL ${expectedUrl}.`,
-        );
-    }
+    if (!version) return "doesn't exist";
+    if (version.sourceType !== ActorSourceType.GitRepo) return `has source type "${version.sourceType}"`;
+
     const actual = parseVersionGitRepoUrl(version.gitRepoUrl);
     const differences = [
         normalizeRepoUrl(actual.repository) !== normalizeRepoUrl(repoUrl)
@@ -178,17 +168,7 @@ export const assertVersionBuildsFromBranch = (
         actual.ref !== branch ? `branch ${actual.ref ?? "(the repository's default)"}, not ${branch}` : undefined,
         actual.folder !== folder.path ? `folder ${actual.folder}, not ${folder.path}` : undefined,
     ].filter(Boolean);
-    if (differences.length === 0) return;
-
-    // The usual mistake is building the checked-out branch while the version builds a dedicated one
-    const branchHint =
-        actual.ref && actual.ref !== branch && differences.length === 1
-            ? ` To build branch ${actual.ref} instead, push the code to it and pass --branch ${actual.ref}.`
-            : '';
-    throw new Error(
-        `[${actorFullName}] Version ${versionNumber} builds ${version.gitRepoUrl} (${differences.join('; ')}). ` +
-            `${NEVER_CHANGES_VERSIONS} Set its Git URL to ${expectedUrl}.${branchHint}`,
-    );
+    return differences.length > 0 ? `builds ${version.gitRepoUrl} (${differences.join('; ')})` : undefined;
 };
 
 /**
@@ -284,7 +264,25 @@ export class ApifyBuilder {
         return { buildId: id, actorRawId: actId, buildNumber, actorFullName: this.actorFullName };
     };
 
-    // Only `build-from-local` sets the version up itself, since its source is a fresh upload every time.
+    /**
+     * Creates the version, or updates the one that exists. Only the fields given change. Needs a token that can change
+     * the Actor. Pass actorInfo when the caller already fetched it, to save an API call
+     */
+    setVersion = async (
+        versionNumber: string,
+        actorVersion: ApifyClientTypes.ActorVersion,
+        actorInfo?: ApifyClientTypes.Actor,
+    ) => {
+        const actorClient = this.apifyClient.actor(this.actorFullName);
+        const { versions } = actorInfo ?? (await this.getActorInfo());
+        const versionMissing = !versions.find((version) => version.versionNumber === versionNumber);
+        if (versionMissing) {
+            await actorClient.versions().create(actorVersion);
+        } else {
+            await actorClient.version(versionNumber).update(actorVersion);
+        }
+    };
+
     // Pass actorInfo when the caller already fetched it, to save an API call
     createVersionAndBuild = async (
         versionNumber: string,
@@ -292,19 +290,7 @@ export class ApifyBuilder {
         useCache: boolean,
         actorInfo?: ApifyClientTypes.Actor,
     ): Promise<BuildData> => {
-        const actorClient = this.apifyClient.actor(this.actorFullName);
-        const { versions } = actorInfo ?? (await this.getActorInfo());
-
-        // Prepare version
-        const versionMissing = !versions.find((version) => version.versionNumber === versionNumber);
-        if (versionMissing) {
-            // create new version
-            await actorClient.versions().create(actorVersion);
-        } else {
-            const version = actorClient.version(versionNumber);
-            await version.update(actorVersion);
-        }
-
+        await this.setVersion(versionNumber, actorVersion, actorInfo);
         return this.startBuild(versionNumber, useCache);
     };
 
@@ -496,6 +482,8 @@ type GitBuildPlan = {
     actorFullName: string;
     versionNumber: string;
     gitRepoUrl: string;
+    // Whether the version is pointed at gitRepoUrl first, see describeVersionMismatch
+    updatesVersion: boolean;
 };
 
 type RunBuildsOptions = {
@@ -505,7 +493,7 @@ type RunBuildsOptions = {
     repoUrl: string;
     // False when the repo URL was passed explicitly, see assertRepoUrlMatchesDefaultVersion
     shouldVerifyRepoUrl: boolean;
-    // The branch every version must build from, see assertVersionBuildsFromBranch
+    // The branch every version builds from, see describeVersionMismatch
     branch: string;
     // When set, the branch on origin must be at this commit before the builds start and after they finish, see
     // assertBranchAtCommit
@@ -516,9 +504,43 @@ type RunBuildsOptions = {
 };
 
 /**
- * Builds the given version of each Actor as it is configured on the platform. Nothing on the Actor is created or
- * changed: every version must already build `branch` of `repoUrl` from the Actor's folder, which is checked first, for
- * all Actors before any build starts.
+ * Points a version that doesn't build the branch yet at it, and leaves one that does alone. When the token can't change
+ * the Actor, the error says what to set on the platform instead.
+ */
+const setVersionToBranch = async ({
+    actorConfig,
+    actorInfo,
+    versionNumber,
+    gitRepoUrl,
+    versionMismatch,
+}: BuildPrActorOptions) => {
+    const { actorFullName } = actorConfig;
+    if (versionMismatch === undefined) {
+        logger.info(`[${actorFullName}] Version ${versionNumber} already builds ${gitRepoUrl}`);
+        return;
+    }
+    logger.info(`[${actorFullName}] Version ${versionNumber} ${versionMismatch}, pointing it at ${gitRepoUrl}`);
+    // No buildTag: the version keeps the one it has, so its build gets the tag the version already gives it
+    const actorVersion: ApifyClientTypes.ActorVersion = {
+        versionNumber,
+        gitRepoUrl,
+        sourceType: ActorSourceType.GitRepo,
+    };
+    try {
+        await ApifyBuilder.fromActorConfig(actorConfig).setVersion(versionNumber, actorVersion, actorInfo);
+    } catch (error) {
+        throw new Error(
+            `[${actorFullName}] Version ${versionNumber} ${versionMismatch}, and pointing it at ${gitRepoUrl} failed: ` +
+                `${(error as Error).message}. A token that may only build the Actor can't change versions, so set the ` +
+                'version up on the platform once, see "Setting up the versions" in docs/workflows.md.',
+        );
+    }
+};
+
+/**
+ * Builds the given version of each Actor from `branch` of `repoUrl`. A version that already builds it (see
+ * describeVersionMismatch) is only built, so a token that may only build the Actor is enough. The others are pointed at
+ * the branch first, which needs a token that can change the Actor. Every version is set before any build starts.
  */
 export const runBuilds = async ({
     repoUrl,
@@ -553,7 +575,7 @@ export const runBuilds = async ({
             }
             const targetVersionNumber =
                 versionNumber === DEFAULT_VERSION_KEYWORD ? defaultVersionNumber : versionNumber;
-            assertVersionBuildsFromBranch(actorFullName, actorInfo, targetVersionNumber, {
+            const versionMismatch = describeVersionMismatch(actorInfo, targetVersionNumber, {
                 repoUrl,
                 branch,
                 folder: actorConfig.folder,
@@ -564,8 +586,10 @@ export const runBuilds = async ({
             }
             return {
                 actorConfig,
+                actorInfo,
                 gitRepoUrl: getVersionGitRepoUrl(repoUrl, branch, actorConfig.folder),
                 versionNumber: targetVersionNumber,
+                versionMismatch,
             };
         }),
     );
@@ -581,12 +605,19 @@ export const runBuilds = async ({
             actorFullName: buildConfig.actorConfig.actorFullName,
             versionNumber: buildConfig.versionNumber,
             gitRepoUrl: buildConfig.gitRepoUrl,
+            updatesVersion: buildConfig.versionMismatch !== undefined,
         }));
         for (const build of builds) {
-            logger.info(`  ${build.actorFullName} (${build.versionNumber}) from ${build.gitRepoUrl}`);
+            logger.info(
+                `  ${build.actorFullName} (${build.versionNumber}) from ${build.gitRepoUrl}` +
+                    `${build.updatesVersion ? ', after pointing the version there' : ''}`,
+            );
         }
         return { dryRun: true, builds };
     }
+
+    // All versions first, so a token that can't change one of them fails before any build starts
+    await Promise.all(buildConfigs.map(setVersionToBranch));
 
     const versionNumbersByActorFullName = new Map(
         buildConfigs.map((buildConfig) => [buildConfig.actorConfig.actorFullName, buildConfig.versionNumber]),

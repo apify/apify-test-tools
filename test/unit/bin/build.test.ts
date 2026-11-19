@@ -11,11 +11,11 @@ import {
     assertBranchAtCommit,
     assertEnvVarsMatchDefaultVersion,
     assertRepoUrlMatchesDefaultVersion,
-    assertVersionBuildsFromBranch,
     assertVersionKeepsDefaultBuildTag,
     buildActors,
     buildOrReuseActors,
     deleteOldBuilds,
+    describeVersionMismatch,
     parseVersionGitRepoUrl,
     resolveDefaultVersion,
     runBuilds,
@@ -305,6 +305,7 @@ describe('dry run', () => {
                     actorFullName: ACTOR,
                     versionNumber: '0.99',
                     gitRepoUrl: `${REPO_URL}#feature:actors/a`,
+                    updatesVersion: false,
                 },
             ],
         });
@@ -471,62 +472,51 @@ describe('parseVersionGitRepoUrl', () => {
     });
 });
 
-describe('assertVersionBuildsFromBranch', () => {
+describe('describeVersionMismatch', () => {
     const folder = new RelativeDir('actors/a');
-    const check = (versions: ApifyClientTypes.ActorVersion[], branch = 'test', repoUrl = REPO_URL) =>
-        assertVersionBuildsFromBranch(ACTOR, makeActorInfo({ versions }), '0.99', { repoUrl, branch, folder });
+    const describeFor = (versions: ApifyClientTypes.ActorVersion[], branch = 'test', repoUrl = REPO_URL) =>
+        describeVersionMismatch(makeActorInfo({ versions }), '0.99', { repoUrl, branch, folder });
 
-    it('passes when the version builds the branch, whatever the form of the repository URL', () => {
-        expect(() =>
-            check([gitVersion('0.99', 'test', 'actors/a')], 'test', 'https://github.com/owner/repo.git'),
-        ).not.toThrow();
+    it('finds nothing when the version builds the branch, whatever the form of the repository URL', () => {
+        expect(describeFor([gitVersion('0.99', 'test', 'actors/a')], 'test', 'https://github.com/owner/repo.git')).toBe(
+            undefined,
+        );
     });
 
-    it('passes for an Actor at the repository root, with or without a folder in the URL', () => {
+    it('finds nothing for an Actor at the repository root, with or without a folder in the URL', () => {
         const atRoot = (versions: ApifyClientTypes.ActorVersion[]) =>
-            assertVersionBuildsFromBranch(ACTOR, makeActorInfo({ versions }), '0.99', {
+            describeVersionMismatch(makeActorInfo({ versions }), '0.99', {
                 repoUrl: REPO_URL,
                 branch: 'test',
                 folder: RelativeDir.ROOT,
             });
-        expect(() => atRoot([gitVersion('0.99', 'test')])).not.toThrow();
-        expect(() => atRoot([gitVersion('0.99', 'test', '.')])).not.toThrow();
+        expect(atRoot([gitVersion('0.99', 'test')])).toBe(undefined);
+        expect(atRoot([gitVersion('0.99', 'test', '.')])).toBe(undefined);
     });
 
-    it('asks to create a missing version, with the Git URL to give it', () => {
-        expect(() => check([])).toThrow(
-            `Version 0.99 doesn't exist. apify-test-tools never creates or changes Actor versions`,
-        );
-        expect(() => check([])).toThrow(`${REPO_URL}#test:actors/a`);
+    it('reports a missing version', () => {
+        expect(describeFor([])).toBe("doesn't exist");
     });
 
-    it('throws for a version not built from a Git repository', () => {
-        expect(() =>
-            check([{ versionNumber: '0.99', sourceType: ActorSourceType.SourceFiles, sourceFiles: [] }]),
-        ).toThrow('has source type "SOURCE_FILES"');
-    });
-
-    it('names the branch to pass when the version builds another branch', () => {
-        expect(() => check([gitVersion('0.99', 'test', 'actors/a')], 'feature')).toThrow(
-            'branch test, not feature). apify-test-tools never creates or changes Actor versions, so set it up on the ' +
-                `platform. Set its Git URL to ${REPO_URL}#feature:actors/a. To build branch test instead, push the code ` +
-                'to it and pass --branch test.',
+    it('reports a version not built from a Git repository', () => {
+        expect(describeFor([{ versionNumber: '0.99', sourceType: ActorSourceType.SourceFiles, sourceFiles: [] }])).toBe(
+            'has source type "SOURCE_FILES"',
         );
     });
 
-    it('throws when the version builds another folder', () => {
-        expect(() => check([gitVersion('0.99', 'test', 'actors/b')])).toThrow('folder actors/b, not actors/a');
-    });
-
-    it('throws when the version builds another repository', () => {
-        expect(() => check([gitVersion('0.99', 'test', 'actors/a')], 'test', 'git@github.com:fork/repo')).toThrow(
+    it('reports another branch, folder and repository', () => {
+        expect(describeFor([gitVersion('0.99', 'test', 'actors/a')], 'feature')).toBe(
+            `builds ${REPO_URL}#test:actors/a (branch test, not feature)`,
+        );
+        expect(describeFor([gitVersion('0.99', 'test', 'actors/b')])).toContain('folder actors/b, not actors/a');
+        expect(describeFor([gitVersion('0.99', 'test', 'actors/a')], 'test', 'git@github.com:fork/repo')).toContain(
             `repository ${REPO_URL}, not git@github.com:fork/repo`,
         );
     });
 
-    it("throws when the version builds the repository's default branch", () => {
+    it("reports the repository's default branch", () => {
         const version = { ...gitVersion('0.99', 'test'), gitRepoUrl: `${REPO_URL}#:actors/a` };
-        expect(() => check([version])).toThrow("branch (the repository's default), not test");
+        expect(describeFor([version])).toContain("branch (the repository's default), not test");
     });
 });
 
@@ -626,7 +616,7 @@ describe('runBuilds', () => {
             ...options,
         });
 
-    it('only starts a build of the version, without changing the Actor', async () => {
+    it('only starts a build of a version that already builds the branch, without changing the Actor', async () => {
         await expect(run()).resolves.toStrictEqual([
             { buildId: 'new-build', actorRawId: 'raw-id', buildNumber: '0.99.7', actorFullName: ACTOR },
         ]);
@@ -635,9 +625,45 @@ describe('runBuilds', () => {
         expect(updateVersion).not.toHaveBeenCalled();
     });
 
-    it('starts no build when a version builds another branch', async () => {
-        await expect(run({ branch: 'feature' })).rejects.toThrow('pass --branch test');
+    it('points a version that builds another branch at the branch, then builds it', async () => {
+        await expect(run({ branch: 'feature' })).resolves.toHaveLength(1);
+        expect(updateVersion).toHaveBeenCalledWith({
+            versionNumber: '0.99',
+            gitRepoUrl: `${REPO_URL}#feature`,
+            sourceType: ActorSourceType.GitRepo,
+        });
+        expect(createVersion).not.toHaveBeenCalled();
+        expect(startBuild).toHaveBeenCalledWith('0.99', { useCache: true });
+    });
+
+    it('creates a version that does not exist yet', async () => {
+        await expect(run({ versionNumber: '0.98' })).resolves.toHaveLength(1);
+        expect(createVersion).toHaveBeenCalledWith({
+            versionNumber: '0.98',
+            gitRepoUrl: `${REPO_URL}#test`,
+            sourceType: ActorSourceType.GitRepo,
+        });
+    });
+
+    it('explains how to set the version up when the token cannot change it, and starts no build', async () => {
+        updateVersion.mockRejectedValueOnce(new Error('Insufficient permissions'));
+        await expect(run({ branch: 'feature' })).rejects.toThrow(
+            `[${ACTOR}] Version 0.99 builds ${REPO_URL}#test (branch test, not feature), and pointing it at ` +
+                `${REPO_URL}#feature failed: Insufficient permissions. A token that may only build the Actor can't ` +
+                'change versions',
+        );
         expect(startBuild).not.toHaveBeenCalled();
+    });
+
+    it('plans whether a version is changed in a dry run', async () => {
+        const plan = async (branch: string) => {
+            const result = await run({ branch, dryRun: true });
+            if (Array.isArray(result)) throw new Error('A dry run must return a plan');
+            return result.builds[0].updatesVersion;
+        };
+        await expect(plan('test')).resolves.toBe(false);
+        await expect(plan('feature')).resolves.toBe(true);
+        expect(updateVersion).not.toHaveBeenCalled();
     });
 
     it('checks the branch is at the expected commit before and after the builds', async () => {

@@ -8,6 +8,13 @@ export type ActorBuild = {
     actorFullName: string;
 };
 
+/**
+ * How an ad-hoc Actor runs: as on the Apify platform, or as on somebody's machine (`local`), with a plain
+ * environment and the SDK's local storage. Where a local run executes is not the test's business, see
+ * `LOCAL_RUNS_ON_ENV_VAR`.
+ */
+export type Runtime = 'platform' | 'local';
+
 export type RunOptions<T> = {
     input?: Omit<T, 'actorName'>;
     options?: Omit<ActorCallOptions, 'timeout'> & {

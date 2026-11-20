@@ -20,10 +20,30 @@ const once = <T>(fn: () => Promise<T>): (() => Promise<T>) => {
     };
 };
 
+/** What `toFinishWith` and the other matchers need from a finished run, wherever it ran. */
+export interface RunOutcome {
+    readonly status: string;
+    getRunInfo(): Promise<{ stats: { durationMillis: number }; chargedEventCounts?: Record<string, number> }>;
+    getDataset<T>(): Promise<Dataset<T>>;
+    getStatistics(): Promise<SdkCrawlerStatistics | undefined>;
+    getLog(): Promise<string>;
+    /** A record of the run's default key-value store, as stored, or `undefined` when there is none. */
+    getRecord(key: string): Promise<{ value: Buffer; contentType: string } | undefined>;
+}
+
 /** Crawlee v3 writes `SDK_CRAWLER_STATISTICS_<n>`, v4 `CRAWLEE_CRAWLER_STATISTICS_<n>`. */
 const STATISTICS_KEY_PREFIXES = ['SDK_CRAWLER_STATISTICS_', 'CRAWLEE_CRAWLER_STATISTICS_'];
+/** With `.json` when it comes from a Crawlee 3 local store, where the key is the filename. */
+const STATISTICS_KEY = /^(?:SDK|CRAWLEE)_CRAWLER_STATISTICS_(\d+)(?:\.json)?$/;
 
-export class RunTestResult {
+/** A crawler that replaces its statistics (adaptive Playwright) lands on the next `<n>`, so the highest one is the live record. */
+export const pickStatisticsKey = (keys: string[]): string | undefined =>
+    keys
+        .map((key) => ({ key, index: Number(STATISTICS_KEY.exec(key)?.[1] ?? NaN) }))
+        .filter(({ index }) => !Number.isNaN(index))
+        .sort((a, b) => b.index - a.index)[0]?.key;
+
+export class RunTestResult implements RunOutcome {
     constructor(
         private readonly apifyClient: ApifyClient,
         private readonly run: ActorRun,
@@ -31,15 +51,11 @@ export class RunTestResult {
         /**/
     }
 
-    /** A crawler that replaces its statistics (adaptive Playwright) lands on the next `<n>`, so the highest one is the live record. */
     getStatistics = once(async (): Promise<SdkCrawlerStatistics | undefined> => {
         const store = this.getKeyValueStoreClient();
         // Listed by prefix: a plain listing stops at 1000 keys, which a store with many records would fill first.
         const pages = await Promise.all(STATISTICS_KEY_PREFIXES.map(async (prefix) => store.listKeys({ prefix })));
-        const [key] = pages
-            .flatMap(({ items }) => items.map(({ key: name }) => name))
-            .filter((name) => /_\d+$/.test(name))
-            .sort((x, y) => Number(y.slice(y.lastIndexOf('_') + 1)) - Number(x.slice(x.lastIndexOf('_') + 1)));
+        const key = pickStatisticsKey(pages.flatMap(({ items }) => items.map(({ key: name }) => name)));
         if (!key) return undefined;
         return (await store.getRecord(key))?.value as SdkCrawlerStatistics | undefined;
     });
@@ -64,6 +80,11 @@ export class RunTestResult {
 
     getKeyValueStoreClient = (): KeyValueStoreClient => {
         return this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
+    };
+
+    getRecord = async (key: string): Promise<{ value: Buffer; contentType: string } | undefined> => {
+        const record = await this.getKeyValueStoreClient().getRecord(key, { buffer: true });
+        return record && { value: record.value, contentType: record.contentType ?? 'application/octet-stream' };
     };
 
     private readonly inputRecord = once(async () => (await this.getKeyValueStoreClient().getRecord('INPUT'))?.value);

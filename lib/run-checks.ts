@@ -1,5 +1,5 @@
 import { TO_FINISH_WITH_OPTIONS } from './consts.js';
-import type { RunTestResult } from './run-test-result.js';
+import type { RunOutcome } from './run-test-result.js';
 import type { Interval, ToFinishWithOptions } from './types.js';
 
 type Check = {
@@ -56,7 +56,7 @@ const ppeChecks = (expected: Record<string, Interval>, actual: Record<string, nu
  * Evaluates every `toFinishWith` expectation against the run, so a failing assertion reports all of them at once.
  */
 export const checkRun = async <PpeEvent extends string>(
-    run: RunTestResult,
+    run: RunOutcome,
     userOptions: ToFinishWithOptions<PpeEvent>,
 ): Promise<Check[]> => {
     const options = { ...TO_FINISH_WITH_OPTIONS, ...userOptions };

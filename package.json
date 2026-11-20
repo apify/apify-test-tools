@@ -28,6 +28,7 @@
     },
     "dependencies": {
         "@apify/consts": "^3.0.1",
+        "@crawlee/fs-storage-native": "^0.2.2",
         "@slack/web-api": "^8.2.0",
         "adm-zip": "^0.6.1",
         "apify-client": "^2.25.0",
@@ -59,8 +60,8 @@
         "vitest": "^3.2.4"
     },
     "peerDependencies": {
-        "vitest": ">=3.2.4",
-        "typescript": ">=5"
+        "typescript": ">=5",
+        "vitest": ">=3.2.4"
     },
     "peerDependenciesMeta": {
         "typescript": {
@@ -82,7 +83,7 @@
         "test": "vitest run --exclude 'test/e2e/**'",
         "test:e2e": "vitest run test/e2e",
         "check-unused": "npx knip",
-        "prepare": "husky .husky || true"
+        "prepare": "(husky .husky || true) && npm run build"
     },
     "lint-staged": {
         "*.js": "eslint",

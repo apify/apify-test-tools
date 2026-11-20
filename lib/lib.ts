@@ -3,11 +3,24 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { afterAll, describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { buildActor, type DefinedActor, pruneBuilds, runOptionsOf } from './ad-hoc-actor.js';
-import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
+import {
+    buildActor,
+    buildActorForLocalRuns,
+    type DefinedActor,
+    pruneBuilds,
+    removeLocalRuns,
+    runActorLocally,
+    runOptionsOf,
+} from './ad-hoc-actor.js';
+import {
+    DATASET_SYNC_DELAY_MS,
+    DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
+    DEFAULT_TEST_RUN_DURATION_MS,
+    LOCAL_RUNS_ON_ENV_VAR,
+} from './consts.js';
 import { extendExpect } from './extend-expect.js';
-import { RunTestResult } from './run-test-result.js';
-import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
+import { type RunOutcome, RunTestResult } from './run-test-result.js';
+import type { ActorBuild, ActorTestOptions, RunOptions, Runtime } from './types.js';
 import { getActorPrefilledInput, sleep } from './utils.js';
 
 const ACTOR_BUILDS = 'ACTOR_BUILDS';
@@ -68,43 +81,99 @@ const defineActorTest = (
     });
 };
 
-const prunedAfterFile = new Set<string>();
+const cleanedAfterFile = new Set<string>();
+
+const LOCAL_LOG_TAIL_LINES = 40;
+
+/** `run` of an Actor given by ID. */
+export type StartRun<T> = ReturnType<typeof createStartRunFn<T>>;
+
+/**
+ * `run` of an ad-hoc Actor. With `runtime: 'local'` the Actor runs as it would on somebody's machine; whether that
+ * happens on this machine or on the platform is decided by `APIFY_LOCAL_RUNS_ON`, so the result is only promised to
+ * be what `toFinishWith` and the other matchers need. On this machine, nothing is built on the platform and `input`
+ * and `options.timeout` are all that's taken from the options.
+ */
+export interface StartAdHocRun<T> {
+    (options?: RunOptions<T> & { runtime?: 'platform' }): Promise<RunTestResult>;
+    (options: RunOptions<T> & { runtime: Runtime }): Promise<RunOutcome>;
+}
 
 /**
  * @param actor - The Actor's raw platform ID, its full name (`owner/name`, e.g. `"apify/web-scraper"`), or an Actor
  * from `defineActor`. Such an ad-hoc Actor always runs: it is built from its source on the first `run`, and its builds
  * and uploaded sources older than three days are deleted after the file's tests.
  */
-export const testActor = <T>(
+export function testActor<T>(
+    actor: DefinedActor,
+    testName: string,
+    fn: TestFunction<{ run: StartAdHocRun<T> }>,
+    testOptions?: ActorTestOptions,
+): void;
+export function testActor<T>(
+    actor: string,
+    testName: string,
+    fn: TestFunction<{ run: StartRun<T> }>,
+    testOptions?: ActorTestOptions,
+): void;
+export function testActor<T>(
     actor: string | DefinedActor,
     testName: string,
-    fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
+    fn: TestFunction<{ run: StartRun<T> }> | TestFunction<{ run: StartAdHocRun<T> }>,
     testOptions?: ActorTestOptions,
-) => {
+): void {
     if (typeof actor === 'string') {
         defineActorTest(actor, testName, testOptions, async (context) => {
             const build = config.get(actor);
-            await fn({ ...context, run: createStartRunFn(context, async () => ({ actorId: actor, build })) });
+            const run = createStartRunFn<T>(context, async () => ({ actorId: actor, build }));
+            await (fn as TestFunction<{ run: StartRun<T> }>)({ ...context, run });
         });
         return;
     }
 
-    if (!prunedAfterFile.has(actor.name)) {
-        prunedAfterFile.add(actor.name);
-        afterAll(async () => pruneBuilds(actor));
+    if (!cleanedAfterFile.has(actor.name)) {
+        cleanedAfterFile.add(actor.name);
+        afterAll(async () => {
+            await pruneBuilds(actor);
+            await removeLocalRuns(actor);
+        });
     }
     vitestTest(`${actor.name}: ${testName}`, { ...DEFAULT_TEST_OPTIONS, ...testOptions }, async (context) => {
-        const run = createStartRunFn<T>(
-            context,
-            async () => {
-                const build = await buildActor(actor);
-                return { actorId: build.actorRawId, build, options: runOptionsOf(actor) };
-            },
-            actor.syncDelayMs,
-        );
-        await fn({ ...context, expect: extendExpect(context.expect), run });
+        const platformRun = (build: (actor: DefinedActor) => Promise<ActorBuild>) =>
+            createStartRunFn<T>(
+                context,
+                async () => {
+                    const actorBuild = await build(actor);
+                    return { actorId: actorBuild.actorRawId, build: actorBuild, options: runOptionsOf(actor) };
+                },
+                actor.syncDelayMs,
+            );
+        const runOnPlatform = platformRun(buildActor);
+        const runLocalOnPlatform = platformRun(buildActorForLocalRuns);
+        const runLocal = async ({ input, options }: RunOptions<T>) => {
+            const result = await runActorLocally(actor, { input, timeoutSecs: options?.timeout });
+            // There is no run in the Console to look at, so a run that went wrong brings its log along
+            if (result.status !== 'SUCCEEDED') {
+                const logTail = (await result.getLog()).split('\n').slice(-LOCAL_LOG_TAIL_LINES).join('\n');
+                await context.annotate(`${context.task.name} - local run ${result.status}\n${logTail}`, 'local_run');
+            }
+            return result;
+        };
+        const run = (async ({ runtime = 'platform', ...options }: RunOptions<T> & { runtime?: Runtime } = {}) => {
+            if (runtime === 'platform') return runOnPlatform(options);
+            const localRunsOn = process.env[LOCAL_RUNS_ON_ENV_VAR] ?? 'machine';
+            if (localRunsOn !== 'machine' && localRunsOn !== 'platform') {
+                throw new Error(`${LOCAL_RUNS_ON_ENV_VAR} must be "machine" or "platform", got "${localRunsOn}"`);
+            }
+            return localRunsOn === 'machine' ? runLocal(options) : runLocalOnPlatform(options);
+        }) as StartAdHocRun<T>;
+        await (fn as TestFunction<{ run: StartAdHocRun<T> }>)({
+            ...context,
+            expect: extendExpect(context.expect),
+            run,
+        });
     });
-};
+}
 
 /**
  * This wrapper creates a new task with specific `build` of the standby actor and provides
@@ -140,10 +209,7 @@ export const testStandbyActor = <I = any, O = any>(
     });
 };
 
-export const testTestActor = <T>(
-    testName: string,
-    fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
-) => {
+export const testTestActor = <T>(testName: string, fn: TestFunction<{ run: StartRun<T> }>) => {
     vitestTest(testName, async (context) => {
         const { expect, ...rest } = context;
         await fn({

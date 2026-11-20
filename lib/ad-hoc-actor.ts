@@ -13,6 +13,14 @@ import type { ACTOR_PERMISSION_LEVEL } from '@apify/consts';
 import { ApifyBuilder } from '../bin/build.js';
 import { type ActorSource, type SourceStep } from '../bin/from-local-files/actor-source.js';
 import type { BuildData } from '../bin/types.js';
+import { localLauncher } from './local-launcher.js';
+import {
+    createLocalRoot,
+    type LocalRunOptions,
+    type LocalRunResult,
+    prepareLocalActor,
+    runLocally,
+} from './local-run.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -183,28 +191,47 @@ const build = async (actor: DefinedActor, token: string): Promise<BuildData> => 
     return buildData;
 };
 
-/**
- * Builds the ad-hoc Actor, once per process however many tests ask. `testActor` calls this on the first `run`;
- * call it directly to reach the Actor before that, e.g. to set its pricing in `beforeAll`.
- */
-export const buildActor = async (actor: DefinedActor, token = process.env.TESTER_APIFY_TOKEN): Promise<BuildData> => {
+const buildOnce = async (key: string, actor: DefinedActor, token: string | undefined): Promise<BuildData> => {
     if (!token) throw new Error(`Building the Actor "${actor.name}" needs TESTER_APIFY_TOKEN`);
-    let started = builds.get(actor.name);
+    let started = builds.get(key);
     if (!started) {
         // A failed build isn't kept, so a retried test builds again.
         started = build(actor, token).catch((error: unknown) => {
-            builds.delete(actor.name);
+            builds.delete(key);
             throw error;
         });
-        builds.set(actor.name, started);
+        builds.set(key, started);
     }
     return started;
 };
 
+const localOnPlatformKey = (actor: DefinedActor) => `${actor.name} (local-on-platform)`;
+
+/**
+ * Builds the ad-hoc Actor, once per process however many tests ask. `testActor` calls this on the first `run`;
+ * call it directly to reach the Actor before that, e.g. to set its pricing in `beforeAll`.
+ */
+export const buildActor = async (actor: DefinedActor, token = process.env.TESTER_APIFY_TOKEN): Promise<BuildData> =>
+    buildOnce(actor.name, actor, token);
+
+/**
+ * Builds the ad-hoc Actor wrapped in `localLauncher`: a second build of the same Actor, for runs that should behave
+ * as off the platform while using its machines and the Actor's image.
+ */
+export const buildActorForLocalRuns = async (
+    actor: DefinedActor,
+    token = process.env.TESTER_APIFY_TOKEN,
+): Promise<BuildData> =>
+    buildOnce(
+        localOnPlatformKey(actor),
+        { ...actor, source: actor.source.with(localLauncher(Object.keys(actor.env ?? {}))) },
+        token,
+    );
+
 /** Deletes the ad-hoc Actor's builds and source zips older than `BUILD_RETENTION_DAYS`. Recent ones stay for comparing runs. */
 export const pruneBuilds = async (actor: DefinedActor, token = process.env.TESTER_APIFY_TOKEN): Promise<void> => {
     // Absent when no test ran the Actor or its build failed; either way there is nothing new to weigh against.
-    const started = builds.get(actor.name);
+    const started = builds.get(actor.name) ?? builds.get(localOnPlatformKey(actor));
     if (!token || !started) return;
     const { actorFullName } = await started;
     const builder = ApifyBuilder.fromToken(token, actorFullName);
@@ -217,3 +244,35 @@ export const runOptionsOf = (actor: DefinedActor) => ({
     memory: actor.memory ?? DEFAULT_MEMORY_MBYTES,
     ...(actor.permissions && { forcePermissionLevel: actor.permissions }),
 });
+
+const localRoots = new Map<string, Promise<{ appDir: string; runsDir: string; root: string }>>();
+
+/**
+ * Runs the ad-hoc Actor on this machine instead of the platform. Its source is written out and its dependencies
+ * installed once per process; every run gets its own storage directory. `env` of the Actor is passed along.
+ */
+export const runActorLocally = async (actor: DefinedActor, options: LocalRunOptions = {}): Promise<LocalRunResult> => {
+    let prepared = localRoots.get(actor.name);
+    if (!prepared) {
+        prepared = createLocalRoot()
+            .then(async (root) => ({
+                root,
+                appDir: await prepareLocalActor(actor.source, root),
+                runsDir: path.join(root, 'runs'),
+            }))
+            .catch((error: unknown) => {
+                localRoots.delete(actor.name);
+                throw error;
+            });
+        localRoots.set(actor.name, prepared);
+    }
+    const { appDir, runsDir } = await prepared;
+    return runLocally(appDir, runsDir, { ...options, env: { ...actor.env, ...options.env } });
+};
+
+/** Deletes what `runActorLocally` left on disk for the Actor. */
+export const removeLocalRuns = async (actor: DefinedActor): Promise<void> => {
+    const prepared = localRoots.get(actor.name);
+    localRoots.delete(actor.name);
+    if (prepared) await rm((await prepared).root, { recursive: true, force: true });
+};

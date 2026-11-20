@@ -1,0 +1,6 @@
+# Present so that packing ignores .gitignore, which would leave out dist: a git install packs the build output too
+node_modules
+storage
+local-clone
+.cli-test-*/
+*.tgz

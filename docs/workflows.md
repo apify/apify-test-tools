@@ -333,12 +333,12 @@ dependency rather than a label-triggered run of `public_claude.yaml`.
 
 With `humanize_duty: label`, each new issue gets a label like `needs-humanize:alice`.
 The developers are the individual users on the `*` rule of the repo's CODEOWNERS (`.github/CODEOWNERS`, `CODEOWNERS`
-or `docs/CODEOWNERS`), in the order listed; teams and emails are skipped. They take turns: the next issue goes to
-the developer after the one most recently labeled `needs-humanize:<login>`. The first issue, or one
-after that developer left CODEOWNERS, goes to a developer picked from the repo name, so repos don't all start with
-the same person. Labels are never removed, and the turn doesn't depend on them being removed. Without CODEOWNERS or
-any individual user on its `*` rule, the job logs a warning and adds no label. It uses `GITHUB_TOKEN` and needs no
-extra setup.
+or `docs/CODEOWNERS`), in the order listed; teams and emails are skipped. They take turns: the next issue goes to the
+developer after the one most recently labeled `needs-humanize:<login>`. The first issue, or one after that developer
+left CODEOWNERS, goes to a developer picked from the repo name, so repos don't all start with the same person. Labels
+stay on the issues; the rotation reads them back, so removing one makes that developer's turn come round again early.
+Without CODEOWNERS or any individual user on its `*` rule, the job logs a warning and adds no label. It uses
+`GITHUB_TOKEN` and needs no extra setup.
 
 `label` is the only supported value for now. Any other value fails the job that records the duty, and leaves the
 investigate and fix phases alone.

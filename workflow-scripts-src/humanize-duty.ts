@@ -3,7 +3,8 @@
 //
 // The developers are the individual users on the `*` rule of the repo's CODEOWNERS, in the order
 // they are listed. Each new issue goes to the developer after the one most recently labeled
-// `needs-humanize:<login>`, so the rotation never depends on labels being removed.
+// `needs-humanize:<login>`. Labels stay on the issues; the rotation reads them back, so removing one
+// makes that developer's turn come round again early.
 // With no such issue yet, or when that developer is no longer listed, the rotation starts at a
 // developer derived from the repo name, so different repos usually start with different people.
 //

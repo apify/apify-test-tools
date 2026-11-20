@@ -8,7 +8,7 @@ import { hideBin } from 'yargs/helpers';
 
 import { getAffectedActors } from './affected-actors.js';
 import { buildActors, DEFAULT_VERSION_KEYWORD, deleteOldBuilds } from './build.js';
-import { runBuildsFromLocal } from './build-from-local.js';
+import { runBuildsFromLocal } from './from-local-files/build-from-local.js';
 import { logger, logLevels } from './logger.js';
 import { notify, notifyOnChoices } from './notify.js';
 import { writeJson } from './output.js';

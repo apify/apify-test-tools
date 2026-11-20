@@ -12,7 +12,7 @@ import { transformSync } from 'oxc-transform';
 
 import type { ACTOR_PERMISSION_LEVEL } from '@apify/consts';
 
-import { type ActorSource, type SourceStep } from '../bin/actor-source.js';
+import { type ActorSource, type SourceStep } from '../bin/from-local-files/actor-source.js';
 import { ApifyBuilder } from '../bin/build.js';
 import type { BuildData } from '../bin/types.js';
 

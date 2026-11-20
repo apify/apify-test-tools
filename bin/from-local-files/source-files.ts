@@ -2,13 +2,13 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { loadDockerIgnore } from './dockerignore.js';
-import { logger } from './logger.js';
-import { isPathWithinScope } from './path-utils.js';
-import type { ActorConfig } from './types.js';
-import type { SourceFile } from './utils.js';
-import { getGitignoredPaths, isOutsideDir, listRepoFilePaths, readSourceFile } from './utils.js';
-import type { RelativeDir } from './utils/path/repo-relative.js';
+import { loadDockerIgnore } from '../dockerignore.js';
+import { logger } from '../logger.js';
+import { isPathWithinScope } from '../path-utils.js';
+import type { ActorConfig } from '../types.js';
+import type { SourceFile } from '../utils.js';
+import { getGitignoredPaths, isOutsideDir, listRepoFilePaths, readSourceFile } from '../utils.js';
+import type { RelativeDir } from '../utils/path/repo-relative.js';
 
 // JUST IN CASE. File patterns that commonly hold credentials — never ship these into a build, regardless
 // of sourceType or of whether the repo's .gitignore happens to list them. Everything else that should be

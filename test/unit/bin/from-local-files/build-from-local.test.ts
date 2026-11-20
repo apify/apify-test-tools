@@ -4,22 +4,22 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ApifyBuilder } from '../../../bin/build.js';
+import { ApifyBuilder } from '../../../../bin/build.js';
 import {
     runBuildsFromLocal,
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore: editor-only TS6059 — test/tsconfig.json's rootDir doesn't span bin/, but the root
     // tsconfig (used for the real build and for eslint's type-aware linting) has no such restriction.
-} from '../../../bin/build-from-local.js';
+} from '../../../../bin/from-local-files/build-from-local.js';
 import {
     collectNonIgnoredFiles,
     collectSourceFiles,
     flattenMonorepoContext,
     rewriteActorJsonPaths,
-} from '../../../bin/source-files.js';
-import type { ActorConfig } from '../../../bin/types.js';
-import * as Utils from '../../../bin/utils.js';
-import { ExistingDir, ExistingFile, RelativeDir } from '../../../bin/utils/path/repo-relative.js';
+} from '../../../../bin/from-local-files/source-files.js';
+import type { ActorConfig } from '../../../../bin/types.js';
+import * as Utils from '../../../../bin/utils.js';
+import { ExistingDir, ExistingFile, RelativeDir } from '../../../../bin/utils/path/repo-relative.js';
 
 const mkTempDir = async (prefix: string) => fs.mkdtemp(path.join(os.tmpdir(), prefix));
 

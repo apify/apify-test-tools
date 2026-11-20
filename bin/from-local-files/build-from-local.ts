@@ -1,13 +1,13 @@
-import { ActorSource, zipFiles } from './actor-source.js';
 import {
     ApifyBuilder,
     assertEnvVarsMatchDefaultVersion,
     LOCAL_SOURCE_VERSION_NUMBER,
     resolveDefaultVersion,
     runAndSummarizeBuilds,
-} from './build.js';
-import { logger } from './logger.js';
-import type { ActorConfig, BuildData, DryRunPlan } from './types.js';
+} from '../build.js';
+import { logger } from '../logger.js';
+import type { ActorConfig, BuildData, DryRunPlan } from '../types.js';
+import { ActorSource, zipFiles } from './actor-source.js';
 
 type LocalBuildPlan = {
     actorFullName: string;

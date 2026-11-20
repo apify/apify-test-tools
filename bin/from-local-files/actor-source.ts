@@ -5,8 +5,8 @@ import { promisify } from 'node:util';
 
 import AdmZip from 'adm-zip';
 
+import type { ActorConfig } from '../types.js';
 import { collectSourceFiles } from './source-files.js';
-import type { ActorConfig } from './types.js';
 
 const execFileAsync = promisify(execFile);
 

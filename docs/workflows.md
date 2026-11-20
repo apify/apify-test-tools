@@ -329,6 +329,19 @@ dependency rather than a label-triggered run of `public_claude.yaml`.
 | `max_flakiness_runs` | number | `200`      | The most times Claude may re-run the failing Actor run to measure how often the failure happens                                                          |
 | `investigate_prompt` | string | (built in) | Prompt for the investigation phase. Override to change how issues are investigated, titled and described                                                 |
 | `priority_prompt`    | string | (built in) | Prompt for setting a new issue's Priority field from its impact and flakiness. Override to change how priority is judged, e.g. to set revenue thresholds |
+| `humanize_duty`      | string | `''`       | Where to record the developer who rewrites each new issue in plain language. `label` labels the issue `needs-humanize:<login>`. Off when empty           |
+
+With `humanize_duty: label`, each new issue gets a label like `needs-humanize:alice`.
+The developers are the individual users on the `*` rule of the repo's CODEOWNERS (`.github/CODEOWNERS`, `CODEOWNERS`
+or `docs/CODEOWNERS`), in the order listed; teams and emails are skipped. They take turns: the next issue goes to the
+developer after the one most recently labeled `needs-humanize:<login>`. The first issue, or one after that developer
+left CODEOWNERS, goes to a developer picked from the repo name, so repos don't all start with the same person. Labels
+stay on the issues; the rotation reads them back, so removing one makes that developer's turn come round again early.
+Without CODEOWNERS or any individual user on its `*` rule, the job logs a warning and adds no label. It uses
+`GITHUB_TOKEN` and needs no extra setup.
+
+`label` is the only supported value for now. Any other value fails the job that records the duty, and leaves the
+investigate and fix phases alone.
 
 Secrets: `ANTHROPIC_API_KEY`, `TESTER_APIFY_TOKEN`, and optionally `NPM_TOKEN`, `REDASH_API_KEY` and `AGENT_SKILLS_INTERNAL_GITHUB_TOKEN`.
 

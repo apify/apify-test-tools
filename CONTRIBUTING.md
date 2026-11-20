@@ -101,8 +101,8 @@ Consumers pin `@workflows-v0`, not `@master`. See [Versioning and releases](#ver
 `npm run lint` and `actionlint` (via the `Code checks` workflow) both gate master, so run them before
 pushing workflow changes.
 
-The reusable workflows load the composite action with `uses: $/.github/actions/checkout-restore-dependencies`, never
-`apify/apify-test-tools/...@workflows-v0`. `$/` is the
+The reusable workflows load the composite actions with `uses: $/.github/actions/checkout-restore-dependencies` (and
+`$/.github/actions/humanize-duty`), never `apify/apify-test-tools/...@workflows-v0`. `$/` is the
 [self-repository syntax](https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/):
 it resolves to this repo at the commit the workflow was called at. A hardcoded tag would hand a caller pinned to an
 older SHA, or to a branch, the action and CLI from the tag instead of from the commit they asked for.
@@ -168,9 +168,9 @@ literally, so update them by hand when you bump it.
 ## Testing workflow changes
 
 - Point [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions) at your
-  branch (`uses: ...@your-branch`). It has real attached Actors and tests. The workflows load the composite action
-  with `$/` and the branch carries its own CLI bundle, so one branch tests the workflows, the action and the CLI
-  together, with nothing to repoint.
+  branch (`uses: ...@your-branch`). It has real attached Actors and tests. The workflows load the composite actions
+  with `$/` and the branch carries its own CLI and workflow script bundles, so one branch tests the workflows, the
+  actions and the CLI together, with nothing to repoint.
 - Make sure the shell code actually works on your laptop first.
 - After merging, watch the workflow on a real project before moving on.
 

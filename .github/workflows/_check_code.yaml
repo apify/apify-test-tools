@@ -96,7 +96,7 @@ jobs:
             - name: Check the bundle is up to date
               run: |
                   npm run bundle
-                  if ! git diff --quiet -- .github/cli/ .github/scripts/run-with-apify-tokens.mjs; then
+                  if ! git diff --quiet -- .github/cli/ .github/scripts/run-with-apify-tokens.mjs .github/scripts/humanize-duty.mjs; then
                       echo "::error::A CLI or workflow script bundle is out of date. Run \`npm run bundle\` and commit the result."
                       exit 1
                   fi

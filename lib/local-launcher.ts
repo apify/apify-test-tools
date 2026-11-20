@@ -100,7 +100,14 @@ const env = Object.fromEntries(
 );
 const child = spawn('npm', ['run', '${ACTOR_START_SCRIPT}', '--silent'], {
     stdio: 'inherit',
-    env: { ...env, CRAWLEE_STORAGE_DIR: storageDir, APIFY_LOCAL_STORAGE_DIR: storageDir, APIFY_HEADLESS: '1' },
+    env: {
+        ...env,
+        CRAWLEE_STORAGE_DIR: storageDir,
+        APIFY_LOCAL_STORAGE_DIR: storageDir,
+        APIFY_HEADLESS: '1',
+        // Chrome's sandbox can't start in a container. The SDK only turns it off when it knows it's on the platform.
+        CRAWLEE_DISABLE_BROWSER_SANDBOX: '1',
+    },
 });
 const [exitCode] = await once(child, 'close');
 console.log('[apify-test-tools] The Actor exited with code ' + exitCode + ', copying its local storage to the run');

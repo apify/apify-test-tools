@@ -182,6 +182,9 @@ export class ApifyBuilder {
         const oldKeys = items
             .map(({ key }) => key)
             .filter((key) => {
+                // Before uploads were named after their day and content, they all went to this one record. Nothing
+                // writes it anymore, and it carries no date, so it counts as old.
+                if (/^version-[\d.]+\.zip$/.test(key)) return true;
                 const day = /^version-[\d.]+-(\d{4}-\d{2}-\d{2})-[0-9a-f]+\.zip$/.exec(key)?.[1];
                 return day !== undefined && day < cutoffDay;
             });

@@ -260,8 +260,9 @@ describe('dry run', () => {
                     items: [
                         { key: 'version-0.98-2020-01-01-0123456789abcdef.zip' },
                         { key: `version-0.98-${new Date().toISOString().slice(0, 10)}-0123456789abcdef.zip` },
-                        // Not written by `uploadSourceZip`, so not ours to judge
                         { key: 'version-0.98.zip' },
+                        // Not written by `uploadSourceZip`, so not ours to judge
+                        { key: 'notes.zip' },
                     ],
                 }),
                 deleteRecord,
@@ -356,9 +357,12 @@ describe('dry run', () => {
         expect(deleteBuild).toHaveBeenCalledTimes(1);
     });
 
-    it('should delete only the dated source zips that are old', async () => {
+    it('should delete the old dated source zips and the undated one from before they were dated', async () => {
         await deleteOldBuilds([actorConfig], { dryRun: false });
-        expect(deleteRecord.mock.calls).toStrictEqual([['version-0.98-2020-01-01-0123456789abcdef.zip']]);
+        expect(deleteRecord.mock.calls).toStrictEqual([
+            ['version-0.98-2020-01-01-0123456789abcdef.zip'],
+            ['version-0.98.zip'],
+        ]);
     });
 });
 

@@ -1,19 +1,17 @@
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
 import { ApifyClient } from 'apify-client';
-import { parseSync } from 'oxc-parser';
-import { transformSync } from 'oxc-transform';
+import type { Program } from 'oxc-parser';
 
 import type { ACTOR_PERMISSION_LEVEL } from '@apify/consts';
 
-import { type ActorSource, type SourceStep } from '../bin/from-local-files/actor-source.js';
 import { ApifyBuilder } from '../bin/build.js';
+import { type ActorSource, type SourceStep } from '../bin/from-local-files/actor-source.js';
 import type { BuildData } from '../bin/types.js';
 
 const execFileAsync = promisify(execFile);
@@ -33,7 +31,10 @@ export const inlineMain =
     (filename: string, fn: () => unknown, { path: target = 'main.js' } = {}): SourceStep =>
     async (files) => {
         const code = await readFile(filename, 'utf8');
-        const source = extractMain(filename, code, fn.name);
+        // Loaded here rather than at the top: this module is behind the package's main entry, and the two native
+        // libraries are of no use to tests that never inline a `main`.
+        const [{ parseSync }, { transformSync }] = await Promise.all([import('oxc-parser'), import('oxc-transform')]);
+        const source = extractMain(parseSync(filename, code).program.body, filename, code, fn.name);
         await typeCheckInIsolation(filename, source);
         const { code: js, errors } = transformSync(path.basename(filename), source, { target: 'node22' });
         if (errors.length > 0) throw new Error(errors.map((error) => error.message).join('\n'));
@@ -44,10 +45,10 @@ export const inlineMain =
  * The entry-point module for the top-level function `name` of `code`: the file's type-only imports (erased on
  * transpile, kept so annotations resolve), the function as a declaration binding `name`, and a call awaiting it.
  */
-const extractMain = (filename: string, code: string, name: string) => {
+const extractMain = (program: Program['body'], filename: string, code: string, name: string) => {
     const typeImports: string[] = [];
     let declaration: string | undefined;
-    for (const statement of parseSync(filename, code).program.body) {
+    for (const statement of program) {
         if (statement.type === 'ImportDeclaration' && statement.importKind === 'type') {
             typeImports.push(code.slice(statement.start, statement.end));
         }
@@ -67,11 +68,23 @@ const extractMain = (filename: string, code: string, name: string) => {
     return [...typeImports, declaration, `await ${name}();`, ''].join('\n');
 };
 
-const findUp = async (from: string, name: string) => {
-    for (let dir = path.dirname(from); ; dir = path.dirname(dir)) {
-        const candidate = path.join(dir, name);
-        if (existsSync(candidate)) return candidate;
-        if (dir === path.dirname(dir)) throw new Error(`No ${name} above ${from}`);
+/**
+ * The `tsconfig.json` that applies to `filename`: the nearest one in its directory or above. The search stays inside
+ * the working directory, like the rest of the package stays inside the repository.
+ */
+const findNearestTsconfig = async (filename: string): Promise<string> => {
+    const boundary = process.cwd();
+    if (path.relative(boundary, filename).startsWith('..')) {
+        throw new Error(`${filename} is outside the working directory ${boundary}`);
+    }
+    for (let dir = path.dirname(filename); ; dir = path.dirname(dir)) {
+        const candidate = path.join(dir, 'tsconfig.json');
+        const found = await access(candidate).then(
+            () => true,
+            () => false,
+        );
+        if (found) return candidate;
+        if (dir === boundary) throw new Error(`No tsconfig.json for ${filename} in ${boundary}`);
     }
 };
 
@@ -82,21 +95,30 @@ const findUp = async (from: string, name: string) => {
  * test files drop their own snippets into the same tree.
  */
 const typeCheckInIsolation = async (filename: string, source: string) => {
-    const tsconfig = await findUp(filename, 'tsconfig.json');
+    const tsconfig = await findNearestTsconfig(filename);
     const tsc = path.join(path.dirname(createRequire(filename).resolve('typescript/package.json')), 'bin', 'tsc');
     const token = randomBytes(4).toString('hex');
     const snippet = path.join(path.dirname(filename), `${path.basename(filename, '.ts')}.${token}.actor-main.mts`);
     await writeFile(snippet, source);
     try {
-        await execFileAsync(process.execPath, [tsc, '-p', tsconfig, '--noEmit', '--pretty', 'false'], {
+        // `--listFiles` tells whether the snippet was checked at all: a `tsconfig.json` that doesn't include it
+        // would otherwise pass for one that found nothing wrong with it.
+        const args = [tsc, '-p', tsconfig, '--noEmit', '--pretty', 'false', '--listFiles'];
+        const { stdout } = await execFileAsync(process.execPath, args, {
             cwd: path.dirname(tsconfig),
-        });
-    } catch (error) {
-        const { stdout = '' } = error as { stdout?: string };
-        const own = stdout.split('\n').filter((line) => line.includes(path.basename(snippet)));
-        if (own.length > 0) {
+            maxBuffer: 256 * 1024 * 1024,
+        }).catch((error: unknown) => error as { stdout?: string });
+        const own = (stdout ?? '').split('\n').filter((line) => line.includes(path.basename(snippet)));
+        if (own.length === 0) {
             throw new Error(
-                `The Actor entry point in ${filename} does not type-check on its own. It must not use anything from the rest of the file.\n${own.join('\n')}`,
+                `The Actor entry point in ${filename} can't be type-checked: ${tsconfig} doesn't include ` +
+                    `${path.basename(snippet)}, a file generated beside the test. Make its "include" cover .mts files there.`,
+            );
+        }
+        const errors = own.filter((line) => /error TS\d+/.test(line));
+        if (errors.length > 0) {
+            throw new Error(
+                `The Actor entry point in ${filename} does not type-check on its own. It must not use anything from the rest of the file.\n${errors.join('\n')}`,
             );
         }
     } finally {

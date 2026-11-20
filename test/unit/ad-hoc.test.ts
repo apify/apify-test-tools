@@ -123,6 +123,24 @@ describe('inlineMain', { timeout: 60_000 }, () => {
         );
     });
 
+    it('refuses a tsconfig.json that would not check the entry point', async () => {
+        const { dir, file } = await testFile(`export const main = async () => {};`);
+        await writeFile(
+            path.join(dir, 'tsconfig.json'),
+            JSON.stringify({ compilerOptions: { skipLibCheck: true, types: [] }, include: ['*.ts'] }),
+        );
+        await expect(ActorSource.dirs(dir).with(inlineMain(file, main)).files()).rejects.toThrow("doesn't include");
+    });
+
+    it('does not look for a tsconfig.json outside the working directory', async () => {
+        const dir = await mkdtemp(path.join(tmpdir(), 'outside-'));
+        const file = path.join(dir, 'scenario.test.ts');
+        await writeFile(file, `export const main = async () => {};`);
+        await expect(ActorSource.dirs(dir).with(inlineMain(file, main)).files()).rejects.toThrow(
+            'outside the working directory',
+        );
+    });
+
     it('fails when the function is not a top-level declaration of the file', async () => {
         const { dir, file } = await testFile(`const other = 1;`);
         await expect(ActorSource.dirs(dir).with(inlineMain(file, main)).files()).rejects.toThrow(

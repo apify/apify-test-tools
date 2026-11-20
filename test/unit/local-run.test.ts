@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -113,6 +113,19 @@ describe('LocalRunResult', () => {
         const output = await result.getRecord('OUTPUT');
         expect(output?.contentType).toBe('application/json');
         expect(output?.value.toString()).toBe('{"done":true}');
+    });
+
+    it('reads a Crawlee 3 store, whose records are bare files named after the key and its type', async () => {
+        const storageDir = await tempDir();
+        const store = path.join(storageDir, 'key_value_stores', 'default');
+        await mkdir(store, { recursive: true });
+        await writeFile(path.join(store, 'SDK_CRAWLER_STATISTICS_0.json'), '{"requestsFinished":4}');
+        await writeFile(path.join(store, 'shot.png'), Buffer.from([9]));
+        const result = new LocalRunResult('SUCCEEDED', 0, 1, '', storageDir);
+
+        expect(await result.getStatistics()).toStrictEqual({ requestsFinished: 4 });
+        expect(await result.listKeys()).toStrictEqual(['SDK_CRAWLER_STATISTICS_0.json', 'shot.png']);
+        expect((await result.getRecord('shot.png'))?.contentType).toBe('application/octet-stream');
     });
 
     it('has no statistics, items or records for a run that stored nothing', async () => {

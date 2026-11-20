@@ -4,6 +4,23 @@ import path from 'node:path';
 
 import type { SourceStep } from '../bin/from-local-files/actor-source.js';
 
+/**
+ * Crawlee 3 keeps a record as a bare `<key>.<extension>` file, which the storage library doesn't count as a record.
+ * Passed to `open`, this makes it adopt every such file, under its filename: the key keeps the extension. The input
+ * is the exception, it's written as `INPUT.json` for either version and stays `INPUT`.
+ */
+export const ADOPT_BARE_FILES = [
+    { key: 'INPUT', files: [{ filename: 'INPUT.json', contentType: 'application/json' }] },
+    {
+        files: [
+            { filename: '*.json', contentType: 'application/json' },
+            { filename: '*.txt', contentType: 'text/plain' },
+            { filename: '*.html', contentType: 'text/html' },
+            { filename: '*', contentType: 'application/octet-stream' },
+        ],
+    },
+];
+
 /** What the platform puts into a run's environment, as opposed to the Actor's image or its author. */
 const PLATFORM_ENV_PATTERN = /^(ACTOR|APIFY)_/;
 /** Set by the Actor images themselves under the platform's prefixes: where the browser is. */
@@ -111,7 +128,7 @@ for (let offset = 0; ; ) {
     if (items.length === 0 || offset >= total) break;
 }
 
-const localRecords = await FileSystemKeyValueStoreClient.open(undefined, undefined, 'default', storageDir);
+const localRecords = await FileSystemKeyValueStoreClient.open(undefined, undefined, 'default', storageDir, undefined, %ADOPT%);
 let copiedRecords = 0;
 for (let start; ; ) {
     const page = await localRecords.listKeys(start, 1000);
@@ -154,6 +171,7 @@ export const localLauncher =
             throw new Error("Running locally on the platform needs a `start` script in the Actor's package.json");
         }
         const launcher = LAUNCHER.replace('%KEEP%', JSON.stringify(keep))
+            .replace('%ADOPT%', JSON.stringify(ADOPT_BARE_FILES))
             .replace('%IMAGE_ENV%', JSON.stringify(IMAGE_ENV))
             .replace('%PLATFORM_ENV_PATTERN%', String(PLATFORM_ENV_PATTERN));
         // The launcher rides in `package.json`, the one file every Dockerfile has to copy: one of its own could be

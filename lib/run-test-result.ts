@@ -31,12 +31,15 @@ export interface RunOutcome {
 
 /** Crawlee v3 writes `SDK_CRAWLER_STATISTICS_<n>`, v4 `CRAWLEE_CRAWLER_STATISTICS_<n>`. */
 const STATISTICS_KEY_PREFIXES = ['SDK_CRAWLER_STATISTICS_', 'CRAWLEE_CRAWLER_STATISTICS_'];
+/** With `.json` when it comes from a Crawlee 3 local store, where the key is the filename. */
+const STATISTICS_KEY = /^(?:SDK|CRAWLEE)_CRAWLER_STATISTICS_(\d+)(?:\.json)?$/;
 
 /** A crawler that replaces its statistics (adaptive Playwright) lands on the next `<n>`, so the highest one is the live record. */
 export const pickStatisticsKey = (keys: string[]): string | undefined =>
     keys
-        .filter((key) => /^(SDK|CRAWLEE)_CRAWLER_STATISTICS_\d+$/.test(key))
-        .sort((a, b) => Number(b.slice(b.lastIndexOf('_') + 1)) - Number(a.slice(a.lastIndexOf('_') + 1)))[0];
+        .map((key) => ({ key, index: Number(STATISTICS_KEY.exec(key)?.[1] ?? NaN) }))
+        .filter(({ index }) => !Number.isNaN(index))
+        .sort((a, b) => b.index - a.index)[0]?.key;
 
 export class RunTestResult implements RunOutcome {
     constructor(

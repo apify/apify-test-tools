@@ -366,6 +366,8 @@ Where a local run executes is decided outside the test, by the `APIFY_LOCAL_RUNS
 - Nothing is charged off the platform, so `chargedEventCounts` can't be asserted on a local run.
 - On the platform, only the default dataset and the default key-value store come back. Named storages and request
   queues stay in the container.
+- A Crawlee 3 Actor's records are read too, but under their filenames: `OUTPUT` is `OUTPUT.json` in `listKeys()` and
+  `getRecord()`. `toFinishWith` finds the statistics either way.
 - The local storage is read with `@crawlee/fs-storage-native`, the library Crawlee 4 writes it with, in the version
   this package depends on. The build for local runs on the platform gets it as one more dependency of the Actor,
   under the alias `apify-test-tools-storage`, so it doesn't replace the copy the Actor's own dependencies resolve.

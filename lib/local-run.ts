@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { FileSystemDatasetClient, FileSystemKeyValueStoreClient } from '@crawlee/fs-storage-native';
 
 import type { ActorSource } from '../bin/from-local-files/actor-source.js';
-import { plainEnv } from './local-launcher.js';
+import { ADOPT_BARE_FILES, plainEnv } from './local-launcher.js';
 import { pickStatisticsKey, type RunOutcome } from './run-test-result.js';
 import type { Dataset, SdkCrawlerStatistics } from './types.js';
 
@@ -124,7 +124,14 @@ export class LocalRunResult implements RunOutcome {
     ) {}
 
     private openStore = async () =>
-        FileSystemKeyValueStoreClient.open(undefined, undefined, DEFAULT_STORAGE, this.storageDir);
+        FileSystemKeyValueStoreClient.open(
+            undefined,
+            undefined,
+            DEFAULT_STORAGE,
+            this.storageDir,
+            undefined,
+            ADOPT_BARE_FILES,
+        );
 
     getRunInfo = async () => ({ stats: { durationMillis: this.durationMillis } });
 

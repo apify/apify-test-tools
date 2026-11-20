@@ -2,11 +2,9 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import type { ActorRun, ApifyClient } from 'apify-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ActorSource, inlineMain } from '../../lib/ad-hoc.js';
-import { RunTestResult } from '../../lib/run-test-result.js';
 
 describe('ActorSource', () => {
     let packs: { name: string; filename: string }[];
@@ -130,32 +128,5 @@ describe('inlineMain', { timeout: 60_000 }, () => {
         await expect(ActorSource.dirs(dir).with(inlineMain(file, main)).files()).rejects.toThrow(
             'No top-level function "main"',
         );
-    });
-});
-
-describe('RunTestResult.getStatistics', () => {
-    const run = { id: 'run', defaultKeyValueStoreId: 'kvs' } as ActorRun;
-    const clientWithKeys = (keys: string[]) =>
-        ({
-            keyValueStore: () => ({
-                listKeys: async () => ({ items: keys.map((key) => ({ key })) }),
-                getRecord: async (key: string) => ({ value: { key } }),
-            }),
-        }) as unknown as ApifyClient;
-
-    it('picks the highest-numbered record across crawlee v3 and v4 names', async () => {
-        const keys = [
-            'INPUT',
-            'SDK_CRAWLER_STATISTICS_0',
-            'CRAWLEE_CRAWLER_STATISTICS_10',
-            'CRAWLEE_CRAWLER_STATISTICS_2',
-        ];
-        expect(await new RunTestResult(clientWithKeys(keys), run).getStatistics()).toStrictEqual({
-            key: 'CRAWLEE_CRAWLER_STATISTICS_10',
-        });
-    });
-
-    it('is undefined for non-crawler Actors', async () => {
-        expect(await new RunTestResult(clientWithKeys(['INPUT']), run).getStatistics()).toBeUndefined();
     });
 });

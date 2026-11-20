@@ -42,3 +42,31 @@ describe('RunTestResult', () => {
         expect(listItems).toHaveBeenCalledTimes(25);
     });
 });
+
+describe('RunTestResult.getStatistics', () => {
+    const clientWithKeys = (keys: string[]) =>
+        ({
+            keyValueStore: () => ({
+                listKeys: async ({ prefix = '' }: { prefix?: string } = {}) => ({
+                    items: keys.filter((key) => key.startsWith(prefix)).map((key) => ({ key })),
+                }),
+                getRecord: async (key: string) => ({ value: { key } }),
+            }),
+        }) as unknown as ApifyClient;
+
+    it('picks the highest-numbered record across crawlee v3 and v4 names', async () => {
+        const keys = [
+            'INPUT',
+            'SDK_CRAWLER_STATISTICS_0',
+            'CRAWLEE_CRAWLER_STATISTICS_10',
+            'CRAWLEE_CRAWLER_STATISTICS_2',
+        ];
+        expect(await new RunTestResult(clientWithKeys(keys), run).getStatistics()).toStrictEqual({
+            key: 'CRAWLEE_CRAWLER_STATISTICS_10',
+        });
+    });
+
+    it('is undefined for non-crawler Actors', async () => {
+        expect(await new RunTestResult(clientWithKeys(['INPUT']), run).getStatistics()).toBeUndefined();
+    });
+});

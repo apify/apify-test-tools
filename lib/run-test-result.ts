@@ -20,6 +20,9 @@ const once = <T>(fn: () => Promise<T>): (() => Promise<T>) => {
     };
 };
 
+/** Crawlee v3 writes `SDK_CRAWLER_STATISTICS_<n>`, v4 `CRAWLEE_CRAWLER_STATISTICS_<n>`. */
+const STATISTICS_KEY_PREFIXES = ['SDK_CRAWLER_STATISTICS_', 'CRAWLEE_CRAWLER_STATISTICS_'];
+
 export class RunTestResult {
     constructor(
         private readonly apifyClient: ApifyClient,
@@ -28,16 +31,15 @@ export class RunTestResult {
         /**/
     }
 
-    /**
-     * Crawlee v3 writes `SDK_CRAWLER_STATISTICS_<n>`, v4 `CRAWLEE_CRAWLER_STATISTICS_<n>`. A crawler that replaces
-     * its statistics (adaptive Playwright) lands on the next `<n>`, so the highest one is the live record.
-     */
+    /** A crawler that replaces its statistics (adaptive Playwright) lands on the next `<n>`, so the highest one is the live record. */
     getStatistics = once(async (): Promise<SdkCrawlerStatistics | undefined> => {
         const store = this.getKeyValueStoreClient();
-        const [key] = (await store.listKeys()).items
-            .map(({ key: name }) => name)
-            .filter((name) => /^(SDK|CRAWLEE)_CRAWLER_STATISTICS_\d+$/.test(name))
-            .sort((a, b) => Number(b.slice(b.lastIndexOf('_') + 1)) - Number(a.slice(a.lastIndexOf('_') + 1)));
+        // Listed by prefix: a plain listing stops at 1000 keys, which a store with many records would fill first.
+        const pages = await Promise.all(STATISTICS_KEY_PREFIXES.map(async (prefix) => store.listKeys({ prefix })));
+        const [key] = pages
+            .flatMap(({ items }) => items.map(({ key: name }) => name))
+            .filter((name) => /_\d+$/.test(name))
+            .sort((x, y) => Number(y.slice(y.lastIndexOf('_') + 1)) - Number(x.slice(x.lastIndexOf('_') + 1)));
         if (!key) return undefined;
         return (await store.getRecord(key))?.value as SdkCrawlerStatistics | undefined;
     });

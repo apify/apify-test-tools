@@ -83,7 +83,7 @@
         "test": "vitest run --exclude 'test/e2e/**'",
         "test:e2e": "vitest run test/e2e",
         "check-unused": "npx knip",
-        "prepare": "husky .husky || true"
+        "prepare": "(husky .husky || true) && npm run build"
     },
     "lint-staged": {
         "*.js": "eslint",

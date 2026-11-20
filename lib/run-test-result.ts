@@ -27,6 +27,8 @@ export interface RunOutcome {
     getDataset<T>(): Promise<Dataset<T>>;
     getStatistics(): Promise<SdkCrawlerStatistics | undefined>;
     getLog(): Promise<string>;
+    /** A record of the run's default key-value store, as stored, or `undefined` when there is none. */
+    getRecord(key: string): Promise<{ value: Buffer; contentType: string } | undefined>;
 }
 
 /** Crawlee v3 writes `SDK_CRAWLER_STATISTICS_<n>`, v4 `CRAWLEE_CRAWLER_STATISTICS_<n>`. */
@@ -78,6 +80,11 @@ export class RunTestResult implements RunOutcome {
 
     getKeyValueStoreClient = (): KeyValueStoreClient => {
         return this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
+    };
+
+    getRecord = async (key: string): Promise<{ value: Buffer; contentType: string } | undefined> => {
+        const record = await this.getKeyValueStoreClient().getRecord(key, { buffer: true });
+        return record && { value: record.value, contentType: record.contentType ?? 'application/octet-stream' };
     };
 
     private readonly inputRecord = once(async () => (await this.getKeyValueStoreClient().getRecord('INPUT'))?.value);

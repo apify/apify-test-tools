@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -40,6 +40,18 @@ describe('ActorSource', () => {
             },
         });
         expect(files.get('packages/apify-1.0.0.tgz')!.toString()).toBe('tgz');
+    });
+
+    it('points a nested manifest at the tarballs relative to itself', async () => {
+        const dir = await actorDir({});
+        await mkdir(path.join(dir, 'nested'));
+        await writeFile(path.join(dir, 'nested', 'package.json'), JSON.stringify({ dependencies: { apify: '*' } }));
+        const files = await ActorSource.dirs(dir).pin(packs, { packageJson: 'nested/package.json' }).files();
+
+        expect(JSON.parse(files.get('nested/package.json')!.toString()).dependencies).toStrictEqual({
+            apify: 'file:../packages/apify-1.0.0.tgz',
+        });
+        expect(files.has('packages/apify-1.0.0.tgz')).toBe(true);
     });
 
     it('writes pnpm overrides under the pnpm key and honors `only`', async () => {

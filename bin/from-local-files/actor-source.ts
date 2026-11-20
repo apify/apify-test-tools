@@ -101,7 +101,9 @@ export class ActorSource {
                 for (const { name, filename } of packs) {
                     if (only && !only.includes(name)) continue;
                     const key = `packages/${path.basename(filename)}`;
-                    const spec = `file:./${key}`;
+                    // Relative to the manifest it's written into, which needn't be the root one
+                    const relative = path.posix.relative(path.posix.dirname(packageJson), key);
+                    const spec = `file:${relative.startsWith('.') ? relative : `./${relative}`}`;
                     // npm refuses an override that disagrees with the direct dependency's spec.
                     for (const group of ['dependencies', 'devDependencies', 'optionalDependencies']) {
                         if (pkg[group]?.[name]) pkg[group][name] = spec;

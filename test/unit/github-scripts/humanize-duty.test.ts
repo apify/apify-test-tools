@@ -321,7 +321,7 @@ describe('assignHumanizeDuty', () => {
         async (duty) => {
             const fake = fakeGitHub({ files: { '.github/CODEOWNERS': '* @alice' }, labels: [], issues: [newIssue] });
             await expect(run(fake.client, duty)).rejects.toThrow(
-                `Unsupported humanize_duty '${duty}'. Supported values: 'label'.`,
+                `Unsupported humanize_duty '${duty}'. The supported value is 'label'.`,
             );
             expect(fake.created).toStrictEqual([]);
             expect(fake.added).toStrictEqual([]);

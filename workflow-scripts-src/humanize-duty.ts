@@ -183,7 +183,7 @@ async function assignHumanizeLabel({ github, context, core, issueNumber }: DutyP
                 ...repo,
                 name: labelName,
                 color: LABEL_COLOR,
-                description: `${login} rewrites this issue in plain language`,
+                description: `${login} reviews this issue`,
             });
         } catch (error) {
             if (!isAlreadyExists(error)) throw error;
@@ -197,13 +197,7 @@ async function assignHumanizeLabel({ github, context, core, issueNumber }: DutyP
     );
 }
 
-const DUTIES = new Map<string, (params: DutyParams) => Promise<void>>([['label', assignHumanizeLabel]]);
-
 export async function assignHumanizeDuty({ duty, ...params }: DutyParams & { duty: string }) {
-    const assign = DUTIES.get(duty);
-    if (!assign) {
-        const supported = [...DUTIES.keys()].map((name) => `'${name}'`).join(', ');
-        throw new Error(`Unsupported humanize_duty '${duty}'. Supported values: ${supported}.`);
-    }
-    await assign(params);
+    if (duty !== 'label') throw new Error(`Unsupported humanize_duty '${duty}'. The supported value is 'label'.`);
+    await assignHumanizeLabel(params);
 }

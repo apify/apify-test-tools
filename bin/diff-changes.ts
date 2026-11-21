@@ -28,7 +28,9 @@ const IGNORED_TOP_LEVEL_FILES = [
 ];
 
 const isIgnoredTopLevelFile = (filePath: RelativeFile, contextPath: RelativeDir): boolean => {
-    const pathWithinContext = contextPath.relativePathTo(filePath.path).toLowerCase();
+    // A context entry that names the file itself is checked by the file's name, as if its folder were the context
+    const scope = contextPath.path === filePath.path ? filePath.parent : contextPath;
+    const pathWithinContext = scope.relativePathTo(filePath.path).toLowerCase();
     return IGNORED_TOP_LEVEL_FILES.some((pattern) => pathWithinContext.startsWith(pattern));
 };
 
@@ -88,7 +90,10 @@ const classifyFileChange = async (
         return { impact: 'outside-context' };
     }
 
-    const matchedContext = actorConfig.contextPaths.find((contextPath) => contextPath.contains(changedFile));
+    // An entry can also name a single file, e.g. a root package-lock.json shared by all Actors
+    const matchedContext = actorConfig.contextPaths.find(
+        (contextPath) => contextPath.contains(changedFile) || contextPath.path === changedFile.path,
+    );
     if (!matchedContext) {
         return { impact: 'outside-context' };
     }

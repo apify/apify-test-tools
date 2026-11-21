@@ -75,7 +75,7 @@ For each changed file, for each Actor:
    broad context from being triggered by changes that belong to a sibling Actor.
 3. **Context matching** — other files must fall within one of the Actor's context paths (`dockerContextDir` from
    `actor.json` by default, or `overrideActorContext` from config if set). Files outside every context path are
-   skipped.
+   skipped. An `overrideActorContext` entry can also be a single file, e.g. a root `package-lock.json`.
 4. **Hardcoded ignore list, context-aware** — the file path is first "hoisted" relative to the context path it
    matched (e.g. a standalone Actor's own `.eslintrc` is checked as just `.eslintrc`, not the full
    repo-root-relative path), then checked against repo-level dev file patterns (`.vscode/`, `.gitignore`, `.husky/`,

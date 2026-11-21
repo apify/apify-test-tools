@@ -350,6 +350,22 @@ describe('getChangedActors', () => {
         expect(result).toEqual([overrideActor]);
     });
 
+    it('ignores a hardcoded ignored file such as .gitignore that is an override entry', async () => {
+        const overrideActor = actorConfig(
+            'team/override-actor',
+            'actors/override',
+            'APIFY_TOKEN_TEAM',
+            'actors/override',
+            ['actors/override', '.gitignore'],
+        );
+        const result = await changedActorsFor({
+            filepathsChanged: ['.gitignore'],
+            actorConfigs: [overrideActor],
+            range,
+        });
+        expect(result).toEqual([]);
+    });
+
     it('does not trigger actor with contextPaths override when file is outside all override paths', async () => {
         const overrideActor = actorConfig(
             'team/override-actor',

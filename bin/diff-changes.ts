@@ -28,9 +28,7 @@ const IGNORED_TOP_LEVEL_FILES = [
 ];
 
 const isIgnoredTopLevelFile = (filePath: RelativeFile, contextPath: RelativeDir): boolean => {
-    // A context entry that names the file itself is checked by the file's name, as if its folder were the context
-    const scope = contextPath.path === filePath.path ? filePath.parent : contextPath;
-    const pathWithinContext = scope.relativePathTo(filePath.path).toLowerCase();
+    const pathWithinContext = contextPath.relativePathTo(filePath.path).toLowerCase();
     return IGNORED_TOP_LEVEL_FILES.some((pattern) => pathWithinContext.startsWith(pattern));
 };
 

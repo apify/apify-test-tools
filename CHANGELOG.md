@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - **test/cli-compile:** Handle SIGTERM SIGINT etc without leaving trash behind ([#250](https://github.com/apify/apify-test-tools/pull/250)) ([41d9237](https://github.com/apify/apify-test-tools/commit/41d923769a1747979b6ad3df7765361b69ee9fbc)) by [@JuanGalilea](https://github.com/JuanGalilea)
 - Use actor.json links for change detection and changelogs ([#232](https://github.com/apify/apify-test-tools/pull/232)) ([4498c94](https://github.com/apify/apify-test-tools/commit/4498c9440ce6ab8d80c53b1450f2afb1b746462e)) by [@JuanGalilea](https://github.com/JuanGalilea), closes [#229](https://github.com/apify/apify-test-tools/issues/229)
 - **get-affected-actors:** Accept refs such as HEAD~1 in --since ([#258](https://github.com/apify/apify-test-tools/pull/258)) ([d251d14](https://github.com/apify/apify-test-tools/commit/d251d148532fe6eca469ebcec258c5c6302bbae7)) by [@harshmaur](https://github.com/harshmaur), closes [#256](https://github.com/apify/apify-test-tools/issues/256)
+- **get-affected-actors:** Match file entries in overrideActorContext ([#259](https://github.com/apify/apify-test-tools/pull/259)) ([416c022](https://github.com/apify/apify-test-tools/commit/416c022d4082c4a7cf89ca50787fa58e4af90843)) by [@harshmaur](https://github.com/harshmaur), closes [#257](https://github.com/apify/apify-test-tools/issues/257)
 
 
 <!-- git-cliff-unreleased-end -->

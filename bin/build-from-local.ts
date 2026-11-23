@@ -197,11 +197,14 @@ export const runBuildsFromLocal = async ({
     actorConfigs,
     dryRun,
     requireEnvVarsInSync = false,
+    maxMemoryGbytes,
 }: {
     actorConfigs: ActorConfig[];
     dryRun: boolean;
     // See assertEnvVarsMatchDefaultVersion
     requireEnvVarsInSync?: boolean;
+    // See createMemoryQueues
+    maxMemoryGbytes?: number;
 }): Promise<BuildData[] | DryRunPlan<LocalBuildPlan>> => {
     // Read-only preparation shared with the real build, so a dry run fails on a missing token, an unknown
     // Actor or unreadable sources just like the build would
@@ -250,7 +253,7 @@ export const runBuildsFromLocal = async ({
         preparedBuilds.map((prepared) => [prepared.actorConfig.actorFullName, prepared]),
     );
 
-    return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', async (actorConfig, builder) => {
+    return runAndSummarizeBuilds(actorConfigs, 'LOCAL BUILDS', { maxMemoryGbytes }, async (actorConfig, builder) => {
         const { actorInfo, zipBuffer } = preparedByActorFullName.get(actorConfig.actorFullName)!;
         const actorVersion: ApifyClientTypes.ActorVersion = {
             versionNumber: LOCAL_SOURCE_VERSION_NUMBER,

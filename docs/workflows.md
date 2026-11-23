@@ -65,11 +65,12 @@ Validates a pull request. It runs two jobs in parallel.
 In a repo whose Actors aren't written in JavaScript or TypeScript, define the `build-check`, `lint` and `test`
 scripts, e.g. to run your language's own checks: without them, the TypeScript, Lint and Test checks fail.
 
-| Input                      | Type    | Default            | Description                                                                                                                 |
-| -------------------------- | ------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `skip-platform-tests`      | boolean | `false`            | Skip the `platformTest` job and run the static checks only                                                                  |
-| `test-files-glob`          | string  | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests) |
-| `require-env-vars-in-sync` | boolean | `true`             | Fail the build unless the env var names of `0.99` match the default version's, see [Env var check](cli.md#env-var-check)    |
+| Input                      | Type    | Default            | Description                                                                                                                                                                       |
+| -------------------------- | ------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skip-platform-tests`      | boolean | `false`            | Skip the `platformTest` job and run the static checks only                                                                                                                        |
+| `test-files-glob`          | string  | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests)                                                       |
+| `require-env-vars-in-sync` | boolean | `true`             | Fail the build unless the env var names of `0.99` match the default version's, see [Env var check](cli.md#env-var-check)                                                          |
+| `max-memory-gbytes`        | string  | `''`               | Memory in GB the builds, and then the runs, may use at once on each account. Empty means the account's free memory. See [Memory budget](cli.md#memory-budget---max-memory-gbytes) |
 
 Secrets: the Actor and test tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`. With `skip-platform-tests`, only
 `NPM_TOKEN`. The build gets each Actor's `tokenEnvVar`, the tests its `testTokenEnvVar`, which is the same token unless
@@ -114,9 +115,10 @@ Releases the Actors a push changed. Skipped when the head commit message contain
 4. `delete-old-builds` deletes old builds of every Actor in the config (see
    [`delete-old-builds`](cli.md#deleting-old-builds-delete-old-builds)).
 
-| Input                  | Type   | Default | Description                                     |
-| ---------------------- | ------ | ------- | ----------------------------------------------- |
-| `report-slack-channel` | string | `''`    | Slack channel for the report. Empty skips Slack |
+| Input                  | Type   | Default | Description                                                                                                                                                   |
+| ---------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `report-slack-channel` | string | `''`    | Slack channel for the report. Empty skips Slack                                                                                                               |
+| `max-memory-gbytes`    | string | `''`    | Memory in GB the builds may use at once on each account. Empty means the account's free memory. See [Memory budget](cli.md#memory-budget---max-memory-gbytes) |
 
 Secrets: `SLACK_BOT_TOKEN`, the Actor tokens in `CONFIG_SECRETS`, and optionally `NPM_TOKEN`.
 
@@ -153,10 +155,11 @@ Runs the platform tests of every Actor in the config against its current default
 reaches the tests. Both the report of `test` and
 vitest's own JSON report are uploaded as the `vitest-results` artifact. Runs only on `master` or `main`.
 
-| Input                  | Type   | Default            | Description                                                                                                                 |
-| ---------------------- | ------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `test-files-glob`      | string | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests) |
-| `report-slack-channel` | string | `''`               | Slack channel for the results. Empty skips Slack                                                                            |
+| Input                  | Type   | Default            | Description                                                                                                                                                 |
+| ---------------------- | ------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test-files-glob`      | string | `test/platform/**` | Glob of the test files to run, from the repo root. Empty means the default. See [Splitting the tests](#splitting-the-tests)                                 |
+| `report-slack-channel` | string | `''`               | Slack channel for the results. Empty skips Slack                                                                                                            |
+| `max-memory-gbytes`    | string | `''`               | Memory in GB the runs may use at once on each account. Empty means the account's free memory. See [Memory budget](cli.md#memory-budget---max-memory-gbytes) |
 
 Secrets: the test tokens in `CONFIG_SECRETS`, `SLACK_BOT_TOKEN`, and optionally `NPM_TOKEN`. The tests run each Actor
 with its `testTokenEnvVar`, its `tokenEnvVar` unless the config names another. `TESTER_APIFY_TOKEN`, if passed, is the

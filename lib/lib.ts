@@ -5,6 +5,7 @@ import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vi
 
 import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
 import { extendExpect } from './extend-expect.js';
+import { reserveMemory } from './memory-queue.js';
 import { RunTestResult } from './run-test-result.js';
 import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
 import { getActorPrefilledInput, sleep } from './utils.js';
@@ -41,12 +42,12 @@ const FALLBACK_TOKEN_ENV_VAR = 'TESTER_APIFY_TOKEN';
 const warnedFallbacks = new Set<string>();
 
 /**
- * The client an Actor's tests run with: the token in the env var listed with the Actor in `ACTOR_BUILDS`, which `test`
+ * The env var with the token an Actor's tests run with: the env var listed with the Actor in `ACTOR_BUILDS`, which `test`
  * takes from `testTokenEnvVar` in `apify-test-tools.config.json` (the Actor's `tokenEnvVar` by default). Without one,
  * or when it isn't set, `TESTER_APIFY_TOKEN`. It throws inside the test, so an Actor without any token fails only its
  * own tests, and the other Actors' tests still run.
  */
-const getApifyClient = (actorId: string): ApifyClient => {
+const resolveTokenEnvVar = (actorId: string): string => {
     const testTokenEnvVar = config.get(actorId)?.testTokenEnvVar;
     let tokenEnvVar = testTokenEnvVar;
     if (!tokenEnvVar || !process.env[tokenEnvVar]) {
@@ -56,13 +57,17 @@ const getApifyClient = (actorId: string): ApifyClient => {
             console.warn(`${testTokenEnvVar} is not set, testing with ${FALLBACK_TOKEN_ENV_VAR} instead.`);
         }
     }
-    const token = process.env[tokenEnvVar];
-    if (!token) {
+    if (!process.env[tokenEnvVar]) {
         const own = testTokenEnvVar ? `${testTokenEnvVar} nor ` : '';
         throw new Error(
             `Neither ${own}${FALLBACK_TOKEN_ENV_VAR} is set. The tests of Actor "${actorId}" need a token.`,
         );
     }
+    return tokenEnvVar;
+};
+
+const getApifyClient = (actorId: string): ApifyClient => {
+    const token = process.env[resolveTokenEnvVar(actorId)]!;
     if (!apifyClients.has(token)) apifyClients.set(token, new ApifyClient({ token }));
     return apifyClients.get(token)!;
 };
@@ -326,7 +331,14 @@ const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testCont
         );
 
         const actorOptions = { timeout, build, log: null, ...options };
-        const run = await actor.call(actorInput, actorOptions);
+        const memoryMbytes = actorOptions.memory ?? actorInfo?.defaultRunOptions?.memoryMbytes;
+        const releaseMemory = memoryMbytes ? await reserveMemory(resolveTokenEnvVar(actorId), memoryMbytes) : undefined;
+        let run: ActorRun;
+        try {
+            run = await actor.call(actorInput, actorOptions);
+        } finally {
+            releaseMemory?.();
+        }
 
         const runLink = generateRunLink(run);
         await annotate(`${task.name} - ${runLink}`, 'run_link');

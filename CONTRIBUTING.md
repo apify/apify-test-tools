@@ -138,6 +138,10 @@ fields freely; renaming or removing one needs a new major tag. When the lib star
 refuses a lib that declares an older version, instead of letting it skip every test. Version 2 added
 `testTokenEnvVar`.
 
+`test` also sets `APIFY_TEST_TOOLS_MEMORY_QUEUE` to the address of its memory queue (`bin/memory-queue.ts`), and the lib
+asks it for room before each run (`lib/memory-queue.ts`), one JSON line each way. The name is written out in both,
+since the lib can't import the CLI. A lib that predates the queue ignores it and starts its runs at once.
+
 **The CLI must keep working with every lib version from `OLDEST_SUPPORTED_LIB_VERSION` up** (`bin/lib-compat.ts`,
 0.2.4 as of 2026-11). That is the oldest version a consumer repo locks. Old libs read the contract differently, and a
 mismatch skips every test while the run still passes:

@@ -14,6 +14,7 @@ import {
     readPackageJson,
 } from './lib-compat.js';
 import { logger } from './logger.js';
+import { createMemoryQueues, MEMORY_QUEUE_ENV_VAR, startMemoryQueueServer } from './memory-queue.js';
 import type { TestTarget } from './stdin-input.js';
 import { resolveTestFilesGlob } from './test-files-glob.js';
 import {
@@ -99,6 +100,8 @@ interface RunTestsOptions {
     vitestOutputFile?: string;
     /** Vitest reporters to add to the default one and the JSON one the report is read from, e.g. `github-actions` */
     reporters?: string[];
+    /** Memory the runs may use at once on each account, see createMemoryQueues */
+    maxMemoryGbytes?: number;
     cwd?: string;
 }
 
@@ -112,6 +115,7 @@ export const runTests = async ({
     targets,
     vitestOutputFile,
     reporters = [],
+    maxMemoryGbytes,
     cwd = process.cwd(),
 }: RunTestsOptions): Promise<TestReport> => {
     const vitestBin = await resolveVitestBin(cwd);
@@ -169,6 +173,10 @@ export const runTests = async ({
     ];
     logger.debug(`Running vitest: ${args.join(' ')}`);
 
+    // The lib asks it for memory before each run it starts, see startMemoryQueueServer
+    const memoryQueue = await startMemoryQueueServer(createMemoryQueues({ maxMemoryGbytes }), env);
+    env[MEMORY_QUEUE_ENV_VAR] = memoryQueue.address;
+
     try {
         const exitCode = await spawnVitest(args, { cwd, env });
         let vitestReport: VitestJsonReport;
@@ -186,6 +194,7 @@ export const runTests = async ({
         logTestReport(report);
         return report;
     } finally {
+        await memoryQueue.close();
         if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
     }
 };

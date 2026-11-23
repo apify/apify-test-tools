@@ -1,8 +1,11 @@
 import type * as ApifyClientTypes from 'apify-client';
 import { ActorSourceType, ApifyClient } from 'apify-client';
 
+import { ACTOR_LIMITS } from '@apify/consts';
+
 import { getCurrentBranch, normalizeRepoUrl, resolveRepoUrl } from './git.js';
 import { logger } from './logger.js';
+import { createMemoryQueues } from './memory-queue.js';
 import type { BuildTarget } from './stdin-input.js';
 import type { ActorConfig, BuildData, DryRunPlan, ExistingBuild } from './types.js';
 
@@ -211,7 +214,7 @@ export class ApifyBuilder {
                     `Not continuing with other builds and tests.`,
             );
         }
-        logger.info(`[${this.actorFullName}]: ${versionNumber}`);
+        logger.info(`[${this.actorFullName}]: ${versionNumber} finished`);
         return build;
     };
 
@@ -323,47 +326,46 @@ export class ApifyBuilder {
     }
 }
 
-export const waitAndSummarizeBuilds = async (
-    startedBuilds: BuildData[],
-    buildersMap: Map<string, ApifyBuilder>,
+/**
+ * Builds each Actor and waits for it, starting each build once its memory fits the account's budget (see
+ * createMemoryQueues). After a failed build, the builds still waiting don't start.
+ */
+export const runAndSummarizeBuilds = async (
+    actorConfigs: ActorConfig[],
     label: string,
+    { maxMemoryGbytes }: { maxMemoryGbytes?: number },
+    buildOneActor: (actorConfig: ActorConfig, builder: ApifyBuilder) => Promise<BuildData>,
 ): Promise<BuildData[]> => {
+    const memoryQueues = createMemoryQueues({ maxMemoryGbytes });
+    let failed = false;
     logger.info('=========================================');
-    logger.info(`FINISHED ${label}:`);
-    await Promise.all(
-        startedBuilds.map(async (buildData) => {
-            const builder = buildersMap.get(buildData.actorFullName)!;
-            await builder.waitForBuildToFinish(buildData.buildId);
+    logger.info(`STARTED ${label}:`);
+    const builds = await Promise.all(
+        actorConfigs.map(async (actorConfig) => {
+            const builder = ApifyBuilder.fromActorConfig(actorConfig);
+            const queue = await memoryQueues(process.env[actorConfig.tokenEnvVar]!, actorConfig.actorFullName);
+            return queue.run(ACTOR_LIMITS.BUILD_DEFAULT_MEMORY_MBYTES, async () => {
+                if (failed) throw new Error(`[${actorConfig.actorFullName}]: Not built, since another build failed`);
+                const buildData = await buildOneActor(actorConfig, builder);
+                try {
+                    await builder.waitForBuildToFinish(buildData.buildId);
+                } catch (error) {
+                    failed = true;
+                    throw error;
+                }
+                return buildData;
+            });
         }),
     );
 
     logger.info('=========================================');
     logger.info('SUMMARY:');
-    for (const buildData of startedBuilds.sort((a, b) => a.actorFullName.localeCompare(b.actorFullName))) {
+    for (const buildData of builds.sort((a, b) => a.actorFullName.localeCompare(b.actorFullName))) {
         logger.info(`[${buildData.actorFullName}]: ${buildData.buildNumber}`);
     }
     logger.info('=========================================');
 
-    return startedBuilds;
-};
-
-export const runAndSummarizeBuilds = async (
-    actorConfigs: ActorConfig[],
-    label: string,
-    buildOneActor: (actorConfig: ActorConfig, builder: ApifyBuilder) => Promise<BuildData>,
-): Promise<BuildData[]> => {
-    const buildersByActorFullName = new Map<string, ApifyBuilder>(
-        actorConfigs.map((actorConfig) => [actorConfig.actorFullName, ApifyBuilder.fromActorConfig(actorConfig)]),
-    );
-    logger.info('=========================================');
-    logger.info(`STARTED ${label}:`);
-    const startedBuilds = await Promise.all(
-        actorConfigs.map(async (actorConfig) =>
-            buildOneActor(actorConfig, buildersByActorFullName.get(actorConfig.actorFullName)!),
-        ),
-    );
-
-    return waitAndSummarizeBuilds(startedBuilds, buildersByActorFullName, label);
+    return builds;
 };
 
 type GitBuildPlan = {
@@ -383,6 +385,8 @@ type RunBuildsOptions = {
     dryRun: boolean;
     // See assertEnvVarsMatchDefaultVersion
     requireEnvVarsInSync?: boolean;
+    // See createMemoryQueues
+    maxMemoryGbytes?: number;
 };
 
 export const runBuilds = async ({
@@ -393,6 +397,7 @@ export const runBuilds = async ({
     versionNumber,
     dryRun,
     requireEnvVarsInSync = false,
+    maxMemoryGbytes,
 }: RunBuildsOptions): Promise<BuildData[] | DryRunPlan<GitBuildPlan>> => {
     // Fetched once per Actor and reused for the checks, the version numbers and the build itself
     const buildConfigs: BuildPrActorOptions[] = await Promise.all(
@@ -457,7 +462,7 @@ export const runBuilds = async ({
         buildConfigs.map((buildConfig) => [buildConfig.actorConfig.actorFullName, buildConfig]),
     );
 
-    return runAndSummarizeBuilds(actorConfigs, 'BUILDS', async (actorConfig, builder) => {
+    return runAndSummarizeBuilds(actorConfigs, 'BUILDS', { maxMemoryGbytes }, async (actorConfig, builder) => {
         const buildConfig = buildConfigsByActorFullName.get(actorConfig.actorFullName)!;
         // No buildTag: the version keeps the one it has, so its build gets the tag the version already gives it
         const actorVersion: ApifyClientTypes.ActorVersion = {

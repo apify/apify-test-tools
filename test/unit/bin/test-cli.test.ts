@@ -102,6 +102,20 @@ test('owner/a: fails', () => {
                 `    test('owner/a: runs', () => {});\n` +
                 `});\n`,
         );
+        // The lib asks the memory queue of `test` before each run, here without starting one
+        await mkdir(path.join(repoDir, 'test/memory'), { recursive: true });
+        await writeFile(
+            path.join(repoDir, 'test/memory/memory.test.ts'),
+            `import { expect, test } from 'vitest';
+import { reserveMemory } from ${JSON.stringify(path.join(projectRoot, 'lib/memory-queue.ts'))};
+
+test('owner/a: gets 4 GB but not 8 GB', async () => {
+    const release = await reserveMemory('APIFY_TOKEN_OWNER', 4096);
+    release();
+    await expect(reserveMemory('APIFY_TOKEN_OWNER', 8192)).rejects.toThrow('more than the budget of 4 GB');
+});
+`,
+        );
         await mkdir(path.join(repoDir, 'test/skipped'), { recursive: true });
         await writeFile(
             path.join(repoDir, 'test/skipped/skipped.test.ts'),
@@ -357,6 +371,15 @@ test('owner/a: fails', () => {
         } finally {
             await rm(noConfigRepo, { recursive: true, force: true });
         }
+    });
+
+    it('gives the tests a memory queue with the budget of --max-memory-gbytes', () => {
+        const result = run(
+            ['test', '--test-files-glob', 'test/memory/**', '--max-memory-gbytes', '4'],
+            JSON.stringify([build]),
+        );
+        expect(result.stderr).toContain('gets 4 GB but not 8 GB');
+        expect(result.status).toBe(0);
     });
 
     it('fails on empty stdin instead of testing nothing', () => {

@@ -8,6 +8,12 @@ on:
                 type: string
                 default: 'test/platform/**'
                 required: false
+            # Memory in GB the builds or runs may use at once on each Apify account, the rest wait their turn.
+            # Empty uses the account's free memory. See the Memory budget section of docs/cli.md.
+            max-memory-gbytes:
+                type: string
+                default: ''
+                required: false
             # Slack channel for failed tests. Empty skips Slack.
             report-slack-channel:
                 type: string
@@ -68,11 +74,13 @@ jobs:
                   # Passed through the environment and quoted, so the shell doesn't expand the glob itself
                   # An empty input, e.g. from an expression that picks the glob, runs everything, like the default
                   TEST_FILES_GLOB: ${{ inputs.test-files-glob || 'test/platform/**' }}
+                  MAX_MEMORY_GBYTES: ${{ inputs.max-memory-gbytes }}
               run: |
                   apify-test-tools get-actor-configs \
                     | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" --tokens test \
                         apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" \
-                        --reporter github-actions --vitest-output-file ./test-output.json > test-report.json
+                        --reporter github-actions --vitest-output-file ./test-output.json ${MAX_MEMORY_GBYTES:+--max-memory-gbytes "$MAX_MEMORY_GBYTES"} \
+                        > test-report.json
 
             # Posts only when the tests failed, but checks the Slack token on every run that has a channel. Runs
             # whenever the tests did, also after a failure, but not when an earlier step stopped the job before them.

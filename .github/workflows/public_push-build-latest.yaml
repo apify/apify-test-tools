@@ -8,6 +8,12 @@ on:
                 type: string
                 default: ''
                 required: false
+            # Memory in GB the builds or runs may use at once on each Apify account, the rest wait their turn.
+            # Empty uses the account's free memory. See the Memory budget section of docs/cli.md.
+            max-memory-gbytes:
+                type: string
+                default: ''
+                required: false
         # Every secret is optional. The ones this workflow reads are declared by name. The secrets that
         # apify-test-tools.config.json names (each Actor's `tokenEnvVar`) differ per repo, so they
         # come packed in CONFIG_SECRETS. See the Secrets section of docs/workflows.md.
@@ -61,10 +67,11 @@ jobs:
               shell: bash
               env:
                   WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
+                  MAX_MEMORY_GBYTES: ${{ inputs.max-memory-gbytes }}
               run: |
                   jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json \
                     | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" --tokens build \
-                        apify-test-tools build --version-number default
+                        apify-test-tools build --version-number default ${MAX_MEMORY_GBYTES:+--max-memory-gbytes "$MAX_MEMORY_GBYTES"}
 
             # Skips the announcement when the push brought no new commits, or when no channel is set
             - name: Announce the release on Slack

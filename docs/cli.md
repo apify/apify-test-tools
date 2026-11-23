@@ -224,12 +224,13 @@ builds nothing and prints `[]`. Empty or invalid input is an error, so a failed 
 into a successful run that built nothing. In GitHub Actions, give such a step `shell: bash` so the pipe also fails on
 its own (the default shell has no `pipefail`).
 
-| Flag                         | Default             | Meaning                                                                                                                |
-| ---------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `--version-number`           | required            | Version to build, like `0.99`, or `default` for each Actor's default version (the one its default build tag points to) |
-| `--repo-url`                 | the `origin` remote | Repository to build from, see [Repository check](#repository-check)                                                    |
-| `--require-env-vars-in-sync` | `false`             | Fail unless the built version's env var names match the default version's, see [Env var check](#env-var-check)         |
-| `--dry-run`                  | `false`             | See [Dry runs](#dry-runs---dry-run)                                                                                    |
+| Flag                         | Default                   | Meaning                                                                                                                |
+| ---------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--version-number`           | required                  | Version to build, like `0.99`, or `default` for each Actor's default version (the one its default build tag points to) |
+| `--repo-url`                 | the `origin` remote       | Repository to build from, see [Repository check](#repository-check)                                                    |
+| `--require-env-vars-in-sync` | `false`                   | Fail unless the built version's env var names match the default version's, see [Env var check](#env-var-check)         |
+| `--max-memory-gbytes`        | the account's free memory | Memory the builds may use at once on each account, see [Memory budget](#memory-budget---max-memory-gbytes)             |
+| `--dry-run`                  | `false`                   | See [Dry runs](#dry-runs---dry-run)                                                                                    |
 
 The output is the build array the vitest library reads from `ACTOR_BUILDS`. A reused default build is the Actor's
 name alone:
@@ -268,6 +269,33 @@ The CLI leaves it off by default, so a one-off build, e.g. of a debug branch, is
 [`public_pr-build-test.yaml`](workflows.md#public_pr-build-testyaml) turns it on by default; set its
 `require-env-vars-in-sync` input to `false` to turn it off.
 
+### Memory budget (`--max-memory-gbytes`)
+
+An Apify account can only run so much memory at once, and the platform refuses a build or run that goes over it. So
+`build`, `build-from-local` and `test` start builds and runs only while they fit a memory budget, and the rest wait
+their turn, first come first served. With room on the account, everything starts at once, as before.
+
+The budget counts per account, since that is where the platform counts the memory. It is `--max-memory-gbytes`
+when given, e.g. to leave room for the account's other runs. Otherwise it is the memory the account has free when
+its first build or run asks for it: its memory limit less what already runs. When the token can't read the account's
+limits, e.g. a token scoped to some Actors, a warning says so and its builds and runs start at once.
+
+- A build counts as 4 GB, the memory the platform builds with, until it finishes. After a failed build, the builds
+  still waiting are not started, since the command fails anyway.
+- A run counts with the memory the test gives it in `options.memory`, else the Actor's default run memory from its
+  settings, until the run finishes. An Actor whose `actor.json` sets its memory with a dynamic expression runs with
+  other memory than it counts with, so give its tests `options.memory`. Runs in Standby mode don't count.
+- A build or run larger than the whole budget fails at once, with an error that names the budget. Free up memory on
+  the account, or raise the budget.
+- A test's time spent waiting counts toward its timeout, 1 hour by default. The run gets the time the test has left,
+  less 1 minute, and at most the Actor's default run timeout (59 minutes at most). So the run still ends before the test
+  does. A test with less than a minute left starts no run. When many tests wait on a small budget, give them a longer
+  `timeout` in their test options, or split the tests over several runs.
+- Accounts are told apart by their token, so two different tokens of one account each get the full budget.
+
+The lib waits only under `test`, which serves the queue to the vitest workers; under a plain `vitest` its runs start
+at once.
+
 ## Build from local source (`build-from-local`)
 
 Builds Actors directly from your local files, with no push needed: the sources are zipped into the Actor's
@@ -278,12 +306,13 @@ Builds Actors directly from your local files, with no push needed: the sources a
 APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build-from-local --actors john.doe/my-actor
 ```
 
-| Flag                         | Default | Meaning                                                                                                  |
-| ---------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
-| `--actors`                   | all     | Only build these Actors. Point vitest at their tests only, for quicker feedback                          |
-| `--ignore`                   | none    | Never build these Actors                                                                                 |
-| `--require-env-vars-in-sync` | `false` | Fail unless the env var names of `0.98` match the default version's, see [Env var check](#env-var-check) |
-| `--dry-run`                  | `false` | Check the token, the Actor and the zipped sources without uploading or building                          |
+| Flag                         | Default                   | Meaning                                                                                                    |
+| ---------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `--actors`                   | all                       | Only build these Actors. Point vitest at their tests only, for quicker feedback                            |
+| `--ignore`                   | none                      | Never build these Actors                                                                                   |
+| `--require-env-vars-in-sync` | `false`                   | Fail unless the env var names of `0.98` match the default version's, see [Env var check](#env-var-check)   |
+| `--max-memory-gbytes`        | the account's free memory | Memory the builds may use at once on each account, see [Memory budget](#memory-budget---max-memory-gbytes) |
+| `--dry-run`                  | `false`                   | Check the token, the Actor and the zipped sources without uploading or building                            |
 
 ## Releasing Actors
 
@@ -384,11 +413,12 @@ annotate the failing tests in a GitHub Actions run. It takes no other vitest opt
 test by name, run vitest directly with the builds in `ACTOR_BUILDS` (see
 [Running tests locally](lib.md#running-tests-locally)).
 
-| Flag                   | Default            | Meaning                                                                                                                         |
-| ---------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `--test-files-glob`    | `test/platform/**` | Glob from the repo root of the test files to run, see below                                                                     |
-| `--vitest-output-file` |                    | Also keep vitest's own JSON report there, e.g. to upload it                                                                     |
-| `--reporter`           |                    | [Vitest reporter](https://vitest.dev/guide/reporters) to add to `default` and `json`, e.g. `github-actions`. Repeat it for more |
+| Flag                   | Default                   | Meaning                                                                                                                         |
+| ---------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `--test-files-glob`    | `test/platform/**`        | Glob from the repo root of the test files to run, see below                                                                     |
+| `--vitest-output-file` |                           | Also keep vitest's own JSON report there, e.g. to upload it                                                                     |
+| `--reporter`           |                           | [Vitest reporter](https://vitest.dev/guide/reporters) to add to `default` and `json`, e.g. `github-actions`. Repeat it for more |
+| `--max-memory-gbytes`  | the account's free memory | Memory the runs of the tests may use at once on each account, see [Memory budget](#memory-budget---max-memory-gbytes)           |
 
 `test` takes no test paths as arguments, only `--test-files-glob`. The glob is read the same way as
 `platformTestsGlob` in the config file. Vitest filters are parts of a file path, not globs, so `test` finds the files

@@ -18,6 +18,12 @@ on:
                 type: boolean
                 default: true
                 required: false
+            # Memory in GB the builds or runs may use at once on each Apify account, the rest wait their turn.
+            # Empty uses the account's free memory. See the Memory budget section of docs/cli.md.
+            max-memory-gbytes:
+                type: string
+                default: ''
+                required: false
         # Every secret is optional. The ones this workflow reads are declared by name. The secrets that
         # apify-test-tools.config.json names (each Actor's `tokenEnvVar` and `testTokenEnvVar`) differ per repo,
         # so they come packed in CONFIG_SECRETS. See the Secrets section of docs/workflows.md.
@@ -100,11 +106,12 @@ jobs:
                   WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
+                  MAX_MEMORY_GBYTES: ${{ inputs.max-memory-gbytes }}
               run: |
                   jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
                     | node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" --tokens build \
                         apify-test-tools build --version-number 0.99 \
-                        --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC" \
+                        --require-env-vars-in-sync="$REQUIRE_ENV_VARS_IN_SYNC" ${MAX_MEMORY_GBYTES:+--max-memory-gbytes "$MAX_MEMORY_GBYTES"} \
                     | tee builds.json
 
             # Runs the repo's test code and its whole import graph, so it gets only the tokens the tests run the
@@ -119,10 +126,11 @@ jobs:
                   # Passed through the environment and quoted, so the shell doesn't expand the glob itself
                   # An empty input, e.g. from an expression that picks the glob, runs everything, like the default
                   TEST_FILES_GLOB: ${{ inputs.test-files-glob || 'test/platform/**' }}
+                  MAX_MEMORY_GBYTES: ${{ inputs.max-memory-gbytes }}
               # The github-actions reporter annotates the PR with the failing tests
               run: |
                   node "$SCRIPTS_PATH/run-with-apify-tokens.mjs" --tokens test \
-                    apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" --reporter github-actions \
+                    apify-test-tools test --test-files-glob "$TEST_FILES_GLOB" --reporter github-actions ${MAX_MEMORY_GBYTES:+--max-memory-gbytes "$MAX_MEMORY_GBYTES"} \
                     < builds.json > test-report.json
 
             # NOTE: This is an optimization that if we did functional changes and later only cosmetic changes (e.g. dev readme), we will compare changes files only for the last commit. This must run after tests because we want to cache the latest commit only if the tests are successful

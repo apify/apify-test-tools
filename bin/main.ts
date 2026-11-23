@@ -103,6 +103,25 @@ const envVarsSyncOptions = {
     },
 } as const satisfies Record<string, Options>;
 
+/**
+ * For the commands that start builds or runs. Each waits for memory on its Apify account, so they don't fail on the
+ * account's memory limit. See createMemoryQueues.
+ */
+const memoryBudgetOptions = {
+    'max-memory-gbytes': {
+        type: 'number',
+        describe:
+            'Memory in GB the builds or runs may use at once on each Apify account. The rest wait their turn. ' +
+            "Defaults to the account's free memory",
+        coerce: (value: number | undefined) => {
+            if (value !== undefined && !(value > 0)) {
+                throw new Error(`--max-memory-gbytes must be a number above 0, got "${value}"`);
+            }
+            return value;
+        },
+    },
+} as const satisfies Record<string, Options>;
+
 /** Flags of `test`, which runs the repository's vitest on the Actors piped in, e.g. the builds from `build`. */
 const testOptions = {
     'test-files-glob': {
@@ -191,13 +210,14 @@ await yargs()
     .command(
         'test',
         'Run the tests of the Actors listed on stdin (builds from build, or get-actor-configs for default builds), and print a report for notify',
-        (y) => y.options(testOptions),
+        (y) => y.options(testOptions).options(memoryBudgetOptions),
         async (args) => {
             const report = await runTests({
                 testFilesGlob: args.testFilesGlob,
                 targets: parseTestTargets(await readStdin()),
                 vitestOutputFile: args.vitestOutputFile,
                 reporters: args.reporter,
+                maxMemoryGbytes: args.maxMemoryGbytes,
             });
             writeJson(report);
             // The report is printed either way, so `notify` later in the pipe still hears about the failure
@@ -224,7 +244,13 @@ await yargs()
         'build',
         'Build the Actors listed on stdin, as {"actors": [{"actorFullName": ...}]}, from the checked-out branch. ' +
             'An Actor listed with a "build" (from testChangedActors of get-affected-actors) reuses it while it exists',
-        (y) => y.options(buildOptions).options(repoUrlOptions).options(envVarsSyncOptions).options(dryRunOptions),
+        (y) =>
+            y
+                .options(buildOptions)
+                .options(repoUrlOptions)
+                .options(envVarsSyncOptions)
+                .options(memoryBudgetOptions)
+                .options(dryRunOptions),
         async (args) => {
             const input = parseBuildInput(await readStdin());
             const names = input.actors.map(({ actorFullName }) => actorFullName);
@@ -238,6 +264,7 @@ await yargs()
                 repoUrl: args.repoUrl,
                 dryRun: args.dryRun,
                 requireEnvVarsInSync: args.requireEnvVarsInSync,
+                maxMemoryGbytes: args.maxMemoryGbytes,
             });
             writeJson(builds);
         },
@@ -245,10 +272,15 @@ await yargs()
     .command(
         'build-from-local',
         '',
-        (y) => y.options(actorSelectionOptions).options(envVarsSyncOptions).options(dryRunOptions),
-        async ({ actors, ignore, dryRun, requireEnvVarsInSync }) => {
+        (y) =>
+            y
+                .options(actorSelectionOptions)
+                .options(envVarsSyncOptions)
+                .options(memoryBudgetOptions)
+                .options(dryRunOptions),
+        async ({ actors, ignore, dryRun, requireEnvVarsInSync, maxMemoryGbytes }) => {
             const actorConfigs = await readConfigFile({ actors, ignore });
-            const builds = await runBuildsFromLocal({ actorConfigs, dryRun, requireEnvVarsInSync });
+            const builds = await runBuildsFromLocal({ actorConfigs, dryRun, requireEnvVarsInSync, maxMemoryGbytes });
             writeJson(builds);
         },
     )

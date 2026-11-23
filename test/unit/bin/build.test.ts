@@ -14,6 +14,7 @@ import {
     buildOrReuseActors,
     deleteOldBuilds,
     resolveDefaultVersion,
+    runAndSummarizeBuilds,
     runBuilds,
 } from '../../../bin/build.js';
 import * as Git from '../../../bin/git.js';
@@ -434,5 +435,69 @@ describe('buildOrReuseActors', () => {
         await expect(
             planned([{ actorFullName: 'owner/a', build: 'default' }, { actorFullName: 'owner/a' }]),
         ).resolves.toStrictEqual(['owner/a']);
+    });
+});
+
+describe('runAndSummarizeBuilds memory budget', () => {
+    const TOKEN_ENV_VAR = 'APIFY_TOKEN_MEMORY';
+    const config = (actorFullName: string) => ({ actorFullName, tokenEnvVar: TOKEN_ENV_VAR }) as unknown as ActorConfig;
+    // Each build runs until the test finishes it, as passed or failed
+    let finishers: Map<string, (status: string) => void>;
+    let started: string[];
+
+    beforeEach(() => {
+        vi.stubEnv(TOKEN_ENV_VAR, 'token');
+        vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+        vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        finishers = new Map();
+        started = [];
+        vi.mocked(ApifyClient).mockImplementation(function () {
+            return {
+                build: (buildId: string) => ({
+                    waitForFinish: async () =>
+                        new Promise((resolve) => {
+                            finishers.set(buildId, (status) => resolve({ status, buildNumber: `0.99.${buildId}` }));
+                        }),
+                    log: () => ({ get: async () => 'build log' }),
+                }),
+            };
+        } as never);
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.restoreAllMocks();
+    });
+
+    // A budget of one 4 GB build at a time
+    const buildAll = async (names: string[]) =>
+        runAndSummarizeBuilds(names.map(config), 'BUILDS', { maxMemoryGbytes: 4 }, async ({ actorFullName }) => {
+            started.push(actorFullName);
+            return { buildId: actorFullName, actorRawId: 'raw', buildNumber: '0.99.1', actorFullName };
+        });
+    const settle = async () =>
+        new Promise((resolve) => {
+            setTimeout(resolve, 10);
+        });
+
+    it('starts the next build only when the one before it finished', async () => {
+        const done = buildAll(['owner/a', 'owner/b']);
+        await settle();
+        expect(started).toEqual(['owner/a']);
+
+        finishers.get('owner/a')!('SUCCEEDED');
+        await settle();
+        expect(started).toEqual(['owner/a', 'owner/b']);
+        finishers.get('owner/b')!('SUCCEEDED');
+        await expect(done).resolves.toHaveLength(2);
+    });
+
+    it('does not start the builds still waiting after a build fails', async () => {
+        const done = buildAll(['owner/a', 'owner/b']);
+        await settle();
+        finishers.get('owner/a')!('FAILED');
+        await expect(done).rejects.toThrow('Build owner/a (0.99.owner/a) failed');
+        await settle();
+        expect(started).toEqual(['owner/a']);
     });
 });

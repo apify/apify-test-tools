@@ -330,12 +330,17 @@ const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testCont
             DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
         );
 
-        const actorOptions = { timeout, build, log: null, ...options };
-        const memoryMbytes = actorOptions.memory ?? actorInfo?.defaultRunOptions?.memoryMbytes;
+        const memoryMbytes = options?.memory ?? actorInfo?.defaultRunOptions?.memoryMbytes;
+        const waitStartedAt = Date.now();
         const releaseMemory = memoryMbytes ? await reserveMemory(resolveTokenEnvVar(actorId), memoryMbytes) : undefined;
         let run: ActorRun;
         try {
-            run = await actor.call(actorInput, actorOptions);
+            // The wait used up part of the test's time, so the run still times out before the test does
+            const waitedSecs = Math.floor((Date.now() - waitStartedAt) / 1000);
+            if (waitedSecs >= timeout && options?.timeout === undefined) {
+                throw new Error('The run was not started: the test timed out while it waited for memory');
+            }
+            run = await actor.call(actorInput, { timeout: timeout - waitedSecs, build, log: null, ...options });
         } finally {
             releaseMemory?.();
         }

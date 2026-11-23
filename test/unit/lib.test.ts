@@ -7,6 +7,7 @@ import { logger } from '../../bin/logger.js';
 import { createMemoryQueues, MEMORY_QUEUE_ENV_VAR, startMemoryQueueServer } from '../../bin/memory-queue.js';
 import { DEFAULT_TEST_ACTOR_TIMEOUT_SECS } from '../../lib/consts.js';
 import { _private } from '../../lib/lib.js';
+import { reserveMemory } from '../../lib/memory-queue.js';
 import * as UtilsModule from '../../lib/utils.js';
 
 const { createStartRunFn } = _private;
@@ -67,7 +68,27 @@ describe('createStartRunFn()', () => {
         afterEach(async () => {
             await server.close();
             vi.unstubAllEnvs();
+            if (vi.isMockFunction(Date.now)) vi.mocked(Date.now).mockRestore();
         });
+
+        // Lets the queue see the run that asks for memory
+        const settle = async () =>
+            new Promise((resolve) => {
+                setTimeout(resolve, 10);
+            });
+
+        /** Holds all the memory, and frees it as if `waitedMs` passed meanwhile */
+        const holdMemory = async () => {
+            const releaseFirst = await reserveMemory('TESTER_APIFY_TOKEN', 4096);
+            const realNow = Date.now.bind(Date);
+            let waitedMs = 0;
+            vi.spyOn(Date, 'now').mockImplementation(() => realNow() + waitedMs);
+            return async (passedMs: number) => {
+                await settle();
+                waitedMs = passedMs;
+                releaseFirst();
+            };
+        };
 
         const startRun = async (defaultMemoryMbytes: number, memory?: number) => {
             vi.spyOn(ApifyClient.prototype, 'actor').mockReturnValue({
@@ -90,6 +111,25 @@ describe('createStartRunFn()', () => {
 
         it('does not start a run whose default memory is over the budget', async () => {
             await expect(startRun(8192)).rejects.toThrow('The run was not started');
+            expect(actorCallMock).not.toHaveBeenCalled();
+        });
+
+        it('shortens the default run timeout by the time the run waited for memory', async () => {
+            const freeAfter = await holdMemory();
+            const run = startRun(4096);
+            await freeAfter(10 * 60 * 1000);
+            await run;
+            expect(actorCallMock).toHaveBeenCalledWith(
+                {},
+                expect.objectContaining({ timeout: DEFAULT_TEST_ACTOR_TIMEOUT_SECS - 600 }),
+            );
+        });
+
+        it('does not start a run when the test timed out while it waited for memory', async () => {
+            const freeAfter = await holdMemory();
+            const run = startRun(4096);
+            await freeAfter(DEFAULT_TEST_ACTOR_TIMEOUT_SECS * 1000);
+            await expect(run).rejects.toThrow('the test timed out while it waited for memory');
             expect(actorCallMock).not.toHaveBeenCalled();
         });
 

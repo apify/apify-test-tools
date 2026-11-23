@@ -136,6 +136,7 @@ describe('createMemoryQueues', () => {
             getAccountMemory: async () => Promise.reject(new Error('insufficient permissions')),
         });
         expect((await queues('scoped-token', 'owner/a')).budgetMbytes).toBe(Infinity);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('(insufficient permissions)'));
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('Pass --max-memory-gbytes to set a budget'));
     });
 });

@@ -3,7 +3,12 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
+import {
+    DATASET_SYNC_DELAY_MS,
+    DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
+    DEFAULT_TEST_RUN_DURATION_MS,
+    RUN_ENDS_BEFORE_TEST_SECS,
+} from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { reserveMemory } from './memory-queue.js';
 import { RunTestResult } from './run-test-result.js';
@@ -307,6 +312,14 @@ const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testCont
     const actorConfig = config.get(actorId);
     const build = actorConfig?.buildNumber;
     const buildId = actorConfig?.buildId;
+    // Made when the test body starts, which is when vitest starts the test's timeout
+    const testStartedAt = Date.now();
+    const testTimeoutMs = task.timeout ?? DEFAULT_TEST_RUN_DURATION_MS;
+    // A timeout of 0 is no timeout, in vitest as on the platform
+    const testSecsLeft = () =>
+        testTimeoutMs > 0
+            ? Math.round((testTimeoutMs - (Date.now() - testStartedAt)) / 1000) - RUN_ENDS_BEFORE_TEST_SECS
+            : Infinity;
     return async (runOptions: RunOptions<T>) => {
         const { input, options, prefilledInput, runId } = runOptions;
 
@@ -331,17 +344,13 @@ const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testCont
         );
 
         const memoryMbytes = options?.memory ?? actorInfo?.defaultRunOptions?.memoryMbytes;
-        const waitStartedAt = Date.now();
         const releaseMemory = memoryMbytes ? await reserveMemory(resolveTokenEnvVar(actorId), memoryMbytes) : undefined;
         let run: ActorRun;
         try {
-            // The wait used up part of the test's time, so the run still times out before the test does
-            const waitedSecs = Math.floor((Date.now() - waitStartedAt) / 1000);
-            // 0 is no timeout
-            const runTimeout = timeout === 0 ? 0 : timeout - waitedSecs;
-            if (runTimeout <= 0 && timeout !== 0 && options?.timeout === undefined) {
-                throw new Error('The run was not started: the test timed out while it waited for memory');
-            }
+            // Read after the wait for memory, which may have used up much of the test's time
+            const secsLeft = testSecsLeft();
+            if (secsLeft <= 0) throw new Error('The run was not started: the test has less than a minute left');
+            const runTimeout = timeout === 0 ? 0 : Math.min(timeout, secsLeft);
             run = await actor.call(actorInput, { timeout: runTimeout, build, log: null, ...options });
         } finally {
             releaseMemory?.();

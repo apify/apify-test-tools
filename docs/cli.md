@@ -287,10 +287,10 @@ limits, e.g. a token scoped to some Actors, a warning says so and its builds and
   other memory than it counts with, so give its tests `options.memory`. Runs in Standby mode don't count.
 - A build or run larger than the whole budget fails at once, with an error that names the budget. Free up memory on
   the account, or raise the budget.
-- A test's time spent waiting counts toward its timeout, 1 hour by default. The run's default timeout gets shorter by
-  the wait, so the run still ends before the test does, and a test that timed out while it waited starts no run. When
-  many tests wait on a small budget, give them a longer `timeout` in their test options, or split the tests over several
-  runs.
+- A test's time spent waiting counts toward its timeout, 1 hour by default. The run gets the time the test has left,
+  less 1 minute, and at most the Actor's default run timeout (59 minutes at most). So the run still ends before the test
+  does. A test with less than a minute left starts no run. When many tests wait on a small budget, give them a longer
+  `timeout` in their test options, or split the tests over several runs.
 - Accounts are told apart by their token, so two different tokens of one account each get the full budget.
 
 The lib waits only under `test`, which serves the queue to the vitest workers; under a plain `vitest` its runs start

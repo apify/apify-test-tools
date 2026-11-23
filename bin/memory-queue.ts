@@ -97,15 +97,16 @@ export const createMemoryQueues = ({
             return new MemoryQueue(maxMemoryGbytes * 1024, '--max-memory-gbytes');
         }
         let memory: Awaited<ReturnType<LimitsGetter>>;
+        let failure = '';
         try {
             memory = await getMemory(token);
         } catch (error) {
-            logger.debug(`Reading the account limits failed: ${(error as Error).message}`);
+            failure = ` (${(error as Error).message})`;
         }
         if (!memory) {
             logger.warn(
-                `Could not read the memory limit of the account of ${accountName}, so its jobs start without waiting ` +
-                    'for memory. Pass --max-memory-gbytes to set a budget.',
+                `Could not read the memory limit of the account of ${accountName}${failure}, so its jobs start ` +
+                    'without waiting for memory. Pass --max-memory-gbytes to set a budget.',
             );
             return new MemoryQueue(Infinity, 'no limit');
         }

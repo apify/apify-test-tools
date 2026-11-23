@@ -101,18 +101,24 @@ describe('createStartRunFn()', () => {
             };
         };
 
-        const startRun = async (defaultMemoryMbytes: number, memory?: number) => {
+        const startRun = async (
+            defaultMemoryMbytes: number,
+            {
+                memory,
+                timeoutSecs,
+                testTimeoutMs,
+            }: { memory?: number; timeoutSecs?: number; testTimeoutMs?: number } = {},
+        ) => {
             vi.spyOn(ApifyClient.prototype, 'actor').mockReturnValue({
                 call: actorCallMock as ActorClient['call'],
                 get: vi.fn(
-                    async () => ({ defaultRunOptions: { memoryMbytes: defaultMemoryMbytes } }) as Actor,
+                    async () => ({ defaultRunOptions: { memoryMbytes: defaultMemoryMbytes, timeoutSecs } }) as Actor,
                 ) as ActorClient['get'],
             } as ActorClient);
-            return createStartRunFn(
-                new ApifyClient({ token: 'fake-token' }),
-                '123',
-                testContext,
-            )({ input: {}, options: { memory } });
+            return createStartRunFn(new ApifyClient({ token: 'fake-token' }), '123', {
+                ...testContext,
+                task: { ...testContext.task, timeout: testTimeoutMs },
+            } as TestContext)({ input: {}, options: { memory } });
         };
 
         it("starts a run that fits the budget with the Actor's default memory", async () => {
@@ -125,27 +131,56 @@ describe('createStartRunFn()', () => {
             expect(actorCallMock).not.toHaveBeenCalled();
         });
 
-        it('shortens the default run timeout by the time the run waited for memory', async () => {
+        it('gives a 1-hour test that waited 10 minutes a run timeout of the time it has left', async () => {
             const freeAfter = await holdMemory();
             const run = startRun(4096);
             await freeAfter(10 * 60 * 1000);
             await run;
-            expect(actorCallMock).toHaveBeenCalledWith(
-                {},
-                expect.objectContaining({ timeout: DEFAULT_TEST_ACTOR_TIMEOUT_SECS - 600 }),
-            );
+            expect(actorCallMock).toHaveBeenCalledWith({}, expect.objectContaining({ timeout: 3600 - 600 - 60 }));
         });
 
-        it('does not start a run when the test timed out while it waited for memory', async () => {
+        it('keeps the Actor default when the test has more time left than it', async () => {
+            const freeAfter = await holdMemory();
+            const run = startRun(4096, { timeoutSecs: 1800 });
+            await freeAfter(10 * 60 * 1000);
+            await run;
+            expect(actorCallMock).toHaveBeenCalledWith({}, expect.objectContaining({ timeout: 1800 }));
+        });
+
+        it('starts a run with the time the test has left after a long wait under a short Actor default', async () => {
+            const freeAfter = await holdMemory();
+            const run = startRun(4096, { timeoutSecs: 1800 });
+            await freeAfter(40 * 60 * 1000);
+            await run;
+            expect(actorCallMock).toHaveBeenCalledWith({}, expect.objectContaining({ timeout: 3600 - 2400 - 60 }));
+        });
+
+        it('starts a run in a 2-hour test that waited 61 minutes', async () => {
+            const freeAfter = await holdMemory();
+            const run = startRun(4096, { testTimeoutMs: 2 * 60 * 60 * 1000 });
+            await freeAfter(61 * 60 * 1000);
+            await run;
+            expect(actorCallMock).toHaveBeenCalledWith({}, expect.objectContaining({ timeout: 7200 - 3660 - 60 }));
+        });
+
+        it('does not start a run when a 10-minute test timed out while it waited for memory', async () => {
+            const freeAfter = await holdMemory();
+            const run = startRun(4096, { testTimeoutMs: 10 * 60 * 1000 });
+            await freeAfter(11 * 60 * 1000);
+            await expect(run).rejects.toThrow('the test has less than a minute left');
+            expect(actorCallMock).not.toHaveBeenCalled();
+        });
+
+        it('does not start a run when the default 1-hour test timed out while it waited for memory', async () => {
             const freeAfter = await holdMemory();
             const run = startRun(4096);
-            await freeAfter(DEFAULT_TEST_ACTOR_TIMEOUT_SECS * 1000);
-            await expect(run).rejects.toThrow('the test timed out while it waited for memory');
+            await freeAfter(60 * 60 * 1000);
+            await expect(run).rejects.toThrow('the test has less than a minute left');
             expect(actorCallMock).not.toHaveBeenCalled();
         });
 
         it('counts the memory the test gives the run over the default', async () => {
-            await expect(startRun(1024, 8192)).rejects.toThrow('The run was not started');
+            await expect(startRun(1024, { memory: 8192 })).rejects.toThrow('The run was not started');
             expect(actorCallMock).not.toHaveBeenCalled();
         });
     });

@@ -168,6 +168,15 @@ describe('resolveReleaseBaseCommit', () => {
         });
     });
 
+    it('should resolve a ref such as HEAD^1 to the commit SHA', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
+            if (args[0] === 'rev-parse' && args[3] === 'HEAD^1^{commit}') return baseSha;
+            if (args[0] === 'merge-base' && args[1] === baseSha) return baseSha;
+            return '';
+        });
+        await expect(resolveReleaseBaseCommit('HEAD^1')).resolves.toBe(baseSha);
+    });
+
     it('should throw on the all-zeros SHA of a newly created branch', async () => {
         const spy = vi.spyOn(Utils, 'runGitCommand');
         await expect(resolveReleaseBaseCommit('0'.repeat(40))).rejects.toThrow('the branch was just created');
@@ -239,8 +248,16 @@ describe('resolveReleaseBaseCommit', () => {
         );
     });
 
-    it('should throw on an invalid SHA', async () => {
-        await expect(resolveReleaseBaseCommit('not-a-sha')).rejects.toThrow('Invalid base commit SHA');
+    it('should throw on a ref that does not resolve to a commit', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockRejectedValue(
+            new Utils.GitCommandError(
+                ['rev-parse', '--verify', '--quiet', 'not-a-ref^{commit}'],
+                Object.assign(new Error('missing'), { code: 1 }),
+            ),
+        );
+        await expect(resolveReleaseBaseCommit('not-a-ref')).rejects.toThrow(
+            'Base commit not-a-ref is not in the local git history',
+        );
     });
 
     it('checks ancestry against a custom head', async () => {

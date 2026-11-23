@@ -145,34 +145,27 @@ export const getRepoName = (repoUrl: string): string => {
     return normalizeRepoUrl(repoUrl).split('/').pop()!;
 };
 
-const SHA_REGEX = /^[0-9a-f]{40}$/i;
-
 // Sent by e.g. GitHub as the "before" commit of a push that created the branch
 const ZERO_SHA_REGEX = /^0{40}$/;
 
 /**
  * Validates the base commit of a release: the last commit whose changes are already released.
+ * Accepts any ref Git resolves to a commit (a SHA, a short SHA, `HEAD~1`) and returns the full SHA.
  * Unlike the PR path (getCommits), there is no lenient fallback. Falling back to "everything"
  * would rebuild the latest build of every Actor and post it to Slack, so every problem is an error.
  */
 export const resolveReleaseBaseCommit = async (baseCommit: string, head = 'HEAD'): Promise<string> => {
-    if (!SHA_REGEX.test(baseCommit)) {
+    if (ZERO_SHA_REGEX.test(baseCommit)) {
         throw new Error(
-            `Invalid base commit SHA: "${baseCommit}". It should be a 40-character hexadecimal string. ` +
-                'See the "Releasing Actors" section of docs/cli.md.',
-        );
-    }
-    const sha = baseCommit;
-    if (ZERO_SHA_REGEX.test(sha)) {
-        throw new Error(
-            `Base commit is ${sha}, which means the branch was just created and there is no previous release to diff against. ` +
+            `Base commit is ${baseCommit}, which means the branch was just created and there is no previous release to diff against. ` +
                 `Rerun with the base commit set to the last commit before the changes you want to release.`,
         );
     }
-    if (!(await findCommitSha(sha))) {
+    const sha = await findCommitSha(baseCommit);
+    if (!sha) {
         throw new Error(
-            `Base commit ${sha} is not in the local git history. Either the checkout is shallow ` +
-                `(fetch the full history, e.g. fetch-depth: 0 in actions/checkout) or the branch was force-pushed.`,
+            `Base commit ${baseCommit} is not in the local git history. Either it is not a valid commit, the checkout ` +
+                `is shallow (fetch the full history, e.g. fetch-depth: 0 in actions/checkout) or the branch was force-pushed.`,
         );
     }
     // git merge-base A B outputs the common ancestor. If that equals A, then A is an ancestor of B.

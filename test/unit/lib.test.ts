@@ -54,6 +54,17 @@ describe('createStartRunFn()', () => {
         expect(actorCallMock).toHaveBeenCalledWith({}, { build: undefined, log: null, timeout: 60 });
     });
 
+    it('keeps an Actor default run timeout of 0, which is no timeout', async () => {
+        vi.spyOn(ApifyClient.prototype, 'actor').mockReturnValue({
+            call: actorCallMock as ActorClient['call'],
+            get: vi.fn(async () => ({ defaultRunOptions: { timeoutSecs: 0 } }) as Actor) as ActorClient['get'],
+        } as ActorClient);
+
+        await createStartRunFn(new ApifyClient({ token: 'fake-token' }), '123', testContext)({ input: {} });
+
+        expect(actorCallMock).toHaveBeenCalledWith({}, { build: undefined, log: null, timeout: 0 });
+    });
+
     describe('under the memory queue of test', () => {
         let server: Awaited<ReturnType<typeof startMemoryQueueServer>>;
 

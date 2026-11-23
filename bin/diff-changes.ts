@@ -88,7 +88,10 @@ const classifyFileChange = async (
         return { impact: 'outside-context' };
     }
 
-    const matchedContext = actorConfig.contextPaths.find((contextPath) => contextPath.contains(changedFile));
+    // An entry can also name a single file, e.g. a root package-lock.json shared by all Actors
+    const matchedContext = actorConfig.contextPaths.find(
+        (contextPath) => contextPath.contains(changedFile) || contextPath.path === changedFile.path,
+    );
     if (!matchedContext) {
         return { impact: 'outside-context' };
     }

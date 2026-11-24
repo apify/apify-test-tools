@@ -59,10 +59,13 @@ export class RunTestResult {
 
     getInput = async <T>(): Promise<T> => (await this.inputRecord()) as T;
 
-    /** Fetches the run again, so unlike `id` and `status` it also reflects what changed after the run finished. */
-    getRunInfo = once(async (): Promise<ActorRun> => {
+    /** Like `getRunInfo`, but fetches the run on every call instead of sharing the first response. */
+    fetchRunInfo = async (): Promise<ActorRun> => {
         return (await this.apifyClient.run(this.run.id).get())!;
-    });
+    };
+
+    /** Fetches the run again, so unlike `id` and `status` it also reflects what changed after the run finished. */
+    getRunInfo = once(this.fetchRunInfo);
 
     get id(): string {
         return this.run.id;

@@ -91,7 +91,8 @@ export const testActor = <T>(
 
     if (!prunedAfterFile.has(actor.name)) {
         prunedAfterFile.add(actor.name);
-        afterAll(async () => pruneBuilds(actor));
+        // Listing and deleting builds takes longer than vitest's default hook timeout.
+        afterAll(async () => pruneBuilds(actor), 5 * 60_000);
     }
     vitestTest(`${actor.name}: ${testName}`, { ...DEFAULT_TEST_OPTIONS, ...testOptions }, async (context) => {
         const run = createStartRunFn<T>(

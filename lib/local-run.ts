@@ -150,8 +150,7 @@ export class LocalRunResult implements RunOutcome {
 
     getStatistics = async (): Promise<SdkCrawlerStatistics | undefined> => {
         const key = pickStatisticsKey(await this.listKeys());
-        const record = key === undefined ? undefined : await this.getRecord(key);
-        return record && (JSON.parse(record.value.toString('utf8')) as SdkCrawlerStatistics);
+        return key === undefined ? undefined : (await this.getRecord<SdkCrawlerStatistics>(key))?.value;
     };
 
     /** Keys of the default key-value store. */
@@ -166,12 +165,19 @@ export class LocalRunResult implements RunOutcome {
         }
     };
 
-    /** A record of the default key-value store, or `undefined` when there is none. */
-    getRecord = async (key: string): Promise<{ value: Buffer; contentType: string } | undefined> => {
+    /** A record of the default key-value store, decoded like `RunTestResult.getRecord`. */
+    getRecord = async <T = unknown>(key: string): Promise<{ value: T; contentType: string } | undefined> => {
         const record = await (await this.openStore()).getValue(key);
-        return record && { value: record.value, contentType: record.contentType };
+        return record && { value: decode(record.value, record.contentType) as T, contentType: record.contentType };
     };
 }
+
+/** apify-client's `maybeParseBody`, which it doesn't export, minus the charset handling. */
+const decode = (value: Buffer, contentType: string): unknown => {
+    if (/^application\/json/i.test(contentType)) return JSON.parse(value.toString('utf8'));
+    if (/^text\/|^application\/.*xml/i.test(contentType)) return value.toString('utf8');
+    return value;
+};
 
 /** A directory for one Actor's local app and runs. */
 export const createLocalRoot = async (): Promise<string> => mkdtemp(path.join(os.tmpdir(), 'apify-local-actor-'));

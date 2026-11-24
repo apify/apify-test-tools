@@ -361,7 +361,7 @@ Where a local run executes is decided outside the test, by the `APIFY_LOCAL_RUNS
 | Options           | `input`, `options.timeout` (seconds, 600 by default)                                                                                                    | All of them                                                                             |
 
 - **The result** is whatever `toFinishWith` needs, wherever the run happened: `status`, `getDataset()`,
-  `getStatistics()`, `getLog()`, `getRecord(key)` (the stored bytes and their content type) and `getRunInfo()` for
+  `getStatistics()`, `getLog()`, `getRecord(key)` (the value decoded like apify-client does, and its content type) and `getRunInfo()` for
   the duration. A test that sticks to those passes in both
   places. Anything beyond them depends on the place.
 - Nothing is charged off the platform, so `chargedEventCounts` can't be asserted on a local run.

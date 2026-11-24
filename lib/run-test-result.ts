@@ -27,8 +27,11 @@ export interface RunOutcome {
     getDataset<T>(): Promise<Dataset<T>>;
     getStatistics(): Promise<SdkCrawlerStatistics | undefined>;
     getLog(): Promise<string>;
-    /** A record of the run's default key-value store, as stored, or `undefined` when there is none. */
-    getRecord(key: string): Promise<{ value: Buffer; contentType: string } | undefined>;
+    /**
+     * A record of the run's default key-value store, or `undefined` when there is none. Decoded like apify-client
+     * does: JSON parsed, text and XML as a string, anything else a `Buffer`.
+     */
+    getRecord<T = unknown>(key: string): Promise<{ value: T; contentType: string } | undefined>;
 }
 
 /** Crawlee v3 writes `SDK_CRAWLER_STATISTICS_<n>`, v4 `CRAWLEE_CRAWLER_STATISTICS_<n>`. */
@@ -82,9 +85,9 @@ export class RunTestResult implements RunOutcome {
         return this.apifyClient.keyValueStore(this.run.defaultKeyValueStoreId);
     };
 
-    getRecord = async (key: string): Promise<{ value: Buffer; contentType: string } | undefined> => {
-        const record = await this.getKeyValueStoreClient().getRecord(key, { buffer: true });
-        return record && { value: record.value, contentType: record.contentType ?? 'application/octet-stream' };
+    getRecord = async <T = unknown>(key: string): Promise<{ value: T; contentType: string } | undefined> => {
+        const record = await this.getKeyValueStoreClient().getRecord(key);
+        return record && { value: record.value as T, contentType: record.contentType ?? 'application/octet-stream' };
     };
 
     private readonly inputRecord = once(async () => (await this.getKeyValueStoreClient().getRecord('INPUT'))?.value);

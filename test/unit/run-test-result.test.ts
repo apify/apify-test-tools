@@ -26,19 +26,15 @@ describe('RunTestResult', () => {
         expect(await result.getLog()).toBe('log');
     });
 
-    it('returns a record as stored, and nothing for a missing key', async () => {
-        const getRecord = vi.fn(async (key: string, _options: { buffer: true }) =>
-            key === 'OUTPUT' ? { key, value: Buffer.from('{"a":1}'), contentType: 'application/json' } : undefined,
+    it('returns a record decoded by the client, and nothing for a missing key', async () => {
+        const getRecord = vi.fn(async (key: string) =>
+            key === 'OUTPUT' ? { key, value: { a: 1 }, contentType: 'application/json' } : undefined,
         );
         const client = { keyValueStore: () => ({ getRecord }) } as unknown as ApifyClient;
         const result = new RunTestResult(client, run);
 
-        expect(await result.getRecord('OUTPUT')).toStrictEqual({
-            value: Buffer.from('{"a":1}'),
-            contentType: 'application/json',
-        });
+        expect(await result.getRecord('OUTPUT')).toStrictEqual({ value: { a: 1 }, contentType: 'application/json' });
         expect(await result.getRecord('MISSING')).toBeUndefined();
-        expect(getRecord).toHaveBeenCalledWith('OUTPUT', { buffer: true });
     });
 
     it('pages through the dataset instead of listing it in one response', async () => {

@@ -110,9 +110,10 @@ describe('LocalRunResult', () => {
             'CRAWLEE_CRAWLER_STATISTICS_1',
             'OUTPUT',
         ]);
-        const output = await result.getRecord('OUTPUT');
-        expect(output?.contentType).toBe('application/json');
-        expect(output?.value.toString()).toBe('{"done":true}');
+        expect(await result.getRecord('OUTPUT')).toStrictEqual({
+            value: { done: true },
+            contentType: 'application/json',
+        });
     });
 
     it('reads a Crawlee 3 store, whose records are bare files named after the key and its type', async () => {
@@ -125,7 +126,10 @@ describe('LocalRunResult', () => {
 
         expect(await result.getStatistics()).toStrictEqual({ requestsFinished: 4 });
         expect(await result.listKeys()).toStrictEqual(['SDK_CRAWLER_STATISTICS_0.json', 'shot.png']);
-        expect((await result.getRecord('shot.png'))?.contentType).toBe('application/octet-stream');
+        expect(await result.getRecord('shot.png')).toStrictEqual({
+            value: Buffer.from([9]),
+            contentType: 'application/octet-stream',
+        });
     });
 
     it('has no statistics, items or records for a run that stored nothing', async () => {

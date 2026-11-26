@@ -171,17 +171,16 @@ It fails if the Actor doesn't have a server interface.
 What `run` returns. Every getter fetches its data on the first call and returns the same result afterwards, so you
 can call them freely.
 
-| Member                     | Returns                                                                                                                                |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                       | The run ID                                                                                                                             |
-| `status`                   | The run status when it finished                                                                                                        |
-| `getDataset<T>()`          | `{ items: T[] }`, every item of the default dataset                                                                                    |
-| `getLog()`                 | The run log as a string                                                                                                                |
-| `getStatistics(key?)`      | The crawler statistics from the record `key`, by default `SDK_CRAWLER_STATISTICS_0`, or `undefined` without one                        |
-| `getStatisticsKeys()`      | The keys of every crawler statistics record of the run, those starting with `SDK_CRAWLER_STATISTICS_` or `CRAWLEE_CRAWLER_STATISTICS_` |
-| `getInput<T>()`            | The `INPUT` record of the default key-value store                                                                                      |
-| `getKeyValueStoreClient()` | An `apify-client` client for the default key-value store                                                                               |
-| `getRunInfo()`             | The run object, fetched again so it reflects changes after the run finished                                                            |
+| Member                     | Returns                                                                                                                                                                                             |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                       | The run ID                                                                                                                                                                                          |
+| `status`                   | The run status when it finished                                                                                                                                                                     |
+| `getDataset<T>()`          | `{ items: T[] }`, every item of the default dataset                                                                                                                                                 |
+| `getLog()`                 | The run log as a string                                                                                                                                                                             |
+| `getStatistics(keys?)`     | The crawler statistics, summed over every crawler's record as `toFinishWith` reads them, or `undefined` without any. `keys` reads only those records, see [Crawler statistics](#crawler-statistics) |
+| `getInput<T>()`            | The `INPUT` record of the default key-value store                                                                                                                                                   |
+| `getKeyValueStoreClient()` | An `apify-client` client for the default key-value store                                                                                                                                            |
+| `getRunInfo()`             | The run object, fetched again so it reflects changes after the run finished                                                                                                                         |
 
 ```ts
 testActor('john.doe/my-actor', 'check dataset items', async ({ expect, run }) => {
@@ -225,12 +224,17 @@ Validates the common run properties in a single call and reports every failed ch
 The default `forbiddenLogs` match a `ReferenceError` or `TypeError` the way JavaScript prints one, `TypeError: <message>`,
 not the word in prose or in a longer name. Your own `forbiddenLogs` replace them.
 
+### Crawler statistics
+
 `failedRequests`, `requestsRetries` and `maxRetriesPerRequest` read the crawler statistics, which a Crawlee crawler
 persists in the record `SDK_CRAWLER_STATISTICS_<id>` or `CRAWLEE_CRAWLER_STATISTICS_<id>`: `0` for the first crawler of
 a run, or the id its statistics were given. By default the checks read every such record of the run and sum them, so a
 run with several crawlers, e.g. an adaptive crawler, needs no setting. The records are found by listing the first 1,000
 keys under each prefix. Set `statisticsKeys` to read only some records, e.g. one crawler's out of several. A record it
-names that doesn't exist fails those checks.
+names that doesn't exist fails those checks. `runResult.getStatistics(keys?)` reads them the same way, and returns the
+counters that add up across crawlers: `requestsFinished`, `requestsFailed`, `requestsRetries`, `requestRetryHistogram`,
+`maxRetriesPerRequest` and the total request durations. A record's other fields, like its timestamps, are in the
+key-value store, see `getKeyValueStoreClient()`.
 
 **An Actor without crawler statistics, e.g. one that doesn't use a Crawlee crawler, must set `failedRequests: null`.**
 `failedRequests` is checked by default, and a run without any statistics record fails it with

@@ -106,7 +106,27 @@ export type ToFinishWithOptions<PpeEvent extends string> = Partial<ToFinishWithO
     chargedEventCounts?: Record<PpeEvent, Interval>;
 };
 
-export type SdkCrawlerStatistics = {
+/**
+ * The crawler statistics of a run, summed over the records read: the counters that add up across crawlers. A single
+ * record's other fields, like its timestamps, are in the key-value store, see `getKeyValueStoreClient()`.
+ */
+export type CrawlerStatistics = {
+    /** The keys of the records summed */
+    keys: string[];
+    requestsFinished: number;
+    requestsFailed: number;
+    /** Retries over all requests */
+    requestsRetries: number;
+    /** How many requests needed each number of retries: `[3, 1]` is three requests without a retry and one with one */
+    requestRetryHistogram: number[];
+    /** The most retries any single request needed */
+    maxRetriesPerRequest: number;
+    requestTotalFinishedDurationMillis: number;
+    requestTotalFailedDurationMillis: number;
+};
+
+/** A statistics record as a Crawlee crawler persists it */
+export type CrawlerStatisticsRecord = {
     requestsFinished: number;
     requestsFailed: number;
     requestsRetries: number;

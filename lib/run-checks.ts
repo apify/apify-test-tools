@@ -1,6 +1,7 @@
 import { STATISTICS_KEY_PREFIXES, TO_FINISH_WITH_OPTIONS } from './consts.js';
+import { MissingStatisticsError } from './missing-statistics-error.js';
 import type { RunTestResult } from './run-test-result.js';
-import type { Interval, ToFinishWithOptions, ToFinishWithOptionsWithDefaults } from './types.js';
+import type { CrawlerStatistics, Interval, ToFinishWithOptions, ToFinishWithOptionsWithDefaults } from './types.js';
 
 type Check = {
     name: string;
@@ -77,32 +78,6 @@ const forbiddenLogsCheck = (log: string, forbiddenLogs: (string | RegExp)[]): Ch
     };
 };
 
-interface CrawlerStatistics {
-    requestsFailed: number;
-    requestsRetries: number;
-    /** The most retries any single request needed */
-    maxRetriesPerRequest: number;
-}
-
-/** The statistics in every record, summed, or the keys of the records that don't exist */
-const readStatistics = async (
-    run: RunTestResult,
-    keys: string[],
-): Promise<{ statistics: CrawlerStatistics } | { missing: string[] }> => {
-    const records = await Promise.all(keys.map(async (key) => ({ key, stats: await run.getStatistics(key) })));
-    const missing = records.filter(({ stats }) => !stats).map(({ key }) => key);
-    if (missing.length > 0) return { missing };
-    const all = records.map(({ stats }) => stats!);
-    return {
-        statistics: {
-            requestsFailed: all.reduce((sum, stats) => sum + stats.requestsFailed, 0),
-            requestsRetries: all.reduce((sum, stats) => sum + stats.requestsRetries, 0),
-            // the histogram has one bucket per retry count, so its length - 1 is the most retries any request needed
-            maxRetriesPerRequest: Math.max(0, ...all.map((stats) => (stats.requestRetryHistogram ?? [0]).length - 1)),
-        },
-    };
-};
-
 const statisticsChecks = async (run: RunTestResult, options: ToFinishWithOptionsWithDefaults): Promise<Check[]> => {
     const { failedRequests, requestsRetries, maxRetriesPerRequest } = options;
     const wanted = [
@@ -113,14 +88,16 @@ const statisticsChecks = async (run: RunTestResult, options: ToFinishWithOptions
     // Fetched only for the checks that need them, so an Actor without statistics can skip them all
     if (wanted.length === 0) return [];
 
-    // Without keys, every crawler's statistics the run has
-    const keys = options.statisticsKeys === undefined ? await run.getStatisticsKeys() : [options.statisticsKeys].flat();
-    const read: Awaited<ReturnType<typeof readStatistics>> =
-        keys.length === 0
-            ? { missing: [STATISTICS_KEY_PREFIXES.map((prefix) => `${prefix}*`).join(' or ')] }
-            : await readStatistics(run, keys);
-    if ('missing' in read) {
-        const actual = `no statistics record ${read.missing.join(', ')}`;
+    let statistics: CrawlerStatistics | undefined;
+    let missing = STATISTICS_KEY_PREFIXES.map((prefix) => `${prefix}*`).join(' or ');
+    try {
+        statistics = await run.getStatistics(options.statisticsKeys);
+    } catch (error) {
+        if (!(error instanceof MissingStatisticsError)) throw error;
+        missing = error.keys.join(', ');
+    }
+    if (!statistics) {
+        const actual = `no statistics record ${missing}`;
         return wanted.map(([name, expected]) => ({
             name,
             pass: false,
@@ -128,7 +105,6 @@ const statisticsChecks = async (run: RunTestResult, options: ToFinishWithOptions
             expected: name === 'maxRetriesPerRequest' ? `<=${expected}` : describeInterval(expected),
         }));
     }
-    const { statistics } = read;
     return [
         ...intervalCheck('failedRequests', statistics.requestsFailed, failedRequests),
         ...intervalCheck('requestsRetries', statistics.requestsRetries, requestsRetries),

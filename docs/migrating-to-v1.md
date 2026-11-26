@@ -299,8 +299,11 @@ What to change:
 - **Your own `forbiddenLogs`** replace the defaults, as before. A string still matches anywhere in a line, but no
   longer across lines.
 
-`runResult.getStatistics()` takes an optional key: `getStatistics('SDK_CRAWLER_STATISTICS_1')`.
-`runResult.getStatisticsKeys()` lists the keys of every statistics record of the run.
+`runResult.getStatistics()` reads the statistics the way `toFinishWith` does: summed over every crawler's record, or
+only the records you pass, e.g. `getStatistics('SDK_CRAWLER_STATISTICS_1')`. It returns the counters that add up,
+`requestsFinished`, `requestsFailed`, `requestsRetries`, `requestRetryHistogram`, `maxRetriesPerRequest` and the total
+durations, not the whole record. Read a record's other fields, like its timestamps, from the key-value store with
+`runResult.getKeyValueStoreClient()`.
 
 ## Running the CLI yourself
 

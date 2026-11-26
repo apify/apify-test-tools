@@ -1,7 +1,8 @@
+import type { ActorRun, ApifyClient } from 'apify-client';
 import { describe, expect, it, vi } from 'vitest';
 
 import { checkRun } from '../../lib/run-checks.js';
-import type { RunTestResult } from '../../lib/run-test-result.js';
+import { RunTestResult } from '../../lib/run-test-result.js';
 
 const STATS = { requestsFailed: 0, requestsRetries: 1, requestRetryHistogram: [5, 1] };
 
@@ -14,6 +15,7 @@ interface FakeRun {
     chargedEventCounts?: object;
 }
 
+// A real RunTestResult, so the statistics are found and summed as in a test, over a fake key-value store
 const fakeRun = ({
     status = 'SUCCEEDED',
     log = 'all good',
@@ -21,22 +23,21 @@ const fakeRun = ({
     statistics = { SDK_CRAWLER_STATISTICS_0: STATS },
     chargedEventCounts,
 }: FakeRun = {}) => {
-    const getStatistics = vi.fn(async (key: string) => statistics[key]);
-    // The real one lists the key-value store under the statistics prefixes
-    const getStatisticsKeys = vi.fn(async () =>
-        Object.keys(statistics)
-            .filter((key) => /^(SDK|CRAWLEE)_CRAWLER_STATISTICS_/.test(key))
-            .sort(),
-    );
-    const run = {
-        status,
+    const getRecord = vi.fn(async (key: string) => (key in statistics ? { key, value: statistics[key] } : undefined));
+    const listKeys = vi.fn(async ({ prefix }: { prefix: string }) => ({
+        items: Object.keys(statistics)
+            .filter((key) => key.startsWith(prefix))
+            .map((key) => ({ key })),
+    }));
+    const client = { keyValueStore: () => ({ getRecord, listKeys }) } as unknown as ApifyClient;
+    const run = new RunTestResult(client, { id: 'run', status, defaultKeyValueStoreId: 'kvs' } as ActorRun);
+    return Object.assign(run, {
         getRunInfo: async () => ({ stats: { durationMillis }, chargedEventCounts }),
         getDataset: async () => ({ items: new Array(10) }),
-        getStatistics,
-        getStatisticsKeys,
         getLog: async () => log,
-    } as unknown as RunTestResult;
-    return Object.assign(run, { getStatistics, getStatisticsKeys });
+        getRecord,
+        listKeys,
+    }) as RunTestResult & { getRecord: typeof getRecord; listKeys: typeof listKeys };
 };
 
 const checks = async (run: RunTestResult, options: Parameters<typeof checkRun>[1]) =>
@@ -118,7 +119,7 @@ describe('checkRun()', () => {
             });
             const options = { datasetItemCount: 10, failedRequests: 3, requestsRetries: 6, maxRetriesPerRequest: 3 };
             expect(await failures(run, options)).toEqual([]);
-            expect(run.getStatistics.mock.calls.map(([key]) => key)).toEqual([
+            expect(run.getRecord.mock.calls.map(([key]) => key)).toEqual([
                 'CRAWLEE_CRAWLER_STATISTICS_0',
                 'SDK_CRAWLER_STATISTICS_0',
                 'SDK_CRAWLER_STATISTICS_adaptive',
@@ -128,16 +129,16 @@ describe('checkRun()', () => {
         it('reads no statistics when no check needs them, e.g. for an Actor without a crawler', async () => {
             const run = fakeRun({ statistics: {} });
             expect(await failures(run, { datasetItemCount: 10, failedRequests: null })).toEqual([]);
-            expect(run.getStatisticsKeys).not.toHaveBeenCalled();
-            expect(run.getStatistics).not.toHaveBeenCalled();
+            expect(run.listKeys).not.toHaveBeenCalled();
+            expect(run.getRecord).not.toHaveBeenCalled();
         });
 
         it('reads the record statisticsKeys names', async () => {
             const run = fakeRun({ statistics: { SDK_CRAWLER_STATISTICS_1: { ...STATS, requestsFailed: 2 } } });
             const options = { datasetItemCount: 10, statisticsKeys: 'SDK_CRAWLER_STATISTICS_1' };
             expect(await failures(run, { ...options, failedRequests: 2 })).toEqual([]);
-            expect(run.getStatistics).toHaveBeenCalledWith('SDK_CRAWLER_STATISTICS_1');
-            expect(run.getStatisticsKeys).not.toHaveBeenCalled();
+            expect(run.getRecord).toHaveBeenCalledWith('SDK_CRAWLER_STATISTICS_1');
+            expect(run.listKeys).not.toHaveBeenCalled();
         });
 
         it('sums the records of several crawlers', async () => {

@@ -10,9 +10,6 @@ export const ACTOR_FULL_NAME_REGEX = new RegExp(
     USERNAME.REGEX.flags + ACTOR_NAME.REGEX.flags,
 );
 
-/** Where a Crawlee crawler persists its statistics, unless it was given another id */
-export const DEFAULT_STATISTICS_KEY = 'SDK_CRAWLER_STATISTICS_0';
-
 /** A Crawlee crawler persists its statistics under one of these, followed by its statistics id */
 export const STATISTICS_KEY_PREFIXES = ['SDK_CRAWLER_STATISTICS_', 'CRAWLEE_CRAWLER_STATISTICS_'] as const;
 

@@ -69,7 +69,7 @@ describe('tokens', () => {
 
 test('owner/a: works', ({ task }) => {
     console.log('ENV', process.env.ACTOR_BUILDS ?? '-');
-    task.meta = { runId: 'run1', runLink: 'https://console.apify.com/view/runs/run1', actorId: 'owner/a' } as never;
+    task.meta = { runId: 'run1', runLink: 'https://console.apify.com/view/runs/run1', actorFullName: 'owner/a' } as never;
 });
 
 test('owner/a: fails', () => {
@@ -127,7 +127,7 @@ test('owner/a: fails', () => {
         expect(result.stderr).not.toContain('JSON report written to');
         expect(JSON.parse(result.stdout)).toMatchObject({
             kind: 'test-report',
-            version: 1,
+            version: 2,
             success: false,
             summary: { total: 2, passed: 1, failed: 1, skipped: 0 },
             tests: [
@@ -214,8 +214,16 @@ test('owner/a: fails', () => {
         const result = run(['test', 'test/platform/core'], JSON.stringify([build]));
         expect(result.status).toBe(1);
         // The help that comes with it shows --test-files-glob
-        expect(result.stderr).toContain('Unknown command: test/platform/core');
+        expect(result.stderr).toContain('Unknown argument: test/platform/core');
         expect(result.stderr).toContain('--test-files-glob');
+        expect(result.stdout).toBe('');
+    });
+
+    // A flag a later version renamed or removed must not be ignored without a word
+    it('rejects an unknown flag instead of ignoring it', () => {
+        const result = run(['test', '--folder', 'test/platform'], JSON.stringify([build]));
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('Unknown argument: folder');
         expect(result.stdout).toBe('');
     });
 

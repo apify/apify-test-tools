@@ -261,7 +261,7 @@ await yargs()
             await deleteOldBuilds(actorConfigs, { dryRun });
         },
     )
-    .strictCommands()
+    .strict()
     .demandCommand(1, 'Command is required')
     .fail((msg, err, yargsInstance) => {
         // Errors thrown from a command handler (e.g. an unknown actor passed to --actors/--ignore,

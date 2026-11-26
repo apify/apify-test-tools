@@ -473,7 +473,7 @@ are no new commits:
 ## Deleting old builds (`delete-old-builds`)
 
 Deletes builds older than 30 days of every selected Actor. It never deletes the default build, or a build tagged
-`latest`, `version…`, `v-…` or `v0`–`v9…`. A build tagged `devel` is kept for only 7 days.
+`latest`, `version…`, `v-…` or `v0`–`v9…`.
 
 | Flag        | Default | Meaning                                                     |
 | ----------- | ------- | ----------------------------------------------------------- |

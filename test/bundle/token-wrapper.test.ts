@@ -27,7 +27,7 @@ describe('token wrapper bundle', () => {
         OTHER: 'hidden',
     };
 
-    const runWrapper = (workflowSecrets: Record<string, string> = actorSecrets) =>
+    const runWrapper = (configSecrets: Record<string, string> = actorSecrets) =>
         spawnSync(
             process.execPath,
             [wrapperPath, '--tokens', 'build', process.execPath, '-e', 'console.log(JSON.stringify(process.env))'],
@@ -35,48 +35,42 @@ describe('token wrapper bundle', () => {
                 cwd: repoDir,
                 env: {
                     PATH: process.env.PATH ?? '',
-                    WORKFLOW_SECRETS: JSON.stringify(workflowSecrets),
+                    CONFIG_SECRETS: JSON.stringify(configSecrets),
                 },
                 encoding: 'utf8',
             },
         );
 
-    it.each(['inherited secrets', 'CONFIG_SECRETS'])(
-        'passes grouped tokens and actor overrides from %s without unrelated secrets',
-        async (source) => {
-            await writeFile(
-                path.join(repoDir, configFileName),
-                JSON.stringify({
-                    mode: 'grouped',
-                    groups: {
-                        example: {
-                            buildTokenEnvVar: 'GROUP_TOKEN',
-                            testTokenEnvVar: 'GROUP_TOKEN',
-                            actors: [
-                                { folder: 'actors/one', actorFullName: 'example/one' },
-                                {
-                                    folder: 'actors/two',
-                                    actorFullName: 'example/two',
-                                    buildTokenEnvVar: 'OVERRIDE_TOKEN',
-                                },
-                            ],
-                        },
+    it('passes grouped tokens and actor overrides from CONFIG_SECRETS without unrelated secrets', async () => {
+        await writeFile(
+            path.join(repoDir, configFileName),
+            JSON.stringify({
+                mode: 'grouped',
+                groups: {
+                    example: {
+                        buildTokenEnvVar: 'GROUP_TOKEN',
+                        testTokenEnvVar: 'GROUP_TOKEN',
+                        actors: [
+                            { folder: 'actors/one', actorFullName: 'example/one' },
+                            {
+                                folder: 'actors/two',
+                                actorFullName: 'example/two',
+                                buildTokenEnvVar: 'OVERRIDE_TOKEN',
+                            },
+                        ],
                     },
-                }),
-            );
+                },
+            }),
+        );
 
-            const { status, stdout, stderr } = runWrapper(
-                source === 'CONFIG_SECRETS' ? { CONFIG_SECRETS: JSON.stringify(actorSecrets) } : actorSecrets,
-            );
-            expect(status, stderr).toBe(0);
-            const childEnv: Record<string, string> = JSON.parse(stdout);
-            expect(childEnv).toMatchObject({ GROUP_TOKEN: 'group-value', OVERRIDE_TOKEN: 'override-value' });
-            expect(childEnv).not.toHaveProperty('OTHER');
-            expect(childEnv).not.toHaveProperty('WORKFLOW_SECRETS');
-            expect(childEnv).not.toHaveProperty('CONFIG_SECRETS');
-            expect(stderr).toContain('Passing 2 build token(s)');
-        },
-    );
+        const { status, stdout, stderr } = runWrapper();
+        expect(status, stderr).toBe(0);
+        const childEnv: Record<string, string> = JSON.parse(stdout);
+        expect(childEnv).toMatchObject({ GROUP_TOKEN: 'group-value', OVERRIDE_TOKEN: 'override-value' });
+        expect(childEnv).not.toHaveProperty('OTHER');
+        expect(childEnv).not.toHaveProperty('CONFIG_SECRETS');
+        expect(stderr).toContain('Passing 2 build token(s)');
+    });
 
     it('does not start the child when config validation fails', async () => {
         await writeFile(path.join(repoDir, configFileName), JSON.stringify({ mode: 'grouped', groups: {} }));

@@ -361,8 +361,9 @@ above. The Actor tokens go packed in one JSON object, `CONFIG_SECRETS`, because 
 | `SLACK_BOT_TOKEN`                                                              | announcing releases and reporting scheduled test results to Slack |
 | `NPM_TOKEN`                                                                    | optional, installing private npm packages. Use a read-only token  |
 
-Repos in the `apify` org can pass `secrets: inherit` instead. Each secret only reaches the step that needs it. See
-[Secrets](docs/workflows.md#secrets) for both, and for passing `CONFIG_SECRETS` without listing the tokens.
+The workflows read the Apify tokens only from `CONFIG_SECRETS`, so `secrets: inherit` doesn't pass them. Each secret
+only reaches the step that needs it. See [Secrets](docs/workflows.md#secrets), also for passing `CONFIG_SECRETS`
+without listing the tokens.
 
 ## Writing tests
 

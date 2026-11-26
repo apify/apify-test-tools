@@ -168,27 +168,27 @@ The public side of this is the [Secrets](./docs/workflows.md#secrets) table.
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its own tokens via
 `buildTokenEnvVar` (build) and `testTokenEnvVar` (tests) in
 `apify-test-tools.config.json`, and a reusable workflow only accepts secrets it declares by name. Callers pack them into
-the `CONFIG_SECRETS` secret. Those steps pass `${{ toJSON(secrets) }}` as `WORKFLOW_SECRETS` and run the command through
+the `CONFIG_SECRETS` secret, the only place the tokens are read from: `secrets: inherit` doesn't pass them. Those steps
+pass `CONFIG_SECRETS` in the env var of the same name and run the command through
 `.github/scripts/run-with-apify-tokens.mjs --tokens build|test`, bundled from `workflow-scripts-src/`, which reads the
-token names with the CLI's own config parser, so it resolves them exactly the way the command that uses them does, in
-every config format. It looks each one up in `CONFIG_SECRETS` first, then among the secrets `secrets: inherit` or the
-workflow's own declarations brought:
+token names with the CLI's own config parser, so it resolves them exactly the way the command that uses them does:
 
 ```yaml
 - name: Build
   shell: bash
   env:
-      WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
+      CONFIG_SECRETS: ${{ secrets.CONFIG_SECRETS }}
   run: |
       jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
         | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" --tokens build \
           apify-test-tools build --version-number 0.99
 ```
 
-The wrapper passes only the tokens the config declares and drops `WORKFLOW_SECRETS`, so neither the CLI nor anything
-under `node_modules` sees the blob. Nothing is written to `$GITHUB_ENV`, so the tokens stay inside that one command
-rather than leaking into later steps. Reading the config with `apify-test-tools`' own parser means the two can't drift, and a
-secret that merely looks like an Actor token is not passed just because of its name.
+The wrapper passes only the tokens the config declares and drops `CONFIG_SECRETS`, so neither the CLI nor anything under
+`node_modules` sees the blob, nor any other secret of the workflow. Nothing is written to `$GITHUB_ENV`, so the tokens
+stay inside that one command rather than leaking into later steps. Reading the config with `apify-test-tools`' own
+parser means the two can't drift, and a secret that merely looks like an Actor token is not passed just because of its
+name.
 
 The test step runs the repo's test code and its whole import graph, so it gets the test tokens only. The config has to
 name them: `testTokenEnvVar` has no default, so each repo chooses whether its tests hold the full-permission Actor

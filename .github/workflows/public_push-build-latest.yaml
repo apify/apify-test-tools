@@ -60,7 +60,7 @@ jobs:
               # bash rather than the default shell, for pipefail
               shell: bash
               env:
-                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
+                  CONFIG_SECRETS: ${{ secrets.CONFIG_SECRETS }}
               run: |
                   jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json \
                     | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" --tokens build \
@@ -78,7 +78,7 @@ jobs:
 
             - name: Delete old builds
               env:
-                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
+                  CONFIG_SECRETS: ${{ secrets.CONFIG_SECRETS }}
               run: |
                   node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" --tokens build \
                     apify-test-tools delete-old-builds

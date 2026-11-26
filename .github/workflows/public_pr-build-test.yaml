@@ -91,7 +91,7 @@ jobs:
               # bash rather than the default shell, for pipefail
               shell: bash
               env:
-                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
+                  CONFIG_SECRETS: ${{ secrets.CONFIG_SECRETS }}
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   REQUIRE_ENV_VARS_IN_SYNC: ${{ inputs.require-env-vars-in-sync }}
               run: |
@@ -105,7 +105,7 @@ jobs:
             # with: each Actor's `testTokenEnvVar`.
             - name: Test
               env:
-                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
+                  CONFIG_SECRETS: ${{ secrets.CONFIG_SECRETS }}
                   SCRIPTS_PATH: ${{ steps.setup.outputs.scripts-path }}
                   # Passed through the environment and quoted, so the shell doesn't expand the glob itself
                   # An empty input, e.g. from an expression that picks the glob, runs everything, like the default

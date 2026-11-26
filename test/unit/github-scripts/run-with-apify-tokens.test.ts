@@ -42,7 +42,7 @@ const PRINT_ENV = `console.log(JSON.stringify({
     TOKEN_THREE: process.env.TOKEN_THREE,
     TESTER_TOKEN: process.env.TESTER_TOKEN,
     NPM_TOKEN: process.env.NPM_TOKEN,
-    WORKFLOW_SECRETS: process.env.WORKFLOW_SECRETS,
+    CONFIG_SECRETS: process.env.CONFIG_SECRETS,
 }))`;
 
 let cwd: string;
@@ -50,12 +50,19 @@ let cwd: string;
 const ALL_SECRETS = { TOKEN_ONE: 'one', TOKEN_TWO: 'two', TOKEN_THREE: 'three', TESTER_TOKEN: 'tester' };
 const BUILD_TOKENS = { TOKEN_ONE: 'one', TOKEN_TWO: 'two', TOKEN_THREE: 'three' };
 
-// `workflowSecrets` is what the step's `toJSON(secrets)` holds inside the reusable workflow.
-const run = (workflowSecrets: Record<string, string>, tokens: string[] = ['--tokens', 'build'], dir = cwd) => {
+// `configSecrets` is the CONFIG_SECRETS secret the step passes in the env var of the same name: an object is
+// serialized, a string passed as it is, and undefined leaves the variable unset, as when the caller passes none.
+const run = (
+    configSecrets: Record<string, string> | string | undefined,
+    tokens: string[] = ['--tokens', 'build'],
+    dir = cwd,
+    stepEnv: Record<string, string> = {},
+) => {
+    const packed = typeof configSecrets === 'object' ? JSON.stringify(configSecrets) : configSecrets;
     const result = spawnSync(process.execPath, [SCRIPT, ...tokens, process.execPath, '-e', PRINT_ENV], {
         cwd: dir,
         encoding: 'utf8',
-        env: { PATH: process.env.PATH, WORKFLOW_SECRETS: JSON.stringify(workflowSecrets) },
+        env: { PATH: process.env.PATH, ...stepEnv, ...(packed !== undefined && { CONFIG_SECRETS: packed }) },
     });
     return { ...result, env: result.status === 0 ? JSON.parse(result.stdout) : undefined };
 };
@@ -70,47 +77,35 @@ describe('run-with-apify-tokens.mjs', () => {
         await rm(cwd, { recursive: true, force: true });
     });
 
-    it('passes on inherited secrets, as `secrets: inherit` sends them', () => {
-        const { status, stderr, env } = run({ ...ALL_SECRETS, NPM_TOKEN: 'npm' });
+    it('unpacks the tokens from the CONFIG_SECRETS secret', () => {
+        const { status, stderr, env } = run(ALL_SECRETS);
         expect(status, stderr).toBe(0);
         expect(env).toStrictEqual(BUILD_TOKENS);
         expect(stderr).toContain('Passing 3 build token(s) to');
     });
 
-    it('unpacks the tokens from the CONFIG_SECRETS secret', () => {
-        const { status, stderr, env } = run({
-            CONFIG_SECRETS: JSON.stringify(ALL_SECRETS),
-            NPM_TOKEN: 'npm',
-        });
-        expect(status, stderr).toBe(0);
-        expect(env).toStrictEqual(BUILD_TOKENS);
-    });
-
     it('passes on only the config names when CONFIG_SECRETS holds every secret of the caller', () => {
-        const { status, stderr, env } = run({
-            CONFIG_SECRETS: JSON.stringify({ ...ALL_SECRETS, NPM_TOKEN: 'npm', github_token: 'gh' }),
-        });
+        const { status, stderr, env } = run({ ...ALL_SECRETS, NPM_TOKEN: 'npm', github_token: 'gh' });
         expect(status, stderr).toBe(0);
         expect(env).toStrictEqual(BUILD_TOKENS);
     });
 
     it("passes on the tokens the tests run with: each Actor's testTokenEnvVar", () => {
-        const { status, stderr, env } = run({ CONFIG_SECRETS: JSON.stringify(ALL_SECRETS), NPM_TOKEN: 'npm' }, [
-            '--tokens',
-            'test',
-        ]);
+        const { status, stderr, env } = run(ALL_SECRETS, ['--tokens', 'test']);
         expect(status, stderr).toBe(0);
         expect(env).toStrictEqual({ TOKEN_ONE: 'one', TOKEN_TWO: 'two', TESTER_TOKEN: 'tester' });
         expect(stderr).toContain('Passing 3 test token(s) to');
     });
 
-    it('takes a test token the workflow declares by name', () => {
-        const { status, stderr, env } = run(
-            { CONFIG_SECRETS: JSON.stringify(BUILD_TOKENS), TESTER_TOKEN: 'declared' },
-            ['--tokens', 'test'],
-        );
+    // `secrets: inherit` hands the workflow the repository's secrets one by one, which it doesn't read
+    it('passes no token without CONFIG_SECRETS, warning about each, and runs anyway', () => {
+        const { status, stderr, env } = run(undefined);
         expect(status, stderr).toBe(0);
-        expect(env).toStrictEqual({ TOKEN_ONE: 'one', TOKEN_TWO: 'two', TESTER_TOKEN: 'declared' });
+        expect(env).toStrictEqual({});
+        expect(stderr).toContain(
+            'declares TOKEN_ONE, TOKEN_THREE, TOKEN_TWO as `buildTokenEnvVar`, but the CONFIG_SECRETS secret has no such entry',
+        );
+        expect(stderr).toContain('Passing 0 build token(s) to');
     });
 
     it.each([[[]], [['build']], [['--tokens', 'deploy']]])('fails without a valid --tokens: %j', (tokens) => {
@@ -131,22 +126,12 @@ describe('run-with-apify-tokens.mjs', () => {
         }
     });
 
-    it('prefers CONFIG_SECRETS over an inherited secret of the same name', () => {
-        const { status, stderr, env } = run({
-            CONFIG_SECRETS: JSON.stringify({ TOKEN_ONE: 'from-config-secrets' }),
-            TOKEN_ONE: 'inherited',
-            TOKEN_TWO: 'inherited',
-        });
-        expect(status, stderr).toBe(0);
-        expect(env).toStrictEqual({ TOKEN_ONE: 'from-config-secrets', TOKEN_TWO: 'inherited' });
-    });
-
     it('warns about a token the config declares but nothing passes, and runs anyway', () => {
-        const { status, stderr, env } = run({
-            CONFIG_SECRETS: JSON.stringify({ TOKEN_ONE: 'one', TOKEN_TWO: 'two' }),
-        });
+        const { status, stderr, env } = run({ TOKEN_ONE: 'one', TOKEN_TWO: 'two' });
         expect(status, stderr).toBe(0);
-        expect(stderr).toContain('declares TOKEN_THREE as `buildTokenEnvVar`, but no such secret was passed');
+        expect(stderr).toContain(
+            'declares TOKEN_THREE as `buildTokenEnvVar`, but the CONFIG_SECRETS secret has no such entry',
+        );
         expect(env).toStrictEqual({ TOKEN_ONE: 'one', TOKEN_TWO: 'two' });
     });
 
@@ -155,7 +140,7 @@ describe('run-with-apify-tokens.mjs', () => {
         ['is a JSON string', '"apify_api_xyzzy"', 'The CONFIG_SECRETS secret must be a JSON object.'],
         ['is a JSON array', '["apify_api_xyzzy"]', 'The CONFIG_SECRETS secret must be a JSON object.'],
     ])('fails without printing the value when CONFIG_SECRETS %s', (_, packed, message) => {
-        const { status, stdout, stderr } = run({ CONFIG_SECRETS: packed });
+        const { status, stdout, stderr } = run(packed);
         expect(status).toBe(1);
         expect(stderr).toContain(message);
         expect(stdout + stderr).not.toContain('xyzzy');

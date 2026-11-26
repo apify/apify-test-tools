@@ -1,17 +1,9 @@
 import { prettifyError, type ZodType } from 'zod';
 
-import { ACTOR_NAME, USERNAME } from '@apify/consts';
-
 import type { ExistingDir, RelativeDir } from '../../path/repo-relative.js';
 
-function stripRegexAnchor(regex: string): string {
-    return regex.replace(/^\^/, '').replace(/\$$/, '');
-}
-
-export const ACTOR_FULL_NAME_REGEX = new RegExp(
-    `^${stripRegexAnchor(USERNAME.REGEX.source)}/${stripRegexAnchor(ACTOR_NAME.REGEX.source)}$`,
-    USERNAME.REGEX.flags + ACTOR_NAME.REGEX.flags,
-);
+// The lib checks the IDs tests name their Actors by with the same regex
+export { ACTOR_FULL_NAME_REGEX } from '../../../../lib/consts.js';
 
 // All fields must exist, even if their value can be undefined.
 // This makes typescript enforce all configs to have resolution for EVERY field.
@@ -20,17 +12,15 @@ export const ACTOR_FULL_NAME_REGEX = new RegExp(
 export interface StrategyActorConfig {
     actorFullName: string;
     folder: string;
-    tokenEnvVar: string;
-    /** The token the platform tests run the Actor with, when the config names one */
-    testTokenEnvVar: string | undefined;
+    /** The env var holding the token that builds the Actor */
+    buildTokenEnvVar: string;
+    /** The env var holding the token the platform tests run the Actor with */
+    testTokenEnvVar: string;
     overrideActorContext: string[] | undefined;
 }
 
-/** An Actor entry with the defaults every config mode shares filled in. */
-export interface ResolvedActorConfig extends Omit<StrategyActorConfig, 'testTokenEnvVar'> {
-    /** The token the platform tests run the Actor with, `tokenEnvVar` unless the config names another */
-    testTokenEnvVar: string;
-}
+/** An Actor entry as the config resolves it, before its paths are checked. */
+export type ResolvedActorConfig = StrategyActorConfig;
 
 export interface ValidatedActorConfig extends Omit<ResolvedActorConfig, 'folder' | 'overrideActorContext'> {
     folder: ExistingDir;
@@ -38,7 +28,6 @@ export interface ValidatedActorConfig extends Omit<ResolvedActorConfig, 'folder'
 }
 
 export enum CONFIG_FILE_STRATEGY {
-    LEGACY = 'legacy',
     GROUPED = 'grouped',
 }
 
@@ -62,7 +51,7 @@ export function defineStrategy<T extends Record<string, unknown>, Mode extends C
          * @throws Error if the config file is invalid.
          * @example
          * ```ts
-         * const strategy = defineStrategy(CONFIG_FILE_STRATEGY.LEGACY, schema, resolve);
+         * const strategy = defineStrategy(CONFIG_FILE_STRATEGY.GROUPED, schema, resolve);
          * const resolvedActors = strategy.parse(configFileContents);
          * ```
          *

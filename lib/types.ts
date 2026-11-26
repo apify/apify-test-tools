@@ -1,19 +1,17 @@
 import type { ActorCallOptions } from 'apify-client';
 import type { Assertion, TestOptions } from 'vitest';
 
+/** An Actor the CLI lists in `ACTOR_BUILDS`, with the build to test or, without one, on its default build */
 export type ActorBuild = {
-    /** Absent when testing the Actor's default build */
-    buildId?: string;
-    actorRawId: string;
-    /** Absent when testing the Actor's default build */
-    buildNumber?: string;
     actorFullName: string;
+    buildId?: string;
+    buildNumber?: string;
     /** The env var holding the token the Actor's tests run with */
     testTokenEnvVar?: string;
 };
 
 export type RunOptions<T> = {
-    input: Omit<T, 'actorName'>;
+    input: T;
     options?: Omit<ActorCallOptions, 'timeout'> & {
         /**
          * Timeout for the actor run in seconds. Zero value means there is no timeout.
@@ -56,33 +54,79 @@ export type Interval = number | OpenInterval | ClosedInterval;
 
 export type ToFinishWithOptionsWithDefaults = {
     status: RunStatus;
+    /** Run duration in milliseconds */
     duration: Interval | null;
+    /**
+     * Failed requests in the crawler statistics. Set it to `null` for an Actor without crawler statistics, e.g. one
+     * that doesn't use a Crawlee crawler, or the check fails.
+     *
+     * @default 0
+     */
     failedRequests: Interval | null;
+    /** Request retries in the crawler statistics, summed over every request */
     requestsRetries: Interval | null;
-    forbiddenLogs: string[];
+    /**
+     * What must not appear in the log: a string in, or a regular expression matching, any of its lines.
+     * The defaults match a `ReferenceError` or `TypeError` the way JavaScript prints one.
+     */
+    forbiddenLogs: (string | RegExp)[];
+    /** The most retries any single request needed, from the crawler statistics */
     maxRetriesPerRequest: number | null;
+    /**
+     * The key-value store record, or records, with the crawler statistics the checks above read. With more than one,
+     * e.g. for a run with several crawlers, the checks read their sum. A record that doesn't exist fails the checks.
+     *
+     * By default, every record whose key starts with `SDK_CRAWLER_STATISTICS_` or `CRAWLEE_CRAWLER_STATISTICS_`,
+     * summed. Without any, the checks fail.
+     */
+    statisticsKeys: string | string[] | undefined;
+    /**
+     * Also fail on any charged event that `chargedEventCounts` doesn't list.
+     *
+     * @default false
+     */
+    strictChargedEventCounts: boolean;
 };
 
 export type ToFinishWithOptions<PpeEvent extends string> = Partial<ToFinishWithOptionsWithDefaults> & {
     datasetItemCount: Interval;
     /**
-     * Define expected charged (PPE) event counts. You can also define count as `Interval`.
+     * Expected charged (pay-per-event) event counts, each an exact number or an `Interval`. Only the events listed are
+     * checked, and an event that was never charged counts as 0, so `0` asserts it wasn't. With
+     * `strictChargedEventCounts`, any other charged event fails the check too.
      *
      * Example
      * ```ts
      * chargedEventCounts: {
-     *   'actor-start': 4,
+     *   'actor-start': 1,
      *   'item-pushed': { min: 10, max: 20 },
      * }
      * ```
-     *
-     * If you omit any PPE event, it's expected count will be 0.
-     * Assertion will fail if `chargedEventCounts` doesn't contain some of the expected events.
      */
     chargedEventCounts?: Record<PpeEvent, Interval>;
 };
 
-export type SdkCrawlerStatistics = {
+/**
+ * The crawler statistics of a run, summed over the records read: the counters that add up across crawlers. A single
+ * record's other fields, like its timestamps, are in the key-value store, see `getKeyValueStoreClient()`.
+ */
+export type CrawlerStatistics = {
+    /** The keys of the records summed */
+    keys: string[];
+    requestsFinished: number;
+    requestsFailed: number;
+    /** Retries over all requests */
+    requestsRetries: number;
+    /** How many requests needed each number of retries: `[3, 1]` is three requests without a retry and one with one */
+    requestRetryHistogram: number[];
+    /** The most retries any single request needed */
+    maxRetriesPerRequest: number;
+    requestTotalFinishedDurationMillis: number;
+    requestTotalFailedDurationMillis: number;
+};
+
+/** A statistics record as a Crawlee crawler persists it */
+export type CrawlerStatisticsRecord = {
     requestsFinished: number;
     requestsFailed: number;
     requestsRetries: number;
@@ -110,7 +154,7 @@ export type RunStatus =
     | 'TIMING-OUT'
     | 'TIMED-OUT';
 
-export interface ActorMatchers<R = unknown> {
+export interface ActorMatchers<R extends void | Promise<void> = void> {
     toBeArray: () => R;
     toBeBoolean: () => R;
     toBeEmptyArray: () => R;
@@ -127,17 +171,15 @@ export interface ActorMatchers<R = unknown> {
     /**
      * Validates the following properties of a run:
      * - `status` (default: `SUCCEEDED`)
-     * - `duration` in milliseconds (default: `{ min: 600, max: 600_000}` - <0.6s, 10min>)
-     * - `failedRequests` (default: `0`)
-     * - `requestsRetries` (default: `{ max: 3 }`)
-     * - `forbiddenLogs` (default: `['ReferenceError', 'TypeError']`)
-     * - `maxRetriesPerRequest` (not checked by default)
      * - `datasetItemCount` (required)
-     * - `chargedEventCounts`
+     * - `failedRequests` (default: `0`), from the crawler statistics: every crawler's, or those in `statisticsKeys`.
+     *   `null` for an Actor without crawler statistics
+     * - `forbiddenLogs` (default: a thrown `ReferenceError` or `TypeError`)
+     * - `duration`, `requestsRetries`, `maxRetriesPerRequest`, `chargedEventCounts` (not checked by default)
      */
     toFinishWith: <PpeEvent extends string>(options: ToFinishWithOptions<PpeEvent>) => Promise<R>;
     toStartWith: (prefix: string) => R;
-    hard: <T>(actual: T, message?: string) => Assertion;
+    hard: <T>(actual: T, message?: string) => Assertion<void, T>;
 }
 
 export type ActorTestOptions = Omit<TestOptions, 'retry' | 'timeout'> & {
@@ -159,10 +201,10 @@ export type ActorTestOptions = Omit<TestOptions, 'retry' | 'timeout'> & {
 };
 
 declare module 'vitest' {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type
-    interface Assertion<T = any> extends ActorMatchers<T> {}
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type
-    interface Matchers<T = any> extends ActorMatchers<T> {}
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type, @typescript-eslint/no-unused-vars
+    interface Assertion<R extends void | Promise<void> = void, T = unknown> extends ActorMatchers<R> {}
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type, @typescript-eslint/no-unused-vars
+    interface Matchers<R extends void | Promise<void> = void | Promise<void>, T = unknown> extends ActorMatchers<R> {}
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     interface AsymmetricMatchersContaining extends ActorMatchers {}
 }

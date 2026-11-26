@@ -4,67 +4,68 @@
 import { describe, testActor, testServerInterfaceActor, RunTestResult, ExpectStatic } from 'apify-test-tools';
 ```
 
-Requires `vitest` `3.2.4` or later as a peer dependency.
+Requires `vitest` 5 or later as a peer dependency.
 
 ## Environment variables
 
-The library reads these when the test file is loaded:
-
-| Variable             | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ACTOR_BUILDS`       | JSON array of Actors to test, e.g. the builds the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local) print. Only tests of Actors listed here run, against the listed build, or the default build for an Actor listed without one. Each entry names the env var holding the token its tests run with, see below. Without any Actors, every `describe` block is skipped, so a plain `npm test` stays unaffected. |
-| `TESTER_APIFY_TOKEN` | Fallback token, for now: the tests of an Actor listed in `ACTOR_BUILDS` without its own `testTokenEnvVar`, or whose variable isn't set, run with it. Set on its own, it also enables the `describe` blocks, as before per-Actor tokens.                                                                                                                                                                                                                                             |
-
-`ACTOR_BUILDS` entries look like this, and are matched to tests by `actorFullName` or `actorRawId`:
+The library reads `ACTOR_BUILDS` when a test file loads: a JSON array of the Actors to test. A test runs only when its
+Actor is listed there. [`test`](cli.md#running-tests-test) sets it from its input. Without any Actors, every
+`describe` block is skipped, so a plain `npm test` is unaffected. A value that isn't a JSON array fails the test file.
 
 ```json
 [
     {
-        "buildId": "...",
-        "actorRawId": "...",
-        "buildNumber": "1.2.3",
         "actorFullName": "john.doe/my-actor",
+        "buildId": "...",
+        "buildNumber": "1.2.3",
         "testTokenEnvVar": "APIFY_TOKEN_JOHN_DOE"
     }
 ]
 ```
 
-The tests of an Actor start runs and read their data with the token in the environment variable `testTokenEnvVar`
-names. [`test`](cli.md#running-tests-test) fills it in from the Actor's `testTokenEnvVar` in
-`apify-test-tools.config.json`, which is its `tokenEnvVar` unless the config names another. An Actor listed without
-one, or whose variable isn't set, falls back to `TESTER_APIFY_TOKEN` for now, with a warning. Without that either, it
-fails its own tests, and the other Actors' tests still run.
+| Field             | Description                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| `actorFullName`   | The Actor's full name, `owner/name`. Tests are matched to entries by it                           |
+| `buildNumber`     | The build to test. Without it, the Actor's tests run on its default build                         |
+| `buildId`         | The build whose input schema [`prefilledInput`](#runoptions) reads. Without it, the default build |
+| `testTokenEnvVar` | Name of the environment variable holding the token the Actor's tests run with                     |
+
+`test` fills in `testTokenEnvVar` from the Actor's `testTokenEnvVar` in `apify-test-tools.config.json`. If an entry has
+no `testTokenEnvVar`, or the variable isn't set, that Actor's tests fail. The other Actors' tests still run.
 
 ## `describe(name, fn, options?)`
 
-Same as vitest's `describe`, but skipped unless `ACTOR_BUILDS` lists any Actors or `TESTER_APIFY_TOKEN` is set. Its tests
-run concurrently by default. Use it instead of vitest's `describe` for platform tests.
+Vitest's `describe`, skipped unless `ACTOR_BUILDS` lists at least one Actor. Its tests run concurrently by default. Use
+it instead of Vitest's `describe` for platform tests.
 
-## `testActor(actorId, testName, fn, options?)`
+## `testActor(actorFullName, testName, fn, options?)`
 
-Registers a test for an Actor. `actorId` is the Actor's full name (`owner/name`) or its raw platform ID. The test
-only runs when the Actor is in `ACTOR_BUILDS`. Its name is
-`<actorId>: <testName>`.
+Registers a test named `<actorFullName>: <testName>`. It runs only when `ACTOR_BUILDS` lists the Actor.
+`actorFullName` must be the Actor's full name, `owner/name`. Anything else, such as an Actor ID, throws, so the test
+file fails to load instead of the test being skipped without a word.
 
-`fn` gets the vitest test context, with `expect` extended by the [custom matchers](#custom-matchers), a `run`
-function, and `apifyClient`: an `ApifyClient` with the token the Actor's tests run with, e.g. to read storages the run
-left elsewhere. Use it rather than a client of your own, whose token may not see the runs.
+`fn` gets the Vitest test context with:
 
-`expect` is soft: a failed assertion marks the test as failed but the test keeps going, so one run reports every
-failed check at once. Use `expect.hard(...)` for an assertion that must stop the test, e.g. before indexing into a
-list that may be empty.
+- `expect`, extended with the [custom matchers](#custom-matchers).
+- `run`, which runs the Actor, see [`run(options)`](#runoptions).
+- `apifyClient`, an `ApifyClient` with the Actor's test token, e.g. to read storages the run left elsewhere. Use it
+  rather than a client of your own, whose token may not see the runs.
+
+`expect` is soft: a failed assertion marks the test as failed, but the test continues, so one run reports every failed
+check. Use `expect.hard(...)` for an assertion that must stop the test, e.g. before indexing into a list that may be
+empty.
 
 ```ts
 import { describe, testActor } from 'apify-test-tools';
 
-describe('test', () => {
-    testActor(actorId, 'actor test 1', async ({ expect, run }) => {
+describe('my-actor', () => {
+    testActor('john.doe/my-actor', 'first test', async ({ expect, run }) => {
         const runResult = await run({ input });
 
         // your checks
     });
 
-    testActor(actorId, 'actor test 2', async ({ expect, run }) => {
+    testActor('john.doe/my-actor', 'second test', async ({ expect, run }) => {
         const runResult = await run({ input });
 
         // your checks
@@ -74,7 +75,7 @@ describe('test', () => {
 
 ### Test options
 
-The fourth argument takes vitest's test options:
+The fourth argument takes Vitest's test options. These defaults differ from Vitest's:
 
 | Option       | Default |
 | ------------ | ------- |
@@ -84,8 +85,8 @@ The fourth argument takes vitest's test options:
 
 ```ts
 testActor(
-    actorId,
-    'slow actor test',
+    'john.doe/my-actor',
+    'slow test',
     async ({ expect, run }) => {
         const runResult = await run({ input });
         await expect(runResult).toFinishWith({ datasetItemCount: 100 });
@@ -99,22 +100,22 @@ testActor(
 
 ### `run(options)`
 
-Starts the Actor, waits for the run to finish, and returns a [`RunTestResult`](#runtestresult). It runs the build
-from `ACTOR_BUILDS`, or the Actor's default build when it isn't listed there. Before returning, it waits 20 seconds
-for the run's dataset and statistics to sync, since the platform is only eventually consistent. The run's Console
-link is added to the test as a vitest annotation.
+Starts the Actor, waits for the run to finish, and returns a [`RunTestResult`](#runtestresult). It runs the
+`buildNumber` that `ACTOR_BUILDS` lists for the Actor, or its default build without one. It then waits 20 seconds for
+the run's dataset and statistics to sync, since the platform is eventually consistent. The run's Console link is added
+to the test as a Vitest annotation.
 
-| Option           | Description                                                                                                                                                                                                                                               |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `input`          | Actor input                                                                                                                                                                                                                                               |
-| `prefilledInput` | When `true`, `input` is merged on top of the Actor's prefilled input                                                                                                                                                                                      |
-| `options`        | [Actor call options](https://docs.apify.com/api/client/js/reference/interface/ActorCallOptions) like `memory`. `timeout` is in seconds and defaults to the Actor's default run timeout, at most 59 minutes, so the run finishes before the test times out |
-| `runId`          | Don't start a run; return this existing run instead. Every other option is ignored                                                                                                                                                                        |
+| Option           | Description                                                                                                                                                                                                                                                     |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input`          | Actor input                                                                                                                                                                                                                                                     |
+| `prefilledInput` | When `true`, `input` is merged on top of the prefilled values from the input schema of the build under test                                                                                                                                                     |
+| `options`        | [Actor call options](https://docs.apify.com/api/client/js/reference/interface/ActorCallOptions), such as `memory`. `timeout` is in seconds and defaults to the Actor's default run timeout, capped at 59 minutes, so the run finishes before the test times out |
+| `runId`          | Don't start a run. Return this existing run instead, without the 20-second wait. Every other option is ignored                                                                                                                                                  |
 
 #### Using prefilled input
 
 ```ts
-testActor(actorId, 'with prefilled input', async ({ expect, run }) => {
+testActor('john.doe/my-actor', 'with prefilled input', async ({ expect, run }) => {
     const runResult = await run({
         prefilledInput: true,
         input: { maxItems: 10 }, // merged on top of the prefilled input
@@ -125,68 +126,83 @@ testActor(actorId, 'with prefilled input', async ({ expect, run }) => {
 
 #### Testing an existing run
 
-Useful for iterating on the checks of a test without waiting for a new run:
+Useful for iterating on a test's checks without waiting for a new run:
 
 ```ts
-testActor(actorId, 'validate existing run', async ({ expect, run }) => {
+testActor('john.doe/my-actor', 'validate existing run', async ({ expect, run }) => {
     const runResult = await run({ runId: 'some-run-id' });
     await expect(runResult).toFinishWith({ datasetItemCount: 100 });
 });
 ```
 
-## `testServerInterfaceActor(actorId, testName, fn, options?)`
+## `testServerInterfaceActor(actorFullName, testName, fn, options?)`
 
-Same as `testActor`, for an Actor's server interface (formerly standby mode). Instead of `run`, `fn` gets
-`callServerInterface`, which sends a `POST` request with `input` as the JSON body directly to the Actor's server
-interface URL, plus `path`. It sends `Content-Type: application/json` unless `headers` set another type. When
-`ACTOR_BUILDS` lists a build for the Actor, as on a PR, the request selects it with the `X-Actor-Build` header. Otherwise, as in the scheduled platform tests, it
-sends no header and the platform serves the Actor's configured server interface build. No temporary tasks are created.
-It returns `{ data, body, status, headers }`, where `body` is the raw response text and `data` is `body` parsed as
-JSON, or `undefined` when the response isn't JSON, e.g. an HTML error page. Pass `body` as the message of the status
-assertion to see what came back when it fails. `fn` gets `apifyClient` too.
+Like `testActor`, for an Actor's server interface (formerly standby mode). Instead of `run`, `fn` gets
+`fetchServer(path, init?)`. It gets `expect` and `apifyClient` as in `testActor`. The test fails if the Actor has no
+server interface.
 
-Only the Actor's owner, or an account with write access to it, can select a build with `X-Actor-Build`. The tests run
-with the owner's token by default; if you point `testTokenEnvVar` at another account, give it write access to the
-Actor, or its server interface tests can only run on the default build.
+`fetchServer` is [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch) for the Actor's server
+interface:
+
+- `path` is appended to the server interface's URL and can include a query string, e.g. `/search?q=shoes`. It defaults
+  to `/`.
+- `init` takes the same options as `fetch`: `method`, `headers`, `body`, `signal`, and the rest.
+- It returns the `Response`, and doesn't throw on an error status.
+
+It adds two headers, unless `init` sets them:
+
+- `Authorization` with the Actor's test token.
+- `X-Actor-Build` with the `buildNumber` that `ACTOR_BUILDS` lists for the Actor, e.g. the build of a PR. Without one,
+  as in scheduled tests on the default build, it sends no `X-Actor-Build`, and the platform serves the Actor's
+  configured server interface build. A test that sets its own `X-Actor-Build` runs against that build instead.
+
+**Server interface tests need a full-permission test token.** Only the Actor's owner, or an account with write access
+to it, can select a build with `X-Actor-Build`, and a scoped token can't get write access to an Actor on its own. Point
+the Actor's `testTokenEnvVar` at a full-permission token of such an account, e.g. the same token as its
+`buildTokenEnvVar`, or its tests fail on a PR. See [Token permissions](../README.md#token-permissions).
 
 ```ts
 import { describe, testServerInterfaceActor } from 'apify-test-tools';
 
 describe('server interface tests', () => {
-    testServerInterfaceActor(actorId, 'search request', async ({ expect, callServerInterface }) => {
-        const { data, body, status } = await callServerInterface({
-            input: { query: 'test' },
-            path: '/search',
+    testServerInterfaceActor('john.doe/my-actor', 'search request', async ({ expect, fetchServer }) => {
+        const response = await fetchServer('/search?limit=10', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: 'test' }),
         });
 
-        expect(status, body).toBe(200);
+        // With the response text as the message, a wrong status shows what came back
+        expect(response.status, await response.clone().text()).toBe(200);
+        const data = await response.json();
         expect(data.results).toBeNonEmptyArray();
+    });
+
+    testServerInterfaceActor('john.doe/my-actor', 'health check', async ({ expect, fetchServer }) => {
+        const response = await fetchServer('/health');
+        expect(response.ok).toBe(true);
     });
 });
 ```
 
-It fails if the Actor doesn't have a server interface.
-
-`testStandbyActor`, whose `fn` gets `callStandby`, is a deprecated alias of `testServerInterfaceActor`.
-
 ## `RunTestResult`
 
-What `run` returns. Every getter fetches its data on the first call and returns the same result afterwards, so you
-can call them freely.
+What `run` returns. Each method fetches its data on the first call and reuses it afterwards, so you can call them
+freely.
 
-| Member                     | Returns                                                                                                  |
-| -------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `id`                       | The run ID                                                                                               |
-| `status`                   | The run status when it finished                                                                          |
-| `getDataset<T>()`          | `{ items: T[] }`, every item of the default dataset                                                      |
-| `getLog()`                 | The run log as a string                                                                                  |
-| `getStatistics()`          | The crawler statistics from the `SDK_CRAWLER_STATISTICS_0` record, or `undefined` for non-crawler Actors |
-| `getInput<T>()`            | The `INPUT` record of the default key-value store                                                        |
-| `getKeyValueStoreClient()` | An `apify-client` client for the default key-value store                                                 |
-| `getRunInfo()`             | The run object, fetched again so it reflects changes after the run finished                              |
+| Member                     | Returns                                                                                                                      |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `id`                       | The run ID                                                                                                                   |
+| `status`                   | The run status when it finished                                                                                              |
+| `getDataset<T>()`          | `{ items: T[] }`, every item of the default dataset                                                                          |
+| `getLog()`                 | The run log as a string                                                                                                      |
+| `getStatistics(keys?)`     | The crawler statistics, summed over every crawler, or `undefined` without any. See [Crawler statistics](#crawler-statistics) |
+| `getInput<T>()`            | The `INPUT` record of the default key-value store                                                                            |
+| `getKeyValueStoreClient()` | An `apify-client` client for the default key-value store                                                                     |
+| `getRunInfo()`             | The run object, fetched again, so it reflects changes made after the run finished                                            |
 
 ```ts
-testActor(actorId, 'check dataset items', async ({ expect, run }) => {
+testActor('john.doe/my-actor', 'check dataset items', async ({ expect, run }) => {
     const runResult = await run({ input });
 
     const { items } = await runResult.getDataset();
@@ -207,32 +223,64 @@ testActor(actorId, 'check dataset items', async ({ expect, run }) => {
 
 ## `toFinishWith(options)`
 
-Validates the common run properties in a single call and reports every failed check at once. Only
-`datasetItemCount` is required; the rest have defaults. Numeric checks take an exact number or a range: `{ min }`,
-`{ max }` or `{ min, max }`. Set a check with a default to `null` to skip it.
+Checks the common run properties in one call and reports every failed check at once. Only `datasetItemCount` is
+required. `datasetItemCount`, `duration`, `failedRequests`, `requestsRetries`, and each `chargedEventCounts` value take
+an exact number or a range: `{ min }`, `{ max }`, or `{ min, max }`.
 
-| Option                 | Default                           | Checks                                                                                           |
-| ---------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `datasetItemCount`     | required                          | Number of items in the default dataset                                                           |
-| `status`               | `'SUCCEEDED'`                     | Run status                                                                                       |
-| `duration`             | `{ min: 600, max: 600_000 }`      | Run duration in milliseconds (0.6 s to 10 min)                                                   |
-| `failedRequests`       | `0`                               | Failed requests in the crawler statistics                                                        |
-| `requestsRetries`      | `{ max: 3 }`                      | Request retries in the crawler statistics                                                        |
-| `maxRetriesPerRequest` | `null`                            | The most retries any single request needed                                                       |
-| `forbiddenLogs`        | `['ReferenceError', 'TypeError']` | Strings that must not appear in the log                                                          |
-| `chargedEventCounts`   | not checked                       | Pay-per-event counts, per event name. An event you omit is expected to have been charged 0 times |
+| Option                     | Default                                   | Checks                                                                                                                                                                 |
+| -------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `datasetItemCount`         | required                                  | Number of items in the default dataset                                                                                                                                 |
+| `status`                   | `'SUCCEEDED'`                             | Run status                                                                                                                                                             |
+| `failedRequests`           | `0`                                       | Failed requests in the crawler statistics. **Set it to `null` for an Actor without crawler statistics**, or the check fails                                            |
+| `forbiddenLogs`            | `[/\bReferenceError: /, /\bTypeError: /]` | Strings no log line may contain, or regular expressions no log line may match. A failure quotes up to three offending lines. `[]` turns the check off                  |
+| `duration`                 | not checked                               | Run duration in milliseconds                                                                                                                                           |
+| `requestsRetries`          | not checked                               | Request retries over all requests, from the crawler statistics                                                                                                         |
+| `maxRetriesPerRequest`     | not checked                               | A number: the most retries any single request may have needed, from the crawler statistics                                                                             |
+| `chargedEventCounts`       | not checked                               | Pay-per-event counts by event name. Only the listed events are checked, and an event that was never charged counts as `0`                                              |
+| `strictChargedEventCounts` | `false`                                   | With `chargedEventCounts`, also fail on any charged event it doesn't list                                                                                              |
+| `statisticsKeys`           | every crawler's                           | The key-value store record, or records, with the crawler statistics. By default, every record starting with `SDK_CRAWLER_STATISTICS_` or `CRAWLEE_CRAWLER_STATISTICS_` |
 
-`failedRequests` and `requestsRetries` come from the crawler statistics, so they fail for an Actor that doesn't
-write them. Set both to `null` for Actors that don't use a Crawlee crawler.
+`duration`, `failedRequests`, `requestsRetries`, and `maxRetriesPerRequest` take `null` to skip the check.
+
+The default `forbiddenLogs` match a `ReferenceError` or `TypeError` as JavaScript prints one (`TypeError: <message>`),
+not the word in prose or in a longer name. Your own `forbiddenLogs` replace the defaults.
+
+### Crawler statistics
+
+`failedRequests`, `requestsRetries`, and `maxRetriesPerRequest` read the crawler statistics. A Crawlee crawler persists
+them in the record `SDK_CRAWLER_STATISTICS_<id>` or `CRAWLEE_CRAWLER_STATISTICS_<id>`, where `<id>` is `0` for a run's
+first crawler, or the ID its statistics were given. By default, the checks sum every such record of the run, found by
+listing the first 1,000 keys under each prefix. A run with several crawlers, e.g. an adaptive crawler, needs no
+setting. Set `statisticsKeys` to read only some records, e.g. one crawler's out of several. If a record it names
+doesn't exist, those checks fail.
+
+`runResult.getStatistics(keys?)` reads the same records: every crawler's by default, or only the `keys` given (a string
+or an array). It returns the counters summed across them: `requestsFinished`, `requestsFailed`, `requestsRetries`,
+`requestRetryHistogram`, `maxRetriesPerRequest`, `requestTotalFinishedDurationMillis`, and
+`requestTotalFailedDurationMillis`, plus `keys`, the records it summed. It returns `undefined` when the run has no
+statistics record, and throws a `MissingStatisticsError` when a key you gave doesn't exist. To read a record's other
+fields, like its timestamps, use `getKeyValueStoreClient()`.
+
+**An Actor without crawler statistics, such as one without a Crawlee crawler, must set `failedRequests: null`.**
+`failedRequests` is checked by default, and a run without any statistics record fails it with
+`got no statistics record SDK_CRAWLER_STATISTICS_* or CRAWLEE_CRAWLER_STATISTICS_*`. With `null`, and no other check
+that needs them, the statistics aren't read at all:
+
+```ts
+await expect(runResult).toFinishWith({ datasetItemCount: 1, failedRequests: null });
+```
 
 ```ts
 await expect(runResult).toFinishWith({
     datasetItemCount: { min: 80, max: 120 },
     duration: { max: 30 * 60 * 1000 },
+    // Only the first crawler's statistics, instead of every crawler's
+    statisticsKeys: 'SDK_CRAWLER_STATISTICS_0',
     chargedEventCounts: {
         'actor-start': 1,
         'place-scraped': { min: 80, max: 120 },
     },
+    strictChargedEventCounts: true,
 });
 ```
 
@@ -240,11 +288,11 @@ await expect(runResult).toFinishWith({
 
 `expect` in `testActor` and `testServerInterfaceActor` is extended with:
 
-- `toBeArray()` / `toBeEmptyArray()` / `toBeNonEmptyArray()`
-- `toBeString()` / `toBeNonEmptyString()` / `toStartWith(prefix)`
-- `toBeNumber()` / `toBeWholeNumber()` / `toBeWithinRange(min, max)`
-- `toBeBoolean()` / `toBeTrue()` / `toBeFalse()`
-- `toBeObject()` / `toBeNonEmptyObject()`
+- `toBeArray()`, `toBeEmptyArray()`, `toBeNonEmptyArray()`
+- `toBeString()`, `toBeNonEmptyString()`, `toStartWith(prefix)`
+- `toBeNumber()`, `toBeWholeNumber()`, `toBeWithinRange(min, max)` (inclusive)
+- `toBeBoolean()`, `toBeTrue()`, `toBeFalse()`
+- `toBeObject()`, `toBeNonEmptyObject()`
 - [`toFinishWith(options)`](#tofinishwithoptions)
 
 Pass a message as the second argument of `expect` to say what failed:
@@ -255,8 +303,8 @@ expect(place.title, `London Eye's title`).toEqual('lastminute.com London Eye');
 
 ### Custom validation functions
 
-Wrap shared checks in your own functions, e.g. in `test/platform/utils.ts`, and pass them `expect`. Use the
-`ExpectStatic` type so the custom matchers type-check:
+Put shared checks in your own functions, e.g. in `test/platform/utils.ts`, and pass them `expect`. Type it as
+`ExpectStatic` so the custom matchers type-check:
 
 ```ts
 import { ExpectStatic } from 'apify-test-tools';
@@ -278,12 +326,13 @@ Run every command from the root of the Actor repository.
 npx apify-test-tools get-actor-configs --actors john.doe/my-actor | APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools test
 ```
 
-This also runs a test that reuses an existing run with [`runId`](#testing-an-existing-run), as long as its Actor is
+This also runs tests that reuse an existing run with [`runId`](#testing-an-existing-run), as long as their Actor is
 listed.
 
-**Against builds of your changes.** Build the Actors with the CLI, either from local files with
-[`build-from-local`](cli.md#build-from-local-source-build-from-local) or from a pushed branch with
-[`build`](cli.md#building-actors-build), and pass the output to [`test`](cli.md#running-tests-test):
+**Against builds of your changes.** Build the Actors from local files with
+[`build-from-local`](cli.md#build-from-local-source-build-from-local), or from a pushed branch with
+[`build`](cli.md#building-actors-build), and pass the output to `test`. You can change the tests and re-run them
+against the same builds.
 
 ```bash
 APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build-from-local --actors john.doe/my-actor > builds.json
@@ -291,11 +340,13 @@ APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build-from-local --actors john
 APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools test < builds.json
 ```
 
-`test` passes the builds to vitest as `ACTOR_BUILDS`, with each Actor's `testTokenEnvVar`. To run plain vitest, add
-`testTokenEnvVar` to each build yourself:
-`ACTOR_BUILDS='[{"actorFullName":"john.doe/my-actor","testTokenEnvVar":"APIFY_TOKEN_JOHN_DOE"}]' APIFY_TOKEN_JOHN_DOE=<token> npx vitest run test/platform`.
+To run only some test files, pass `--test-files-glob` to `test`. `test` rejects any other flag, so to filter tests by
+name with Vitest's `-t`, run Vitest directly. Set `ACTOR_BUILDS` yourself then, with each Actor's `testTokenEnvVar`,
+which `test` would otherwise add:
 
-You can change the tests and re-run them against the same builds.
+```bash
+ACTOR_BUILDS='[{"actorFullName":"john.doe/my-actor","testTokenEnvVar":"APIFY_TOKEN_JOHN_DOE"}]' \
+    APIFY_TOKEN_JOHN_DOE=<token> npx vitest run test/platform -t 'first test'
+```
 
-The same token builds and tests an Actor unless the config names a `testTokenEnvVar`. To run only some tests, pass a specific file instead of `test/platform`, or filter by
-name with vitest's `-t <name>` when running vitest directly. See [Running locally](cli.md#running-locally) for the full flow.
+See [Running locally](cli.md#running-locally) for the full flow.

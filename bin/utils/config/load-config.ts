@@ -52,9 +52,9 @@ const readConfigFileContents = async (): Promise<Record<string, unknown>> => {
         case 'invalid-json':
             // TODO: support .jsonc
             throw new Error(`Config file "${CONFIG_FILE_NAME}" contains invalid JSON and cannot be parsed.`);
-        // Valid JSON that isn't an object can't carry an "actors" array either.
+        // Valid JSON that isn't an object can't carry a mode and its Actors either.
         case 'not-an-object':
-            throw new Error(`Config file "${CONFIG_FILE_NAME}" must have an "actors" array at the top level.`);
+            throw new Error(`Config file "${CONFIG_FILE_NAME}" must be a JSON object with a "mode".`);
         default:
             throw new Error(
                 `Config file "${CONFIG_FILE_NAME}" not found in the current directory. ` +
@@ -90,7 +90,7 @@ export const loadActorConfig = (entry: ValidatedActorConfig): ActorConfig => {
     return {
         actorFullName: entry.actorFullName,
         folder: entry.folder,
-        tokenEnvVar: entry.tokenEnvVar,
+        buildTokenEnvVar: entry.buildTokenEnvVar,
         testTokenEnvVar: entry.testTokenEnvVar,
         actorJson,
         dockerContextDir,
@@ -118,12 +118,12 @@ type PathlessConfig = Omit<ResolvedActorConfig, 'folder' | 'overrideActorContext
 export const readBaseConfigFile = async () => {
     const rawFileContents = await readConfigFileContents();
     return parseResolvedConfigFile(rawFileContents).map(
-        ({ actorFullName, tokenEnvVar, testTokenEnvVar }) =>
+        ({ actorFullName, buildTokenEnvVar, testTokenEnvVar }) =>
             // using `satisfies` here instead of return type annotation
             // so its not shown as `PathlessConfig` type on output or IDE, but the expanded form
             ({
                 actorFullName,
-                tokenEnvVar,
+                buildTokenEnvVar,
                 testTokenEnvVar,
             }) satisfies PathlessConfig,
     );

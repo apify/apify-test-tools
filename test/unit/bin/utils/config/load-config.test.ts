@@ -12,6 +12,7 @@ import {
 } from '../../../../../bin/utils/config/load-config.js';
 import type { ResolvedActorConfig } from '../../../../../bin/utils/config/structures/base.js';
 import { ExistingDir, ExistingFile, RelativeDir, RelativeFile } from '../../../../../bin/utils/path/repo-relative.js';
+import { groupedConfig } from '../../../../grouped-config.js';
 
 let repoDir: string;
 let originalCwd: string;
@@ -31,7 +32,7 @@ afterEach(async () => {
 
 const emptyActorSelection = { actors: [], ignore: [] };
 
-const validConfig = (actors: object[]) => JSON.stringify({ actors });
+const validConfig = (actors: Record<string, unknown>[]) => JSON.stringify(groupedConfig(actors));
 const actorJson = (fields: Record<string, unknown> = {}) => JSON.stringify(fields);
 
 const writeFiles = async (files: Record<string, string>) =>
@@ -47,8 +48,8 @@ describe('loadActorConfig', () => {
     const entry = (fields: Partial<ResolvedActorConfig> = {}) => ({
         folder: new ExistingDir(fields.folder ?? 'actors/shopify'),
         actorFullName: fields.actorFullName ?? 'myteam/shopify',
-        tokenEnvVar: fields.tokenEnvVar ?? 'APIFY_TOKEN',
-        testTokenEnvVar: fields.testTokenEnvVar ?? fields.tokenEnvVar ?? 'APIFY_TOKEN',
+        buildTokenEnvVar: fields.buildTokenEnvVar ?? 'APIFY_TOKEN',
+        testTokenEnvVar: fields.testTokenEnvVar ?? fields.buildTokenEnvVar ?? 'APIFY_TOKEN',
         overrideActorContext: fields.overrideActorContext?.map((contextPath) => new RelativeDir(contextPath)),
     });
 
@@ -276,11 +277,11 @@ describe('readConfigFile', () => {
     it("carries the parser's normalization through to ActorConfig[]", async () => {
         await writeFiles({
             [CONFIG_FILE_NAME]: validConfig([
-                { folder: '.', actorFullName: 'apify/root', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
+                { folder: '.', actorFullName: 'apify/root', buildTokenEnvVar: 'APIFY_TOKEN_APIFY' },
                 {
                     folder: 'actors/shopify/',
                     actorFullName: 'myteam/shopify',
-                    tokenEnvVar: 'APIFY_TOKEN',
+                    buildTokenEnvVar: 'APIFY_TOKEN',
                     overrideActorContext: ['actors/shopify/', 'packages/'],
                 },
             ]),
@@ -290,10 +291,10 @@ describe('readConfigFile', () => {
 
         const actors = await readConfigFile(emptyActorSelection);
         expect(
-            actors.map(({ actorFullName, folder, tokenEnvVar, dockerContextDir, contextPaths }) => ({
+            actors.map(({ actorFullName, folder, buildTokenEnvVar, dockerContextDir, contextPaths }) => ({
                 actorFullName,
                 folder: folder.path,
-                tokenEnvVar,
+                buildTokenEnvVar,
                 dockerContextDir: dockerContextDir.path,
                 contextPaths: contextPaths.map((contextPath) => contextPath.path),
             })),
@@ -301,14 +302,14 @@ describe('readConfigFile', () => {
             {
                 actorFullName: 'apify/root',
                 folder: '.',
-                tokenEnvVar: 'APIFY_TOKEN_APIFY',
+                buildTokenEnvVar: 'APIFY_TOKEN_APIFY',
                 dockerContextDir: '.',
                 contextPaths: ['.'],
             },
             {
                 actorFullName: 'myteam/shopify',
                 folder: 'actors/shopify',
-                tokenEnvVar: 'APIFY_TOKEN',
+                buildTokenEnvVar: 'APIFY_TOKEN',
                 dockerContextDir: 'actors/shopify',
                 contextPaths: ['actors/shopify', 'packages'],
             },
@@ -329,14 +330,14 @@ describe('readConfigFile', () => {
 
     it('throws when the config file is not a JSON object', async () => {
         await writeFiles({ [CONFIG_FILE_NAME]: JSON.stringify([{ folder: 'actors/shopify' }]) });
-        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('"actors" array');
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow('must be a JSON object with a "mode"');
     });
 
     // The wording of a schema failure belongs to the strategy; this only checks that the failure
     // reaches the caller rather than being swallowed on the way out of readConfigFile.
     it('surfaces a schema failure from the parser', async () => {
-        await writeFiles({ [CONFIG_FILE_NAME]: JSON.stringify({ notActors: [] }) });
-        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/at actors/);
+        await writeFiles({ [CONFIG_FILE_NAME]: JSON.stringify({ mode: 'grouped', notGroups: {} }) });
+        await expect(readConfigFile(emptyActorSelection)).rejects.toThrow(/at groups/);
     });
 });
 
@@ -347,14 +348,14 @@ describe('readBaseConfigFile', () => {
                 {
                     folder: 'missing-actor-dir',
                     actorFullName: 'myteam/shopify',
-                    tokenEnvVar: 'APIFY_TOKEN',
+                    buildTokenEnvVar: 'APIFY_TOKEN',
                     overrideActorContext: ['../outside'],
                 },
             ]),
         });
 
         await expect(readBaseConfigFile()).resolves.toEqual([
-            { actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN', testTokenEnvVar: 'APIFY_TOKEN' },
+            { actorFullName: 'myteam/shopify', buildTokenEnvVar: 'APIFY_TOKEN', testTokenEnvVar: 'APIFY_TOKEN' },
         ]);
         await expect(readConfigFile(emptyActorSelection)).rejects.toThrow();
     });

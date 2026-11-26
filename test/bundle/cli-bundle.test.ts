@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { groupedConfig } from '../grouped-config.js';
+
 // Runs the committed bundle the composite action ships, not the sources, so these catch anything
 // that only breaks once bundled (a dependency loading code at runtime, a missing shim). Everything
 // here works without tokens or network: read-only commands, dry runs that end up with nothing to
@@ -60,12 +62,12 @@ describe('CLI bundle', () => {
         }
         await writeRepoFile(
             'apify-test-tools.config.json',
-            JSON.stringify({
-                actors: [
-                    { folder: 'actors/foo', actorFullName: 'tester/foo', tokenEnvVar: 'FOO_TOKEN' },
-                    { folder: 'actors/bar', actorFullName: 'tester/bar', tokenEnvVar: 'BAR_TOKEN' },
-                ],
-            }),
+            JSON.stringify(
+                groupedConfig([
+                    { folder: 'actors/foo', actorFullName: 'tester/foo', buildTokenEnvVar: 'FOO_TOKEN' },
+                    { folder: 'actors/bar', actorFullName: 'tester/bar', buildTokenEnvVar: 'BAR_TOKEN' },
+                ]),
+            ),
         );
         git('add', '-A');
         git('commit', '-q', '-m', 'chore: init');
@@ -105,8 +107,8 @@ describe('CLI bundle', () => {
         const { status, stdout, stderr } = runCli('get-actor-configs');
         expect(status, stderr).toBe(0);
         expect(JSON.parse(stdout)).toMatchObject([
-            { actorFullName: 'tester/foo', tokenEnvVar: 'FOO_TOKEN', testTokenEnvVar: 'FOO_TOKEN' },
-            { actorFullName: 'tester/bar', tokenEnvVar: 'BAR_TOKEN', testTokenEnvVar: 'BAR_TOKEN' },
+            { actorFullName: 'tester/foo', buildTokenEnvVar: 'FOO_TOKEN', testTokenEnvVar: 'FOO_TOKEN' },
+            { actorFullName: 'tester/bar', buildTokenEnvVar: 'BAR_TOKEN', testTokenEnvVar: 'BAR_TOKEN' },
         ]);
     });
 
@@ -196,7 +198,7 @@ describe('CLI bundle', () => {
     it('notify needs the Slack token to post a failed report, even in a dry run', () => {
         const report = {
             kind: 'test-report',
-            version: 1,
+            version: 2,
             success: false,
             summary: { total: 1, passed: 0, failed: 1, skipped: 0 },
             tests: [
@@ -206,7 +208,11 @@ describe('CLI bundle', () => {
                     status: 'failed',
                     durationMs: 1,
                     failureMessages: ['AssertionError: expected 1 to be 2'],
-                    run: { actorId: 'tester/foo', runId: 'run2', runLink: 'https://console.apify.com/view/runs/run2' },
+                    run: {
+                        actorFullName: 'tester/foo',
+                        runId: 'run2',
+                        runLink: 'https://console.apify.com/view/runs/run2',
+                    },
                 },
             ],
             errors: [],

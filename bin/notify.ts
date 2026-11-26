@@ -163,7 +163,7 @@ const escapeSlack = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, 
 
 /** One line per failure message, linked to the run that failed, if the test started one. */
 const formatFailures = ({ failureMessages, run }: TestCaseReport) => {
-    const link = run ? ` --- <${run.runLink}|${escapeSlack(run.actorId)}>` : '';
+    const link = run ? ` --- <${run.runLink}|${escapeSlack(run.actorFullName)}>` : '';
     return failureMessages.map((message) => `${escapeSlack(message)}${link}`);
 };
 

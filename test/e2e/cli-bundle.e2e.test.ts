@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { copyFile, lstat, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -7,7 +7,7 @@ import process from 'node:process';
 import { ApifyClient } from 'apify-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { OLDEST_SUPPORTED_LIB_VERSION } from '../../bin/lib-compat.js';
+import { groupedConfig } from '../grouped-config.js';
 import type { ActorBuild } from './helpers.js';
 import {
     bundlePath,
@@ -115,9 +115,9 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
                 `${folder}/main.js`,
                 serverInterface ? SERVER_INTERFACE_DUMMY_MAIN : `console.log('dummy ${i + 1}');\n`,
             );
-            actors.push({ folder, actorFullName, tokenEnvVar: TOKEN_ENV_VAR });
+            actors.push({ folder, actorFullName, buildTokenEnvVar: TOKEN_ENV_VAR });
         }
-        await writeRepoFile('apify-test-tools.config.json', JSON.stringify({ actors }));
+        await writeRepoFile('apify-test-tools.config.json', JSON.stringify(groupedConfig(actors)));
         git('add', '-A');
         git('commit', '-q', '-m', 'chore: init');
         baseSha = git('rev-parse', 'HEAD');
@@ -269,29 +269,28 @@ describe('sandbox dummies', () => {${actorTests}
         const input = { hello: 'server interface' };
         await writeRepoFile(
             'test/platform/server-interface.test.ts',
-            `import { describe, testServerInterfaceActor, testStandbyActor } from ${JSON.stringify(libPath)};
+            `import { describe, testServerInterfaceActor } from ${JSON.stringify(libPath)};
 
-const expected = {
-    buildId: ${JSON.stringify(build!.buildId)},
-    buildNumber: ${JSON.stringify(build!.buildNumber)},
-    method: 'POST',
-    path: '/echo?q=1',
-    contentType: 'application/json',
-    body: ${JSON.stringify(JSON.stringify(input))},
-};
+const build = { buildId: ${JSON.stringify(build!.buildId)}, buildNumber: ${JSON.stringify(build!.buildNumber)} };
 
 describe('sandbox server interface dummy', () => {
-    testServerInterfaceActor(${JSON.stringify(SERVER_INTERFACE_ACTOR)}, 'answers on the tested build', async ({ expect, callServerInterface }) => {
-        const { status, data, body } = await callServerInterface({ input: ${JSON.stringify(input)}, path: '/echo?q=1' });
-        expect(status, body).toBe(200);
-        expect(data).toEqual(expected);
-    });
+    testServerInterfaceActor(${JSON.stringify(SERVER_INTERFACE_ACTOR)}, 'answers on the tested build', async ({ expect, fetchServer }) => {
+        const json = await fetchServer('/echo?q=1', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: ${JSON.stringify(JSON.stringify(input))},
+        });
+        expect(json.status, await json.clone().text()).toBe(200);
+        expect(await json.json()).toEqual({
+            ...build,
+            method: 'POST',
+            path: '/echo?q=1',
+            contentType: 'application/json',
+            body: ${JSON.stringify(JSON.stringify(input))},
+        });
 
-    // The deprecated name still works
-    testStandbyActor(${JSON.stringify(SERVER_INTERFACE_ACTOR)}, 'answers testStandbyActor', async ({ expect, callStandby }) => {
-        const { status, data, body } = await callStandby({ input: ${JSON.stringify(input)}, path: '/echo?q=1' });
-        expect(status, body).toBe(200);
-        expect(data).toEqual(expected);
+        const get = await fetchServer('/status');
+        expect(await get.json()).toMatchObject({ ...build, method: 'GET', path: '/status', body: '' });
     });
 });
 `,
@@ -306,86 +305,15 @@ describe('sandbox server interface dummy', () => {
         // Server interface tests start no run of their own, so the report links none
         expect(JSON.parse(tested.stdout)).toMatchObject({
             success: true,
-            summary: { passed: 2, failed: 0 },
+            summary: { passed: 1, failed: 0 },
             tests: [
                 {
                     name: `sandbox server interface dummy ${SERVER_INTERFACE_ACTOR}: answers on the tested build`,
                     run: null,
                 },
-                {
-                    name: `sandbox server interface dummy ${SERVER_INTERFACE_ACTOR}: answers testStandbyActor`,
-                    run: null,
-                },
             ],
         });
     });
-
-    // A repository can run the newest CLI with an old lib, so the oldest supported one must run the builds too
-    it(
-        `runs the builds through testActor of the oldest supported lib, ${OLDEST_SUPPORTED_LIB_VERSION}`,
-        { timeout: 10 * 60_000 },
-        async () => {
-            expect(builds, 'needs the builds from the earlier test').toBeDefined();
-
-            // Its own repository, whose apify-test-tools is the oldest supported version (a dev dependency alias)
-            const oldLibRepo = await mkdtemp(path.join(os.tmpdir(), 'apify-cli-e2e-old-lib-'));
-            try {
-                await mkdir(path.join(oldLibRepo, 'node_modules'));
-                await symlink(
-                    path.join(projectRoot, 'node_modules/apify-test-tools-oldest'),
-                    path.join(oldLibRepo, 'node_modules/apify-test-tools'),
-                );
-                await symlink(
-                    path.join(projectRoot, 'node_modules/vitest'),
-                    path.join(oldLibRepo, 'node_modules/vitest'),
-                );
-                // The test names the Actors by raw ID and by full name, as old repositories do
-                const actorTests = builds
-                    .map(
-                        ({ actorFullName, actorRawId }, i) => `
-    testActor(${JSON.stringify(i === 0 ? actorRawId : actorFullName)}, 'finishes', async ({ expect, run }) => {
-        const result = await run({ input: {} });
-        expect(result.status).toBe('SUCCEEDED');
-    });`,
-                    )
-                    .join('\n');
-                await mkdir(path.join(oldLibRepo, 'test/platform'), { recursive: true });
-                // `test` reads each Actor's test token from the config
-                await copyFile(
-                    path.join(repoDir, 'apify-test-tools.config.json'),
-                    path.join(oldLibRepo, 'apify-test-tools.config.json'),
-                );
-                await writeFile(
-                    path.join(oldLibRepo, 'test/platform/dummies.test.ts'),
-                    `import { describe, testActor } from 'apify-test-tools';
-
-describe('sandbox dummies on the oldest lib', () => {${actorTests}
-});
-`,
-                );
-
-                const tested = await runProcess(process.execPath, [bundlePath, 'test'], {
-                    cwd: oldLibRepo,
-                    env: { ...cliEnv, TESTER_APIFY_TOKEN: token! },
-                    input: JSON.stringify(builds),
-                });
-                expect(tested.status, tested.stderr).toBe(0);
-                const report = JSON.parse(tested.stdout);
-                expect(report).toMatchObject({ success: true, summary: { passed: ACTORS.length, failed: 0 } });
-
-                // Each run used the build piped into `test`, which the report links though the lib records no actorId
-                const client = new ApifyClient({ token });
-                const runBuildIds = await Promise.all(
-                    report.tests.map(
-                        async ({ run }: { run: { runId: string } }) => (await client.run(run.runId).get())?.buildId,
-                    ),
-                );
-                expect(runBuildIds.sort()).toEqual(builds.map((build) => build.buildId).sort());
-            } finally {
-                await rm(oldLibRepo, { recursive: true, force: true });
-            }
-        },
-    );
 
     // Last, so builds from earlier runs of this suite don't pile up in the sandbox.
     it('delete-old-builds keeps the default builds', async () => {

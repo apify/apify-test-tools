@@ -3,7 +3,12 @@ import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
 
-import { DATASET_SYNC_DELAY_MS, DEFAULT_TEST_ACTOR_TIMEOUT_SECS, DEFAULT_TEST_RUN_DURATION_MS } from './consts.js';
+import {
+    ACTOR_FULL_NAME_REGEX,
+    DATASET_SYNC_DELAY_MS,
+    DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
+    DEFAULT_TEST_RUN_DURATION_MS,
+} from './consts.js';
 import { extendExpect } from './extend-expect.js';
 import { RunTestResult } from './run-test-result.js';
 import type { ActorBuild, ActorTestOptions, RunOptions } from './types.js';
@@ -23,45 +28,27 @@ try {
     throw new Error(`Failed to parse actor builds: ${err}`);
 }
 
-const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
-    map.set(cfg.actorFullName, cfg);
-    map.set(cfg.actorRawId, cfg);
-    return map;
-}, new Map<string, ActorBuild>());
+const config = new Map(actorBuilds.map((build) => [build.actorFullName, build]));
 
 export { ExpectStatic };
 
 const apifyClients = new Map<string, ApifyClient>();
 
 /**
- * The token the tests fall back to. A CLI older than per-Actor tokens names none, and a caller may not pass the
- * Actors' own tokens yet, so it stays until every repository and caller has moved over.
- */
-const FALLBACK_TOKEN_ENV_VAR = 'TESTER_APIFY_TOKEN';
-const warnedFallbacks = new Set<string>();
-
-/**
  * The client an Actor's tests run with: the token in the env var listed with the Actor in `ACTOR_BUILDS`, which `test`
- * takes from `testTokenEnvVar` in `apify-test-tools.config.json` (the Actor's `tokenEnvVar` by default). Without one,
- * or when it isn't set, `TESTER_APIFY_TOKEN`. It throws inside the test, so an Actor without any token fails only its
- * own tests, and the other Actors' tests still run.
+ * takes from `testTokenEnvVar` in `apify-test-tools.config.json`. It throws inside the test, so an Actor without its
+ * token fails only its own tests, and the other Actors' tests still run.
  */
-const getApifyClient = (actorId: string): ApifyClient => {
-    const testTokenEnvVar = config.get(actorId)?.testTokenEnvVar;
-    let tokenEnvVar = testTokenEnvVar;
-    if (!tokenEnvVar || !process.env[tokenEnvVar]) {
-        tokenEnvVar = FALLBACK_TOKEN_ENV_VAR;
-        if (testTokenEnvVar && !warnedFallbacks.has(testTokenEnvVar) && process.env[FALLBACK_TOKEN_ENV_VAR]) {
-            warnedFallbacks.add(testTokenEnvVar);
-            console.warn(`${testTokenEnvVar} is not set, testing with ${FALLBACK_TOKEN_ENV_VAR} instead.`);
-        }
-    }
-    const token = process.env[tokenEnvVar];
-    if (!token) {
-        const own = testTokenEnvVar ? `${testTokenEnvVar} nor ` : '';
+const getApifyClient = (actorFullName: string): ApifyClient => {
+    const testTokenEnvVar = config.get(actorFullName)?.testTokenEnvVar;
+    if (!testTokenEnvVar) {
         throw new Error(
-            `Neither ${own}${FALLBACK_TOKEN_ENV_VAR} is set. The tests of Actor "${actorId}" need a token.`,
+            `ACTOR_BUILDS names no testTokenEnvVar for Actor "${actorFullName}", so its tests have no token to run with.`,
         );
+    }
+    const token = process.env[testTokenEnvVar];
+    if (!token) {
+        throw new Error(`${testTokenEnvVar} is not set. The tests of Actor "${actorFullName}" need it.`);
     }
     if (!apifyClients.has(token)) apifyClients.set(token, new ApifyClient({ token }));
     return apifyClients.get(token)!;
@@ -77,26 +64,35 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
 
 /**
  * Platform tests only run on the Actors listed in `ACTOR_BUILDS`, so without any we skip them altogether. A plain
- * `npm test` stays unaffected. `TESTER_APIFY_TOKEN` alone still enables them, as it did before per-Actor tokens.
+ * `npm test` stays unaffected.
  */
 export const describe = (name: string, fn?: SuiteFactory<object>, options: ActorTestOptions = DEFAULT_TEST_OPTIONS) => {
-    vitestDescribe.runIf(actorBuilds.length > 0 || !!process.env[FALLBACK_TOKEN_ENV_VAR])(name, options, fn);
+    vitestDescribe.runIf(actorBuilds.length > 0)(name, options, fn);
 };
 
 /**
  * Registers a vitest test for an Actor, which only runs when the Actor is listed in `ACTOR_BUILDS`: against the build
  * listed with it, or its default build without one.
  * `body` gets the test context with the soft `expect` and the full test name.
+ *
+ * @throws when `actorFullName` isn't a full name, so its test file fails to load: a test naming its Actor by another ID
+ * would never match `ACTOR_BUILDS` and would be skipped without a word.
  */
 const defineActorTest = (
-    actorId: string,
+    actorFullName: string,
     testName: string,
     testOptions: ActorTestOptions | undefined,
     body: (context: TestContext, name: string) => Promise<void>,
 ) => {
+    if (!ACTOR_FULL_NAME_REGEX.test(actorFullName)) {
+        throw new Error(
+            `Test "${testName}" names its Actor "${actorFullName}", which is not a full name. Name the Actor ` +
+                'as owner/name, e.g. "apify/web-scraper".',
+        );
+    }
     const options = { ...DEFAULT_TEST_OPTIONS, ...testOptions };
-    const name = `${actorId}: ${testName}`;
-    vitestTest.runIf(config.has(actorId))(name, options, async (context) => {
+    const name = `${actorFullName}: ${testName}`;
+    vitestTest.runIf(config.has(actorFullName))(name, options, async (context) => {
         await body({ ...context, expect: extendExpect(context.expect) }, name);
     });
 };
@@ -105,17 +101,17 @@ const defineActorTest = (
  * `fn` gets `run`, which starts the Actor, and `apifyClient`, the client with the token the Actor's tests run with,
  * e.g. to read storages the run left elsewhere.
  *
- * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
+ * @param actorFullName - The Actor's full name, `owner/name`, e.g. `"apify/web-scraper"`.
  */
 export const testActor = <T>(
-    actorId: string,
+    actorFullName: string,
     testName: string,
     fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>>; apifyClient: ApifyClient }>,
     testOptions?: ActorTestOptions,
 ) => {
-    defineActorTest(actorId, testName, testOptions, async (context) => {
-        const apifyClient = getApifyClient(actorId);
-        await fn({ ...context, apifyClient, run: createStartRunFn(apifyClient, actorId, context) });
+    defineActorTest(actorFullName, testName, testOptions, async (context) => {
+        const apifyClient = getApifyClient(actorFullName);
+        await fn({ ...context, apifyClient, run: createStartRunFn(apifyClient, actorFullName, context) });
     });
 };
 
@@ -123,49 +119,27 @@ export const testActor = <T>(
  * Tests an Actor's server interface directly. A build listed in `ACTOR_BUILDS` is targeted with the X-Actor-Build
  * header, otherwise the platform serves the Actor's configured server interface build.
  *
- * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
+ * @param actorFullName - The Actor's full name, `owner/name`, e.g. `"apify/web-scraper"`.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const testServerInterfaceActor = <I = any, O = any>(
-    actorId: string,
+export const testServerInterfaceActor = (
+    actorFullName: string,
     testName: string,
-    fn: TestFunction<{
-        callServerInterface: ReturnType<typeof createCallServerInterfaceFn<I, O>>;
-        apifyClient: ApifyClient;
-    }>,
+    fn: TestFunction<{ fetchServer: ReturnType<typeof createFetchServerFn>; apifyClient: ApifyClient }>,
     testOptions?: ActorTestOptions,
 ) => {
-    defineActorTest(actorId, testName, testOptions, async (context) => {
-        const apifyClient = getApifyClient(actorId);
-        const serverInterface = await getServerInterface(apifyClient, actorId, config.get(actorId)?.buildNumber);
+    defineActorTest(actorFullName, testName, testOptions, async (context) => {
+        const apifyClient = getApifyClient(actorFullName);
+        const serverInterface = await getServerInterface(
+            apifyClient,
+            actorFullName,
+            config.get(actorFullName)?.buildNumber,
+        );
         await fn({
             ...context,
-            callServerInterface: createCallServerInterfaceFn<I, O>({ ...serverInterface, apifyClient }),
+            fetchServer: createFetchServerFn({ ...serverInterface, apifyClient }),
             apifyClient,
         });
     });
-};
-
-/**
- * @deprecated Use `testServerInterfaceActor`, whose `fn` gets `callServerInterface` instead of `callStandby`. The
- * platform renamed standby mode to server interface.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const testStandbyActor = <I = any, O = any>(
-    actorId: string,
-    testName: string,
-    fn: TestFunction<{
-        callStandby: ReturnType<typeof createCallServerInterfaceFn<I, O>>;
-        apifyClient: ApifyClient;
-    }>,
-    testOptions?: ActorTestOptions,
-) => {
-    testServerInterfaceActor<I, O>(
-        actorId,
-        testName,
-        (context) => fn({ ...context, callStandby: context.callServerInterface }),
-        testOptions,
-    );
 };
 
 export const testTestActor = <T>(
@@ -184,50 +158,22 @@ export const testTestActor = <T>(
     });
 };
 
-export const it = testActor;
-
 /**
- * Sends JSON input directly to the Actor's server interface URL, as `application/json` unless `headers` set another type.
- * Returns the raw response `body` too. `data` is the body parsed as JSON, or `undefined` when it isn't JSON (e.g. an
- * HTML error page), so a test can still assert the status and show what came back.
+ * `fetch` for the Actor's server interface: `path` is resolved against its URL, e.g. `/search?q=shoes`, and `init` is
+ * `fetch`'s own. By default it authenticates with the Actor's test token and selects the build under test, the one
+ * `ACTOR_BUILDS` lists, with `X-Actor-Build` (none on the default build). `init` can set either header itself.
  */
-const createCallServerInterfaceFn = <I, O>({
-    url,
-    build,
-    apifyClient,
-}: ServerInterface & { apifyClient: ApifyClient }) => {
-    return async ({
-        input,
-        path = '',
-        headers = {},
-    }: Pick<RunOptions<I>, 'input'> & { path?: string; headers?: Record<string, string> }) => {
-        const requestHeaders = new Headers(headers);
-        if (!requestHeaders.has('Content-Type')) {
-            requestHeaders.set('Content-Type', 'application/json');
+const createFetchServerFn = ({ url, build, apifyClient }: ServerInterface & { apifyClient: ApifyClient }) => {
+    return async (path = '/', init: RequestInit = {}): Promise<Response> => {
+        const target = new URL(url.replace(/\/+$/, '') + (path.startsWith('/') ? path : `/${path}`));
+        const headers = new Headers(init.headers);
+        if (!headers.has('Authorization')) {
+            headers.set('Authorization', `Bearer ${apifyClient.token}`);
         }
-        requestHeaders.set('Authorization', `Bearer ${apifyClient.token}`);
-        if (build !== undefined) {
-            requestHeaders.set('X-Actor-Build', build);
+        if (build !== undefined && !headers.has('X-Actor-Build')) {
+            headers.set('X-Actor-Build', build);
         }
-        const response = await fetch(url + path, {
-            headers: requestHeaders,
-            method: 'POST',
-            body: JSON.stringify(input),
-        });
-
-        const body = await response.text();
-        let data: O;
-        try {
-            data = JSON.parse(body) as O;
-        } catch {
-            data = undefined as O;
-        }
-        return {
-            data,
-            body,
-            status: response.status,
-            headers: response.headers,
-        };
+        return fetch(target, { ...init, headers });
     };
 };
 
@@ -244,15 +190,15 @@ interface ServerInterface {
  */
 const getServerInterface = async (
     apifyClient: ApifyClient,
-    actorId: string,
+    actorFullName: string,
     buildNumber?: string,
 ): Promise<ServerInterface> => {
-    const actorInfo = (await apifyClient.actor(actorId).get()) as (Actor & { standbyUrl?: string }) | undefined;
+    const actorInfo = (await apifyClient.actor(actorFullName).get()) as (Actor & { standbyUrl?: string }) | undefined;
     if (!actorInfo) {
-        throw new Error(`Actor "${actorId}" not found`);
+        throw new Error(`Actor "${actorFullName}" not found`);
     }
     if (!actorInfo.standbyUrl) {
-        throw new Error(`Actor "${actorId}" doesn't have a server interface`);
+        throw new Error(`Actor "${actorFullName}" doesn't have a server interface`);
     }
 
     return {
@@ -261,9 +207,9 @@ const getServerInterface = async (
     };
 };
 
-const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testContext: TestContext) => {
+const createStartRunFn = <T>(apifyClient: ApifyClient, actorFullName: string, testContext: TestContext) => {
     const { annotate, task } = testContext;
-    const actorConfig = config.get(actorId);
+    const actorConfig = config.get(actorFullName);
     const build = actorConfig?.buildNumber;
     const buildId = actorConfig?.buildId;
     return async (runOptions: RunOptions<T>) => {
@@ -278,11 +224,11 @@ const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testCont
         }
 
         const actorInput = {
-            ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorId, buildId))),
+            ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorFullName, buildId))),
             ...input,
         };
 
-        const actor = apifyClient.actor(actorId);
+        const actor = apifyClient.actor(actorFullName);
         const actorInfo = await actor.get();
         const timeout = Math.min(
             actorInfo?.defaultRunOptions?.timeoutSecs ?? DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
@@ -298,7 +244,7 @@ const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testCont
         task.meta = {
             runId: run.id,
             runLink,
-            actorId: actorConfig?.actorFullName ?? actorId,
+            actorFullName,
         };
 
         // waiting for dataset and statistics to sync, the Apify platform is only eventually consistent.
@@ -314,4 +260,4 @@ const generateRunLink = (run: ActorRun | ActorRunListItem): string => {
 
 /** Used for unit testing */
 // eslint-disable-next-line no-underscore-dangle
-export const _private = { createStartRunFn, createCallServerInterfaceFn, getServerInterface } as const;
+export const _private = { createStartRunFn, createFetchServerFn, getServerInterface } as const;

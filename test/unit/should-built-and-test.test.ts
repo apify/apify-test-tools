@@ -20,7 +20,7 @@ afterAll(() => {
 const actorConfig = (
     actorFullName: string,
     folder: string,
-    tokenEnvVar: string,
+    buildTokenEnvVar: string,
     dockerContextDir = '.',
 ): ActorConfig => {
     const actorJsonPath = path.posix.join(folder, '.actor/actor.json');
@@ -30,8 +30,8 @@ const actorConfig = (
     return {
         actorFullName,
         folder: new ExistingDir(folder),
-        tokenEnvVar,
-        testTokenEnvVar: tokenEnvVar,
+        buildTokenEnvVar,
+        testTokenEnvVar: buildTokenEnvVar,
         actorJson: {
             file: new ExistingFile(actorJsonPath),
             dockerContextDir: contextPath,

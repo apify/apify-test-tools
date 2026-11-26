@@ -4,19 +4,16 @@
 //     jq ... | node .github/scripts/run-with-apify-tokens.mjs --tokens build apify-test-tools build --version-number 0.99
 //     node .github/scripts/run-with-apify-tokens.mjs --tokens test apify-test-tools test < builds.json
 //
-// `--tokens build` passes the tokens that build the Actors, each Actor's `tokenEnvVar` in the repo's
+// `--tokens build` passes the tokens that build the Actors, each Actor's `buildTokenEnvVar` in the repo's
 // apify-test-tools.config.json. `--tokens test` passes the tokens the platform tests run with, each
-// Actor's `testTokenEnvVar`, which is its `tokenEnvVar` unless the config names another.
+// Actor's `testTokenEnvVar`.
 //
-// The step passes the reusable workflow's whole secrets map as WORKFLOW_SECRETS. The token names
-// come from the repo's apify-test-tools.config.json, read with apify-test-tools' own parser, so the
-// two can't drift. Everything else in the secrets map (npm, Slack, GitHub, anything else the repo
-// holds) is left out, and WORKFLOW_SECRETS itself is dropped, so the blob never reaches the CLI or
-// anything under node_modules. Variables the step sets itself, like TESTER_APIFY_TOKEN, pass through.
-//
-// Each token is looked up in the CONFIG_SECRETS secret first, a JSON object of secret name -> value,
-// and then among the top-level secrets, which is where `secrets: inherit` and the secrets a workflow
-// declares by name put them.
+// The step passes the CONFIG_SECRETS secret in the env var of the same name: a JSON object of secret
+// name -> value, the only place the tokens are read from. The token names come from the repo's
+// apify-test-tools.config.json, read with apify-test-tools' own parser, so the two can't drift.
+// Everything else in CONFIG_SECRETS is left out, and CONFIG_SECRETS itself is dropped, so the blob
+// never reaches the CLI or anything under node_modules. Variables the step sets itself, like
+// SCRIPTS_PATH, pass through.
 //
 // The command runs without a shell, so branch names and other interpolated arguments are passed
 // through as literal argv entries.
@@ -34,7 +31,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const TOKEN_FIELDS = { build: 'tokenEnvVar', test: 'testTokenEnvVar' } as const;
+const TOKEN_FIELDS = { build: 'buildTokenEnvVar', test: 'testTokenEnvVar' } as const;
 type TokenKind = keyof typeof TOKEN_FIELDS;
 const isTokenKind = (value: string | undefined): value is TokenKind => value === 'build' || value === 'test';
 
@@ -44,30 +41,14 @@ if (flag !== '--tokens' || !isTokenKind(kind) || !command) {
 }
 const tokenField = TOKEN_FIELDS[kind];
 
-const { WORKFLOW_SECRETS, ...baseEnv } = process.env;
-if (!WORKFLOW_SECRETS) {
-    fail('WORKFLOW_SECRETS is not set. Add `WORKFLOW_SECRETS: ${{ toJSON(secrets) }}` to the step env.');
-}
-
-let workflowSecrets: unknown;
-try {
-    workflowSecrets = JSON.parse(WORKFLOW_SECRETS);
-} catch (error) {
-    fail(`WORKFLOW_SECRETS is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
-}
-const workflowSecretsMap = workflowSecrets;
-if (!isRecord(workflowSecretsMap)) {
-    fail('WORKFLOW_SECRETS must be a JSON object of secret names and values.');
-}
+const { CONFIG_SECRETS, ...baseEnv } = process.env;
 
 // Never includes the parse error: Node quotes the input in it, and the input is a secret.
 const unpackConfigSecrets = (): Record<string, unknown> => {
-    const packed = workflowSecretsMap.CONFIG_SECRETS;
-    if (!packed) return {};
-    if (typeof packed !== 'string') fail('The CONFIG_SECRETS secret is not valid JSON.');
+    if (!CONFIG_SECRETS) return {};
     let value: unknown;
     try {
-        value = JSON.parse(packed);
+        value = JSON.parse(CONFIG_SECRETS);
     } catch {
         fail('The CONFIG_SECRETS secret is not valid JSON.');
     }
@@ -77,7 +58,7 @@ const unpackConfigSecrets = (): Record<string, unknown> => {
     return value;
 };
 
-const secrets = { ...workflowSecretsMap, ...unpackConfigSecrets() };
+const secrets = unpackConfigSecrets();
 
 let actorConfigs: Awaited<ReturnType<typeof readBaseConfigFile>>;
 try {
@@ -94,9 +75,9 @@ const tokenNames = [...new Set(actorConfigs.map((actorConfig) => actorConfig[tok
 const missing = tokenNames.filter((name) => !(name in secrets));
 if (missing.length > 0) {
     console.error(
-        `Warning: ${CONFIG_FILE_NAME} declares ${missing.join(', ')} as \`${tokenField}\`, but no such ` +
-            `secret was passed to this workflow, neither inside CONFIG_SECRETS nor inherited. Check the ` +
-            `repository secrets and the workflow's \`secrets:\` if a ${kind} fails on a missing token.`,
+        `Warning: ${CONFIG_FILE_NAME} declares ${missing.join(', ')} as \`${tokenField}\`, but the ` +
+            `CONFIG_SECRETS secret has no such entry. Add it to CONFIG_SECRETS in the calling workflow's ` +
+            `\`secrets:\` if a ${kind} fails on a missing token.`,
     );
 }
 

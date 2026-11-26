@@ -9,7 +9,7 @@ on:
                 default: ''
                 required: false
         # Every secret is optional. The ones this workflow reads are declared by name. The secrets that
-        # apify-test-tools.config.json names (each Actor's `tokenEnvVar`) differ per repo, so they
+        # apify-test-tools.config.json names (each Actor's `buildTokenEnvVar`) differ per repo, so they
         # come packed in CONFIG_SECRETS. See the Secrets section of docs/workflows.md.
         secrets:
             NPM_TOKEN:
@@ -22,7 +22,7 @@ on:
                 required: false
                 description: >-
                     JSON object of the secrets apify-test-tools.config.json names, secret name -> value.
-                    Today that is each Actor's `tokenEnvVar`. Passing `toJSON(secrets)` works too, only
+                    Today that is each Actor's `buildTokenEnvVar`. Passing `toJSON(secrets)` works too, only
                     the names the config declares are used.
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
               # bash rather than the default shell, for pipefail
               shell: bash
               env:
-                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
+                  CONFIG_SECRETS: ${{ secrets.CONFIG_SECRETS }}
               run: |
                   jq '{ actors: (.functionallyChangedActors + .cosmeticallyChangedActors) }' affected.json \
                     | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" --tokens build \
@@ -78,7 +78,7 @@ jobs:
 
             - name: Delete old builds
               env:
-                  WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
+                  CONFIG_SECRETS: ${{ secrets.CONFIG_SECRETS }}
               run: |
                   node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" --tokens build \
                     apify-test-tools delete-old-builds

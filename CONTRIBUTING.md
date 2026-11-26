@@ -89,7 +89,7 @@ The tag is not semver, so `git-cliff` would abort on it. It is skipped only beca
 The action's "Nothing to release" guard resolves to this tag and never fires, so an empty stable
 release fails at `npm publish` instead of erroring cleanly.
 
-Consumers pin `@workflows-v0`, not `@master`. See [Versioning and releases](#versioning-and-releases) below.
+Consumers pin `@workflows-v1`, not `@master`. See [Versioning and releases](#versioning-and-releases) below.
 
 - `npm test` covers the bundle without network (`test/bundle/`). `npm run test:e2e` runs it against
   dummy Actors in an isolated sandbox account (`test/e2e/`) and skips itself unless
@@ -102,7 +102,7 @@ Consumers pin `@workflows-v0`, not `@master`. See [Versioning and releases](#ver
 pushing workflow changes.
 
 The reusable workflows load the composite actions with `uses: $/.github/actions/checkout-restore-dependencies` (and
-`$/.github/actions/humanize-duty`), never `apify/apify-test-tools/...@workflows-v0`. `$/` is the
+`$/.github/actions/humanize-duty`), never `apify/apify-test-tools/...@workflows-v1`. `$/` is the
 [self-repository syntax](https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/):
 it resolves to this repo at the commit the workflow was called at. A hardcoded tag would hand a caller pinned to an
 older SHA, or to a branch, the action and CLI from the tag instead of from the commit they asked for.
@@ -118,7 +118,7 @@ The workflows and the npm package live in one repo but ship on their own schedul
 
 | What                                         | Consumers get it through                   | Ships when              |
 | -------------------------------------------- | ------------------------------------------ | ----------------------- |
-| the workflows and the CLI they call          | the `@workflows-v0` tag in `uses:`         | every master push       |
+| the workflows and the CLI they call          | the `@workflows-v1` tag in `uses:`         | every master push       |
 | the lib (`testActor`, `describe`, matchers…) | `apify-test-tools` in their `package.json` | a stable release on npm |
 
 The CLI is bundled with its dependencies into `.github/cli/apify-test-tools.mjs` (`npm run bundle`, run by the
@@ -126,43 +126,30 @@ pre-commit hook and checked in CI), and the setup action runs it from there. Not
 a complete statement: these workflows and this CLI, with the exact dependency versions from `package-lock.json` at
 that commit. The consumer's own `node_modules` is left alone, so their tests keep the lib version they locked.
 
-- **Workflow or CLI change** — merge it. `workflows-v0` moves once checks and tests pass, and it goes live. No
+- **Workflow or CLI change** — merge it. `workflows-v1` moves once checks and tests pass, and it goes live. No
   release needed, even when a workflow starts using a new CLI feature: both are in the same commit.
 - **Lib change** — merge it, then cut a release when you want it out. Consumers pick it up when they update
   `apify-test-tools`.
 
-The CLI and the lib in one job can be different versions now, so the formats between them are a contract: the
+The CLI and the lib in one job can be different versions, so the formats between them are a contract: the
 `ACTOR_BUILDS` JSON that `build` writes and the lib reads, and the vitest JSON report (with the run each test started on its `meta`) that `test` reads. Add
-fields freely; renaming or removing one needs a new major tag. When the lib starts depending on a field, bump
-`apifyTestTools.actorBuildsVersion` in `package.json` and `ACTOR_BUILDS_VERSION` in `bin/run-tests.ts` together: `test`
-refuses a lib that declares an older version, instead of letting it skip every test. Version 2 added
-`testTokenEnvVar`.
+fields freely; renaming or removing one needs a new major tag. When the lib starts depending on a field, raise
+`OLDEST_SUPPORTED_LIB_VERSION` (below) to the lib version that first reads it.
 
-**The CLI must keep working with every lib version from `OLDEST_SUPPORTED_LIB_VERSION` up** (`bin/lib-compat.ts`,
-0.2.4 as of 2026-11). That is the oldest version a consumer repo locks. Old libs read the contract differently, and a
-mismatch skips every test while the run still passes:
+**The CLI works with every lib version from `OLDEST_SUPPORTED_LIB_VERSION` up** (`bin/lib-compat.ts`). An
+older lib may read the contract differently, and a mismatch skips every test while the run still
+passes, so `test` refuses a repository whose installed lib is older. Raising the version breaks the callers still on
+the older lib, so it goes with a new major workflows tag. `test/bundle/old-libs.test.ts` checks the bundled `test`
+refuses an older lib and runs the oldest supported one.
 
-- Before 0.9.0, the lib reads the Actor IDs in `ACTOR_BUILDS` as `actorName` and `actorId`, and records a test's run
-  without `actorId`. `test` writes the IDs under both names, and takes the Actor from the test name.
-- Before 0.10.0, the lib's `describe` runs only with `RUN_PLATFORM_TESTS` set, and `RUN_ALL_PLATFORM_TESTS` runs the
-  tests of every Actor. `test` sets the first and removes the second.
-
-`test/bundle/old-libs.test.ts` runs the bundled `test` with the oldest supported lib and with 0.9.0, installed as npm
-aliases (`apify-test-tools-oldest`, `apify-test-tools-0-9-0`). The e2e suite runs real builds through the oldest one.
-`test` warns when a repository uses a lib older than the oldest supported version.
-
-To raise the oldest supported version, first check the `apify-test-tools` version in each consumer repo's lockfile,
-then change the constant and the `apify-test-tools-oldest` alias together. A test checks they match.
-
-`workflows-v0` moving on every master push means `@workflows-v0` is as live as `@master` was — there's no staging
-step. What the tag buys you is a `workflows-v1` for breaking workflow changes, so repos migrate one at a time instead
+`workflows-v1` moving on every master push means `@workflows-v1` is as live as `@master` — there's no staging
+step. What the tag buys you is a `workflows-v2` for breaking workflow changes, so repos migrate one at a time instead
 of all at once, and a way to roll back by pointing the tag at an earlier commit (**Move major version tag**
 workflow). Bump `MAJOR_TAG` in `.github/workflows/_move_major_tag.yaml` to cut the next major; the old tag then
 freezes where it is and keeps working, CLI included, since the bundle is part of the frozen commit.
 
-The tag tracks the **workflows'** contract, not the npm package version. They move independently on purpose, so
-`@workflows-v0` is expected to stay `@workflows-v0` after the package reaches 1.0 — bump it when a workflow breaks
-its callers, not when the package does. The usage examples in the workflows, README and docs repeat the tag
+The tag tracks the **workflows'** contract, not the npm package version. They move independently on purpose: bump it
+when a workflow breaks its callers, not when the package does. The usage examples in the workflows, README and docs repeat the tag
 literally, so update them by hand when you bump it.
 
 ## Testing workflow changes
@@ -179,39 +166,33 @@ literally, so update them by hand when you bump it.
 The public side of this is the [Secrets](./docs/workflows.md#secrets) table.
 
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its own tokens via
-`tokenEnvVar` (build) and `testTokenEnvVar` (tests, `tokenEnvVar` by default) in `apify-test-tools.config.json`, and a
-reusable workflow only accepts secrets it declares by name. Callers pack them into the `CONFIG_SECRETS` secret. Those
-steps pass `${{ toJSON(secrets) }}` as `WORKFLOW_SECRETS` and run the command through
-`.github/scripts/run-with-apify-tokens.mjs --tokens build|test`, bundled from `workflow-scripts-src/`, which reads
-the token names with the CLI's own config parser, so it resolves them exactly the way the command that uses them does,
-in every config format. It looks each one up in `CONFIG_SECRETS` first, then among the secrets `secrets: inherit` or the workflow's own
-declarations brought:
+`buildTokenEnvVar` (build) and `testTokenEnvVar` (tests) in
+`apify-test-tools.config.json`, and a reusable workflow only accepts secrets it declares by name. Callers pack them into
+the `CONFIG_SECRETS` secret, the only place the tokens are read from: `secrets: inherit` doesn't pass them. Those steps
+pass `CONFIG_SECRETS` in the env var of the same name and run the command through
+`.github/scripts/run-with-apify-tokens.mjs --tokens build|test`, bundled from `workflow-scripts-src/`, which reads the
+token names with the CLI's own config parser, so it resolves them exactly the way the command that uses them does:
 
 ```yaml
 - name: Build
   shell: bash
   env:
-      WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
+      CONFIG_SECRETS: ${{ secrets.CONFIG_SECRETS }}
   run: |
       jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
         | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" --tokens build \
           apify-test-tools build --version-number 0.99
 ```
 
-The wrapper passes only the tokens the config declares and drops `WORKFLOW_SECRETS`, so neither the CLI nor anything
-under `node_modules` sees the blob. Nothing is written to `$GITHUB_ENV`, so the tokens stay inside that one command
-rather than leaking into later steps. Reading the config with `apify-test-tools`' own parser means the two can't drift, and a
-secret that merely looks like an Actor token is not passed just because of its name.
+The wrapper passes only the tokens the config declares and drops `CONFIG_SECRETS`, so neither the CLI nor anything under
+`node_modules` sees the blob, nor any other secret of the workflow. Nothing is written to `$GITHUB_ENV`, so the tokens
+stay inside that one command rather than leaking into later steps. Reading the config with `apify-test-tools`' own
+parser means the two can't drift, and a secret that merely looks like an Actor token is not passed just because of its
+name.
 
-The test step runs the repo's test code and its whole import graph, so it gets the test tokens only. These are the
-Actor tokens unless the config names others: the tests run as the Actor's owner, because only the owner (or an account
-with write access) can call an Actor's server interface on a non-default build. A repo that wants the tests to hold less can point
-`testTokenEnvVar` at a more restricted token.
-
-For now the test steps also get `TESTER_APIFY_TOKEN`, and both the CLI and the lib fall back to it for an Actor whose
-own test token isn't set. The lib and the workflows ship separately, so this keeps a repo on an older lib (which reads
-only `TESTER_APIFY_TOKEN`) and a caller that doesn't pass the Actors' tokens yet working. Drop the fallback once every
-repository is on a lib with `actorBuildsVersion` 2 and passes its test tokens.
+The test step runs the repo's test code and its whole import graph, so it gets the test tokens only. The config has to
+name them: `testTokenEnvVar` has no default, so each repo chooses whether its tests hold the full-permission Actor
+token, which server interface tests on a PR build need, or a scoped token that can only run its Actors.
 
 A token the config declares but the repo hasn't set is a warning, not a failure: a repo can carry an Actor whose
 token isn't configured and still build fine as long as that Actor never changes, and `apify-test-tools` raises a

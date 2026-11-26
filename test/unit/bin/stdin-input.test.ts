@@ -36,14 +36,14 @@ describe('parseBuildInput', () => {
 describe('parseTestTargets', () => {
     const build = { buildId: 'b', actorRawId: 'r', buildNumber: '0.99.1', actorFullName: 'owner/a' };
 
-    it('reads the output of build, leaving out its raw ID, which test looks up itself', () => {
-        const { actorRawId: _actorRawId, ...withoutRawId } = build;
-        expect(parseTestTargets(JSON.stringify([build]))).toStrictEqual([withoutRawId]);
+    it('reads the output of build, keeping only what the lib reads', () => {
+        const { actorRawId: _actorRawId, ...target } = build;
+        expect(parseTestTargets(JSON.stringify([build]))).toStrictEqual([target]);
         expect(parseTestTargets('[]')).toStrictEqual([]);
     });
 
     it('reads an Actor without a build, for its default build, ignoring the rest of get-actor-configs', () => {
-        const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' };
+        const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', buildTokenEnvVar: 'APIFY_TOKEN_OWNER' };
         expect(parseTestTargets(JSON.stringify([actorConfig]))).toStrictEqual([{ actorFullName: 'owner/a' }]);
     });
 
@@ -70,7 +70,7 @@ describe('parseNotifyInput', () => {
     const commit = { sha: '1'.repeat(40), author: 'Dev<dev@example.com>', date: 'Date', message: 'feat: foo' };
     const report = {
         kind: 'test-report',
-        version: 1,
+        version: 2,
         success: true,
         summary: { total: 0, passed: 0, failed: 0, skipped: 0 },
         tests: [],

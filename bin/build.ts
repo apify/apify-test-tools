@@ -216,10 +216,10 @@ export class ApifyBuilder {
     };
 
     static fromActorConfig = (actorConfig: ActorConfig): ApifyBuilder => {
-        const { actorFullName, tokenEnvVar } = actorConfig;
-        const token = process.env[tokenEnvVar];
+        const { actorFullName, buildTokenEnvVar } = actorConfig;
+        const token = process.env[buildTokenEnvVar];
         if (!token) {
-            throw new Error(`Env var ${tokenEnvVar} is not set (needed for actor "${actorFullName}").`);
+            throw new Error(`Env var ${buildTokenEnvVar} is not set (needed for actor "${actorFullName}").`);
         }
         const apifyClient = new ApifyClient({ token });
         return new ApifyBuilder(apifyClient, actorFullName);
@@ -227,7 +227,6 @@ export class ApifyBuilder {
 
     /**
      * Deletes build of all versions. Apify API doesn't allow to delete default build and we explicitly skip it
-     * We delete devel builds faster because we used the for every PR until recently so just to get rid of them faster
      */
     async deleteOldBuilds({ dryRun }: { dryRun: boolean }): Promise<void> {
         // Even though we don't version our current Actors, if we ever such Actors to GitHub CI, we would accidentally delete old supported versions
@@ -252,12 +251,8 @@ export class ApifyBuilder {
         // We don't want to be too short because we might to debug something
         // but also not too long because it increases the risk of users using outdated versions
         const DEFAULT_DAYS_BACK_PROD_VERSIONS = 30;
-        const DEFAULT_DAYS_BACK_DEVEL = 7;
 
         const actorInfo = await this.getActorInfo();
-
-        // A build tagged 'devel' is kept for DEFAULT_DAYS_BACK_DEVEL only. Remove this once no Actor has the tag
-        const taggedDevelBuildNumber: string | undefined = actorInfo.taggedBuilds!.devel?.buildNumber;
 
         const allTags = Object.keys(actorInfo.taggedBuilds ?? {});
         const protectedTags = allTags.filter((tag) => PROTECTED_TAGS_PREFIX.some((prefix) => tag.startsWith(prefix)));
@@ -272,7 +267,6 @@ export class ApifyBuilder {
         const { defaultBuildNumber, defaultBuildTag } = resolveDefaultVersion(this.actorFullName, actorInfo);
 
         const daysAgoUnixProd = Date.now() - DEFAULT_DAYS_BACK_PROD_VERSIONS * 24 * 60 * 60 * 1000;
-        const daysAgoUnixDevel = Date.now() - DEFAULT_DAYS_BACK_DEVEL * 24 * 60 * 60 * 1000;
 
         // Fixing API client missing buildNumber field
         type CorrectBuildColletionItem = (typeof items)[0] & { buildNumber: string };
@@ -295,15 +289,6 @@ export class ApifyBuilder {
                 return false;
             }
 
-            if (taggedDevelBuildNumber && build.buildNumber === taggedDevelBuildNumber) {
-                const shouldDeleteDevelBuild = build.startedAt.getTime() < daysAgoUnixDevel;
-                if (shouldDeleteDevelBuild) {
-                    logger.info(
-                        `[DELETE OLD BUILDS][${this.actorFullName}]: Removing olf devel build ${taggedDevelBuildNumber}.`,
-                    );
-                }
-                return shouldDeleteDevelBuild;
-            }
             return build.startedAt.getTime() < daysAgoUnixProd;
         });
 

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { _private } from '../../lib/lib.js';
 
-const { createCallServerInterfaceFn, getServerInterface } = _private;
+const { createFetchServerFn, getServerInterface } = _private;
 const serverInterfaceUrl = 'https://test-actor.apify.actor';
 const apifyClient = new ApifyClient({ token: 'server-interface-test-token' });
 
@@ -20,56 +20,47 @@ const mockActor = (actor: (Partial<Actor> & { standbyUrl?: string }) | undefined
     } as unknown as ActorClient);
 };
 
-describe('server interface requests', () => {
+/** Stubs the global fetch with `response`, and returns the request it got: its URL, its options and headers */
+const stubFetch = (response: Response = new Response('{}')) => {
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal('fetch', fetchMock);
+    return () => {
+        const [url, options] = fetchMock.mock.calls[0];
+        return { url: `${url}`, options, headers: options.headers };
+    };
+};
+
+const fetchServer = createFetchServerFn({ url: serverInterfaceUrl, apifyClient });
+
+describe('fetchServer', () => {
     it.each(['0.12.34', 'beta'])('targets build %s directly without creating or deleting tasks', async (build) => {
         const actor = mockActor({ standbyUrl: serverInterfaceUrl, actorStandby: { isEnabled: true, build: 'latest' } });
         const tasks = vi.spyOn(ApifyClient.prototype, 'tasks');
         const task = vi.spyOn(ApifyClient.prototype, 'task');
-        const response = new Response(JSON.stringify({ results: [1, 2] }), {
-            status: 201,
-            headers: { 'X-Test-Response': 'preserved' },
-        });
-        const fetchMock = vi.fn().mockResolvedValue(response);
-        vi.stubGlobal('fetch', fetchMock);
+        const response = new Response('{"results":[1,2]}', { status: 201 });
+        const request = stubFetch(response);
 
-        const callServerInterface = createCallServerInterfaceFn({
+        const fetchBuild = createFetchServerFn({
             ...(await getServerInterface(apifyClient, 'owner/actor', build)),
             apifyClient,
         });
-        const result = await callServerInterface({
-            input: { query: 'test' },
-            path: '/search?limit=2',
-            headers: { 'content-type': 'application/x-ndjson', 'x-actor-build': 'wrong-build', 'X-Custom': 'value' },
+        const result = await fetchBuild('/search', {
+            method: 'POST',
+            body: '{"query":"test"}',
+            headers: { 'Content-Type': 'application/json' },
         });
 
         expect(actor).toHaveBeenCalledWith('owner/actor');
-        expect(fetchMock).toHaveBeenCalledTimes(1);
-        const [url, options] = fetchMock.mock.calls[0];
-        expect(url).toBe(`${serverInterfaceUrl}/search?limit=2`);
-        expect(options.method).toBe('POST');
-        expect(options.body).toBe(JSON.stringify({ query: 'test' }));
-        expect(options.headers.get('X-Actor-Build')).toBe(build);
-        expect([...options.headers.keys()].filter((key) => key === 'x-actor-build')).toHaveLength(1);
-        expect(options.headers.get('Authorization')).toBe('Bearer server-interface-test-token');
-        expect(options.headers.get('Content-Type')).toBe('application/x-ndjson');
-        expect(options.headers.get('X-Custom')).toBe('value');
-        expect(result).toEqual({
-            data: { results: [1, 2] },
-            body: '{"results":[1,2]}',
-            status: 201,
-            headers: response.headers,
-        });
+        const { url, options, headers } = request();
+        expect(url).toBe(`${serverInterfaceUrl}/search`);
+        expect(options).toMatchObject({ method: 'POST', body: '{"query":"test"}' });
+        expect(headers.get('X-Actor-Build')).toBe(build);
+        expect(headers.get('Authorization')).toBe('Bearer server-interface-test-token');
+        expect(headers.get('Content-Type')).toBe('application/json');
+        // The response as fetch returned it
+        expect(result).toBe(response);
         expect(tasks).not.toHaveBeenCalled();
         expect(task).not.toHaveBeenCalled();
-    });
-
-    it('sends the input as JSON by default', async () => {
-        const fetchMock = vi.fn().mockResolvedValue(new Response('{}'));
-        vi.stubGlobal('fetch', fetchMock);
-
-        await createCallServerInterfaceFn({ url: serverInterfaceUrl, apifyClient })({ input: {} });
-
-        expect(fetchMock.mock.calls[0][1].headers.get('Content-Type')).toBe('application/json');
     });
 
     // The default build needs no header, and a header would need write access to the Actor even for that build
@@ -78,45 +69,49 @@ describe('server interface requests', () => {
         ['no configured server interface build', undefined],
     ])('sends no build on the default build, with %s', async (_, actorStandby) => {
         mockActor({ standbyUrl: serverInterfaceUrl, actorStandby });
-        const fetchMock = vi.fn().mockResolvedValue(new Response('{}'));
-        vi.stubGlobal('fetch', fetchMock);
+        const request = stubFetch();
 
-        await createCallServerInterfaceFn({ ...(await getServerInterface(apifyClient, 'actor')), apifyClient })({
-            input: {},
-        });
+        const fetchDefault = createFetchServerFn({ ...(await getServerInterface(apifyClient, 'actor')), apifyClient });
+        await fetchDefault('/');
 
-        expect(fetchMock.mock.calls[0][0]).toBe(serverInterfaceUrl);
-        expect(fetchMock.mock.calls[0][1].headers.has('X-Actor-Build')).toBe(false);
+        expect(request().headers.has('X-Actor-Build')).toBe(false);
     });
 
-    it('returns an error response for the test to assert', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"error":"bad input"}', { status: 400 })));
+    it("resolves the path against the server's URL, keeping its query string", async () => {
+        const request = stubFetch();
+        await fetchServer('search?q=a+b&limit=3');
+        expect(request().url).toBe(`${serverInterfaceUrl}/search?q=a+b&limit=3`);
 
-        const result = await createCallServerInterfaceFn({ url: serverInterfaceUrl, build: 'latest', apifyClient })({
-            input: {},
-        });
+        const root = stubFetch();
+        await fetchServer();
+        expect(root().url).toBe(`${serverInterfaceUrl}/`);
+        expect(root().options.method).toBeUndefined();
+    });
 
-        expect(result.status).toBe(400);
-        expect(result.data).toEqual({ error: 'bad input' });
+    it('passes the init on as fetch takes it', async () => {
+        const request = stubFetch();
+        const { signal } = new AbortController();
+        const body = new URLSearchParams({ a: '1' });
+        await fetchServer('/form', { method: 'PUT', body, signal, redirect: 'manual' });
+        expect(request().options).toMatchObject({ method: 'PUT', body, signal, redirect: 'manual' });
     });
 
     it.each([
-        ['an HTML error page', '<html><body>502 Bad Gateway</body></html>', 502],
-        ['an empty body', '', 204],
-    ])('returns %s as the raw body, without data', async (_, text, status) => {
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(text || null, { status })));
-
-        const result = await createCallServerInterfaceFn({ url: serverInterfaceUrl, apifyClient })({ input: {} });
-
-        expect(result).toMatchObject({ status, body: text, data: undefined });
+        ['on the build under test', '0.0.7'],
+        ['on the default build', undefined],
+    ])('keeps the Authorization and X-Actor-Build the caller sets, %s', async (_, build) => {
+        const request = stubFetch();
+        await createFetchServerFn({ url: serverInterfaceUrl, build, apifyClient })('/', {
+            headers: { Authorization: 'Bearer other', 'X-Actor-Build': '0.0.1' },
+        });
+        expect(request().headers.get('Authorization')).toBe('Bearer other');
+        expect(request().headers.get('X-Actor-Build')).toBe('0.0.1');
     });
 
     it('propagates fetch failures', async () => {
         vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('connection failed')));
 
-        await expect(
-            createCallServerInterfaceFn({ url: serverInterfaceUrl, apifyClient })({ input: {} }),
-        ).rejects.toThrow('connection failed');
+        await expect(fetchServer('/')).rejects.toThrow('connection failed');
     });
 
     it('rejects a missing Actor', async () => {

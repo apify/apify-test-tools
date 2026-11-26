@@ -29,7 +29,7 @@ const actorConfig = (name: string): ActorConfig => {
     return {
         actorFullName: `owner/${name}`,
         folder: new ExistingDir(folder),
-        tokenEnvVar: 'APIFY_TOKEN',
+        buildTokenEnvVar: 'APIFY_TOKEN',
         testTokenEnvVar: 'APIFY_TOKEN',
         dockerContextDir: context,
         contextPaths: [context],

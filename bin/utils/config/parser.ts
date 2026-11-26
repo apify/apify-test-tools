@@ -8,20 +8,18 @@ import {
     type ValidatedActorConfig,
 } from './structures/base.js';
 import { GROUPED_PARSER } from './structures/grouped.js';
-import { LEGACY_PARSER } from './structures/legacy.js';
 
 const CONFIG_FILE_STRATEGIES: {
     // instead of Record, we do this to ensure that the modes match
     [key in CONFIG_FILE_STRATEGY]: StrategyParser & { mode: key };
 } = {
-    [CONFIG_FILE_STRATEGY.LEGACY]: LEGACY_PARSER,
     [CONFIG_FILE_STRATEGY.GROUPED]: GROUPED_PARSER,
 } as const;
 
-const ModeSelectionSchema = z.object({ mode: z.enum(CONFIG_FILE_STRATEGY).default(CONFIG_FILE_STRATEGY.LEGACY) });
+const ModeSelectionSchema = z.object({ mode: z.enum(CONFIG_FILE_STRATEGY) });
 
-function selectStrategy(mode: unknown): StrategyParser {
-    const parsed = ModeSelectionSchema.safeParse(mode);
+function selectStrategy(body: unknown): StrategyParser {
+    const parsed = ModeSelectionSchema.safeParse(body);
     if (!parsed.success) {
         throw new Error(z.prettifyError(parsed.error));
     }
@@ -42,7 +40,7 @@ const ValidatedConfigSchema = z.array(
     z.object({
         actorFullName: z.string(),
         folder: ExistingDirSchema,
-        tokenEnvVar: z.string(),
+        buildTokenEnvVar: z.string(),
         testTokenEnvVar: z.string(),
         overrideActorContext: z.array(RelativeDirSchema).optional(),
     }),
@@ -116,12 +114,7 @@ export function parseResolvedConfigFile(body: Record<string, unknown>): Resolved
     // The repo settings are read by parseRepoSettings, the strategies only see the Actor entries
     const { mode, platformTestsGlob: _platformTestsGlob, ...rest } = body;
     const strategy = selectStrategy({ mode });
-    // Defaults every mode shares, after the mode resolved what an Actor and its group set. A group's test token so
-    // still applies to an Actor that sets only its own tokenEnvVar.
-    return strategy.parse(rest).map((entry) => ({
-        ...entry,
-        testTokenEnvVar: entry.testTokenEnvVar ?? entry.tokenEnvVar,
-    }));
+    return strategy.parse(rest);
 }
 
 export function parseConfigFile(body: Record<string, unknown>): ValidatedActorConfig[] {

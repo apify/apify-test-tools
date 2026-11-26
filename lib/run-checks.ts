@@ -1,6 +1,7 @@
-import { TO_FINISH_WITH_OPTIONS } from './consts.js';
+import { STATISTICS_KEY_PREFIXES, TO_FINISH_WITH_OPTIONS } from './consts.js';
+import { MissingStatisticsError } from './missing-statistics-error.js';
 import type { RunTestResult } from './run-test-result.js';
-import type { Interval, ToFinishWithOptions } from './types.js';
+import type { CrawlerStatistics, Interval, ToFinishWithOptions, ToFinishWithOptionsWithDefaults } from './types.js';
 
 type Check = {
     name: string;
@@ -36,20 +37,88 @@ const intervalCheck = (name: string, actual: number | undefined, interval: Inter
     ];
 };
 
-const ppeChecks = (expected: Record<string, Interval>, actual: Record<string, number> = {}): Check[] => {
-    const events = new Set([...Object.keys(expected), ...Object.keys(actual)]);
-    return [...events].flatMap((event): Check[] => {
-        const name = `chargedEventCounts.${event}`;
-        // charged events the test didn't list are expected to not happen at all
-        if (!(event in expected)) {
-            return intervalCheck(name, actual[event], 0);
-        }
-        // an expected event that was never charged is a failure, even for an interval that includes 0
-        if (!(event in actual)) {
-            return [{ name, pass: false, actual: 'X', expected: describeInterval(expected[event]) }];
-        }
-        return intervalCheck(name, actual[event], expected[event]);
-    });
+/**
+ * Only the listed events are checked, and an event that was never charged counts as 0, so `0` asserts it wasn't.
+ * Strict, any charged event that isn't listed must not have happened either.
+ */
+const ppeChecks = (
+    expected: Record<string, Interval>,
+    charged: Record<string, number> | undefined,
+    strict: boolean,
+): Check[] => {
+    const actual = charged ?? {};
+    const events = new Set([...Object.keys(expected), ...(strict ? Object.keys(actual) : [])]);
+    return [...events].flatMap((event) =>
+        intervalCheck(`chargedEventCounts.${event}`, actual[event] ?? 0, expected[event] ?? 0),
+    );
+};
+
+/** At most this many offending log lines are quoted in a failed check, each cut to `MAX_LOG_LINE_LENGTH` */
+const MAX_QUOTED_LOG_LINES = 3;
+const MAX_LOG_LINE_LENGTH = 200;
+
+const describeForbidden = (forbidden: string | RegExp) =>
+    typeof forbidden === 'string' ? JSON.stringify(forbidden) : `${forbidden}`;
+
+/** A string in, or a regular expression matching, any line of the log */
+const forbiddenLogsCheck = (log: string, forbiddenLogs: (string | RegExp)[]): Check => {
+    const lines = log.split('\n');
+    const offending = lines.filter((line) =>
+        forbiddenLogs.some((forbidden) =>
+            typeof forbidden === 'string' ? line.includes(forbidden) : new RegExp(forbidden).test(line),
+        ),
+    );
+    const quoted = offending.slice(0, MAX_QUOTED_LOG_LINES).map((line) => line.trim().slice(0, MAX_LOG_LINE_LENGTH));
+    const more = offending.length > MAX_QUOTED_LOG_LINES ? ` and ${offending.length - MAX_QUOTED_LOG_LINES} more` : '';
+    return {
+        name: 'forbiddenLogs',
+        pass: quoted.length === 0,
+        actual: quoted.length === 0 ? '[]' : `[${quoted.join(' | ')}]${more}`,
+        expected: `none of [${forbiddenLogs.map(describeForbidden).join(', ')}]`,
+    };
+};
+
+const statisticsChecks = async (run: RunTestResult, options: ToFinishWithOptionsWithDefaults): Promise<Check[]> => {
+    const { failedRequests, requestsRetries, maxRetriesPerRequest } = options;
+    const wanted = [
+        ['failedRequests', failedRequests],
+        ['requestsRetries', requestsRetries],
+        ['maxRetriesPerRequest', maxRetriesPerRequest],
+    ].filter(([, expected]) => expected != null) as [string, Interval][];
+    // Fetched only for the checks that need them, so an Actor without statistics can skip them all
+    if (wanted.length === 0) return [];
+
+    let statistics: CrawlerStatistics | undefined;
+    let missing = STATISTICS_KEY_PREFIXES.map((prefix) => `${prefix}*`).join(' or ');
+    try {
+        statistics = await run.getStatistics(options.statisticsKeys);
+    } catch (error) {
+        if (!(error instanceof MissingStatisticsError)) throw error;
+        missing = error.keys.join(', ');
+    }
+    if (!statistics) {
+        const actual = `no statistics record ${missing}`;
+        return wanted.map(([name, expected]) => ({
+            name,
+            pass: false,
+            actual,
+            expected: name === 'maxRetriesPerRequest' ? `<=${expected}` : describeInterval(expected),
+        }));
+    }
+    return [
+        ...intervalCheck('failedRequests', statistics.requestsFailed, failedRequests),
+        ...intervalCheck('requestsRetries', statistics.requestsRetries, requestsRetries),
+        ...(maxRetriesPerRequest == null
+            ? []
+            : [
+                  {
+                      name: 'maxRetriesPerRequest',
+                      pass: statistics.maxRetriesPerRequest <= maxRetriesPerRequest,
+                      actual: `${statistics.maxRetriesPerRequest}`,
+                      expected: `<=${maxRetriesPerRequest}`,
+                  },
+              ]),
+    ];
 };
 
 /**
@@ -63,39 +132,21 @@ export const checkRun = async <PpeEvent extends string>(
 
     // The dataset's item count lags the run by 10-20 seconds, so counting the downloaded items is the only way to
     // be in sync. Don't swap it for the count from the dataset info.
-    const [runInfo, { items }, stats, log] = await Promise.all([
+    const [runInfo, { items }, log, statistics] = await Promise.all([
         run.getRunInfo(),
         run.getDataset(),
-        run.getStatistics(),
         run.getLog(),
+        statisticsChecks(run, options),
     ]);
-
-    // the histogram has one bucket per retry count, so its length - 1 is the most retries any request needed
-    const maxRetriesPerRequest = (stats?.requestRetryHistogram ?? [0]).length - 1;
-    const occurredLogs = options.forbiddenLogs.filter((forbidden) => log.includes(forbidden));
 
     return [
         { name: 'status', pass: run.status === options.status, actual: run.status, expected: options.status },
         ...intervalCheck('datasetItemCount', items.length, options.datasetItemCount),
         ...intervalCheck('duration', runInfo.stats.durationMillis, options.duration),
-        ...intervalCheck('failedRequests', stats?.requestsFailed, options.failedRequests),
-        ...intervalCheck('requestsRetries', stats?.requestsRetries, options.requestsRetries),
-        ...(options.maxRetriesPerRequest == null
-            ? []
-            : [
-                  {
-                      name: 'maxRetriesPerRequest',
-                      pass: maxRetriesPerRequest <= options.maxRetriesPerRequest,
-                      actual: `${maxRetriesPerRequest}`,
-                      expected: `<=${options.maxRetriesPerRequest}`,
-                  },
-              ]),
-        ...(options.chargedEventCounts ? ppeChecks(options.chargedEventCounts, runInfo.chargedEventCounts) : []),
-        {
-            name: 'forbiddenLogs',
-            pass: occurredLogs.length === 0,
-            actual: `[${occurredLogs.join(', ')}]`,
-            expected: '[]',
-        },
+        ...statistics,
+        ...(options.chargedEventCounts
+            ? ppeChecks(options.chargedEventCounts, runInfo.chargedEventCounts, options.strictChargedEventCounts)
+            : []),
+        forbiddenLogsCheck(log, options.forbiddenLogs),
     ];
 };

@@ -218,7 +218,7 @@ describe('dry run', () => {
         actorConfig = {
             actorFullName: ACTOR,
             folder: new ExistingDir('actors/a'),
-            tokenEnvVar: TOKEN_ENV_VAR,
+            buildTokenEnvVar: TOKEN_ENV_VAR,
             testTokenEnvVar: TOKEN_ENV_VAR,
             actorJson: {
                 file: new ExistingFile('actors/a/.actor/actor.json'),
@@ -348,7 +348,7 @@ describe('dry run', () => {
 describe('buildOrReuseActors', () => {
     const TOKEN_ENV_VAR = 'APIFY_TOKEN_REUSE';
     const config = (actorFullName: string) =>
-        ({ actorFullName, tokenEnvVar: TOKEN_ENV_VAR, folder: { isRoot: () => true } }) as unknown as ActorConfig;
+        ({ actorFullName, buildTokenEnvVar: TOKEN_ENV_VAR, folder: { isRoot: () => true } }) as unknown as ActorConfig;
     const stored = { buildId: 'b1', actorRawId: 'raw-a', buildNumber: '0.99.4' };
     let builds: Record<string, unknown>;
 

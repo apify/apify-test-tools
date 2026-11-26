@@ -104,18 +104,20 @@ one, which is what the tests do on a PR.**
 ### Token permissions
 
 - **`buildTokenEnvVar`** needs a token with full permissions, for now. A token that needs less is planned.
-- **`testTokenEnvVar`** only needs to run the repo's Actors, so a scoped token with run access to them is enough,
-  unless the tests call a server interface. A scoped token can't get write access to an Actor on its own, so the
-  `testTokenEnvVar` of an Actor with server interface tests needs a full-permission token of the owner, or of an
-  account with write access to the Actor.
+- **`testTokenEnvVar`** depends on the tests:
+    - **Server interface tests need a full-permission token**, of the Actor's owner or of an account with write access
+      to the Actor. A scoped token can't get write access to an Actor on its own, so a scoped token makes these tests
+      fail on a PR.
+    - **Other tests only need to run the repo's Actors**, so a scoped token with run access to them is enough.
 
 ### The owner's token or `TESTER_APIFY_TOKEN`
 
 Testing with the owner's token, the same env var as `buildTokenEnvVar` as in [Convert the config](#convert-the-config),
 works for every test, server interface tests included, and the runs start in the owner's account.
 
-To keep the tests running with `TESTER_APIFY_TOKEN`, as before, set it as the `testTokenEnvVar` of every group. It can't
-be set for the whole config at once:
+To keep the tests running with `TESTER_APIFY_TOKEN`, as before, set it as the `testTokenEnvVar` of every group. That
+works for server interface tests only if it is a full-permission token of an account with write access to the Actor.
+It can't be set for the whole config at once:
 
 ```json
 {

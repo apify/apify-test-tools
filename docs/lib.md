@@ -143,10 +143,10 @@ interface build. It returns `{ data, body, status, headers }`, where `body` is t
 `body` parsed as JSON, or `undefined` when the response isn't JSON, e.g. an HTML error page. Pass `body` as the message
 of the status assertion to see what came back when it fails. `fn` gets `apifyClient` too.
 
-**Only the Actor's owner, or an account with write access to it, can select a build with `X-Actor-Build`**, so a test
-token that can't do that can only test the default build. A scoped token can't get write access to an Actor on its
-own: point the Actor's `testTokenEnvVar` at a full-permission token of such an account, see
-[Token permissions](../README.md#token-permissions).
+**Server interface tests need a full-permission test token.** Only the Actor's owner, or an account with write access
+to it, can select a build with `X-Actor-Build`, and a scoped token can't get write access to an Actor on its own. So
+point the Actor's `testTokenEnvVar` at a full-permission token of such an account, e.g. the same token as its
+`buildTokenEnvVar`, or its tests fail on a PR. See [Token permissions](../README.md#token-permissions).
 
 ```ts
 import { describe, testServerInterfaceActor } from 'apify-test-tools';

@@ -8,7 +8,7 @@ than 1.0.0, and the 1.0 library expects what the v1 workflows pass it. Migrate a
 3. [Choose the account that runs the tests](#choose-the-account-that-runs-the-tests): the Actor's owner by default, or
    `TESTER_APIFY_TOKEN` as before
 4. [Switch the workflows](#switch-the-workflows) to `@workflows-v1`, with `secrets: inherit` or the test tokens in `CONFIG_SECRETS`
-5. [Update the tests](#update-the-tests): Actors by full name, the imports, standby tests and `toFinishWith`
+5. [Update the tests](#update-the-tests): Actors by full name, the imports, server interface tests and `toFinishWith`
 
 `@workflows-v0` keeps working with the libraries before 1.0, so a repository can stay on it until its PR is merged.
 The [Troubleshooting](#troubleshooting) section maps the errors you may hit to the step that fixes them.
@@ -86,7 +86,7 @@ the owner's. So after the migration, by default:
 - the runs show up among the owner's runs;
 - the Claude investigation workflow needs the owner's token to read a failed run, see
   [With `secrets: inherit`](#with-secrets-inherit);
-- standby tests can run an Actor's PR build, which only the owner, or an account with write access, can do.
+- server interface tests can run an Actor's PR build, which only the owner, or an account with write access, can do.
 
 To keep the tests running with `TESTER_APIFY_TOKEN`, set `testTokenEnvVar` on every group. It can't be set for the
 whole config at once:
@@ -217,7 +217,7 @@ reads and re-runs the failed run with. Keep passing it the token your tests ran 
 
 ### Name every Actor by its full name
 
-`testActor` and `testStandbyActor` take the Actor's full name, `owner/name`. A test that names its Actor by its raw ID
+`testActor` and `testServerInterfaceActor` take the Actor's full name, `owner/name`. A test that names its Actor by its raw ID
 now fails its whole test file to load, instead of being skipped:
 
 ```ts
@@ -234,22 +234,38 @@ The package exports only its root, `apify-test-tools`. Deep imports such as `api
 with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Import everything from the root:
 
 ```ts
-import { describe, testActor, testStandbyActor, RunTestResult } from 'apify-test-tools';
+import { describe, testActor, testServerInterfaceActor, RunTestResult } from 'apify-test-tools';
 ```
 
 The `it` alias of `testActor` is gone: use `testActor`.
 
-### Standby tests
+### Server interface tests
 
-`testStandbyActor` sends its requests straight to the Actor's standby URL and selects the PR build with the
-`X-Actor-Build` header, instead of creating a temporary task on that build. As a result:
+The platform renamed standby mode to server interface, and so did the library:
 
-- the report and the test annotations no longer link the standby runs;
-- `callStandby` sends `Content-Type: application/json` unless `headers` set another type, so a test can drop that
-  header;
-- `callStandby` also returns `body`, the raw response text, and `data` is `undefined` when the response isn't JSON.
-  Pass `body` as the message of the status assertion to see what came back when it fails:
-  `expect(status, body).toBe(200)`.
+```ts
+// Before
+testStandbyActor('myteam/search', 'answers a query', async ({ expect, callStandby }) => {
+    const { data, status } = await callStandby({ input: { query: 'test' }, headers: { 'Content-Type': 'application/json' } });
+    ...
+});
+
+// After
+testServerInterfaceActor('myteam/search', 'answers a query', async ({ expect, callServerInterface }) => {
+    const { data, body, status } = await callServerInterface({ input: { query: 'test' } });
+    expect(status, body).toBe(200);
+    ...
+});
+```
+
+`testServerInterfaceActor` sends its requests straight to the Actor's server interface URL and selects the PR build
+with the `X-Actor-Build` header, instead of creating a temporary task on that build. As a result:
+
+- the report and the test annotations no longer link the server interface runs;
+- `callServerInterface` sends `Content-Type: application/json` unless `headers` set another type, so a test can drop
+  that header;
+- `callServerInterface` also returns `body`, the raw response text, and `data` is `undefined` when the response isn't
+  JSON. Pass `body` as the message of the status assertion to see what came back when it fails.
 
 ### `toFinishWith`
 
@@ -302,3 +318,4 @@ Skip this if you only use the workflows.
 | The workflow fails to start over `TESTER_APIFY_TOKEN`                                                                    | Remove it from the `secrets:` of the PR and scheduled test workflows, or pass `secrets: inherit`                                             |
 | Claude's investigation can't find the failed run                                                                         | Pass it the token the tests ran with, see [With `secrets: inherit`](#with-secrets-inherit)                                                   |
 | `ERR_PACKAGE_PATH_NOT_EXPORTED`                                                                                          | [Import from the package root](#import-from-the-package-root)                                                                                |
+| `Module '"apify-test-tools"' has no exported member 'testStandbyActor'` or `testStandbyActor is not a function`          | [Rename it to `testServerInterfaceActor`](#server-interface-tests)                                                                           |

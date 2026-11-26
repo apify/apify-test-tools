@@ -24,17 +24,19 @@ import {
 // End-to-end run of the shipped CLI bundle against two dummy Actors in an isolated sandbox account:
 // dry-run plans read the real Actors, `build-from-local` really builds them, the lib runs them
 // through `testActor` on exactly those builds (`build-from-local | test`), calls dummy-for-testing-2
-// in standby through `testStandbyActor` on its build, `notify` reads the report, and
+// through its server interface with `testServerInterfaceActor` on its build, `notify` reads the report, and
 // `delete-old-builds` cleans up. Git builds of a real repository are in
 // git-build-release.e2e.test.ts.
 //
 // Runs with `npm run test:e2e`, kept out of `npm test`. Skipped without the token, e.g. on fork PRs.
 const ACTORS = ['test-tools-testing-sandbox/dummy-for-testing-1', 'test-tools-testing-sandbox/dummy-for-testing-2'];
-// dummy-for-testing-2 doubles as a standby Actor
-const STANDBY_ACTOR = ACTORS[1];
-// Started normally it only logs; in standby it answers every request with the build serving it and what it got.
+// dummy-for-testing-2 doubles as an Actor with a server interface. The platform API and the Actor's environment still
+// call it standby (`actorStandby`, `usesStandbyMode`, `ACTOR_STANDBY_PORT`, the `STANDBY` origin).
+const SERVER_INTERFACE_ACTOR = ACTORS[1];
+// Started normally it only logs; as a server interface it answers every request with the build serving it and what it
+// got.
 // A dynamic import works whether the image treats main.js as CommonJS or as an ES module.
-const STANDBY_DUMMY_MAIN = `import('node:http').then(({ createServer }) => {
+const SERVER_INTERFACE_DUMMY_MAIN = `import('node:http').then(({ createServer }) => {
     if (process.env.APIFY_META_ORIGIN !== 'STANDBY') {
         console.log('dummy 2');
         return;
@@ -94,7 +96,7 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
         const actors = [];
         for (const [i, actorFullName] of ACTORS.entries()) {
             const folder = `actors/dummy-${i + 1}`;
-            const standby = actorFullName === STANDBY_ACTOR;
+            const serverInterface = actorFullName === SERVER_INTERFACE_ACTOR;
             await writeRepoFile(
                 `${folder}/.actor/actor.json`,
                 JSON.stringify({
@@ -102,14 +104,17 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
                     name: actorFullName.split('/')[1],
                     version: '0.0',
                     dockerfile: '../Dockerfile',
-                    ...(standby && { usesStandbyMode: true }),
+                    ...(serverInterface && { usesStandbyMode: true }),
                 }),
             );
             await writeRepoFile(
                 `${folder}/Dockerfile`,
                 'FROM apify/actor-node:22\nCOPY . ./\nCMD ["node", "main.js"]\n',
             );
-            await writeRepoFile(`${folder}/main.js`, standby ? STANDBY_DUMMY_MAIN : `console.log('dummy ${i + 1}');\n`);
+            await writeRepoFile(
+                `${folder}/main.js`,
+                serverInterface ? SERVER_INTERFACE_DUMMY_MAIN : `console.log('dummy ${i + 1}');\n`,
+            );
             actors.push({ folder, actorFullName, tokenEnvVar: TOKEN_ENV_VAR });
         }
         await writeRepoFile('apify-test-tools.config.json', JSON.stringify(groupedConfig(actors)));
@@ -234,15 +239,15 @@ describe('sandbox dummies', () => {${actorTests}
         expect(stderr).toContain('Skipping notification');
     });
 
-    it('runs the standby build through testStandbyActor on exactly that build', { timeout: 10 * 60_000 }, async () => {
-        const build = builds?.find(({ actorFullName }) => actorFullName === STANDBY_ACTOR);
+    it('runs the build through testServerInterfaceActor on exactly that build', { timeout: 10 * 60_000 }, async () => {
+        const build = builds?.find(({ actorFullName }) => actorFullName === SERVER_INTERFACE_ACTOR);
         expect(build, 'needs the builds from the earlier test').toBeDefined();
 
-        // The sandbox Actor needs standby turned on, which a build doesn't do. Low limits keep its idle runs cheap.
+        // The sandbox Actor needs its server interface turned on, which a build doesn't do. Low limits keep its idle runs cheap.
         const client = new ApifyClient({ token });
-        const actor = await client.actor(STANDBY_ACTOR).get();
+        const actor = await client.actor(SERVER_INTERFACE_ACTOR).get();
         if (!actor?.actorStandby?.isEnabled) {
-            await client.actor(STANDBY_ACTOR).update({
+            await client.actor(SERVER_INTERFACE_ACTOR).update({
                 actorStandby: {
                     isEnabled: true,
                     build: 'latest',
@@ -253,47 +258,55 @@ describe('sandbox dummies', () => {${actorTests}
                 },
             });
         }
-        // Without X-Actor-Build the platform would serve the Actor's own standby build, which must be another one,
+        // Without X-Actor-Build the platform would serve the Actor's own server interface build, which must be another one,
         // or the test can't tell them apart
-        const updated = await client.actor(STANDBY_ACTOR).get();
-        const standbyBuild = updated?.actorStandby?.build ?? 'latest';
-        expect(updated?.taggedBuilds?.[standbyBuild]?.buildNumber ?? standbyBuild).not.toBe(build!.buildNumber);
+        const updated = await client.actor(SERVER_INTERFACE_ACTOR).get();
+        const defaultBuild = updated?.actorStandby?.build ?? 'latest';
+        expect(updated?.taggedBuilds?.[defaultBuild]?.buildNumber ?? defaultBuild).not.toBe(build!.buildNumber);
 
         await linkNodeModules();
         const libPath = path.join(projectRoot, 'index.ts');
-        const input = { hello: 'standby' };
+        const input = { hello: 'server interface' };
         await writeRepoFile(
-            'test/platform/standby.test.ts',
-            `import { describe, testStandbyActor } from ${JSON.stringify(libPath)};
+            'test/platform/server-interface.test.ts',
+            `import { describe, testServerInterfaceActor } from ${JSON.stringify(libPath)};
 
-describe('sandbox standby dummy', () => {
-    testStandbyActor(${JSON.stringify(STANDBY_ACTOR)}, 'answers on the tested build', async ({ expect, callStandby }) => {
-        const { status, data, body } = await callStandby({ input: ${JSON.stringify(input)}, path: '/echo?q=1' });
+const expected = {
+    buildId: ${JSON.stringify(build!.buildId)},
+    buildNumber: ${JSON.stringify(build!.buildNumber)},
+    method: 'POST',
+    path: '/echo?q=1',
+    contentType: 'application/json',
+    body: ${JSON.stringify(JSON.stringify(input))},
+};
+
+describe('sandbox server interface dummy', () => {
+    testServerInterfaceActor(${JSON.stringify(SERVER_INTERFACE_ACTOR)}, 'answers on the tested build', async ({ expect, callServerInterface }) => {
+        const { status, data, body } = await callServerInterface({ input: ${JSON.stringify(input)}, path: '/echo?q=1' });
         expect(status, body).toBe(200);
-        expect(data).toEqual({
-            buildId: ${JSON.stringify(build!.buildId)},
-            buildNumber: ${JSON.stringify(build!.buildNumber)},
-            method: 'POST',
-            path: '/echo?q=1',
-            contentType: 'application/json',
-            body: ${JSON.stringify(JSON.stringify(input))},
-        });
+        expect(data).toEqual(expected);
     });
+
 });
 `,
         );
 
         const tested = await runProcess(
             process.execPath,
-            [bundlePath, 'test', '--test-files-glob', 'test/platform/standby.test.ts'],
+            [bundlePath, 'test', '--test-files-glob', 'test/platform/server-interface.test.ts'],
             { cwd: repoDir, env: cliEnv, input: JSON.stringify(builds) },
         );
         expect(tested.status, tested.stderr).toBe(0);
-        // Standby tests start no run of their own, so the report links none
+        // Server interface tests start no run of their own, so the report links none
         expect(JSON.parse(tested.stdout)).toMatchObject({
             success: true,
             summary: { passed: 1, failed: 0 },
-            tests: [{ name: `sandbox standby dummy ${STANDBY_ACTOR}: answers on the tested build`, run: null }],
+            tests: [
+                {
+                    name: `sandbox server interface dummy ${SERVER_INTERFACE_ACTOR}: answers on the tested build`,
+                    run: null,
+                },
+            ],
         });
     });
 

@@ -192,7 +192,7 @@ secret that merely looks like an Actor token is not passed just because of its n
 
 The test step runs the repo's test code and its whole import graph, so it gets the test tokens only. These are the
 Actor tokens unless the config names others: the tests run as the Actor's owner, because only the owner (or an account
-with write access) can run a standby Actor on a non-default build. A repo that wants the tests to hold less can point
+with write access) can call an Actor's server interface on a non-default build. A repo that wants the tests to hold less can point
 `testTokenEnvVar` at a more restricted token.
 
 A token the config declares but the repo hasn't set is a warning, not a failure: a repo can carry an Actor whose

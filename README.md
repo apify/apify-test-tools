@@ -52,7 +52,7 @@ See [Change detection](docs/cli.md#change-detection) for the exact rules.
 
 This README covers what you need to get a repo running. The full reference lives in `docs/`:
 
-- [Vitest library API](docs/lib.md) — `testActor`, `testStandbyActor`, `RunTestResult`, matchers, running tests locally
+- [Vitest library API](docs/lib.md) — `testActor`, `testServerInterfaceActor`, `RunTestResult`, matchers, running tests locally
 - [CLI API](docs/cli.md) — every command, change detection, releasing, building locally
 - [Workflow API](docs/workflows.md) — every GitHub workflow, its inputs and secrets, versioning
 - [Migrating to v1](docs/migrating-to-v1.md) — updating a repository from `@workflows-v0` and a library before 1.0
@@ -181,7 +181,7 @@ group needs a `tokenEnvVar` and at least one Actor. Add another group for Actors
 Actors owned by another account.
 
 The platform tests run each Actor with the same token that builds it, so they run in the account that owns the Actor.
-Only the owner, or an account with write access to the Actor, can run a [standby Actor](docs/lib.md#teststandbyactoractorfullname-testname-fn-options)
+Only the owner, or an account with write access to the Actor, can call an Actor's [server interface](docs/lib.md#testserverinterfaceactoractorfullname-testname-fn-options)
 on a build other than its default one, which is what the tests do on a PR. To test some Actors from another account,
 name its token in `testTokenEnvVar`, on the group or on an Actor:
 
@@ -373,5 +373,5 @@ To run them locally against the Actors' current default builds:
 npx apify-test-tools get-actor-configs | APIFY_TOKEN_MYTEAM=<token> npx apify-test-tools test
 ```
 
-The [Vitest library API](docs/lib.md) covers everything `toFinishWith` checks, the other matchers, standby Actors,
+The [Vitest library API](docs/lib.md) covers everything `toFinishWith` checks, the other matchers, server interfaces,
 reading run data, and running tests locally against builds of your own changes.

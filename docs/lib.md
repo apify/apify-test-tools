@@ -137,10 +137,13 @@ testActor(actorId, 'validate existing run', async ({ expect, run }) => {
 ## `testStandbyActor(actorId, testName, fn, options?)`
 
 Same as `testActor`, for Actors in standby mode. Instead of `run`, `fn` gets `callStandby`, which sends a
-`POST` request with `input` as the JSON body directly to the Actor's standby URL, plus `path`. The request uses the
+`POST` request with `input` as the JSON body directly to the Actor's standby URL, plus `path`. It sends
+`Content-Type: application/json` unless `headers` set another type. The request uses the
 `X-Actor-Build` header to select the build from `ACTOR_BUILDS`, falling back to the Actor's configured standby build
 (number or tag). If neither is set, the platform uses its default standby build. No temporary tasks are created.
-It returns `{ data, status, headers }`, where `data` is the parsed JSON response. `fn` gets `apifyClient` too.
+It returns `{ data, body, status, headers }`, where `body` is the raw response text and `data` is `body` parsed as
+JSON, or `undefined` when the response isn't JSON, e.g. an HTML error page. Pass `body` as the message of the status
+assertion to see what came back when it fails. `fn` gets `apifyClient` too.
 
 Only the Actor's owner, or an account with write access to it, can start a standby Actor on a build other than its
 default one. The tests run with the owner's token by default; if you point `testTokenEnvVar` at another account, give
@@ -151,13 +154,12 @@ import { describe, testStandbyActor } from 'apify-test-tools';
 
 describe('standby tests', () => {
     testStandbyActor(actorId, 'standby request', async ({ expect, callStandby }) => {
-        const { data, status } = await callStandby({
+        const { data, body, status } = await callStandby({
             input: { query: 'test' },
             path: '/search',
-            headers: { 'Content-Type': 'application/json' },
         });
 
-        expect(status).toBe(200);
+        expect(status, body).toBe(200);
         expect(data.results).toBeNonEmptyArray();
     });
 });

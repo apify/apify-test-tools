@@ -38,7 +38,7 @@ describe('standby Actor requests', () => {
         const result = await callStandby({
             input: { query: 'test' },
             path: '/search?limit=2',
-            headers: { 'Content-Type': 'application/json', 'x-actor-build': 'wrong-build', 'X-Custom': 'value' },
+            headers: { 'content-type': 'application/x-ndjson', 'x-actor-build': 'wrong-build', 'X-Custom': 'value' },
         });
 
         expect(actor).toHaveBeenCalledWith('owner/actor');
@@ -50,9 +50,14 @@ describe('standby Actor requests', () => {
         expect(options.headers.get('X-Actor-Build')).toBe(build);
         expect([...options.headers.keys()].filter((key) => key === 'x-actor-build')).toHaveLength(1);
         expect(options.headers.get('Authorization')).toBe('Bearer standby-test-token');
-        expect(options.headers.get('Content-Type')).toBe('application/json');
+        expect(options.headers.get('Content-Type')).toBe('application/x-ndjson');
         expect(options.headers.get('X-Custom')).toBe('value');
-        expect(result).toEqual({ data: { results: [1, 2] }, status: 201, headers: response.headers });
+        expect(result).toEqual({
+            data: { results: [1, 2] },
+            body: '{"results":[1,2]}',
+            status: 201,
+            headers: response.headers,
+        });
         expect(tasks).not.toHaveBeenCalled();
         expect(task).not.toHaveBeenCalled();
     });
@@ -66,6 +71,15 @@ describe('standby Actor requests', () => {
 
         expect(fetchMock.mock.calls[0][0]).toBe(standbyUrl);
         expect(fetchMock.mock.calls[0][1].headers.get('X-Actor-Build')).toBe('latest');
+    });
+
+    it('sends the input as JSON by default', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(new Response('{}'));
+        vi.stubGlobal('fetch', fetchMock);
+
+        await createStartStandbyFn({ standbyUrl, apifyClient })({ input: {} });
+
+        expect(fetchMock.mock.calls[0][1].headers.get('Content-Type')).toBe('application/json');
     });
 
     it('leaves build selection to the platform when no standby build is configured', async () => {
@@ -85,6 +99,17 @@ describe('standby Actor requests', () => {
 
         expect(result.status).toBe(400);
         expect(result.data).toEqual({ error: 'bad input' });
+    });
+
+    it.each([
+        ['an HTML error page', '<html><body>502 Bad Gateway</body></html>', 502],
+        ['an empty body', '', 204],
+    ])('returns %s as the raw body, without data', async (_, text, status) => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(text || null, { status })));
+
+        const result = await createStartStandbyFn({ standbyUrl, apifyClient })({ input: {} });
+
+        expect(result).toMatchObject({ status, body: text, data: undefined });
     });
 
     it('propagates fetch failures', async () => {

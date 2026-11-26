@@ -160,7 +160,11 @@ export const testTestActor = <T>(
 
 export const it = testActor;
 
-/** Sends JSON input directly to the Actor's standby URL. */
+/**
+ * Sends JSON input directly to the Actor's standby URL, as `application/json` unless `headers` set another type.
+ * Returns the raw response `body` too. `data` is the body parsed as JSON, or `undefined` when it isn't JSON (e.g. an
+ * HTML error page), so a test can still assert the status and show what came back.
+ */
 const createStartStandbyFn = <I, O>({
     standbyUrl,
     build,
@@ -172,6 +176,9 @@ const createStartStandbyFn = <I, O>({
         headers = {},
     }: Pick<RunOptions<I>, 'input'> & { path?: string; headers?: Record<string, string> }) => {
         const requestHeaders = new Headers(headers);
+        if (!requestHeaders.has('Content-Type')) {
+            requestHeaders.set('Content-Type', 'application/json');
+        }
         requestHeaders.set('Authorization', `Bearer ${apifyClient.token}`);
         if (build !== undefined) {
             requestHeaders.set('X-Actor-Build', build);
@@ -182,9 +189,16 @@ const createStartStandbyFn = <I, O>({
             body: JSON.stringify(input),
         });
 
-        const data = (await response.json()) as O;
+        const body = await response.text();
+        let data: O;
+        try {
+            data = JSON.parse(body) as O;
+        } catch {
+            data = undefined as O;
+        }
         return {
             data,
+            body,
             status: response.status,
             headers: response.headers,
         };

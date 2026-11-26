@@ -52,6 +52,7 @@ const STANDBY_DUMMY_MAIN = `import('node:http').then(({ createServer }) => {
                     buildNumber: process.env.ACTOR_BUILD_NUMBER,
                     method: req.method,
                     path: req.url,
+                    contentType: req.headers['content-type'],
                     body,
                 }),
             );
@@ -267,13 +268,14 @@ describe('sandbox dummies', () => {${actorTests}
 
 describe('sandbox standby dummy', () => {
     testStandbyActor(${JSON.stringify(STANDBY_ACTOR)}, 'answers on the tested build', async ({ expect, callStandby }) => {
-        const { status, data } = await callStandby({ input: ${JSON.stringify(input)}, path: '/echo?q=1' });
-        expect(status).toBe(200);
+        const { status, data, body } = await callStandby({ input: ${JSON.stringify(input)}, path: '/echo?q=1' });
+        expect(status, body).toBe(200);
         expect(data).toEqual({
             buildId: ${JSON.stringify(build!.buildId)},
             buildNumber: ${JSON.stringify(build!.buildNumber)},
             method: 'POST',
             path: '/echo?q=1',
+            contentType: 'application/json',
             body: ${JSON.stringify(JSON.stringify(input))},
         });
     });

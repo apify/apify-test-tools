@@ -18,7 +18,7 @@ const testCase = (name: string, overrides: Partial<TestCaseReport> = {}): TestCa
     status: 'passed',
     durationMs: 1,
     failureMessages: [],
-    run: { actorId: 'owner/a', runId: name, runLink: `https://console.apify.com/view/runs/${name}` },
+    run: { actorFullName: 'owner/a', runId: name, runLink: `https://console.apify.com/view/runs/${name}` },
     ...overrides,
 });
 
@@ -29,7 +29,7 @@ const reportOf = (tests: TestCaseReport[], errors: string[] = []): TestReport =>
     const count = (status: string) => tests.filter((test) => test.status === status).length;
     return {
         kind: 'test-report',
-        version: 1,
+        version: 2,
         success: count('failed') === 0 && errors.length === 0,
         summary: { total: tests.length, passed: count('passed'), failed: count('failed'), skipped: count('skipped') },
         tests,

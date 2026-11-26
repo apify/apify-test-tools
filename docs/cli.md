@@ -397,7 +397,7 @@ gets only the report:
 ```json
 {
     "kind": "test-report",
-    "version": 1,
+    "version": 2,
     "success": false,
     "summary": { "total": 3, "passed": 1, "failed": 1, "skipped": 1 },
     "tests": [
@@ -407,7 +407,11 @@ gets only the report:
             "status": "failed",
             "durationMs": 61234,
             "failureMessages": ["AssertionError: expected 'FAILED' to be 'SUCCEEDED'"],
-            "run": { "actorId": "john.doe/my-actor", "runId": "…", "runLink": "https://console.apify.com/view/runs/…" }
+            "run": {
+                "actorFullName": "john.doe/my-actor",
+                "runId": "…",
+                "runLink": "https://console.apify.com/view/runs/…"
+            }
         }
     ],
     "errors": ["test/platform/other.test.ts: Cannot find package 'foo'"]

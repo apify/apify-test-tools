@@ -70,7 +70,7 @@ describe('parseNotifyInput', () => {
     const commit = { sha: '1'.repeat(40), author: 'Dev<dev@example.com>', date: 'Date', message: 'feat: foo' };
     const report = {
         kind: 'test-report',
-        version: 1,
+        version: 2,
         success: true,
         summary: { total: 0, passed: 0, failed: 0, skipped: 0 },
         tests: [],

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { requireTestsToRun, toTestReport, type VitestJsonReport } from '../../../bin/test-report.js';
 
 const cwd = '/repo';
-const run = { actorId: 'owner/a', runId: 'run1', runLink: 'https://console.apify.com/view/runs/run1' };
+const run = { actorFullName: 'owner/a', runId: 'run1', runLink: 'https://console.apify.com/view/runs/run1' };
 
 const vitestReport = (testResults: VitestJsonReport['testResults'], success = false): VitestJsonReport => ({
     success,
@@ -42,7 +42,7 @@ describe('toTestReport', () => {
         );
         expect(report).toStrictEqual({
             kind: 'test-report',
-            version: 1,
+            version: 2,
             success: false,
             summary: { total: 3, passed: 1, failed: 1, skipped: 1 },
             tests: [

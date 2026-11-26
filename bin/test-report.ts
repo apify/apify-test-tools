@@ -6,7 +6,7 @@ export type TestStatus = 'passed' | 'failed' | 'skipped';
 
 /** The Actor run a test started, as the lib records it on the test's `meta`. */
 export interface TestRun {
-    actorId: string;
+    actorFullName: string;
     runId: string;
     runLink: string;
 }
@@ -31,7 +31,7 @@ export interface TestCaseReport {
 export interface TestReport {
     /** What the document is, so `notify` and others can tell it from other outputs */
     kind: 'test-report';
-    version: 1;
+    version: 2;
     /** False if any test failed, or the run failed in a way no test accounts for (see `errors`) */
     success: boolean;
     summary: { total: number; passed: number; failed: number; skipped: number };
@@ -67,8 +67,8 @@ const firstLine = (text: string) => text.split('\n')[0];
 
 /** The run a test started, which the lib records on the test's `meta` */
 const toRun = ({ meta }: VitestAssertionResult): TestRun | null => {
-    const { runId, runLink, actorId } = meta ?? {};
-    return actorId && runId && runLink ? { actorId, runId, runLink } : null;
+    const { runId, runLink, actorFullName } = meta ?? {};
+    return actorFullName && runId && runLink ? { actorFullName, runId, runLink } : null;
 };
 
 /**
@@ -115,7 +115,7 @@ export const toTestReport = (
 
     return {
         kind: 'test-report',
-        version: 1,
+        version: 2,
         success: vitest.success && exitCode === 0 && summary.failed === 0 && errors.length === 0,
         summary,
         tests,
@@ -126,7 +126,7 @@ export const toTestReport = (
 /** The report of a run that left no vitest report behind, e.g. because vitest crashed or was killed. */
 export const failedRunReport = (error: string): TestReport => ({
     kind: 'test-report',
-    version: 1,
+    version: 2,
     success: false,
     summary: { total: 0, passed: 0, failed: 0, skipped: 0 },
     tests: [],

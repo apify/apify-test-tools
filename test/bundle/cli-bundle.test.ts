@@ -198,7 +198,7 @@ describe('CLI bundle', () => {
     it('notify needs the Slack token to post a failed report, even in a dry run', () => {
         const report = {
             kind: 'test-report',
-            version: 1,
+            version: 2,
             success: false,
             summary: { total: 1, passed: 0, failed: 1, skipped: 0 },
             tests: [
@@ -208,7 +208,11 @@ describe('CLI bundle', () => {
                     status: 'failed',
                     durationMs: 1,
                     failureMessages: ['AssertionError: expected 1 to be 2'],
-                    run: { actorId: 'tester/foo', runId: 'run2', runLink: 'https://console.apify.com/view/runs/run2' },
+                    run: {
+                        actorFullName: 'tester/foo',
+                        runId: 'run2',
+                        runLink: 'https://console.apify.com/view/runs/run2',
+                    },
                 },
             ],
             errors: [],

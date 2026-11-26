@@ -110,10 +110,10 @@ export const parseTestTargets = (raw: string) => {
 };
 
 /** The report `test` prints, see TestReport. */
-const testRunSchema = z.object({ actorId: z.string(), runId: z.string(), runLink: z.string() });
+const testRunSchema = z.object({ actorFullName: z.string(), runId: z.string(), runLink: z.string() });
 const testReportSchema = z.object({
     kind: z.literal('test-report'),
-    version: z.literal(1),
+    version: z.literal(2),
     success: z.boolean(),
     summary: z.object({ total: z.number(), passed: z.number(), failed: z.number(), skipped: z.number() }),
     tests: z.array(

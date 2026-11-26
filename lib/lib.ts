@@ -220,15 +220,15 @@ interface ServerInterface {
  */
 const getServerInterface = async (
     apifyClient: ApifyClient,
-    actorId: string,
+    actorFullName: string,
     buildNumber?: string,
 ): Promise<ServerInterface> => {
-    const actorInfo = (await apifyClient.actor(actorId).get()) as (Actor & { standbyUrl?: string }) | undefined;
+    const actorInfo = (await apifyClient.actor(actorFullName).get()) as (Actor & { standbyUrl?: string }) | undefined;
     if (!actorInfo) {
-        throw new Error(`Actor "${actorId}" not found`);
+        throw new Error(`Actor "${actorFullName}" not found`);
     }
     if (!actorInfo.standbyUrl) {
-        throw new Error(`Actor "${actorId}" doesn't have a server interface`);
+        throw new Error(`Actor "${actorFullName}" doesn't have a server interface`);
     }
 
     return {
@@ -237,9 +237,9 @@ const getServerInterface = async (
     };
 };
 
-const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testContext: TestContext) => {
+const createStartRunFn = <T>(apifyClient: ApifyClient, actorFullName: string, testContext: TestContext) => {
     const { annotate, task } = testContext;
-    const actorConfig = config.get(actorId);
+    const actorConfig = config.get(actorFullName);
     const build = actorConfig?.buildNumber;
     const buildId = actorConfig?.buildId;
     return async (runOptions: RunOptions<T>) => {
@@ -254,11 +254,11 @@ const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testCont
         }
 
         const actorInput = {
-            ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorId, buildId))),
+            ...(prefilledInput && (await getActorPrefilledInput(apifyClient, actorFullName, buildId))),
             ...input,
         };
 
-        const actor = apifyClient.actor(actorId);
+        const actor = apifyClient.actor(actorFullName);
         const actorInfo = await actor.get();
         const timeout = Math.min(
             actorInfo?.defaultRunOptions?.timeoutSecs ?? DEFAULT_TEST_ACTOR_TIMEOUT_SECS,
@@ -274,7 +274,7 @@ const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testCont
         task.meta = {
             runId: run.id,
             runLink,
-            actorId,
+            actorFullName,
         };
 
         // waiting for dataset and statistics to sync, the Apify platform is only eventually consistent.

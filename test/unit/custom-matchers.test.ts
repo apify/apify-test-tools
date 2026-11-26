@@ -61,10 +61,10 @@ describe.skip('custom-matchers', { timeout: 100_000 }, () => {
     testServerInterfaceActor(
         'ondrejklinovsky/contact-info',
         'CDS server interface',
-        async ({ expect, callServerInterface }) => {
+        async ({ expect, sendRequestToServer }) => {
             {
-                const { data, status } = await callServerInterface({
-                    input: {
+                const { data, status } = await sendRequestToServer({
+                    body: {
                         startUrls: [{ url: 'https://apify.com' }],
                         maxRequests: 3,
                         aggregateContacts: true,
@@ -74,8 +74,10 @@ describe.skip('custom-matchers', { timeout: 100_000 }, () => {
                 expect(data[0].domain).toEqual('apify.com');
             }
 
-            const { data, status } = await callServerInterface({
-                input: {
+            const { data, status } = await sendRequestToServer({
+                path: '/search',
+                query: { limit: 3, tags: ['a', 'b'] },
+                body: {
                     startUrls: [{ url: 'https://apify.com' }],
                     maxRequests: 3,
                     aggregateContacts: true,

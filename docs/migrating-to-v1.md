@@ -247,7 +247,9 @@ The `it` alias of `testActor` is gone: use `testActor`.
 
 ### Server interface tests
 
-The platform renamed standby mode to server interface, and so did the library:
+The platform renamed standby mode to server interface, and so did the library. `callStandby` is `sendRequestToServer`,
+and it takes the request's `path`, `query`, `body`, `method` and `headers`, instead of an `input` that was always the
+JSON body of a `POST`:
 
 ```ts
 // Before
@@ -257,9 +259,9 @@ testStandbyActor('myteam/search', 'answers a query', async ({ expect, callStandb
 });
 
 // After
-testServerInterfaceActor('myteam/search', 'answers a query', async ({ expect, callServerInterface }) => {
-    const { data, body, status } = await callServerInterface({ input: { query: 'test' } });
-    expect(status, body).toBe(200);
+testServerInterfaceActor('myteam/search', 'answers a query', async ({ expect, sendRequestToServer }) => {
+    const { data, text, status } = await sendRequestToServer({ body: { query: 'test' } });
+    expect(status, text).toBe(200);
     ...
 });
 ```
@@ -268,10 +270,11 @@ testServerInterfaceActor('myteam/search', 'answers a query', async ({ expect, ca
 with the `X-Actor-Build` header, instead of creating a temporary task on that build. As a result:
 
 - the report and the test annotations no longer link the server interface runs;
-- `callServerInterface` sends `Content-Type: application/json` unless `headers` set another type, so a test can drop
-  that header;
-- `callServerInterface` also returns `body`, the raw response text, and `data` is `undefined` when the response isn't
-  JSON. Pass `body` as the message of the status assertion to see what came back when it fails.
+- an object `body` goes as JSON, with `Content-Type: application/json` unless `headers` set another type, so a test
+  can drop that header. A string, `Buffer`, `FormData` or other raw body is sent as it is;
+- without a `body` the request is a `GET`, so pass `method: 'POST'` for a `POST` without a body;
+- it also returns `text`, the raw response text, and `data` is `undefined` when the response isn't JSON. Pass `text` as
+  the message of the status assertion to see what came back when it fails.
 
 ### `toFinishWith`
 
@@ -334,3 +337,4 @@ Skip this if you only use the workflows.
 | Claude's investigation can't find the failed run                                                                               | Pass it the token the tests ran with, see [The Claude investigation workflow](#the-claude-investigation-workflow)       |
 | `ERR_PACKAGE_PATH_NOT_EXPORTED`                                                                                                | [Import from the package root](#import-from-the-package-root)                                                           |
 | `Module '"apify-test-tools"' has no exported member 'testStandbyActor'` or `testStandbyActor is not a function`                | [Rename it to `testServerInterfaceActor`](#server-interface-tests)                                                      |
+| `Property 'callStandby' does not exist`, or `callStandby is not a function`                                                    | [Use `sendRequestToServer`](#server-interface-tests)                                                                    |

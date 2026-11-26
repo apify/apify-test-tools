@@ -135,12 +135,20 @@ testActor('john.doe/my-actor', 'validate existing run', async ({ expect, run }) 
 ## `testServerInterfaceActor(actorFullName, testName, fn, options?)`
 
 Same as `testActor`, for an Actor's server interface (formerly standby mode). Instead of `run`, `fn` gets
-`callServerInterface`, which sends a `POST` request with `input` as the JSON body directly to the Actor's server
-interface URL, plus `path`. It sends `Content-Type: application/json` unless `headers` set another type. When
-`ACTOR_BUILDS` lists a build for the Actor, as on a PR, the request selects it with the `X-Actor-Build` header.
+`sendRequestToServer`, which sends an HTTP request directly to the Actor's server interface URL. It takes:
+
+| Option    | Default                                 | What                                                                                                                                                                                                                     |
+| --------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`    | `/`                                     | The path on the server, e.g. `/search`. A query string in it is kept                                                                                                                                                     |
+| `query`   | none                                    | Query parameters, e.g. `{ q: 'shoes', limit: 10 }`. An array adds the parameter once per value                                                                                                                           |
+| `body`    | none                                    | A string, `Buffer` or other typed array, `ArrayBuffer`, `Blob`, `FormData` or `URLSearchParams` is sent as it is. Anything else is sent as JSON, with `Content-Type: application/json` unless `headers` set another type |
+| `method`  | `POST` with a `body`, `GET` without one | The HTTP method                                                                                                                                                                                                          |
+| `headers` | none                                    | Request headers                                                                                                                                                                                                          |
+
+When `ACTOR_BUILDS` lists a build for the Actor, as on a PR, the request selects it with the `X-Actor-Build` header.
 Otherwise, as in the scheduled platform tests, it sends no header and the platform serves the Actor's configured server
-interface build. It returns `{ data, body, status, headers }`, where `body` is the raw response text and `data` is
-`body` parsed as JSON, or `undefined` when the response isn't JSON, e.g. an HTML error page. Pass `body` as the message
+interface build. It returns `{ data, text, status, headers }`, where `text` is the raw response text and `data` is
+`text` parsed as JSON, or `undefined` when the response isn't JSON, e.g. an HTML error page. Pass `text` as the message
 of the status assertion to see what came back when it fails. `fn` gets `apifyClient` too.
 
 **Server interface tests need a full-permission test token.** Only the Actor's owner, or an account with write access
@@ -152,14 +160,21 @@ point the Actor's `testTokenEnvVar` at a full-permission token of such an accoun
 import { describe, testServerInterfaceActor } from 'apify-test-tools';
 
 describe('server interface tests', () => {
-    testServerInterfaceActor('john.doe/my-actor', 'search request', async ({ expect, callServerInterface }) => {
-        const { data, body, status } = await callServerInterface({
-            input: { query: 'test' },
+    testServerInterfaceActor('john.doe/my-actor', 'search request', async ({ expect, sendRequestToServer }) => {
+        const { data, text, status } = await sendRequestToServer({
             path: '/search',
+            query: { limit: 10 },
+            body: { query: 'test' },
         });
 
-        expect(status, body).toBe(200);
+        expect(status, text).toBe(200);
         expect(data.results).toBeNonEmptyArray();
+    });
+
+    testServerInterfaceActor('john.doe/my-actor', 'health check', async ({ expect, sendRequestToServer }) => {
+        // No body, so a GET
+        const { status, text } = await sendRequestToServer({ path: '/health' });
+        expect(status, text).toBe(200);
     });
 });
 ```

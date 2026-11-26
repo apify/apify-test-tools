@@ -271,22 +271,26 @@ describe('sandbox dummies', () => {${actorTests}
             'test/platform/server-interface.test.ts',
             `import { describe, testServerInterfaceActor } from ${JSON.stringify(libPath)};
 
-const expected = {
-    buildId: ${JSON.stringify(build!.buildId)},
-    buildNumber: ${JSON.stringify(build!.buildNumber)},
-    method: 'POST',
-    path: '/echo?q=1',
-    contentType: 'application/json',
-    body: ${JSON.stringify(JSON.stringify(input))},
-};
+const build = { buildId: ${JSON.stringify(build!.buildId)}, buildNumber: ${JSON.stringify(build!.buildNumber)} };
 
 describe('sandbox server interface dummy', () => {
-    testServerInterfaceActor(${JSON.stringify(SERVER_INTERFACE_ACTOR)}, 'answers on the tested build', async ({ expect, callServerInterface }) => {
-        const { status, data, body } = await callServerInterface({ input: ${JSON.stringify(input)}, path: '/echo?q=1' });
-        expect(status, body).toBe(200);
-        expect(data).toEqual(expected);
-    });
+    testServerInterfaceActor(${JSON.stringify(SERVER_INTERFACE_ACTOR)}, 'answers on the tested build', async ({ expect, sendRequestToServer }) => {
+        const json = await sendRequestToServer({ path: '/echo', query: { q: 1 }, body: ${JSON.stringify(input)} });
+        expect(json.status, json.text).toBe(200);
+        expect(json.data).toEqual({
+            ...build,
+            method: 'POST',
+            path: '/echo?q=1',
+            contentType: 'application/json',
+            body: ${JSON.stringify(JSON.stringify(input))},
+        });
 
+        const raw = await sendRequestToServer({ path: '/raw', body: 'a,b', headers: { 'Content-Type': 'text/csv' } });
+        expect(raw.data).toEqual({ ...build, method: 'POST', path: '/raw', contentType: 'text/csv', body: 'a,b' });
+
+        const get = await sendRequestToServer({ path: '/status' });
+        expect(get.data).toMatchObject({ ...build, method: 'GET', path: '/status', body: '' });
+    });
 });
 `,
         );

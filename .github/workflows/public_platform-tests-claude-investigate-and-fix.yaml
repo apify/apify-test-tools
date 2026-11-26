@@ -12,6 +12,11 @@ name: 'Platform tests: Claude failure investigation and fix'
 #   2. fix: Runs only when investigate created a new issue. Claude reads the issue,
 #      implements a fix, and opens a PR. On success, adds a "claude:done" label to the issue.
 #
+# With `humanize_duty` set, a new issue also records the developer who rewrites it in plain language: the
+# next individual user on the `*` rule of the repo's CODEOWNERS, in turn. `label` labels the issue
+# `needs-humanize:<login>`. It runs in its own job, one at a time per repo, so it never holds up the investigate
+# or fix phase.
+#
 # Note: this workflow is intended to be called from a scheduled workflow. Scheduled runs use
 # GITHUB_TOKEN with reduced permissions that cannot trigger other workflow runs. For this reason
 # the PR phase is chained as a direct job dependency rather than relying on a label-based trigger.
@@ -99,6 +104,11 @@ on:
 
                     Priority is an organization-level issue field. If the revenue actually at risk can't be determined, e.g. the Impact section says "Cannot be determined", leave Priority unset, unless the relative severity is Invisible to the user or Test.
                 description: Prompt given to Claude for setting a new issue's Priority field from its impact and flakiness. Override to customize how priority is judged, e.g. to set revenue thresholds.
+            humanize_duty:
+                required: false
+                type: string
+                default: ''
+                description: Where to record the developer who rewrites each new issue in plain language, taking turns through the individual users on the `*` rule of the repo's CODEOWNERS. `label` labels the issue `needs-humanize:<login>`, the only supported value. Off when empty.
         secrets:
             ANTHROPIC_API_KEY:
                 required: true
@@ -248,6 +258,26 @@ jobs:
                           issue_number: parseInt('${{ steps.issue.outputs.number }}'),
                           labels: ["claude"],
                       });
+
+    humanize-duty:
+        needs: investigate
+        if: inputs.humanize_duty != '' && needs.investigate.outputs.issue_number != ''
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        permissions:
+            contents: read
+            issues: write
+        # Two issues handled at once would pick the same developer.
+        concurrency:
+            group: humanize-duty-${{ github.repository }}
+            cancel-in-progress: false
+            queue: max
+        steps:
+            - name: Record who humanizes the issue
+              uses: $/.github/actions/humanize-duty
+              with:
+                  duty: ${{ inputs.humanize_duty }}
+                  issue-number: ${{ needs.investigate.outputs.issue_number }}
 
     fix:
         needs: investigate

@@ -1,4 +1,4 @@
-import type { Actor, ActorRun, ActorRunListItem, ActorStandby, Task } from 'apify-client';
+import type { Actor, ActorRun, ActorRunListItem } from 'apify-client';
 import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
@@ -116,10 +116,8 @@ export const testActor = <T>(
 };
 
 /**
- * This wrapper creates a new task with specific `build` of the standby actor and provides
- * `callStandby` function, which calls the task's `standbyUrl`.
- *
- * Using task is just current shortcoming of standby feature but ideally we would use Actor directly
+ * Tests a standby Actor directly. A build listed in `ACTOR_BUILDS` is targeted with the X-Actor-Build header, otherwise
+ * the platform serves the Actor's configured standby build.
  *
  * @param actorFullName - The Actor's full name, `owner/name`, e.g. `"apify/web-scraper"`.
  */
@@ -130,27 +128,14 @@ export const testStandbyActor = <I = any, O = any>(
     fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>>; apifyClient: ApifyClient }>,
     testOptions?: ActorTestOptions,
 ) => {
-    defineActorTest(actorFullName, testName, testOptions, async (context, name) => {
+    defineActorTest(actorFullName, testName, testOptions, async (context) => {
         const apifyClient = getApifyClient(actorFullName);
-        const standbyTask = await createStandbyTask(apifyClient, actorFullName, config.get(actorFullName)?.buildNumber);
-
-        // NOTE: we wrap `fn` in try/finally so cleanup (deleting the task) always runs afterwards
-        try {
-            await fn({
-                ...context,
-                apifyClient,
-                callStandby: createStartStandbyFn(apifyClient, standbyTask, context, name),
-            });
-        } finally {
-            const { taskId } = standbyTask;
-            // we want to delete the task at the end of the test
-            await apifyClient
-                .task(taskId)
-                .delete()
-                .catch((error) => {
-                    console.error(`Failed to delete standby task "${taskId}": ${error}`);
-                });
-        }
+        const standbyActor = await getStandbyActor(apifyClient, actorFullName, config.get(actorFullName)?.buildNumber);
+        await fn({
+            ...context,
+            callStandby: createStartStandbyFn<I, O>({ ...standbyActor, apifyClient }),
+            apifyClient,
+        });
     });
 };
 
@@ -171,124 +156,77 @@ export const testTestActor = <T>(
 };
 
 /**
- * Creates a function that accepts input for a standby actor and sends a request containing the input
- * to the task's standby url.
+ * Sends JSON input directly to the Actor's standby URL, as `application/json` unless `headers` set another type.
+ * Returns the raw response `body` too. `data` is the body parsed as JSON, or `undefined` when it isn't JSON (e.g. an
+ * HTML error page), so a test can still assert the status and show what came back.
  */
-const createStartStandbyFn = <I, O>(
-    apifyClient: ApifyClient,
-    standbyTask: StandbyTask,
-    { annotate }: TestContext,
-    testName: string,
-) => {
-    const { standbyUrl, taskId } = standbyTask;
-    const annotatedRuns = new Set<string>();
-
-    // We annotate all the runs of the task, though it will be only one run
-    // for most of the tests. To avoid annotating the same run multiple times
-    // (in case the test calls the standby more than once), we use `annotatedRuns`
-    // set to keep track of which runs have already been annotated.
-    const annotateStandbyRuns = async () => {
-        const runs = (await apifyClient.task(taskId).runs().list()).items;
-        for (const run of runs) {
-            if (!annotatedRuns.has(run.id)) {
-                const runLink = generateRunLink(run);
-                await annotate(`${testName} - ${runLink}`, 'run_link');
-            }
-            annotatedRuns.add(run.id);
-        }
-    };
-
+const createStartStandbyFn = <I, O>({
+    standbyUrl,
+    build,
+    apifyClient,
+}: StandbyActor & { apifyClient: ApifyClient }) => {
     return async ({
         input,
         path = '',
         headers = {},
     }: Pick<RunOptions<I>, 'input'> & { path?: string; headers?: Record<string, string> }) => {
+        const requestHeaders = new Headers(headers);
+        if (!requestHeaders.has('Content-Type')) {
+            requestHeaders.set('Content-Type', 'application/json');
+        }
+        requestHeaders.set('Authorization', `Bearer ${apifyClient.token}`);
+        if (build !== undefined) {
+            requestHeaders.set('X-Actor-Build', build);
+        }
         const response = await fetch(standbyUrl + path, {
-            headers: {
-                ...headers,
-                Authorization: `Bearer ${apifyClient.token}`,
-            },
+            headers: requestHeaders,
             method: 'POST',
             body: JSON.stringify(input),
         });
 
-        await annotateStandbyRuns();
-
-        const data = (await response.json()) as O;
+        const body = await response.text();
+        let data: O;
+        try {
+            data = JSON.parse(body) as O;
+        } catch {
+            data = undefined as O;
+        }
         return {
             data,
+            body,
             status: response.status,
             headers: response.headers,
         };
     };
 };
 
-interface StandbyTask {
+interface StandbyActor {
     standbyUrl: string;
-    taskId: string;
+    build?: string;
 }
 
 /**
- * Creates a task with specific `build` - either `buildNumber` or default.
- *
- * @throws if actor doesn't exist or it doesn't support standby mode.
+ * Resolves the Actor's standby URL, and the build from `ACTOR_BUILDS` to target with `X-Actor-Build`. Without one, the
+ * tests run on the Actor's default build, so no header is sent and the platform serves its configured standby build.
+ * That keeps default-build runs working for testers without write access to the Actor.
  */
-const createStandbyTask = async (
+const getStandbyActor = async (
     apifyClient: ApifyClient,
     actorId: string,
     buildNumber?: string,
-): Promise<StandbyTask> => {
-    const actor = apifyClient.actor(actorId);
-
-    const actorInfo = (await actor.get()) as Actor & { standbyUrl?: string };
+): Promise<StandbyActor> => {
+    const actorInfo = (await apifyClient.actor(actorId).get()) as (Actor & { standbyUrl?: string }) | undefined;
     if (!actorInfo) {
         throw new Error(`Actor "${actorId}" not found`);
     }
-
     if (!actorInfo.standbyUrl) {
         throw new Error(`Actor "${actorId}" doesn't support standby mode`);
     }
 
-    if (!actorInfo.actorStandby) {
-        throw new Error(`Actor "${actorId} doesn't contain actorStandby options`);
-    }
-    const { isEnabled, ...defaultActorStandby } = actorInfo.actorStandby;
-    delete defaultActorStandby.disableStandbyFieldsOverride;
-
-    const build = buildNumber ?? defaultActorStandby.build;
-
-    const actorStandbyOptions: ActorStandby = {
-        ...defaultActorStandby,
-        build,
+    return {
+        standbyUrl: actorInfo.standbyUrl,
+        build: buildNumber,
     };
-
-    try {
-        const title = `Test task - ${build}`.slice(0, 62);
-        const randomValueLength = 15;
-        // we try to create unique task name containing only `a-z0-9-` characters and at most 63 characters long
-        const randomValue = Math.random().toString(10).slice(2).padEnd(randomValueLength, '0');
-        const name = `test-${randomValue.slice(0, randomValueLength)}`;
-        const newTask = (await apifyClient.tasks().create({
-            actId: actorId,
-            actorStandby: actorStandbyOptions,
-            description: `Task for testing standby version ${build} of actor "${actorId}"`,
-            title,
-            name,
-        })) as Task & { standbyUrl?: string };
-
-        const { id, standbyUrl } = newTask;
-
-        if (!standbyUrl) {
-            throw new Error(`Task "${id} doesn't contain standbyUrl property`);
-        }
-
-        return {
-            standbyUrl,
-            taskId: id,
-        };
-    } catch (error) {
-        throw new Error(`Failed to create task: ${error}`);
-    }
 };
 
 const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testContext: TestContext) => {
@@ -344,4 +282,4 @@ const generateRunLink = (run: ActorRun | ActorRunListItem): string => {
 
 /** Used for unit testing */
 // eslint-disable-next-line no-underscore-dangle
-export const _private = { createStartRunFn } as const;
+export const _private = { createStartRunFn, createStartStandbyFn, getStandbyActor } as const;

@@ -8,7 +8,7 @@ than 1.0.0, and the 1.0 library expects what the v1 workflows pass it. Migrate a
 3. [Choose the account that runs the tests](#choose-the-account-that-runs-the-tests): the Actor's owner by default, or
    `TESTER_APIFY_TOKEN` as before
 4. [Switch the workflows](#switch-the-workflows) to `@workflows-v1`, with `secrets: inherit` or the test tokens in `CONFIG_SECRETS`
-5. [Update the tests](#update-the-tests): Actors by full name, the imports and `toFinishWith`
+5. [Update the tests](#update-the-tests): Actors by full name, the imports, standby tests and `toFinishWith`
 
 `@workflows-v0` keeps working with the libraries before 1.0, so a repository can stay on it until its PR is merged.
 The [Troubleshooting](#troubleshooting) section maps the errors you may hit to the step that fixes them.
@@ -238,6 +238,18 @@ import { describe, testActor, testStandbyActor, RunTestResult } from 'apify-test
 ```
 
 The `it` alias of `testActor` is gone: use `testActor`.
+
+### Standby tests
+
+`testStandbyActor` sends its requests straight to the Actor's standby URL and selects the PR build with the
+`X-Actor-Build` header, instead of creating a temporary task on that build. As a result:
+
+- the report and the test annotations no longer link the standby runs;
+- `callStandby` sends `Content-Type: application/json` unless `headers` set another type, so a test can drop that
+  header;
+- `callStandby` also returns `body`, the raw response text, and `data` is `undefined` when the response isn't JSON.
+  Pass `body` as the message of the status assertion to see what came back when it fails:
+  `expect(status, body).toBe(200)`.
 
 ### `toFinishWith`
 

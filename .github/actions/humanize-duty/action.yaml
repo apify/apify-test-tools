@@ -1,0 +1,37 @@
+name: Record who humanizes an issue
+description: >-
+    Records the next developer from the `*` rule of the repo's CODEOWNERS, in turn, as the one who rewrites an
+    issue in plain language. See workflow-scripts-src/humanize-duty.ts.
+inputs:
+    duty:
+        description: Where the duty is recorded. `label` labels the issue `needs-humanize:<login>`.
+        required: true
+    issue-number:
+        description: Issue to record the duty on.
+        required: true
+    github-token:
+        description: Token that can read the repo's contents and write its issues.
+        required: false
+        default: ${{ github.token }}
+
+# The script ships with this action as a bundle (npm run bundle), so nothing is checked out or installed.
+runs:
+    using: 'composite'
+    steps:
+        - name: Record the duty
+          uses: actions/github-script@v9
+          env:
+              HUMANIZE_DUTY: ${{ inputs.duty }}
+              ISSUE_NUMBER: ${{ inputs.issue-number }}
+              SCRIPT_PATH: ${{ github.action_path }}/../../scripts/humanize-duty.mjs
+          with:
+              github-token: ${{ inputs.github-token }}
+              script: |
+                  const { assignHumanizeDuty } = await import(process.env.SCRIPT_PATH);
+                  await assignHumanizeDuty({
+                      github,
+                      context,
+                      core,
+                      duty: process.env.HUMANIZE_DUTY,
+                      issueNumber: Number(process.env.ISSUE_NUMBER),
+                  });

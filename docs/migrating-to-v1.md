@@ -282,7 +282,7 @@ with the `X-Actor-Build` header, instead of creating a temporary task on that bu
 | `forbiddenLogs`            | the strings `ReferenceError`, `TypeError` anywhere in the log | strings or regular expressions, per log line. The defaults match a printed error, `TypeError: <message>` |
 | `chargedEventCounts`       | an event you don't list must be 0                             | only the events you list are checked                                                                     |
 | `strictChargedEventCounts` | –                                                             | `true` brings back: an event you don't list must be 0                                                    |
-| `statisticsKeys`           | always `SDK_CRAWLER_STATISTICS_0`                             | one key or several, summed                                                                               |
+| `statisticsKeys`           | always `SDK_CRAWLER_STATISTICS_0`                             | every `SDK_CRAWLER_STATISTICS_*` and `CRAWLEE_CRAWLER_STATISTICS_*` record, summed, or the keys you list |
 
 What to change:
 
@@ -290,14 +290,17 @@ What to change:
 - **A test that relied on every unlisted event being 0** adds `strictChargedEventCounts: true`.
 - **An event listed as never charged** passes now: `'premium': 0` asserts it wasn't charged. Before, an event listed
   but never charged failed.
-- **An Actor without a Crawlee crawler** keeps `failedRequests: null`, and can drop `requestsRetries: null` and
+- **An Actor without crawler statistics, e.g. without a Crawlee crawler, must set `failedRequests: null`**, as before:
+  `failedRequests` is checked by default and fails without statistics. It can drop `requestsRetries: null` and
   `duration: null`.
-- **An adaptive crawler, a crawler with its own statistics id, or a run with several crawlers** sets
-  `statisticsKeys`, e.g. `['SDK_CRAWLER_STATISTICS_0', 'SDK_CRAWLER_STATISTICS_1']`. The checks read their sum.
+- **An adaptive crawler, a crawler with its own statistics id, or a run with several crawlers** needs no setting:
+  the checks read every statistics record of the run and sum them. To read only some, set `statisticsKeys`, e.g.
+  `'SDK_CRAWLER_STATISTICS_0'`.
 - **Your own `forbiddenLogs`** replace the defaults, as before. A string still matches anywhere in a line, but no
   longer across lines.
 
 `runResult.getStatistics()` takes an optional key: `getStatistics('SDK_CRAWLER_STATISTICS_1')`.
+`runResult.getStatisticsKeys()` lists the keys of every statistics record of the run.
 
 ## Running the CLI yourself
 
@@ -321,7 +324,7 @@ Skip this if you only use the workflows.
 | `Test "…" names its Actor "…", which is not a full name`                                                                       | [Name every Actor by its full name](#name-every-actor-by-its-full-name)                                                 |
 | `APIFY_TOKEN_… is not set, so the tests of … will fail.` and `APIFY_TOKEN_… is not set. The tests of Actor "…" need it.`       | Pass it in `CONFIG_SECRETS`, see [Switch the workflows](#switch-the-workflows)                                          |
 | `Actor … is not in apify-test-tools.config.json, so its tests will fail.`                                                      | Add the Actor to the config                                                                                             |
-| `Failed failedRequests check, expected 0, got no statistics record SDK_CRAWLER_STATISTICS_0.`                                  | Set `statisticsKeys`, or `failedRequests: null` for an Actor without a crawler                                          |
+| `Failed failedRequests check, expected 0, got no statistics record SDK_CRAWLER_STATISTICS_* or CRAWLEE_CRAWLER_STATISTICS_*.`  | `failedRequests: null` for an Actor without a Crawlee crawler                                                           |
 | A `chargedEventCounts` check that passes although an unlisted event was charged                                                | Add `strictChargedEventCounts: true`                                                                                    |
 | The workflow fails to start over `TESTER_APIFY_TOKEN`                                                                          | Remove it from the `secrets:` of the PR and scheduled test workflows                                                    |
 | ``Warning: … declares … as `buildTokenEnvVar`, but the CONFIG_SECRETS secret has no such entry``, e.g. with `secrets: inherit` | List the secrets by name, with every Apify token in `CONFIG_SECRETS`, see [Switch the workflows](#switch-the-workflows) |

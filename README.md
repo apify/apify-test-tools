@@ -388,6 +388,9 @@ describe('web-scraper', () => {
 });
 ```
 
+The failed requests come from the crawler statistics that Crawlee saves. **An Actor without crawler statistics, e.g.
+one that doesn't use Crawlee, must pass `failedRequests: null`**, or `toFinishWith` fails on the missing statistics.
+
 Platform tests only run on the Actors [`test`](docs/cli.md#running-tests-test) passes to them, each with its
 `testTokenEnvVar` token, so your regular unit test run stays unaffected.
 

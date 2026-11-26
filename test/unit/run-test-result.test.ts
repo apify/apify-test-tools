@@ -54,4 +54,28 @@ describe('RunTestResult', () => {
 
         expect(getRecord.mock.calls.map(([key]) => key)).toEqual(['SDK_CRAWLER_STATISTICS_0', 'CUSTOM', 'missing']);
     });
+
+    it('lists the statistics records under both prefixes once, sorted, keeping only keys that match', async () => {
+        const keys: Record<string, string[]> = {
+            SDK_CRAWLER_STATISTICS_: ['SDK_CRAWLER_STATISTICS_1', 'SDK_CRAWLER_STATISTICS_0'],
+            // The prefix is matched again, in case the listing ignores it
+            CRAWLEE_CRAWLER_STATISTICS_: ['CRAWLEE_CRAWLER_STATISTICS_0', 'INPUT'],
+        };
+        const listKeys = vi.fn(async ({ prefix }: { prefix: string }) => ({
+            items: keys[prefix].map((key) => ({ key })),
+        }));
+        const client = { keyValueStore: () => ({ listKeys }) } as unknown as ApifyClient;
+        const result = new RunTestResult(client, run);
+
+        await Promise.all([result.getStatisticsKeys(), result.getStatisticsKeys()]);
+        expect(await result.getStatisticsKeys()).toEqual([
+            'CRAWLEE_CRAWLER_STATISTICS_0',
+            'SDK_CRAWLER_STATISTICS_0',
+            'SDK_CRAWLER_STATISTICS_1',
+        ]);
+        expect(listKeys.mock.calls.map(([options]) => options)).toEqual([
+            { prefix: 'SDK_CRAWLER_STATISTICS_', limit: 1000 },
+            { prefix: 'CRAWLEE_CRAWLER_STATISTICS_', limit: 1000 },
+        ]);
+    });
 });

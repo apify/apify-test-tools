@@ -1,10 +1,13 @@
 import type { ActorRun, ApifyClient, KeyValueStoreClient } from 'apify-client';
 
-import { DEFAULT_STATISTICS_KEY } from './consts.js';
+import { DEFAULT_STATISTICS_KEY, STATISTICS_KEY_PREFIXES } from './consts.js';
 import type { Dataset, SdkCrawlerStatistics } from './types.js';
 
 /** Items fetched per request, so no single response can exceed Node's string limit on large datasets. */
 const DATASET_PAGE_SIZE = 1000;
+
+/** Statistics records found per key prefix: the first page of keys, far more crawlers than any run has */
+const STATISTICS_KEYS_LIMIT = 1000;
 
 /**
  * Runs `fn` at most once and shares its promise, so repeated and concurrent calls are one request.
@@ -44,6 +47,21 @@ export class RunTestResult {
         }
         return this.statisticsRecords.get(key)!();
     };
+
+    /**
+     * The keys of the crawler statistics records in the default key-value store, sorted: those starting with
+     * `SDK_CRAWLER_STATISTICS_` or `CRAWLEE_CRAWLER_STATISTICS_`, from the first page of keys under each prefix.
+     */
+    getStatisticsKeys = once(async (): Promise<string[]> => {
+        const store = this.getKeyValueStoreClient();
+        const pages = await Promise.all(
+            STATISTICS_KEY_PREFIXES.map(async (prefix) => store.listKeys({ prefix, limit: STATISTICS_KEYS_LIMIT })),
+        );
+        return pages
+            .flatMap(({ items }) => items.map(({ key }) => key))
+            .filter((key) => STATISTICS_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)))
+            .sort();
+    });
 
     getLog = once(async (): Promise<string> => {
         return (await this.apifyClient.run(this.id).log().get()) as string;

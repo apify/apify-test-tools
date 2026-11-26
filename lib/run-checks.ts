@@ -1,4 +1,4 @@
-import { TO_FINISH_WITH_OPTIONS } from './consts.js';
+import { STATISTICS_KEY_PREFIXES, TO_FINISH_WITH_OPTIONS } from './consts.js';
 import type { RunTestResult } from './run-test-result.js';
 import type { Interval, ToFinishWithOptions, ToFinishWithOptionsWithDefaults } from './types.js';
 
@@ -113,8 +113,12 @@ const statisticsChecks = async (run: RunTestResult, options: ToFinishWithOptions
     // Fetched only for the checks that need them, so an Actor without statistics can skip them all
     if (wanted.length === 0) return [];
 
-    const keys = [options.statisticsKeys].flat();
-    const read = await readStatistics(run, keys);
+    // Without keys, every crawler's statistics the run has
+    const keys = options.statisticsKeys === undefined ? await run.getStatisticsKeys() : [options.statisticsKeys].flat();
+    const read: Awaited<ReturnType<typeof readStatistics>> =
+        keys.length === 0
+            ? { missing: [STATISTICS_KEY_PREFIXES.map((prefix) => `${prefix}*`).join(' or ')] }
+            : await readStatistics(run, keys);
     if ('missing' in read) {
         const actual = `no statistics record ${read.missing.join(', ')}`;
         return wanted.map(([name, expected]) => ({

@@ -56,7 +56,12 @@ export type ToFinishWithOptionsWithDefaults = {
     status: RunStatus;
     /** Run duration in milliseconds */
     duration: Interval | null;
-    /** Failed requests in the crawler statistics */
+    /**
+     * Failed requests in the crawler statistics. Set it to `null` for an Actor without crawler statistics, e.g. one
+     * that doesn't use a Crawlee crawler, or the check fails.
+     *
+     * @default 0
+     */
     failedRequests: Interval | null;
     /** Request retries in the crawler statistics, summed over every request */
     requestsRetries: Interval | null;
@@ -71,9 +76,10 @@ export type ToFinishWithOptionsWithDefaults = {
      * The key-value store record, or records, with the crawler statistics the checks above read. With more than one,
      * e.g. for a run with several crawlers, the checks read their sum. A record that doesn't exist fails the checks.
      *
-     * @default 'SDK_CRAWLER_STATISTICS_0'
+     * By default, every record whose key starts with `SDK_CRAWLER_STATISTICS_` or `CRAWLEE_CRAWLER_STATISTICS_`,
+     * summed. Without any, the checks fail.
      */
-    statisticsKeys: string | string[];
+    statisticsKeys: string | string[] | undefined;
     /**
      * Also fail on any charged event that `chargedEventCounts` doesn't list.
      *
@@ -146,7 +152,8 @@ export interface ActorMatchers<R extends void | Promise<void> = void> {
      * Validates the following properties of a run:
      * - `status` (default: `SUCCEEDED`)
      * - `datasetItemCount` (required)
-     * - `failedRequests` (default: `0`), from the crawler statistics in `statisticsKeys`
+     * - `failedRequests` (default: `0`), from the crawler statistics: every crawler's, or those in `statisticsKeys`.
+     *   `null` for an Actor without crawler statistics
      * - `forbiddenLogs` (default: a thrown `ReferenceError` or `TypeError`)
      * - `duration`, `requestsRetries`, `maxRetriesPerRequest`, `chargedEventCounts` (not checked by default)
      */

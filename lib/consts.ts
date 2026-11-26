@@ -13,6 +13,9 @@ export const ACTOR_FULL_NAME_REGEX = new RegExp(
 /** Where a Crawlee crawler persists its statistics, unless it was given another id */
 export const DEFAULT_STATISTICS_KEY = 'SDK_CRAWLER_STATISTICS_0';
 
+/** A Crawlee crawler persists its statistics under one of these, followed by its statistics id */
+export const STATISTICS_KEY_PREFIXES = ['SDK_CRAWLER_STATISTICS_', 'CRAWLEE_CRAWLER_STATISTICS_'] as const;
+
 export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
     status: 'SUCCEEDED',
     duration: null,
@@ -21,7 +24,8 @@ export const TO_FINISH_WITH_OPTIONS: ToFinishWithOptionsWithDefaults = {
     maxRetriesPerRequest: null,
     // An error as JavaScript prints it, `TypeError: <message>`, not the word in prose or in a longer name
     forbiddenLogs: [/\bReferenceError: /, /\bTypeError: /],
-    statisticsKeys: DEFAULT_STATISTICS_KEY,
+    // Every record under STATISTICS_KEY_PREFIXES
+    statisticsKeys: undefined,
     strictChargedEventCounts: false,
 };
 

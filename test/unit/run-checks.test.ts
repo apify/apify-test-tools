@@ -22,14 +22,21 @@ const fakeRun = ({
     chargedEventCounts,
 }: FakeRun = {}) => {
     const getStatistics = vi.fn(async (key: string) => statistics[key]);
+    // The real one lists the key-value store under the statistics prefixes
+    const getStatisticsKeys = vi.fn(async () =>
+        Object.keys(statistics)
+            .filter((key) => /^(SDK|CRAWLEE)_CRAWLER_STATISTICS_/.test(key))
+            .sort(),
+    );
     const run = {
         status,
         getRunInfo: async () => ({ stats: { durationMillis }, chargedEventCounts }),
         getDataset: async () => ({ items: new Array(10) }),
         getStatistics,
+        getStatisticsKeys,
         getLog: async () => log,
     } as unknown as RunTestResult;
-    return Object.assign(run, { getStatistics });
+    return Object.assign(run, { getStatistics, getStatisticsKeys });
 };
 
 const checks = async (run: RunTestResult, options: Parameters<typeof checkRun>[1]) =>
@@ -86,28 +93,42 @@ describe('checkRun()', () => {
     });
 
     describe('statistics', () => {
-        it('fails the checks that read a missing record, naming it', async () => {
-            const run = fakeRun({ statistics: {} });
+        it('fails the checks that need statistics when the run has none, naming the prefixes', async () => {
+            const run = fakeRun({ statistics: { OTHER_RECORD: STATS } });
             const failed = await checks(run, { datasetItemCount: 10, requestsRetries: { max: 3 } });
+            const actual = 'no statistics record SDK_CRAWLER_STATISTICS_* or CRAWLEE_CRAWLER_STATISTICS_*';
             expect(failed).toEqual([
-                {
-                    name: 'failedRequests',
-                    pass: false,
-                    actual: 'no statistics record SDK_CRAWLER_STATISTICS_0',
-                    expected: '0',
+                { name: 'failedRequests', pass: false, actual, expected: '0' },
+                { name: 'requestsRetries', pass: false, actual, expected: '<,3>' },
+            ]);
+        });
+
+        it('sums every crawler statistics record the run has, under either prefix', async () => {
+            const run = fakeRun({
+                statistics: {
+                    SDK_CRAWLER_STATISTICS_0: { requestsFailed: 1, requestsRetries: 2, requestRetryHistogram: [5, 2] },
+                    CRAWLEE_CRAWLER_STATISTICS_0: { requestsFailed: 2, requestsRetries: 3, requestRetryHistogram: [1] },
+                    SDK_CRAWLER_STATISTICS_adaptive: {
+                        requestsFailed: 0,
+                        requestsRetries: 1,
+                        requestRetryHistogram: [5, 0, 0, 1],
+                    },
+                    OTHER_RECORD: { requestsFailed: 100, requestsRetries: 100, requestRetryHistogram: [] },
                 },
-                {
-                    name: 'requestsRetries',
-                    pass: false,
-                    actual: 'no statistics record SDK_CRAWLER_STATISTICS_0',
-                    expected: '<,3>',
-                },
+            });
+            const options = { datasetItemCount: 10, failedRequests: 3, requestsRetries: 6, maxRetriesPerRequest: 3 };
+            expect(await failures(run, options)).toEqual([]);
+            expect(run.getStatistics.mock.calls.map(([key]) => key)).toEqual([
+                'CRAWLEE_CRAWLER_STATISTICS_0',
+                'SDK_CRAWLER_STATISTICS_0',
+                'SDK_CRAWLER_STATISTICS_adaptive',
             ]);
         });
 
         it('reads no statistics when no check needs them, e.g. for an Actor without a crawler', async () => {
             const run = fakeRun({ statistics: {} });
             expect(await failures(run, { datasetItemCount: 10, failedRequests: null })).toEqual([]);
+            expect(run.getStatisticsKeys).not.toHaveBeenCalled();
             expect(run.getStatistics).not.toHaveBeenCalled();
         });
 
@@ -116,6 +137,7 @@ describe('checkRun()', () => {
             const options = { datasetItemCount: 10, statisticsKeys: 'SDK_CRAWLER_STATISTICS_1' };
             expect(await failures(run, { ...options, failedRequests: 2 })).toEqual([]);
             expect(run.getStatistics).toHaveBeenCalledWith('SDK_CRAWLER_STATISTICS_1');
+            expect(run.getStatisticsKeys).not.toHaveBeenCalled();
         });
 
         it('sums the records of several crawlers', async () => {

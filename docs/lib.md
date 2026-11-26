@@ -171,16 +171,17 @@ It fails if the Actor doesn't have a server interface.
 What `run` returns. Every getter fetches its data on the first call and returns the same result afterwards, so you
 can call them freely.
 
-| Member                     | Returns                                                                                                         |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `id`                       | The run ID                                                                                                      |
-| `status`                   | The run status when it finished                                                                                 |
-| `getDataset<T>()`          | `{ items: T[] }`, every item of the default dataset                                                             |
-| `getLog()`                 | The run log as a string                                                                                         |
-| `getStatistics(key?)`      | The crawler statistics from the record `key`, by default `SDK_CRAWLER_STATISTICS_0`, or `undefined` without one |
-| `getInput<T>()`            | The `INPUT` record of the default key-value store                                                               |
-| `getKeyValueStoreClient()` | An `apify-client` client for the default key-value store                                                        |
-| `getRunInfo()`             | The run object, fetched again so it reflects changes after the run finished                                     |
+| Member                     | Returns                                                                                                                                |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                       | The run ID                                                                                                                             |
+| `status`                   | The run status when it finished                                                                                                        |
+| `getDataset<T>()`          | `{ items: T[] }`, every item of the default dataset                                                                                    |
+| `getLog()`                 | The run log as a string                                                                                                                |
+| `getStatistics(key?)`      | The crawler statistics from the record `key`, by default `SDK_CRAWLER_STATISTICS_0`, or `undefined` without one                        |
+| `getStatisticsKeys()`      | The keys of every crawler statistics record of the run, those starting with `SDK_CRAWLER_STATISTICS_` or `CRAWLEE_CRAWLER_STATISTICS_` |
+| `getInput<T>()`            | The `INPUT` record of the default key-value store                                                                                      |
+| `getKeyValueStoreClient()` | An `apify-client` client for the default key-value store                                                                               |
+| `getRunInfo()`             | The run object, fetched again so it reflects changes after the run finished                                                            |
 
 ```ts
 testActor('john.doe/my-actor', 'check dataset items', async ({ expect, run }) => {
@@ -208,33 +209,44 @@ Validates the common run properties in a single call and reports every failed ch
 `datasetItemCount` is required. Numeric checks take an exact number or a range: `{ min }`, `{ max }` or
 `{ min, max }`. Set a check with a default to `null` to skip it.
 
-| Option                     | Default                                   | Checks                                                                                                                        |
-| -------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `datasetItemCount`         | required                                  | Number of items in the default dataset                                                                                        |
-| `status`                   | `'SUCCEEDED'`                             | Run status                                                                                                                    |
-| `failedRequests`           | `0`                                       | Failed requests in the crawler statistics                                                                                     |
-| `forbiddenLogs`            | `[/\bReferenceError: /, /\bTypeError: /]` | Strings that no log line may contain, or regular expressions that no log line may match. A failure quotes the offending lines |
-| `duration`                 | not checked                               | Run duration in milliseconds                                                                                                  |
-| `requestsRetries`          | not checked                               | Request retries in the crawler statistics, over all requests                                                                  |
-| `maxRetriesPerRequest`     | not checked                               | The most retries any single request needed                                                                                    |
-| `chargedEventCounts`       | not checked                               | Pay-per-event counts, per event name. Only the events listed are checked, and an event that was never charged counts as 0     |
-| `strictChargedEventCounts` | `false`                                   | Also fail on any charged event that `chargedEventCounts` doesn't list                                                         |
-| `statisticsKeys`           | `'SDK_CRAWLER_STATISTICS_0'`              | The key-value store record, or records, with the crawler statistics                                                           |
+| Option                     | Default                                   | Checks                                                                                                                                                                |
+| -------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `datasetItemCount`         | required                                  | Number of items in the default dataset                                                                                                                                |
+| `status`                   | `'SUCCEEDED'`                             | Run status                                                                                                                                                            |
+| `failedRequests`           | `0`                                       | Failed requests in the crawler statistics. **Set it to `null` for an Actor without crawler statistics**, or the check fails                                           |
+| `forbiddenLogs`            | `[/\bReferenceError: /, /\bTypeError: /]` | Strings that no log line may contain, or regular expressions that no log line may match. A failure quotes the offending lines                                         |
+| `duration`                 | not checked                               | Run duration in milliseconds                                                                                                                                          |
+| `requestsRetries`          | not checked                               | Request retries in the crawler statistics, over all requests                                                                                                          |
+| `maxRetriesPerRequest`     | not checked                               | The most retries any single request needed                                                                                                                            |
+| `chargedEventCounts`       | not checked                               | Pay-per-event counts, per event name. Only the events listed are checked, and an event that was never charged counts as 0                                             |
+| `strictChargedEventCounts` | `false`                                   | Also fail on any charged event that `chargedEventCounts` doesn't list                                                                                                 |
+| `statisticsKeys`           | every crawler's                           | The key-value store record, or records, with the crawler statistics. By default every record starting with `SDK_CRAWLER_STATISTICS_` or `CRAWLEE_CRAWLER_STATISTICS_` |
 
 The default `forbiddenLogs` match a `ReferenceError` or `TypeError` the way JavaScript prints one, `TypeError: <message>`,
 not the word in prose or in a longer name. Your own `forbiddenLogs` replace them.
 
 `failedRequests`, `requestsRetries` and `maxRetriesPerRequest` read the crawler statistics, which a Crawlee crawler
-persists in the record `SDK_CRAWLER_STATISTICS_<id>`: `0` for the first crawler of a run, or the id its statistics were
-given. Give `statisticsKeys` the record of another crawler, or the records of every crawler of a run with several, e.g.
-an adaptive crawler: the checks then read their sum. A record that doesn't exist fails those checks, so set
-`failedRequests: null` for an Actor that doesn't use a Crawlee crawler.
+persists in the record `SDK_CRAWLER_STATISTICS_<id>` or `CRAWLEE_CRAWLER_STATISTICS_<id>`: `0` for the first crawler of
+a run, or the id its statistics were given. By default the checks read every such record of the run and sum them, so a
+run with several crawlers, e.g. an adaptive crawler, needs no setting. The records are found by listing the first 1,000
+keys under each prefix. Set `statisticsKeys` to read only some records, e.g. one crawler's out of several. A record it
+names that doesn't exist fails those checks.
+
+**An Actor without crawler statistics, e.g. one that doesn't use a Crawlee crawler, must set `failedRequests: null`.**
+`failedRequests` is checked by default, and a run without any statistics record fails it with
+`got no statistics record SDK_CRAWLER_STATISTICS_* or CRAWLEE_CRAWLER_STATISTICS_*`. With `null`, and no other check
+that needs them, the statistics aren't read at all:
+
+```ts
+await expect(runResult).toFinishWith({ datasetItemCount: 1, failedRequests: null });
+```
 
 ```ts
 await expect(runResult).toFinishWith({
     datasetItemCount: { min: 80, max: 120 },
     duration: { max: 30 * 60 * 1000 },
-    statisticsKeys: ['SDK_CRAWLER_STATISTICS_0', 'SDK_CRAWLER_STATISTICS_1'],
+    // Only the first crawler's statistics, instead of every crawler's
+    statisticsKeys: 'SDK_CRAWLER_STATISTICS_0',
     chargedEventCounts: {
         'actor-start': 1,
         'place-scraped': { min: 80, max: 120 },

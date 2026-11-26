@@ -160,9 +160,8 @@ export const testTestActor = <T>(
 
 /**
  * `fetch` for the Actor's server interface: `path` is resolved against its URL, e.g. `/search?q=shoes`, and `init` is
- * `fetch`'s own. It authenticates with the Actor's test token unless `init` sets `Authorization`, and always selects the
- * build under test: the one `ACTOR_BUILDS` lists with `X-Actor-Build`, or none on the default build, whatever `init`
- * sets, so a test can't end up on another build without noticing.
+ * `fetch`'s own. By default it authenticates with the Actor's test token and selects the build under test, the one
+ * `ACTOR_BUILDS` lists, with `X-Actor-Build` (none on the default build). `init` can set either header itself.
  */
 const createFetchServerFn = ({ url, build, apifyClient }: ServerInterface & { apifyClient: ApifyClient }) => {
     return async (path = '/', init: RequestInit = {}): Promise<Response> => {
@@ -171,9 +170,7 @@ const createFetchServerFn = ({ url, build, apifyClient }: ServerInterface & { ap
         if (!headers.has('Authorization')) {
             headers.set('Authorization', `Bearer ${apifyClient.token}`);
         }
-        if (build === undefined) {
-            headers.delete('X-Actor-Build');
-        } else {
+        if (build !== undefined && !headers.has('X-Actor-Build')) {
             headers.set('X-Actor-Build', build);
         }
         return fetch(target, { ...init, headers });

@@ -140,13 +140,12 @@ server interface. `path` is resolved against the server interface's URL, with an
 `/search?q=shoes`, and `init` takes what `fetch` takes: `method`, `headers`, `body`, `signal` and the rest. It returns
 the `Response` as `fetch` does, and doesn't throw on an error status. `fn` gets `apifyClient` too.
 
-`fetchServer` adds two headers:
+`fetchServer` adds two headers, unless `init` sets them itself:
 
-- `Authorization` with the Actor's test token, unless `init` sets its own, e.g. to test how the server treats another
-  token.
+- `Authorization` with the Actor's test token.
 - `X-Actor-Build` with the build `ACTOR_BUILDS` lists for the Actor, as on a PR. Without one, as in the scheduled
-  platform tests, it sends none and the platform serves the Actor's configured server interface build. It replaces an
-  `X-Actor-Build` that `init` sets, so a test always runs against the build under test.
+  platform tests, it sends none and the platform serves the Actor's configured server interface build. A test that
+  sets its own `X-Actor-Build` runs against that build instead of the one under test.
 
 **Server interface tests need a full-permission test token.** Only the Actor's owner, or an account with write access
 to it, can select a build with `X-Actor-Build`, and a scoped token can't get write access to an Actor on its own. So

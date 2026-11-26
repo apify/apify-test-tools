@@ -47,7 +47,7 @@ describe('fetchServer', () => {
         const result = await fetchBuild('/search', {
             method: 'POST',
             body: '{"query":"test"}',
-            headers: { 'x-actor-build': 'wrong-build', 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json' },
         });
 
         expect(actor).toHaveBeenCalledWith('owner/actor');
@@ -67,12 +67,12 @@ describe('fetchServer', () => {
     it.each([
         ['a configured server interface build', { isEnabled: true, build: 'latest' }],
         ['no configured server interface build', undefined],
-    ])('sends no build on the default build, with %s, even one the caller sets', async (_, actorStandby) => {
+    ])('sends no build on the default build, with %s', async (_, actorStandby) => {
         mockActor({ standbyUrl: serverInterfaceUrl, actorStandby });
         const request = stubFetch();
 
         const fetchDefault = createFetchServerFn({ ...(await getServerInterface(apifyClient, 'actor')), apifyClient });
-        await fetchDefault('/', { headers: { 'X-Actor-Build': '1.2.3' } });
+        await fetchDefault('/');
 
         expect(request().headers.has('X-Actor-Build')).toBe(false);
     });
@@ -96,10 +96,16 @@ describe('fetchServer', () => {
         expect(request().options).toMatchObject({ method: 'PUT', body, signal, redirect: 'manual' });
     });
 
-    it("keeps the caller's Authorization, e.g. to test another token", async () => {
+    it.each([
+        ['on the build under test', '0.0.7'],
+        ['on the default build', undefined],
+    ])('keeps the Authorization and X-Actor-Build the caller sets, %s', async (_, build) => {
         const request = stubFetch();
-        await fetchServer('/', { headers: { Authorization: 'Bearer other' } });
+        await createFetchServerFn({ url: serverInterfaceUrl, build, apifyClient })('/', {
+            headers: { Authorization: 'Bearer other', 'X-Actor-Build': '0.0.1' },
+        });
         expect(request().headers.get('Authorization')).toBe('Bearer other');
+        expect(request().headers.get('X-Actor-Build')).toBe('0.0.1');
     });
 
     it('propagates fetch failures', async () => {

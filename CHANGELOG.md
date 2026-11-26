@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Add per-Actor test tokens support - enables server mode testing ([#240](https://github.com/apify/apify-test-tools/pull/240)) ([1081f01](https://github.com/apify/apify-test-tools/commit/1081f01aa471d716e647f1955b3755909d4ee13d)) by [@metalwarrior665](https://github.com/metalwarrior665)
 - **workflows:** Skip rebuilds for test-only changes on PRs ([#241](https://github.com/apify/apify-test-tools/pull/241)) ([c78355d](https://github.com/apify/apify-test-tools/commit/c78355d84d0d48feedc0189bba2c06644db5fad4)) by [@metalwarrior665](https://github.com/metalwarrior665), closes [#1](https://github.com/apify/apify-test-tools/issues/1), [#176](https://github.com/apify/apify-test-tools/issues/176)
 - **workflows:** Record who humanizes new investigate-and-fix issues ([#253](https://github.com/apify/apify-test-tools/pull/253)) ([7df9c6f](https://github.com/apify/apify-test-tools/commit/7df9c6f3b6adbed5ffc8acbc40e0245373433c58)) by [@poshengchiang](https://github.com/poshengchiang)
+- Target standby builds directly with X-Actor-Build ([#233](https://github.com/apify/apify-test-tools/pull/233)) ([5fb376f](https://github.com/apify/apify-test-tools/commit/5fb376fe60dadbe5bbb3e9505e60badb8bfc9b71)) by [@JuanGalilea](https://github.com/JuanGalilea)
 
 ### 🐛 Bug Fixes
 

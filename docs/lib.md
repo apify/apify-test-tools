@@ -140,7 +140,7 @@ Same as `testActor`, for Actors in standby mode. Instead of `run`, `fn` gets `ca
 `POST` request with `input` as the JSON body directly to the Actor's standby URL, plus `path`. The request uses the
 `X-Actor-Build` header to select the build from `ACTOR_BUILDS`, falling back to the Actor's configured standby build
 (number or tag). If neither is set, the platform uses its default standby build. No temporary tasks are created.
-It returns `{ data, status, headers }`, where `data` is the parsed JSON response.
+It returns `{ data, status, headers }`, where `data` is the parsed JSON response. `fn` gets `apifyClient` too.
 
 Only the Actor's owner, or an account with write access to it, can start a standby Actor on a build other than its
 default one. The tests run with the owner's token by default; if you point `testTokenEnvVar` at another account, give

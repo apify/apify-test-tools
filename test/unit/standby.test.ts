@@ -62,17 +62,6 @@ describe('standby Actor requests', () => {
         expect(task).not.toHaveBeenCalled();
     });
 
-    it('falls back to the configured standby build tag', async () => {
-        mockActor({ standbyUrl, actorStandby: { isEnabled: true, build: 'latest' } });
-        const fetchMock = vi.fn().mockResolvedValue(new Response('{}'));
-        vi.stubGlobal('fetch', fetchMock);
-
-        await createStartStandbyFn({ ...(await getStandbyActor(apifyClient, 'actor')), apifyClient })({ input: {} });
-
-        expect(fetchMock.mock.calls[0][0]).toBe(standbyUrl);
-        expect(fetchMock.mock.calls[0][1].headers.get('X-Actor-Build')).toBe('latest');
-    });
-
     it('sends the input as JSON by default', async () => {
         const fetchMock = vi.fn().mockResolvedValue(new Response('{}'));
         vi.stubGlobal('fetch', fetchMock);
@@ -82,13 +71,18 @@ describe('standby Actor requests', () => {
         expect(fetchMock.mock.calls[0][1].headers.get('Content-Type')).toBe('application/json');
     });
 
-    it('leaves build selection to the platform when no standby build is configured', async () => {
-        mockActor({ standbyUrl });
+    // The default build needs no header, and a header would need write access to the Actor even for that build
+    it.each([
+        ['a configured standby build', { isEnabled: true, build: 'latest' }],
+        ['no configured standby build', undefined],
+    ])('sends no build on the default build, with %s', async (_, actorStandby) => {
+        mockActor({ standbyUrl, actorStandby });
         const fetchMock = vi.fn().mockResolvedValue(new Response('{}'));
         vi.stubGlobal('fetch', fetchMock);
 
         await createStartStandbyFn({ ...(await getStandbyActor(apifyClient, 'actor')), apifyClient })({ input: {} });
 
+        expect(fetchMock.mock.calls[0][0]).toBe(standbyUrl);
         expect(fetchMock.mock.calls[0][1].headers.has('X-Actor-Build')).toBe(false);
     });
 

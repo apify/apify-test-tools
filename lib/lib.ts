@@ -120,7 +120,8 @@ export const testActor = <T>(
 };
 
 /**
- * Tests a standby Actor directly, targeting the configured build with the X-Actor-Build header.
+ * Tests a standby Actor directly. A build listed in `ACTOR_BUILDS` is targeted with the X-Actor-Build header, otherwise
+ * the platform serves the Actor's configured standby build.
  *
  * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
  */
@@ -210,7 +211,11 @@ interface StandbyActor {
     build?: string;
 }
 
-/** Resolves the Actor's standby URL and the selected build number or tag. */
+/**
+ * Resolves the Actor's standby URL, and the build from `ACTOR_BUILDS` to target with `X-Actor-Build`. Without one, the
+ * tests run on the Actor's default build, so no header is sent and the platform serves its configured standby build.
+ * That keeps default-build runs working for testers without write access to the Actor.
+ */
 const getStandbyActor = async (
     apifyClient: ApifyClient,
     actorId: string,
@@ -226,7 +231,7 @@ const getStandbyActor = async (
 
     return {
         standbyUrl: actorInfo.standbyUrl,
-        build: buildNumber ?? actorInfo.actorStandby?.build,
+        build: buildNumber,
     };
 };
 

@@ -365,8 +365,8 @@ repo:
 
 | Secret                                                                         | Needed for                                                        |
 | ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| the Actor tokens named by `buildTokenEnvVar` in `apify-test-tools.config.json` | building Actors and deleting their old builds                     |
-| the test tokens named by `testTokenEnvVar`, which can be the Actor tokens      | running the platform tests                                        |
+| the build tokens named by `buildTokenEnvVar` in `apify-test-tools.config.json` | building Actors and deleting their old builds                     |
+| the test tokens named by `testTokenEnvVar`, which can be the build tokens      | running the platform tests                                        |
 | `SLACK_BOT_TOKEN`                                                              | announcing releases and reporting scheduled test results to Slack |
 | `NPM_TOKEN`                                                                    | optional, installing private npm packages. Use a read-only token  |
 

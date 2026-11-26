@@ -114,12 +114,7 @@ export function parseResolvedConfigFile(body: Record<string, unknown>): Resolved
     // The repo settings are read by parseRepoSettings, the strategies only see the Actor entries
     const { mode, platformTestsGlob: _platformTestsGlob, ...rest } = body;
     const strategy = selectStrategy({ mode });
-    // Defaults every mode shares, after the mode resolved what an Actor and its group set. A group's test token so
-    // still applies to an Actor that sets only its own buildTokenEnvVar.
-    return strategy.parse(rest).map((entry) => ({
-        ...entry,
-        testTokenEnvVar: entry.testTokenEnvVar ?? entry.buildTokenEnvVar,
-    }));
+    return strategy.parse(rest);
 }
 
 export function parseConfigFile(body: Record<string, unknown>): ValidatedActorConfig[] {

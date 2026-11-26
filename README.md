@@ -152,9 +152,9 @@ On GitHub, add the [GitHub workflows](#github-workflows) below. On another CI pl
 
 ## Config file
 
-`apify-test-tools.config.json` lives at the repo root and tells the tool which Actors live in the repo, where they
-are, and which tokens build and test them. Actors are organized into groups, and each group sets the token once for all of its
-Actors:
+`apify-test-tools.config.json` lives at the repo root and tells the tool which Actors live in the repo, where they are,
+and which tokens build and test them. Actors are organized into groups, and each group sets the tokens once for all of
+its Actors:
 
 ```json
 {
@@ -162,6 +162,7 @@ Actors:
     "groups": {
         "myteam": {
             "buildTokenEnvVar": "APIFY_TOKEN_MYTEAM",
+            "testTokenEnvVar": "APIFY_TOKEN_MYTEAM",
             "actors": [
                 { "folder": "actors/web-scraper", "actorFullName": "myteam/web-scraper" },
                 { "folder": "actors/email-sender", "actorFullName": "myteam/email-sender" },
@@ -177,19 +178,28 @@ Actors:
 ```
 
 The group key (`myteam` above) is only a label for readability; it doesn't need to match any folder or username. Each
-group needs a `buildTokenEnvVar` and at least one Actor. Add another group for Actors that need a different token, e.g.
-Actors owned by another account.
+group needs a `buildTokenEnvVar`, a `testTokenEnvVar` and at least one Actor. Add another group for Actors that need a
+different token, e.g. Actors owned by another account.
 
-The platform tests run each Actor with the same token that builds it, so they run in the account that owns the Actor.
-Only the owner, or an account with write access to the Actor, can call an Actor's [server interface](docs/lib.md#testserverinterfaceactoractorfullname-testname-fn-options)
-on a build other than its default one, which is what the tests do on a PR. To test some Actors from another account,
-name its token in `testTokenEnvVar`, on the group or on an Actor:
+`buildTokenEnvVar` names the token that builds the Actors, `testTokenEnvVar` the one their platform tests run them
+with, so the test runs start in that token's account. The two can name the same env var, as `myteam` does above, or
+the tests can run with a token that may do less. [Token permissions](#token-permissions) says what each one needs.
+
+Here the tests of the partner's Actors run with a scoped tester token. The search Actor sets its own
+`testTokenEnvVar`, the partner's full token, because its tests call its server interface on the PR build:
 
 ```json
 "partner": {
     "buildTokenEnvVar": "APIFY_TOKEN_PARTNER",
     "testTokenEnvVar": "APIFY_TOKEN_TESTER",
-    "actors": [{ "folder": "actors/partner-scraper", "actorFullName": "partner/scraper" }]
+    "actors": [
+        { "folder": "actors/partner-scraper", "actorFullName": "partner/scraper" },
+        {
+            "folder": "actors/partner-search",
+            "actorFullName": "partner/search",
+            "testTokenEnvVar": "APIFY_TOKEN_PARTNER"
+        }
+    ]
 }
 ```
 
@@ -202,8 +212,8 @@ their context.
 | `mode`                 | top level      | yes      | Always `"grouped"`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `folder`               | Actor          | yes      | Relative path from repo root to the Actor's own project directory — the folder that directly contains `.actor/actor.json` (i.e. `<folder>/.actor/actor.json`) and its source. Documentation and schemas may be linked from elsewhere through `actor.json`. Use `"."` for a single-Actor repo where `.actor/` is at the root.                                                                                                                                                                           |
 | `actorFullName`        | Actor          | yes      | Full Actor identifier in `owner/name` format (e.g. `"apify/web-scraper"`). This is the source of truth for the Actor name — the `name` field in `actor.json` is not used.                                                                                                                                                                                                                                                                                                                              |
-| `buildTokenEnvVar`     | group or Actor | yes      | Name of the environment variable holding the Apify API token that builds the group's Actors. No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                                                                                                   |
-| `testTokenEnvVar`      | group or Actor | no       | Name of the environment variable holding the Apify API token the platform tests run the Actors with. Defaults to the Actor's `buildTokenEnvVar`. A group's `testTokenEnvVar` applies to its Actors even when an Actor sets its own `buildTokenEnvVar`. If the env var is not set, the tests of the Actors that use it fail.                                                                                                                                                                            |
+| `buildTokenEnvVar`     | group or Actor | yes      | Name of the environment variable holding the Apify API token that builds the group's Actors. It needs full permissions, see [Token permissions](#token-permissions). No fallback — if the env var is not set at build time, the build fails.                                                                                                                                                                                                                                                           |
+| `testTokenEnvVar`      | group or Actor | yes      | Name of the environment variable holding the Apify API token the platform tests run the group's Actors with. It can name the same env var as `buildTokenEnvVar`, or a token that may do less, see [Token permissions](#token-permissions). If the env var is not set, the tests of the Actors that use it fail.                                                                                                                                                                                        |
 | `platformTestsGlob`    | top level      | no       | Glob from the repo root of the platform tests and their helpers. Default `test/platform/**`. A changed file that matches it is a test change, also when `.dockerignore` lists it: the PR workflow builds and tests the Actor whose context holds it, and a release skips it. See [Change detection](docs/cli.md#change-detection).                                                                                                                                                                     |
 | `overrideActorContext` | group or Actor | no       | Array of paths (relative to repo root) that define which files are relevant to the Actor. When set, replaces the `dockerContextDir` from `actor.json` for change detection. Useful when an Actor depends on shared packages outside its Docker build context. Entries must not be prefixes of one another (e.g. `["", "code"]` or `["actors", "actors/foo"]` are rejected). The Actor's own `folder` is always part of its context — if none of the listed entries reach it, it's added automatically. |
 
@@ -211,6 +221,18 @@ A value set on an Actor replaces the group's for that Actor only. Values are rep
 group also set `overrideActorContext`, the orchestrator would still get only the two paths it lists.
 
 No two Actors may share a `folder`, and no two entries may point at the same `actorFullName`.
+
+### Token permissions
+
+- **`buildTokenEnvVar`** needs a token with full permissions, for now. It builds the Actors, creates their versions and
+  deletes their old builds. A token that needs less is planned.
+- **`testTokenEnvVar`** only needs to run the repo's Actors, so a scoped token with run access to them is enough,
+  unless the tests call a server interface.
+  **Only the owner, or an account with write access to the Actor, can call an Actor's
+  [server interface](docs/lib.md#testserverinterfaceactoractorfullname-testname-fn-options) on a build other than its
+  default one, which is what the tests do on a PR.** A scoped token can't get write access to an Actor on its own, so
+  the `testTokenEnvVar` of an Actor with server interface tests needs a full-permission token of such an account,
+  e.g. the same token as its `buildTokenEnvVar`.
 
 ## GitHub workflows
 
@@ -294,7 +316,7 @@ jobs:
             test-files-glob: 'test/platform/{daily,daily-without-pr}/**'
         secrets:
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-            # One entry per token the tests run with: each `testTokenEnvVar`, by default each `buildTokenEnvVar`
+            # One entry per token the tests run with: each `testTokenEnvVar`
             CONFIG_SECRETS: |
                 {
                     "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
@@ -335,7 +357,7 @@ above. The Actor tokens go packed in one JSON object, `CONFIG_SECRETS`, because 
 | Secret                                                                         | Needed for                                                        |
 | ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
 | the Actor tokens named by `buildTokenEnvVar` in `apify-test-tools.config.json` | building Actors and deleting their old builds                     |
-| the test tokens named by `testTokenEnvVar`, by default the same Actor tokens   | running the platform tests                                        |
+| the test tokens named by `testTokenEnvVar`, which can be the Actor tokens      | running the platform tests                                        |
 | `SLACK_BOT_TOKEN`                                                              | announcing releases and reporting scheduled test results to Slack |
 | `NPM_TOKEN`                                                                    | optional, installing private npm packages. Use a read-only token  |
 

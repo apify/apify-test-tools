@@ -12,17 +12,15 @@ export { ACTOR_FULL_NAME_REGEX } from '../../../../lib/consts.js';
 export interface StrategyActorConfig {
     actorFullName: string;
     folder: string;
+    /** The env var holding the token that builds the Actor */
     buildTokenEnvVar: string;
-    /** The token the platform tests run the Actor with, when the config names one */
-    testTokenEnvVar: string | undefined;
+    /** The env var holding the token the platform tests run the Actor with */
+    testTokenEnvVar: string;
     overrideActorContext: string[] | undefined;
 }
 
-/** An Actor entry with the defaults every config mode shares filled in. */
-export interface ResolvedActorConfig extends Omit<StrategyActorConfig, 'testTokenEnvVar'> {
-    /** The token the platform tests run the Actor with, `buildTokenEnvVar` unless the config names another */
-    testTokenEnvVar: string;
-}
+/** An Actor entry as the config resolves it, before its paths are checked. */
+export type ResolvedActorConfig = StrategyActorConfig;
 
 export interface ValidatedActorConfig extends Omit<ResolvedActorConfig, 'folder' | 'overrideActorContext'> {
     folder: ExistingDir;

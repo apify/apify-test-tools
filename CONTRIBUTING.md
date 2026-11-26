@@ -166,7 +166,7 @@ literally, so update them by hand when you bump it.
 The public side of this is the [Secrets](./docs/workflows.md#secrets) table.
 
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its own tokens via
-`buildTokenEnvVar` (build) and `testTokenEnvVar` (tests, `buildTokenEnvVar` by default) in
+`buildTokenEnvVar` (build) and `testTokenEnvVar` (tests) in
 `apify-test-tools.config.json`, and a reusable workflow only accepts secrets it declares by name. Callers pack them into
 the `CONFIG_SECRETS` secret. Those steps pass `${{ toJSON(secrets) }}` as `WORKFLOW_SECRETS` and run the command through
 `.github/scripts/run-with-apify-tokens.mjs --tokens build|test`, bundled from `workflow-scripts-src/`, which reads the
@@ -190,10 +190,9 @@ under `node_modules` sees the blob. Nothing is written to `$GITHUB_ENV`, so the 
 rather than leaking into later steps. Reading the config with `apify-test-tools`' own parser means the two can't drift, and a
 secret that merely looks like an Actor token is not passed just because of its name.
 
-The test step runs the repo's test code and its whole import graph, so it gets the test tokens only. These are the
-Actor tokens unless the config names others: the tests run as the Actor's owner, because only the owner (or an account
-with write access) can call an Actor's server interface on a non-default build. A repo that wants the tests to hold less can point
-`testTokenEnvVar` at a more restricted token.
+The test step runs the repo's test code and its whole import graph, so it gets the test tokens only. The config has to
+name them: `testTokenEnvVar` has no default, so each repo chooses whether its tests hold the full-permission Actor
+token, which server interface tests on a PR build need, or a scoped token that can only run its Actors.
 
 A token the config declares but the repo hasn't set is a warning, not a failure: a repo can carry an Actor whose
 token isn't configured and still build fine as long as that Actor never changes, and `apify-test-tools` raises a

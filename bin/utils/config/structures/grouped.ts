@@ -6,6 +6,17 @@ import { ACTOR_FULL_NAME_REGEX, CONFIG_FILE_STRATEGY, defineStrategy } from './b
 // old tokenEnvVar without a word and build it with its group's token.
 const renamedTokenEnvVar = z.never({ error: 'tokenEnvVar is renamed to buildTokenEnvVar' }).optional();
 
+// The test token has no default, so each repo chooses who the tests run as and what that token may do
+const requiredTokenEnvVar = (field: string) =>
+    z
+        .string({
+            error: (issue) =>
+                issue.input === undefined
+                    ? `${field} is required. See the token permissions in the README: https://github.com/apify/apify-test-tools#token-permissions`
+                    : undefined,
+        })
+        .min(1);
+
 const schema = z.object({
     groups: z
         .record(
@@ -24,9 +35,9 @@ const schema = z.object({
                         }),
                     )
                     .min(1),
-                buildTokenEnvVar: z.string().min(1),
+                buildTokenEnvVar: requiredTokenEnvVar('buildTokenEnvVar'),
                 tokenEnvVar: renamedTokenEnvVar,
-                testTokenEnvVar: z.string().min(1).optional(),
+                testTokenEnvVar: requiredTokenEnvVar('testTokenEnvVar'),
                 overrideActorContext: z.array(z.string()).optional(),
             }),
         )

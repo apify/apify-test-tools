@@ -102,7 +102,7 @@ jobs:
                     | tee builds.json
 
             # Runs the repo's test code and its whole import graph, so it gets only the tokens the tests run the Actors
-            # with: each Actor's `testTokenEnvVar`, which is its `buildTokenEnvVar` unless the config names another.
+            # with: each Actor's `testTokenEnvVar`.
             - name: Test
               env:
                   WORKFLOW_SECRETS: ${{ toJSON(secrets) }}

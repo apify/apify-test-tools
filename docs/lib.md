@@ -30,8 +30,8 @@ tests run on its default build:
 
 The tests of an Actor start runs and read their data with the token in the environment variable `testTokenEnvVar`
 names. [`test`](cli.md#running-tests-test) fills it in from the Actor's `testTokenEnvVar` in
-`apify-test-tools.config.json`, which is its `buildTokenEnvVar` unless the config names another. An Actor listed without
-one, or whose variable isn't set, fails its own tests, and the other Actors' tests still run.
+`apify-test-tools.config.json`. An Actor listed without one, or whose variable isn't set, fails its own tests, and the
+other Actors' tests still run.
 
 ## `describe(name, fn, options?)`
 
@@ -143,9 +143,10 @@ interface build. It returns `{ data, body, status, headers }`, where `body` is t
 `body` parsed as JSON, or `undefined` when the response isn't JSON, e.g. an HTML error page. Pass `body` as the message
 of the status assertion to see what came back when it fails. `fn` gets `apifyClient` too.
 
-Only the Actor's owner, or an account with write access to it, can select a build with `X-Actor-Build`. The tests run
-with the owner's token by default; if you point `testTokenEnvVar` at another account, give it write access to the
-Actor, or its server interface tests can only run on the default build.
+**Only the Actor's owner, or an account with write access to it, can select a build with `X-Actor-Build`**, so a test
+token that can't do that can only test the default build. A scoped token can't get write access to an Actor on its
+own: point the Actor's `testTokenEnvVar` at a full-permission token of such an account, see
+[Token permissions](../README.md#token-permissions).
 
 ```ts
 import { describe, testServerInterfaceActor } from 'apify-test-tools';
@@ -303,5 +304,5 @@ APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools test < builds.json
 
 You can change the tests and re-run them against the same builds.
 
-The same token builds and tests an Actor unless the config names a `testTokenEnvVar`. To run only some tests, pass a specific file instead of `test/platform`, or filter by
-name with vitest's `-t <name>` when running vitest directly. See [Running locally](cli.md#running-locally) for the full flow.
+To run only some tests, pass a specific file instead of `test/platform`, or filter by name with vitest's `-t <name>`
+when running vitest directly. See [Running locally](cli.md#running-locally) for the full flow.

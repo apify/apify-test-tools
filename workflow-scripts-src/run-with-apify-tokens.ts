@@ -6,7 +6,7 @@
 //
 // `--tokens build` passes the tokens that build the Actors, each Actor's `buildTokenEnvVar` in the repo's
 // apify-test-tools.config.json. `--tokens test` passes the tokens the platform tests run with, each
-// Actor's `testTokenEnvVar`, which is its `buildTokenEnvVar` unless the config names another.
+// Actor's `testTokenEnvVar`.
 //
 // The step passes the reusable workflow's whole secrets map as WORKFLOW_SECRETS. The token names
 // come from the repo's apify-test-tools.config.json, read with apify-test-tools' own parser, so the

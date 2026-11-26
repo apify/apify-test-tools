@@ -21,8 +21,7 @@ Results are written to stdout as JSON, diagnostics to stderr, so commands can be
 | [`get-actor-configs`](#listing-actors-get-actor-configs)              | Prints the resolved config                              | nothing       |
 
 "Actor tokens" are the environment variables named by each Actor's `buildTokenEnvVar` in the config, "test tokens" those
-named by its `testTokenEnvVar`, which default to the Actor tokens. A command only needs the tokens of the Actors it
-touches.
+named by its `testTokenEnvVar`, which can be the same. A command only needs the tokens of the Actors it touches.
 
 ## Global flags
 
@@ -356,10 +355,10 @@ tests name their Actor by. An Actor's tests run against the build given with it 
 `build` and `build-from-local` print them), or against its default build without one. Other fields are ignored, so the
 output of [`get-actor-configs`](#listing-actors-get-actor-configs) works as it is.
 
-Each Actor's tests run with its test token: the environment variable its `testTokenEnvVar` in the config names, which
-is its `buildTokenEnvVar` unless the config names another. `test` reads the config for it, so the Actors must be listed
-there. An Actor that isn't in the config or whose token isn't set gets a warning, and only its own tests fail. A dry-run plan, empty or invalid input is an error,
-as with `build`, and so is a missing config.
+Each Actor's tests run with its test token: the environment variable its `testTokenEnvVar` in the config names. `test`
+reads the config for it, so the Actors must be listed there. An Actor that isn't in the config or whose token isn't set
+gets a warning, and only its own tests fail. A dry-run plan, empty or invalid input is an error, as with `build`, and so
+is a missing config.
 
 `test` passes the Actors to vitest as `ACTOR_BUILDS`, each with its `testTokenEnvVar`, in place of any `ACTOR_BUILDS`
 in its own environment. It needs apify-test-tools 1.0.0 or newer in the repository, and fails on an older one, which
@@ -484,7 +483,7 @@ Deletes builds older than 30 days of every selected Actor. It never deletes the 
 ## Listing Actors (`get-actor-configs`)
 
 Prints the [config](../README.md#config-file) as the tool resolves it: one entry per Actor, with the group's values
-applied, `testTokenEnvVar` defaulted to `buildTokenEnvVar`, and `actor.json` read. Takes `--actors` and `--ignore`.
+applied and `actor.json` read. Takes `--actors` and `--ignore`.
 Useful to check a config change.
 
 ## Running locally

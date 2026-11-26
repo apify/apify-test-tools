@@ -51,6 +51,7 @@ describe('token wrapper bundle', () => {
                     groups: {
                         example: {
                             buildTokenEnvVar: 'GROUP_TOKEN',
+                            testTokenEnvVar: 'GROUP_TOKEN',
                             actors: [
                                 { folder: 'actors/one', actorFullName: 'example/one' },
                                 {
@@ -95,7 +96,11 @@ describe('token wrapper bundle', () => {
                 JSON.stringify({
                     mode: 'grouped',
                     groups: {
-                        example: { buildTokenEnvVar, actors: [{ folder: 'actors/one', actorFullName: 'example/one' }] },
+                        example: {
+                            buildTokenEnvVar,
+                            testTokenEnvVar: 'TEST_TOKEN',
+                            actors: [{ folder: 'actors/one', actorFullName: 'example/one' }],
+                        },
                     },
                 }),
             );

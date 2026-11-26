@@ -168,6 +168,7 @@ describe('parseResolvedConfigFile', () => {
         groups: {
             myteam: {
                 buildTokenEnvVar: 'GROUP_TOKEN',
+                testTokenEnvVar: 'GROUP_TESTER',
                 ...groupFields,
                 actors: [{ folder: 'actors/a', actorFullName: 'myteam/a', ...actorFields }],
             },
@@ -175,13 +176,20 @@ describe('parseResolvedConfigFile', () => {
     });
     const testToken = (body: Record<string, unknown>) => parseResolvedConfigFile(body)[0].testTokenEnvVar;
 
-    it("defaults the test token to the Actor's build token", () => {
-        expect(testToken(grouped({}))).toBe('GROUP_TOKEN');
-        expect(testToken(grouped({}, { buildTokenEnvVar: 'FROM_ACTOR' }))).toBe('FROM_ACTOR');
+    it("takes the group's test token, never the build token", () => {
+        expect(testToken(grouped({}))).toBe('GROUP_TESTER');
+        expect(testToken(grouped({}, { buildTokenEnvVar: 'FROM_ACTOR' }))).toBe('GROUP_TESTER');
     });
 
-    it("keeps a group's test token for an Actor that sets only its own build token", () => {
-        expect(testToken(grouped({ testTokenEnvVar: 'TESTER' }, { buildTokenEnvVar: 'FROM_ACTOR' }))).toBe('TESTER');
+    it("takes an Actor's own test token over the group's", () => {
+        expect(testToken(grouped({}, { testTokenEnvVar: 'ACTOR_TESTER' }))).toBe('ACTOR_TESTER');
+    });
+
+    it('rejects a group without a test token instead of testing with the build token', () => {
+        const { testTokenEnvVar: _, ...body } = grouped({}).groups.myteam;
+        expect(() => parseResolvedConfigFile({ mode: 'grouped', groups: { myteam: body } })).toThrow(
+            /testTokenEnvVar is required\. See the token permissions in the README[^\n]*\n\s+→ at groups\.myteam\.testTokenEnvVar/,
+        );
     });
 });
 
@@ -227,6 +235,7 @@ describe('parseConfigFile', () => {
                 myteam: {
                     actors: [{ folder: 'actors/shopify/', actorFullName: 'myteam/shopify' }],
                     buildTokenEnvVar: 'APIFY_TOKEN',
+                    testTokenEnvVar: 'APIFY_TOKEN_TESTER',
                 },
             },
         });
@@ -235,6 +244,7 @@ describe('parseConfigFile', () => {
         expect(parsed[0].folder.path).toBe('actors/shopify');
         expect(parsed[0].actorFullName).toBe('myteam/shopify');
         expect(parsed[0].buildTokenEnvVar).toBe('APIFY_TOKEN');
+        expect(parsed[0].testTokenEnvVar).toBe('APIFY_TOKEN_TESTER');
         expect(parsed[0].overrideActorContext).toBeUndefined();
     });
 

@@ -119,7 +119,7 @@ on:
                     Apify token for investigating the failing run — reading it, its log and its storages — and
                     re-running it to measure how often the failure happens. Runs are private to the account that
                     started them, so pass the token the tests ran the Actor with: its `testTokenEnvVar` from
-                    apify-test-tools.config.json, which is its `buildTokenEnvVar` unless the config names another.
+                    apify-test-tools.config.json.
             NPM_TOKEN:
                 required: false
                 description: Read-only token for installing private npm packages before Claude runs.

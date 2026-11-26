@@ -9,16 +9,22 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const SCRIPT = fileURLToPath(new URL('../../../.github/scripts/run-with-apify-tokens.mjs', import.meta.url));
 
-// Grouped, the format the README recommends. team/two overrides the group's build token, and the partner group
-// tests with a token of its own, so the build and test tokens differ.
+// team tests with its build tokens, team/two overriding both of its group's, and the partner group tests with a
+// token of its own, so the build and test tokens differ.
 const CONFIG = {
     mode: 'grouped',
     groups: {
         team: {
             buildTokenEnvVar: 'TOKEN_ONE',
+            testTokenEnvVar: 'TOKEN_ONE',
             actors: [
                 { folder: 'actors/one', actorFullName: 'team/one' },
-                { folder: 'actors/two', actorFullName: 'team/two', buildTokenEnvVar: 'TOKEN_TWO' },
+                {
+                    folder: 'actors/two',
+                    actorFullName: 'team/two',
+                    buildTokenEnvVar: 'TOKEN_TWO',
+                    testTokenEnvVar: 'TOKEN_TWO',
+                },
             ],
         },
         partner: {
@@ -88,7 +94,7 @@ describe('run-with-apify-tokens.mjs', () => {
         expect(env).toStrictEqual(BUILD_TOKENS);
     });
 
-    it("passes on the tokens the tests run with: each Actor's build token, unless the config names another", () => {
+    it("passes on the tokens the tests run with: each Actor's testTokenEnvVar", () => {
         const { status, stderr, env } = run({ CONFIG_SECRETS: JSON.stringify(ALL_SECRETS), NPM_TOKEN: 'npm' }, [
             '--tokens',
             'test',

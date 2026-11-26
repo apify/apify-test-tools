@@ -274,10 +274,14 @@ describe('sandbox dummies', () => {${actorTests}
 const build = { buildId: ${JSON.stringify(build!.buildId)}, buildNumber: ${JSON.stringify(build!.buildNumber)} };
 
 describe('sandbox server interface dummy', () => {
-    testServerInterfaceActor(${JSON.stringify(SERVER_INTERFACE_ACTOR)}, 'answers on the tested build', async ({ expect, sendRequestToServer }) => {
-        const json = await sendRequestToServer({ path: '/echo', query: { q: 1 }, body: ${JSON.stringify(input)} });
-        expect(json.status, json.text).toBe(200);
-        expect(json.data).toEqual({
+    testServerInterfaceActor(${JSON.stringify(SERVER_INTERFACE_ACTOR)}, 'answers on the tested build', async ({ expect, fetchServer }) => {
+        const json = await fetchServer('/echo?q=1', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: ${JSON.stringify(JSON.stringify(input))},
+        });
+        expect(json.status, await json.clone().text()).toBe(200);
+        expect(await json.json()).toEqual({
             ...build,
             method: 'POST',
             path: '/echo?q=1',
@@ -285,11 +289,8 @@ describe('sandbox server interface dummy', () => {
             body: ${JSON.stringify(JSON.stringify(input))},
         });
 
-        const raw = await sendRequestToServer({ path: '/raw', body: 'a,b', headers: { 'Content-Type': 'text/csv' } });
-        expect(raw.data).toEqual({ ...build, method: 'POST', path: '/raw', contentType: 'text/csv', body: 'a,b' });
-
-        const get = await sendRequestToServer({ path: '/status' });
-        expect(get.data).toMatchObject({ ...build, method: 'GET', path: '/status', body: '' });
+        const get = await fetchServer('/status');
+        expect(await get.json()).toMatchObject({ ...build, method: 'GET', path: '/status', body: '' });
     });
 });
 `,

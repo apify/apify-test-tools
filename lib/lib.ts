@@ -121,14 +121,10 @@ export const testActor = <T>(
  *
  * @param actorFullName - The Actor's full name, `owner/name`, e.g. `"apify/web-scraper"`.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const testServerInterfaceActor = <I = any, O = any>(
+export const testServerInterfaceActor = (
     actorFullName: string,
     testName: string,
-    fn: TestFunction<{
-        sendRequestToServer: ReturnType<typeof createSendRequestToServerFn<I, O>>;
-        apifyClient: ApifyClient;
-    }>,
+    fn: TestFunction<{ fetchServer: ReturnType<typeof createFetchServerFn>; apifyClient: ApifyClient }>,
     testOptions?: ActorTestOptions,
 ) => {
     defineActorTest(actorFullName, testName, testOptions, async (context) => {
@@ -140,7 +136,7 @@ export const testServerInterfaceActor = <I = any, O = any>(
         );
         await fn({
             ...context,
-            sendRequestToServer: createSendRequestToServerFn<I, O>({ ...serverInterface, apifyClient }),
+            fetchServer: createFetchServerFn({ ...serverInterface, apifyClient }),
             apifyClient,
         });
     });
@@ -162,84 +158,26 @@ export const testTestActor = <T>(
     });
 };
 
-/** Whether `body` goes out as it is, rather than as JSON */
-const isRawBody = (body: unknown): body is BodyInit =>
-    typeof body === 'string' ||
-    body instanceof ArrayBuffer ||
-    ArrayBuffer.isView(body) ||
-    body instanceof Blob ||
-    body instanceof FormData ||
-    body instanceof URLSearchParams;
-
 /**
- * Sends a request directly to the Actor's server interface: to `path`, with the `query` parameters and the `body`.
- * Returns the raw response `text` too. `data` is the text parsed as JSON, or `undefined` when it isn't JSON (e.g. an
- * HTML error page), so a test can still assert the status and show what came back.
+ * `fetch` for the Actor's server interface: `path` is resolved against its URL, e.g. `/search?q=shoes`, and `init` is
+ * `fetch`'s own. It authenticates with the Actor's test token unless `init` sets `Authorization`, and always selects the
+ * build under test: the one `ACTOR_BUILDS` lists with `X-Actor-Build`, or none on the default build, whatever `init`
+ * sets, so a test can't end up on another build without noticing.
  */
-const createSendRequestToServerFn = <I, O>({
-    url,
-    build,
-    apifyClient,
-}: ServerInterface & { apifyClient: ApifyClient }) => {
-    return async ({ path = '', query = {}, method, body, headers = {} }: ServerRequest<I> = {}) => {
-        const target = new URL(url.replace(/\/+$/, '') + (path && !path.startsWith('/') ? `/${path}` : path));
-        for (const [name, values] of Object.entries(query)) {
-            for (const value of [values].flat()) {
-                if (value !== undefined) target.searchParams.append(name, String(value));
-            }
+const createFetchServerFn = ({ url, build, apifyClient }: ServerInterface & { apifyClient: ApifyClient }) => {
+    return async (path = '/', init: RequestInit = {}): Promise<Response> => {
+        const target = new URL(url.replace(/\/+$/, '') + (path.startsWith('/') ? path : `/${path}`));
+        const headers = new Headers(init.headers);
+        if (!headers.has('Authorization')) {
+            headers.set('Authorization', `Bearer ${apifyClient.token}`);
         }
-
-        const requestHeaders = new Headers(headers);
-        let requestBody = body as BodyInit | undefined;
-        if (body !== undefined && !isRawBody(body)) {
-            requestBody = JSON.stringify(body);
-            if (!requestHeaders.has('Content-Type')) {
-                requestHeaders.set('Content-Type', 'application/json');
-            }
+        if (build === undefined) {
+            headers.delete('X-Actor-Build');
+        } else {
+            headers.set('X-Actor-Build', build);
         }
-        requestHeaders.set('Authorization', `Bearer ${apifyClient.token}`);
-        if (build !== undefined) {
-            requestHeaders.set('X-Actor-Build', build);
-        }
-        const response = await fetch(target, {
-            headers: requestHeaders,
-            method: method ?? (body === undefined ? 'GET' : 'POST'),
-            body: requestBody,
-        });
-
-        const text = await response.text();
-        let data: O;
-        try {
-            data = JSON.parse(text) as O;
-        } catch {
-            data = undefined as O;
-        }
-        return {
-            data,
-            text,
-            status: response.status,
-            headers: response.headers,
-        };
+        return fetch(target, { ...init, headers });
     };
-};
-
-type QueryValue = string | number | boolean | undefined;
-
-/** A request `sendRequestToServer` sends to the Actor's server interface */
-type ServerRequest<I> = {
-    /** The path on the server, e.g. `/search`. A query string in it is kept */
-    path?: string;
-    /** Query parameters added to the URL. An array adds the parameter once per value, `undefined` leaves it out */
-    query?: Record<string, QueryValue | QueryValue[]>;
-    /** By default `POST` with a body and `GET` without one */
-    method?: string;
-    /**
-     * A string, `Buffer` or other typed array, `ArrayBuffer`, `Blob`, `FormData` or `URLSearchParams` is sent as it is,
-     * with the content type `fetch` gives it unless `headers` set one. Anything else is sent as JSON, as
-     * `application/json` unless `headers` set another type.
-     */
-    body?: I | BodyInit;
-    headers?: Record<string, string>;
 };
 
 interface ServerInterface {
@@ -325,4 +263,4 @@ const generateRunLink = (run: ActorRun | ActorRunListItem): string => {
 
 /** Used for unit testing */
 // eslint-disable-next-line no-underscore-dangle
-export const _private = { createStartRunFn, createSendRequestToServerFn, getServerInterface } as const;
+export const _private = { createStartRunFn, createFetchServerFn, getServerInterface } as const;

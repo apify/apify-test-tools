@@ -135,21 +135,18 @@ testActor('john.doe/my-actor', 'validate existing run', async ({ expect, run }) 
 ## `testServerInterfaceActor(actorFullName, testName, fn, options?)`
 
 Same as `testActor`, for an Actor's server interface (formerly standby mode). Instead of `run`, `fn` gets
-`sendRequestToServer`, which sends an HTTP request directly to the Actor's server interface URL. It takes:
+`fetchServer(path, init?)`: [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch) for the Actor's
+server interface. `path` is resolved against the server interface's URL, with any query string, e.g.
+`/search?q=shoes`, and `init` takes what `fetch` takes: `method`, `headers`, `body`, `signal` and the rest. It returns
+the `Response` as `fetch` does, and doesn't throw on an error status. `fn` gets `apifyClient` too.
 
-| Option    | Default                                 | What                                                                                                                                                                                                                     |
-| --------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`    | `/`                                     | The path on the server, e.g. `/search`. A query string in it is kept                                                                                                                                                     |
-| `query`   | none                                    | Query parameters, e.g. `{ q: 'shoes', limit: 10 }`. An array adds the parameter once per value                                                                                                                           |
-| `body`    | none                                    | A string, `Buffer` or other typed array, `ArrayBuffer`, `Blob`, `FormData` or `URLSearchParams` is sent as it is. Anything else is sent as JSON, with `Content-Type: application/json` unless `headers` set another type |
-| `method`  | `POST` with a `body`, `GET` without one | The HTTP method                                                                                                                                                                                                          |
-| `headers` | none                                    | Request headers                                                                                                                                                                                                          |
+`fetchServer` adds two headers:
 
-When `ACTOR_BUILDS` lists a build for the Actor, as on a PR, the request selects it with the `X-Actor-Build` header.
-Otherwise, as in the scheduled platform tests, it sends no header and the platform serves the Actor's configured server
-interface build. It returns `{ data, text, status, headers }`, where `text` is the raw response text and `data` is
-`text` parsed as JSON, or `undefined` when the response isn't JSON, e.g. an HTML error page. Pass `text` as the message
-of the status assertion to see what came back when it fails. `fn` gets `apifyClient` too.
+- `Authorization` with the Actor's test token, unless `init` sets its own, e.g. to test how the server treats another
+  token.
+- `X-Actor-Build` with the build `ACTOR_BUILDS` lists for the Actor, as on a PR. Without one, as in the scheduled
+  platform tests, it sends none and the platform serves the Actor's configured server interface build. It replaces an
+  `X-Actor-Build` that `init` sets, so a test always runs against the build under test.
 
 **Server interface tests need a full-permission test token.** Only the Actor's owner, or an account with write access
 to it, can select a build with `X-Actor-Build`, and a scoped token can't get write access to an Actor on its own. So
@@ -160,21 +157,22 @@ point the Actor's `testTokenEnvVar` at a full-permission token of such an accoun
 import { describe, testServerInterfaceActor } from 'apify-test-tools';
 
 describe('server interface tests', () => {
-    testServerInterfaceActor('john.doe/my-actor', 'search request', async ({ expect, sendRequestToServer }) => {
-        const { data, text, status } = await sendRequestToServer({
-            path: '/search',
-            query: { limit: 10 },
-            body: { query: 'test' },
+    testServerInterfaceActor('john.doe/my-actor', 'search request', async ({ expect, fetchServer }) => {
+        const response = await fetchServer('/search?limit=10', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: 'test' }),
         });
 
-        expect(status, text).toBe(200);
+        // The response text as the message shows what came back when the status is wrong
+        expect(response.status, await response.clone().text()).toBe(200);
+        const data = await response.json();
         expect(data.results).toBeNonEmptyArray();
     });
 
-    testServerInterfaceActor('john.doe/my-actor', 'health check', async ({ expect, sendRequestToServer }) => {
-        // No body, so a GET
-        const { status, text } = await sendRequestToServer({ path: '/health' });
-        expect(status, text).toBe(200);
+    testServerInterfaceActor('john.doe/my-actor', 'health check', async ({ expect, fetchServer }) => {
+        const response = await fetchServer('/health');
+        expect(response.ok).toBe(true);
     });
 });
 ```

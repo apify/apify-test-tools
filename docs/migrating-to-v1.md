@@ -247,9 +247,9 @@ The `it` alias of `testActor` is gone: use `testActor`.
 
 ### Server interface tests
 
-The platform renamed standby mode to server interface, and so did the library. `callStandby` is `sendRequestToServer`,
-and it takes the request's `path`, `query`, `body`, `method` and `headers`, instead of an `input` that was always the
-JSON body of a `POST`:
+The platform renamed standby mode to server interface, and so did the library. `callStandby` is now `fetchServer`, a
+`fetch` for the Actor's server interface: it takes a path and `fetch`'s own options, and returns the `Response`. It
+no longer turns an `input` into the JSON body of a `POST`, so send the body, method and content type yourself:
 
 ```ts
 // Before
@@ -259,22 +259,24 @@ testStandbyActor('myteam/search', 'answers a query', async ({ expect, callStandb
 });
 
 // After
-testServerInterfaceActor('myteam/search', 'answers a query', async ({ expect, sendRequestToServer }) => {
-    const { data, text, status } = await sendRequestToServer({ body: { query: 'test' } });
-    expect(status, text).toBe(200);
+testServerInterfaceActor('myteam/search', 'answers a query', async ({ expect, fetchServer }) => {
+    const response = await fetchServer('/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'test' }),
+    });
+    expect(response.status, await response.clone().text()).toBe(200);
+    const data = await response.json();
     ...
 });
 ```
 
-`testServerInterfaceActor` sends its requests straight to the Actor's server interface URL and selects the PR build
-with the `X-Actor-Build` header, instead of creating a temporary task on that build. As a result:
+`fetchServer` returns the `Response` itself: read it with `response.json()` or `response.text()`, as with `fetch`.
+Pass the text as the message of the status assertion to see what came back when it fails.
 
-- the report and the test annotations no longer link the server interface runs;
-- an object `body` goes as JSON, with `Content-Type: application/json` unless `headers` set another type, so a test
-  can drop that header. A string, `Buffer`, `FormData` or other raw body is sent as it is;
-- without a `body` the request is a `GET`, so pass `method: 'POST'` for a `POST` without a body;
-- it also returns `text`, the raw response text, and `data` is `undefined` when the response isn't JSON. Pass `text` as
-  the message of the status assertion to see what came back when it fails.
+`testServerInterfaceActor` sends its requests straight to the Actor's server interface URL and selects the PR build
+with the `X-Actor-Build` header, instead of creating a temporary task on that build. So the report and the test
+annotations no longer link the server interface runs.
 
 ### `toFinishWith`
 
@@ -337,4 +339,4 @@ Skip this if you only use the workflows.
 | Claude's investigation can't find the failed run                                                                               | Pass it the token the tests ran with, see [The Claude investigation workflow](#the-claude-investigation-workflow)       |
 | `ERR_PACKAGE_PATH_NOT_EXPORTED`                                                                                                | [Import from the package root](#import-from-the-package-root)                                                           |
 | `Module '"apify-test-tools"' has no exported member 'testStandbyActor'` or `testStandbyActor is not a function`                | [Rename it to `testServerInterfaceActor`](#server-interface-tests)                                                      |
-| `Property 'callStandby' does not exist`, or `callStandby is not a function`                                                    | [Use `sendRequestToServer`](#server-interface-tests)                                                                    |
+| `Property 'callStandby' does not exist`, or `callStandby is not a function`                                                    | [Use `fetchServer`](#server-interface-tests)                                                                            |

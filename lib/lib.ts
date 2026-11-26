@@ -120,27 +120,52 @@ export const testActor = <T>(
 };
 
 /**
- * Tests a standby Actor directly. A build listed in `ACTOR_BUILDS` is targeted with the X-Actor-Build header, otherwise
- * the platform serves the Actor's configured standby build.
+ * Tests an Actor's server interface directly. A build listed in `ACTOR_BUILDS` is targeted with the X-Actor-Build
+ * header, otherwise the platform serves the Actor's configured server interface build.
  *
  * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const testServerInterfaceActor = <I = any, O = any>(
+    actorId: string,
+    testName: string,
+    fn: TestFunction<{
+        callServerInterface: ReturnType<typeof createCallServerInterfaceFn<I, O>>;
+        apifyClient: ApifyClient;
+    }>,
+    testOptions?: ActorTestOptions,
+) => {
+    defineActorTest(actorId, testName, testOptions, async (context) => {
+        const apifyClient = getApifyClient(actorId);
+        const serverInterface = await getServerInterface(apifyClient, actorId, config.get(actorId)?.buildNumber);
+        await fn({
+            ...context,
+            callServerInterface: createCallServerInterfaceFn<I, O>({ ...serverInterface, apifyClient }),
+            apifyClient,
+        });
+    });
+};
+
+/**
+ * @deprecated Use `testServerInterfaceActor`, whose `fn` gets `callServerInterface` instead of `callStandby`. The
+ * platform renamed standby mode to server interface.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const testStandbyActor = <I = any, O = any>(
     actorId: string,
     testName: string,
-    fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>>; apifyClient: ApifyClient }>,
+    fn: TestFunction<{
+        callStandby: ReturnType<typeof createCallServerInterfaceFn<I, O>>;
+        apifyClient: ApifyClient;
+    }>,
     testOptions?: ActorTestOptions,
 ) => {
-    defineActorTest(actorId, testName, testOptions, async (context) => {
-        const apifyClient = getApifyClient(actorId);
-        const standbyActor = await getStandbyActor(apifyClient, actorId, config.get(actorId)?.buildNumber);
-        await fn({
-            ...context,
-            callStandby: createStartStandbyFn<I, O>({ ...standbyActor, apifyClient }),
-            apifyClient,
-        });
-    });
+    testServerInterfaceActor<I, O>(
+        actorId,
+        testName,
+        (context) => fn({ ...context, callStandby: context.callServerInterface }),
+        testOptions,
+    );
 };
 
 export const testTestActor = <T>(
@@ -162,15 +187,15 @@ export const testTestActor = <T>(
 export const it = testActor;
 
 /**
- * Sends JSON input directly to the Actor's standby URL, as `application/json` unless `headers` set another type.
+ * Sends JSON input directly to the Actor's server interface URL, as `application/json` unless `headers` set another type.
  * Returns the raw response `body` too. `data` is the body parsed as JSON, or `undefined` when it isn't JSON (e.g. an
  * HTML error page), so a test can still assert the status and show what came back.
  */
-const createStartStandbyFn = <I, O>({
-    standbyUrl,
+const createCallServerInterfaceFn = <I, O>({
+    url,
     build,
     apifyClient,
-}: StandbyActor & { apifyClient: ApifyClient }) => {
+}: ServerInterface & { apifyClient: ApifyClient }) => {
     return async ({
         input,
         path = '',
@@ -184,7 +209,7 @@ const createStartStandbyFn = <I, O>({
         if (build !== undefined) {
             requestHeaders.set('X-Actor-Build', build);
         }
-        const response = await fetch(standbyUrl + path, {
+        const response = await fetch(url + path, {
             headers: requestHeaders,
             method: 'POST',
             body: JSON.stringify(input),
@@ -206,31 +231,32 @@ const createStartStandbyFn = <I, O>({
     };
 };
 
-interface StandbyActor {
-    standbyUrl: string;
+interface ServerInterface {
+    url: string;
     build?: string;
 }
 
 /**
- * Resolves the Actor's standby URL, and the build from `ACTOR_BUILDS` to target with `X-Actor-Build`. Without one, the
- * tests run on the Actor's default build, so no header is sent and the platform serves its configured standby build.
+ * Resolves the Actor's server interface URL, and the build from `ACTOR_BUILDS` to target with `X-Actor-Build`. Without
+ * one, the tests run on the Actor's default build, so no header is sent and the platform serves its configured server
+ * interface build. The platform API still calls the server interface standby (`standbyUrl`, `actorStandby`).
  * That keeps default-build runs working for testers without write access to the Actor.
  */
-const getStandbyActor = async (
+const getServerInterface = async (
     apifyClient: ApifyClient,
     actorId: string,
     buildNumber?: string,
-): Promise<StandbyActor> => {
+): Promise<ServerInterface> => {
     const actorInfo = (await apifyClient.actor(actorId).get()) as (Actor & { standbyUrl?: string }) | undefined;
     if (!actorInfo) {
         throw new Error(`Actor "${actorId}" not found`);
     }
     if (!actorInfo.standbyUrl) {
-        throw new Error(`Actor "${actorId}" doesn't support standby mode`);
+        throw new Error(`Actor "${actorId}" doesn't have a server interface`);
     }
 
     return {
-        standbyUrl: actorInfo.standbyUrl,
+        url: actorInfo.standbyUrl,
         build: buildNumber,
     };
 };
@@ -288,4 +314,4 @@ const generateRunLink = (run: ActorRun | ActorRunListItem): string => {
 
 /** Used for unit testing */
 // eslint-disable-next-line no-underscore-dangle
-export const _private = { createStartRunFn, createStartStandbyFn, getStandbyActor } as const;
+export const _private = { createStartRunFn, createCallServerInterfaceFn, getServerInterface } as const;

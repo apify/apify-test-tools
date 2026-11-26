@@ -20,7 +20,7 @@ export interface TestCaseReport {
     durationMs: number | null;
     /** The first line of each failure, the rest (diffs, stack traces) is in the vitest output */
     failureMessages: string[];
-    /** Null for tests that didn't start a run: skipped ones, standby tests, or ones that failed before the run */
+    /** Null for tests that didn't start a run: skipped ones, server interface tests, or ones that failed before the run */
     run: TestRun | null;
 }
 

@@ -37,7 +37,7 @@ const repoWithLibVersion = async (version: string) => {
     await writeFile(
         path.join(repoDir, 'apify-test-tools.config.json'),
         JSON.stringify(
-            groupedConfig([{ folder: 'actors/a', actorFullName: 'owner/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' }]),
+            groupedConfig([{ folder: 'actors/a', actorFullName: 'owner/a', buildTokenEnvVar: 'APIFY_TOKEN_OWNER' }]),
         ),
     );
     return repoDir;

@@ -15,16 +15,16 @@ const CONFIG = {
         {
             folder: 'actors/a',
             actorFullName: 'owner/actor-a',
-            tokenEnvVar: 'T',
+            buildTokenEnvVar: 'T',
             overrideActorContext: ['actors/a', 'src'],
         },
         {
             folder: 'actors/c',
             actorFullName: 'owner/actor-c',
-            tokenEnvVar: 'T',
+            buildTokenEnvVar: 'T',
             overrideActorContext: ['actors/c', 'src'],
         },
-        { folder: 'actors/b', actorFullName: 'owner/actor-b', tokenEnvVar: 'T' },
+        { folder: 'actors/b', actorFullName: 'owner/actor-b', buildTokenEnvVar: 'T' },
     ],
 };
 

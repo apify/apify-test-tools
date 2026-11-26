@@ -40,7 +40,7 @@ const ValidatedConfigSchema = z.array(
     z.object({
         actorFullName: z.string(),
         folder: ExistingDirSchema,
-        tokenEnvVar: z.string(),
+        buildTokenEnvVar: z.string(),
         testTokenEnvVar: z.string(),
         overrideActorContext: z.array(RelativeDirSchema).optional(),
     }),
@@ -115,10 +115,10 @@ export function parseResolvedConfigFile(body: Record<string, unknown>): Resolved
     const { mode, platformTestsGlob: _platformTestsGlob, ...rest } = body;
     const strategy = selectStrategy({ mode });
     // Defaults every mode shares, after the mode resolved what an Actor and its group set. A group's test token so
-    // still applies to an Actor that sets only its own tokenEnvVar.
+    // still applies to an Actor that sets only its own buildTokenEnvVar.
     return strategy.parse(rest).map((entry) => ({
         ...entry,
-        testTokenEnvVar: entry.testTokenEnvVar ?? entry.tokenEnvVar,
+        testTokenEnvVar: entry.testTokenEnvVar ?? entry.buildTokenEnvVar,
     }));
 }
 

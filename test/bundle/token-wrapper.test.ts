@@ -50,10 +50,14 @@ describe('token wrapper bundle', () => {
                     mode: 'grouped',
                     groups: {
                         example: {
-                            tokenEnvVar: 'GROUP_TOKEN',
+                            buildTokenEnvVar: 'GROUP_TOKEN',
                             actors: [
                                 { folder: 'actors/one', actorFullName: 'example/one' },
-                                { folder: 'actors/two', actorFullName: 'example/two', tokenEnvVar: 'OVERRIDE_TOKEN' },
+                                {
+                                    folder: 'actors/two',
+                                    actorFullName: 'example/two',
+                                    buildTokenEnvVar: 'OVERRIDE_TOKEN',
+                                },
                             ],
                         },
                     },
@@ -85,13 +89,13 @@ describe('token wrapper bundle', () => {
 
     it.each(['', undefined])(
         'rejects an empty or missing token name (%s) before starting the child',
-        async (tokenEnvVar) => {
+        async (buildTokenEnvVar) => {
             await writeFile(
                 path.join(repoDir, configFileName),
                 JSON.stringify({
                     mode: 'grouped',
                     groups: {
-                        example: { tokenEnvVar, actors: [{ folder: 'actors/one', actorFullName: 'example/one' }] },
+                        example: { buildTokenEnvVar, actors: [{ folder: 'actors/one', actorFullName: 'example/one' }] },
                     },
                 }),
             );
@@ -99,7 +103,7 @@ describe('token wrapper bundle', () => {
             const { status, stdout, stderr } = runWrapper();
             expect(status).toBe(1);
             expect(stdout).toBe('');
-            expect(stderr).toContain('groups.example.tokenEnvVar');
+            expect(stderr).toContain('groups.example.buildTokenEnvVar');
             expect(stderr).not.toContain('Warning:');
             expect(stderr).not.toContain('Cannot read');
         },

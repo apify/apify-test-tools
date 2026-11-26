@@ -4,7 +4,7 @@ Version 1 of the library and `@workflows-v1` of the workflows go together: the v
 than 1.0.0, and the 1.0 library expects what the v1 workflows pass it. Migrate a repository in one PR:
 
 1. [Update the packages](#update-the-packages): `apify-test-tools` 1.0, vitest 5 and Node.js
-2. [Convert the config](#convert-the-config) to `"mode": "grouped"`
+2. [Convert the config](#convert-the-config) to `"mode": "grouped"`, with `tokenEnvVar` renamed to `buildTokenEnvVar`
 3. [Choose the account that runs the tests](#choose-the-account-that-runs-the-tests): the Actor's owner by default, or
    `TESTER_APIFY_TOKEN` as before
 4. [Switch the workflows](#switch-the-workflows) to `@workflows-v1`, with `secrets: inherit` or the test tokens in `CONFIG_SECRETS`
@@ -31,6 +31,10 @@ npm install --save-dev apify-test-tools@^1.0.0 vitest@^5
 `apify-test-tools.config.json` needs `"mode": "grouped"`, and its Actors go into groups. A config with a top-level
 `actors` array and no `mode` fails with `Invalid input: expected "grouped" → at mode`.
 
+`tokenEnvVar` is renamed to `buildTokenEnvVar`, on the groups and on the Actors, so it reads apart from
+`testTokenEnvVar`. A config that is already grouped only needs this rename. A config that still has `tokenEnvVar`
+anywhere fails with `tokenEnvVar is renamed to buildTokenEnvVar`.
+
 Before:
 
 ```json
@@ -54,14 +58,14 @@ After:
     "mode": "grouped",
     "groups": {
         "myteam": {
-            "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
+            "buildTokenEnvVar": "APIFY_TOKEN_MYTEAM",
             "actors": [
                 { "folder": "actors/web-scraper", "actorFullName": "myteam/web-scraper" },
                 { "folder": "actors/email-sender", "actorFullName": "myteam/email-sender" }
             ]
         },
         "partner": {
-            "tokenEnvVar": "APIFY_TOKEN_PARTNER",
+            "buildTokenEnvVar": "APIFY_TOKEN_PARTNER",
             "actors": [{ "folder": "actors/partner", "actorFullName": "partner/scraper" }]
         }
     }
@@ -69,7 +73,7 @@ After:
 ```
 
 Group the Actors by the token that builds them. The group key is only a label. An Actor can still set its own
-`tokenEnvVar` or `overrideActorContext`, which replaces the group's. `platformTestsGlob` stays at the top level.
+`buildTokenEnvVar` or `overrideActorContext`, which replaces the group's. `platformTestsGlob` stays at the top level.
 
 See [Config file](../README.md#config-file) for every field.
 
@@ -78,8 +82,8 @@ See [Config file](../README.md#config-file) for every field.
 This changes who the test runs belong to, without any error to tell you.
 
 Before v1, every platform test ran its Actor with `TESTER_APIFY_TOKEN`. In v1, the tests of each Actor run with its
-`testTokenEnvVar`, which is its `tokenEnvVar` unless the config names another: the token that builds the Actor, usually
-the owner's. So after the migration, by default:
+`testTokenEnvVar`, which is its `buildTokenEnvVar` unless the config names another: the token that builds the Actor,
+usually the owner's. So after the migration, by default:
 
 - the test runs start in the owner's account, and their usage counts against it, not against the account of
   `TESTER_APIFY_TOKEN`;
@@ -96,7 +100,7 @@ whole config at once:
     "mode": "grouped",
     "groups": {
         "myteam": {
-            "tokenEnvVar": "APIFY_TOKEN_MYTEAM",
+            "buildTokenEnvVar": "APIFY_TOKEN_MYTEAM",
             "testTokenEnvVar": "TESTER_APIFY_TOKEN",
             "actors": [
                 { "folder": "actors/web-scraper", "actorFullName": "myteam/web-scraper" },
@@ -104,7 +108,7 @@ whole config at once:
             ]
         },
         "partner": {
-            "tokenEnvVar": "APIFY_TOKEN_PARTNER",
+            "buildTokenEnvVar": "APIFY_TOKEN_PARTNER",
             "testTokenEnvVar": "TESTER_APIFY_TOKEN",
             "actors": [{ "folder": "actors/partner", "actorFullName": "partner/scraper" }]
         }
@@ -122,7 +126,7 @@ In every workflow that calls this repository's workflows, change `@workflows-v0`
 inputs are unchanged.
 
 The PR and scheduled test workflows no longer take `TESTER_APIFY_TOKEN`: the tests run each Actor with its own test
-token, its `testTokenEnvVar`, which is its `tokenEnvVar` unless the config names another. How the tokens get there
+token, its `testTokenEnvVar`, which is its `buildTokenEnvVar` unless the config names another. How the tokens get there
 depends on how you pass the secrets.
 
 ### With `secrets: inherit`
@@ -145,7 +149,7 @@ jobs:
         secrets: inherit
 ```
 
-Check that the repository, or its organization, has a secret under each name the config uses as a `tokenEnvVar` or
+Check that the repository, or its organization, has a secret under each name the config uses as a `buildTokenEnvVar` or
 `testTokenEnvVar`. A test token that's missing is a warning in the test step, and the tests of its Actors fail with an
 error naming it. A leftover `TESTER_APIFY_TOKEN` secret does no harm: the test workflows ignore it, unless the config
 names it as a `testTokenEnvVar`.
@@ -198,7 +202,7 @@ jobs:
             report-slack-channel: '#notif-my-repo'
         secrets:
             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-            # One entry per token the config names: each `tokenEnvVar` and `testTokenEnvVar`
+            # One entry per token the config names: each `buildTokenEnvVar` and `testTokenEnvVar`
             CONFIG_SECRETS: |
                 {
                     "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}",
@@ -310,6 +314,7 @@ Skip this if you only use the workflows.
 | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `The repository uses apify-test-tools 0.x, older than 1.0.0, the oldest version this CLI supports`                       | [Update the packages](#update-the-packages)                                                                                                  |
 | `Invalid input: expected "grouped" → at mode`                                                                            | [Convert the config](#convert-the-config)                                                                                                    |
+| `tokenEnvVar is renamed to buildTokenEnvVar`                                                                             | [Convert the config](#convert-the-config)                                                                                                    |
 | `Test "…" names its Actor "…", which is not a full name`                                                                 | [Name every Actor by its full name](#name-every-actor-by-its-full-name)                                                                      |
 | `APIFY_TOKEN_… is not set, so the tests of … will fail.` and `APIFY_TOKEN_… is not set. The tests of Actor "…" need it.` | Add that secret to the repository with `secrets: inherit`, or pass it in `CONFIG_SECRETS`, see [Switch the workflows](#switch-the-workflows) |
 | `Actor … is not in apify-test-tools.config.json, so its tests will fail.`                                                | Add the Actor to the config                                                                                                                  |

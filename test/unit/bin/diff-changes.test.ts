@@ -19,7 +19,7 @@ fs.writeFileSync('package.json', '{}');
 const actorConfig = (
     actorFullName: string,
     folder: string,
-    tokenEnvVar: string,
+    buildTokenEnvVar: string,
     dockerContextDir: string,
     contextPaths: string[],
 ): ActorConfig => {
@@ -28,8 +28,8 @@ const actorConfig = (
     return {
         actorFullName,
         folder: new ExistingDir(folderPath),
-        tokenEnvVar,
-        testTokenEnvVar: tokenEnvVar,
+        buildTokenEnvVar,
+        testTokenEnvVar: buildTokenEnvVar,
         actorJson: {
             file: new RelativeFile(path.join(folderPath, '.actor/actor.json')),
             dockerContextDir: new RelativeDir(dockerContextDir || '.'),

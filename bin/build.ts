@@ -216,10 +216,10 @@ export class ApifyBuilder {
     };
 
     static fromActorConfig = (actorConfig: ActorConfig): ApifyBuilder => {
-        const { actorFullName, tokenEnvVar } = actorConfig;
-        const token = process.env[tokenEnvVar];
+        const { actorFullName, buildTokenEnvVar } = actorConfig;
+        const token = process.env[buildTokenEnvVar];
         if (!token) {
-            throw new Error(`Env var ${tokenEnvVar} is not set (needed for actor "${actorFullName}").`);
+            throw new Error(`Env var ${buildTokenEnvVar} is not set (needed for actor "${actorFullName}").`);
         }
         const apifyClient = new ApifyClient({ token });
         return new ApifyBuilder(apifyClient, actorFullName);

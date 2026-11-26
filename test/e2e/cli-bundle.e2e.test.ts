@@ -115,7 +115,7 @@ describe.runIf(token)('CLI bundle against real Actors', { timeout: 2 * 60_000 },
                 `${folder}/main.js`,
                 serverInterface ? SERVER_INTERFACE_DUMMY_MAIN : `console.log('dummy ${i + 1}');\n`,
             );
-            actors.push({ folder, actorFullName, tokenEnvVar: TOKEN_ENV_VAR });
+            actors.push({ folder, actorFullName, buildTokenEnvVar: TOKEN_ENV_VAR });
         }
         await writeRepoFile('apify-test-tools.config.json', JSON.stringify(groupedConfig(actors)));
         git('add', '-A');

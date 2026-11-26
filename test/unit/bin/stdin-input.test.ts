@@ -43,7 +43,7 @@ describe('parseTestTargets', () => {
     });
 
     it('reads an Actor without a build, for its default build, ignoring the rest of get-actor-configs', () => {
-        const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' };
+        const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', buildTokenEnvVar: 'APIFY_TOKEN_OWNER' };
         expect(parseTestTargets(JSON.stringify([actorConfig]))).toStrictEqual([{ actorFullName: 'owner/a' }]);
     });
 

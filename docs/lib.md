@@ -30,7 +30,7 @@ tests run on its default build:
 
 The tests of an Actor start runs and read their data with the token in the environment variable `testTokenEnvVar`
 names. [`test`](cli.md#running-tests-test) fills it in from the Actor's `testTokenEnvVar` in
-`apify-test-tools.config.json`, which is its `tokenEnvVar` unless the config names another. An Actor listed without
+`apify-test-tools.config.json`, which is its `buildTokenEnvVar` unless the config names another. An Actor listed without
 one, or whose variable isn't set, fails its own tests, and the other Actors' tests still run.
 
 ## `describe(name, fn, options?)`

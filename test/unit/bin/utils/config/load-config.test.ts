@@ -48,8 +48,8 @@ describe('loadActorConfig', () => {
     const entry = (fields: Partial<ResolvedActorConfig> = {}) => ({
         folder: new ExistingDir(fields.folder ?? 'actors/shopify'),
         actorFullName: fields.actorFullName ?? 'myteam/shopify',
-        tokenEnvVar: fields.tokenEnvVar ?? 'APIFY_TOKEN',
-        testTokenEnvVar: fields.testTokenEnvVar ?? fields.tokenEnvVar ?? 'APIFY_TOKEN',
+        buildTokenEnvVar: fields.buildTokenEnvVar ?? 'APIFY_TOKEN',
+        testTokenEnvVar: fields.testTokenEnvVar ?? fields.buildTokenEnvVar ?? 'APIFY_TOKEN',
         overrideActorContext: fields.overrideActorContext?.map((contextPath) => new RelativeDir(contextPath)),
     });
 
@@ -277,11 +277,11 @@ describe('readConfigFile', () => {
     it("carries the parser's normalization through to ActorConfig[]", async () => {
         await writeFiles({
             [CONFIG_FILE_NAME]: validConfig([
-                { folder: '.', actorFullName: 'apify/root', tokenEnvVar: 'APIFY_TOKEN_APIFY' },
+                { folder: '.', actorFullName: 'apify/root', buildTokenEnvVar: 'APIFY_TOKEN_APIFY' },
                 {
                     folder: 'actors/shopify/',
                     actorFullName: 'myteam/shopify',
-                    tokenEnvVar: 'APIFY_TOKEN',
+                    buildTokenEnvVar: 'APIFY_TOKEN',
                     overrideActorContext: ['actors/shopify/', 'packages/'],
                 },
             ]),
@@ -291,10 +291,10 @@ describe('readConfigFile', () => {
 
         const actors = await readConfigFile(emptyActorSelection);
         expect(
-            actors.map(({ actorFullName, folder, tokenEnvVar, dockerContextDir, contextPaths }) => ({
+            actors.map(({ actorFullName, folder, buildTokenEnvVar, dockerContextDir, contextPaths }) => ({
                 actorFullName,
                 folder: folder.path,
-                tokenEnvVar,
+                buildTokenEnvVar,
                 dockerContextDir: dockerContextDir.path,
                 contextPaths: contextPaths.map((contextPath) => contextPath.path),
             })),
@@ -302,14 +302,14 @@ describe('readConfigFile', () => {
             {
                 actorFullName: 'apify/root',
                 folder: '.',
-                tokenEnvVar: 'APIFY_TOKEN_APIFY',
+                buildTokenEnvVar: 'APIFY_TOKEN_APIFY',
                 dockerContextDir: '.',
                 contextPaths: ['.'],
             },
             {
                 actorFullName: 'myteam/shopify',
                 folder: 'actors/shopify',
-                tokenEnvVar: 'APIFY_TOKEN',
+                buildTokenEnvVar: 'APIFY_TOKEN',
                 dockerContextDir: 'actors/shopify',
                 contextPaths: ['actors/shopify', 'packages'],
             },
@@ -348,14 +348,14 @@ describe('readBaseConfigFile', () => {
                 {
                     folder: 'missing-actor-dir',
                     actorFullName: 'myteam/shopify',
-                    tokenEnvVar: 'APIFY_TOKEN',
+                    buildTokenEnvVar: 'APIFY_TOKEN',
                     overrideActorContext: ['../outside'],
                 },
             ]),
         });
 
         await expect(readBaseConfigFile()).resolves.toEqual([
-            { actorFullName: 'myteam/shopify', tokenEnvVar: 'APIFY_TOKEN', testTokenEnvVar: 'APIFY_TOKEN' },
+            { actorFullName: 'myteam/shopify', buildTokenEnvVar: 'APIFY_TOKEN', testTokenEnvVar: 'APIFY_TOKEN' },
         ]);
         await expect(readConfigFile(emptyActorSelection)).rejects.toThrow();
     });

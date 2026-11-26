@@ -15,14 +15,14 @@ const CONFIG = {
     mode: 'grouped',
     groups: {
         team: {
-            tokenEnvVar: 'TOKEN_ONE',
+            buildTokenEnvVar: 'TOKEN_ONE',
             actors: [
                 { folder: 'actors/one', actorFullName: 'team/one' },
-                { folder: 'actors/two', actorFullName: 'team/two', tokenEnvVar: 'TOKEN_TWO' },
+                { folder: 'actors/two', actorFullName: 'team/two', buildTokenEnvVar: 'TOKEN_TWO' },
             ],
         },
         partner: {
-            tokenEnvVar: 'TOKEN_THREE',
+            buildTokenEnvVar: 'TOKEN_THREE',
             testTokenEnvVar: 'TESTER_TOKEN',
             actors: [{ folder: 'actors/three', actorFullName: 'partner/three' }],
         },
@@ -140,7 +140,7 @@ describe('run-with-apify-tokens.mjs', () => {
             CONFIG_SECRETS: JSON.stringify({ TOKEN_ONE: 'one', TOKEN_TWO: 'two' }),
         });
         expect(status, stderr).toBe(0);
-        expect(stderr).toContain('declares TOKEN_THREE as `tokenEnvVar`, but no such secret was passed');
+        expect(stderr).toContain('declares TOKEN_THREE as `buildTokenEnvVar`, but no such secret was passed');
         expect(env).toStrictEqual({ TOKEN_ONE: 'one', TOKEN_TWO: 'two' });
     });
 

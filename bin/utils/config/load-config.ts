@@ -90,7 +90,7 @@ export const loadActorConfig = (entry: ValidatedActorConfig): ActorConfig => {
     return {
         actorFullName: entry.actorFullName,
         folder: entry.folder,
-        tokenEnvVar: entry.tokenEnvVar,
+        buildTokenEnvVar: entry.buildTokenEnvVar,
         testTokenEnvVar: entry.testTokenEnvVar,
         actorJson,
         dockerContextDir,
@@ -118,12 +118,12 @@ type PathlessConfig = Omit<ResolvedActorConfig, 'folder' | 'overrideActorContext
 export const readBaseConfigFile = async () => {
     const rawFileContents = await readConfigFileContents();
     return parseResolvedConfigFile(rawFileContents).map(
-        ({ actorFullName, tokenEnvVar, testTokenEnvVar }) =>
+        ({ actorFullName, buildTokenEnvVar, testTokenEnvVar }) =>
             // using `satisfies` here instead of return type annotation
             // so its not shown as `PathlessConfig` type on output or IDE, but the expanded form
             ({
                 actorFullName,
-                tokenEnvVar,
+                buildTokenEnvVar,
                 testTokenEnvVar,
             }) satisfies PathlessConfig,
     );

@@ -51,7 +51,7 @@ afterAll(async () => {
 const actor = (fields: Record<string, unknown> = {}) => ({
     folder: 'actors/shopify',
     actorFullName: 'myteam/shopify',
-    tokenEnvVar: 'APIFY_TOKEN',
+    buildTokenEnvVar: 'APIFY_TOKEN',
     testTokenEnvVar: 'APIFY_TOKEN',
     overrideActorContext: undefined,
     ...fields,
@@ -82,7 +82,7 @@ describe('verifyConfiguration', () => {
             {
                 folder: 'actors/shopify/',
                 actorFullName: 'myteam/shopify',
-                tokenEnvVar: 'APIFY_TOKEN',
+                buildTokenEnvVar: 'APIFY_TOKEN',
                 testTokenEnvVar: 'APIFY_TOKEN',
                 overrideActorContext: ['packages/'],
             },
@@ -167,7 +167,7 @@ describe('parseResolvedConfigFile', () => {
         mode: 'grouped',
         groups: {
             myteam: {
-                tokenEnvVar: 'GROUP_TOKEN',
+                buildTokenEnvVar: 'GROUP_TOKEN',
                 ...groupFields,
                 actors: [{ folder: 'actors/a', actorFullName: 'myteam/a', ...actorFields }],
             },
@@ -177,11 +177,11 @@ describe('parseResolvedConfigFile', () => {
 
     it("defaults the test token to the Actor's build token", () => {
         expect(testToken(grouped({}))).toBe('GROUP_TOKEN');
-        expect(testToken(grouped({}, { tokenEnvVar: 'FROM_ACTOR' }))).toBe('FROM_ACTOR');
+        expect(testToken(grouped({}, { buildTokenEnvVar: 'FROM_ACTOR' }))).toBe('FROM_ACTOR');
     });
 
     it("keeps a group's test token for an Actor that sets only its own build token", () => {
-        expect(testToken(grouped({ testTokenEnvVar: 'TESTER' }, { tokenEnvVar: 'FROM_ACTOR' }))).toBe('TESTER');
+        expect(testToken(grouped({ testTokenEnvVar: 'TESTER' }, { buildTokenEnvVar: 'FROM_ACTOR' }))).toBe('TESTER');
     });
 });
 
@@ -192,7 +192,7 @@ describe('parseConfigFile', () => {
             {
                 actorFullName: 'myteam/shopify',
                 folder: 'missing-actor-dir',
-                tokenEnvVar: 'APIFY_TOKEN',
+                buildTokenEnvVar: 'APIFY_TOKEN',
                 testTokenEnvVar: 'APIFY_TOKEN',
                 overrideActorContext: ['../outside'],
             },
@@ -226,7 +226,7 @@ describe('parseConfigFile', () => {
             groups: {
                 myteam: {
                     actors: [{ folder: 'actors/shopify/', actorFullName: 'myteam/shopify' }],
-                    tokenEnvVar: 'APIFY_TOKEN',
+                    buildTokenEnvVar: 'APIFY_TOKEN',
                 },
             },
         });
@@ -234,7 +234,7 @@ describe('parseConfigFile', () => {
         expect(parsed[0].folder).toBeInstanceOf(ExistingDir);
         expect(parsed[0].folder.path).toBe('actors/shopify');
         expect(parsed[0].actorFullName).toBe('myteam/shopify');
-        expect(parsed[0].tokenEnvVar).toBe('APIFY_TOKEN');
+        expect(parsed[0].buildTokenEnvVar).toBe('APIFY_TOKEN');
         expect(parsed[0].overrideActorContext).toBeUndefined();
     });
 

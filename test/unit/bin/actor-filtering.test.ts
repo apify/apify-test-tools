@@ -7,7 +7,7 @@ import { ExistingDir, ExistingFile, RelativeDir } from '../../../bin/utils/path/
 const actor = (actorFullName: string): ActorConfig => ({
     actorFullName,
     folder: new ExistingDir('.'),
-    tokenEnvVar: 'TOKEN',
+    buildTokenEnvVar: 'TOKEN',
     testTokenEnvVar: 'TOKEN',
     actorJson: {
         // kind of a hack, but its not supposed to be read here

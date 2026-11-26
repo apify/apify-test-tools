@@ -20,7 +20,7 @@ Results are written to stdout as JSON, diagnostics to stderr, so commands can be
 | [`delete-old-builds`](#deleting-old-builds-delete-old-builds)         | Deletes old builds of the Actors                        | Actor tokens  |
 | [`get-actor-configs`](#listing-actors-get-actor-configs)              | Prints the resolved config                              | nothing       |
 
-"Actor tokens" are the environment variables named by each Actor's `tokenEnvVar` in the config, "test tokens" those
+"Actor tokens" are the environment variables named by each Actor's `buildTokenEnvVar` in the config, "test tokens" those
 named by its `testTokenEnvVar`, which default to the Actor tokens. A command only needs the tokens of the Actors it
 touches.
 
@@ -357,7 +357,7 @@ tests name their Actor by. An Actor's tests run against the build given with it 
 output of [`get-actor-configs`](#listing-actors-get-actor-configs) works as it is.
 
 Each Actor's tests run with its test token: the environment variable its `testTokenEnvVar` in the config names, which
-is its `tokenEnvVar` unless the config names another. `test` reads the config for it, so the Actors must be listed
+is its `buildTokenEnvVar` unless the config names another. `test` reads the config for it, so the Actors must be listed
 there. An Actor that isn't in the config or whose token isn't set gets a warning, and only its own tests fail. A dry-run plan, empty or invalid input is an error,
 as with `build`, and so is a missing config.
 
@@ -484,7 +484,8 @@ Deletes builds older than 30 days of every selected Actor. It never deletes the 
 ## Listing Actors (`get-actor-configs`)
 
 Prints the [config](../README.md#config-file) as the tool resolves it: one entry per Actor, with the group's values
-applied, `testTokenEnvVar` defaulted to `tokenEnvVar`, and `actor.json` read. Takes `--actors` and `--ignore`. Useful to check a config change.
+applied, `testTokenEnvVar` defaulted to `buildTokenEnvVar`, and `actor.json` read. Takes `--actors` and `--ignore`.
+Useful to check a config change.
 
 ## Running locally
 

@@ -24,8 +24,8 @@ const env: Record<string, string> = {
 
 const CONFIG = JSON.stringify(
     groupedConfig([
-        { folder: 'actors/a', actorFullName: 'owner/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' },
-        { folder: 'actors/p', actorFullName: 'partner/p', tokenEnvVar: 'APIFY_TOKEN_PARTNER' },
+        { folder: 'actors/a', actorFullName: 'owner/a', buildTokenEnvVar: 'APIFY_TOKEN_OWNER' },
+        { folder: 'actors/p', actorFullName: 'partner/p', buildTokenEnvVar: 'APIFY_TOKEN_PARTNER' },
     ]),
 );
 
@@ -140,7 +140,7 @@ test('owner/a: fails', () => {
 
     it('tests an Actor without a build on its default build', () => {
         // As get-actor-configs prints it
-        const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', tokenEnvVar: 'APIFY_TOKEN_OWNER' };
+        const actorConfig = { actorFullName: 'owner/a', folder: 'actors/a', buildTokenEnvVar: 'APIFY_TOKEN_OWNER' };
         const result = run(['test'], JSON.stringify([actorConfig]));
         expect(result.status).toBe(1);
         // Only the fields the lib reads reach it

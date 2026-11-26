@@ -39,7 +39,7 @@ export interface DryRunPlan<T> {
 export interface ActorConfig {
     actorFullName: string;
     folder: ExistingDir;
-    tokenEnvVar: string;
+    buildTokenEnvVar: string;
     /** The env var holding the token the platform tests run the Actor with */
     testTokenEnvVar: string;
     actorJson: ActorJsonPaths;

@@ -166,13 +166,13 @@ literally, so update them by hand when you bump it.
 The public side of this is the [Secrets](./docs/workflows.md#secrets) table.
 
 The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its own tokens via
-`tokenEnvVar` (build) and `testTokenEnvVar` (tests, `tokenEnvVar` by default) in `apify-test-tools.config.json`, and a
-reusable workflow only accepts secrets it declares by name. Callers pack them into the `CONFIG_SECRETS` secret. Those
-steps pass `${{ toJSON(secrets) }}` as `WORKFLOW_SECRETS` and run the command through
-`.github/scripts/run-with-apify-tokens.mjs --tokens build|test`, bundled from `workflow-scripts-src/`, which reads
-the token names with the CLI's own config parser, so it resolves them exactly the way the command that uses them does,
-in every config format. It looks each one up in `CONFIG_SECRETS` first, then among the secrets `secrets: inherit` or the workflow's own
-declarations brought:
+`buildTokenEnvVar` (build) and `testTokenEnvVar` (tests, `buildTokenEnvVar` by default) in
+`apify-test-tools.config.json`, and a reusable workflow only accepts secrets it declares by name. Callers pack them into
+the `CONFIG_SECRETS` secret. Those steps pass `${{ toJSON(secrets) }}` as `WORKFLOW_SECRETS` and run the command through
+`.github/scripts/run-with-apify-tokens.mjs --tokens build|test`, bundled from `workflow-scripts-src/`, which reads the
+token names with the CLI's own config parser, so it resolves them exactly the way the command that uses them does, in
+every config format. It looks each one up in `CONFIG_SECRETS` first, then among the secrets `secrets: inherit` or the
+workflow's own declarations brought:
 
 ```yaml
 - name: Build

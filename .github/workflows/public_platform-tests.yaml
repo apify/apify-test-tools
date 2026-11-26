@@ -14,7 +14,7 @@ on:
                 default: ''
                 required: false
         # Every secret is optional. The tests run each Actor with its `testTokenEnvVar` from
-        # apify-test-tools.config.json, which is its `tokenEnvVar` unless the config names another. Those names
+        # apify-test-tools.config.json, which is its `buildTokenEnvVar` unless the config names another. Those names
         # differ per repo, so the tokens come packed in CONFIG_SECRETS. See the Secrets section of docs/workflows.md.
         secrets:
             NPM_TOKEN:
@@ -24,7 +24,7 @@ on:
                 required: false
                 description: >-
                     JSON object of the secrets apify-test-tools.config.json names, secret name -> value. Here
-                    that is each Actor's `testTokenEnvVar`, its `tokenEnvVar` by default. Passing
+                    that is each Actor's `testTokenEnvVar`, its `buildTokenEnvVar` by default. Passing
                     `toJSON(secrets)` works too, only the names the config declares are used.
             SLACK_BOT_TOKEN:
                 required: false

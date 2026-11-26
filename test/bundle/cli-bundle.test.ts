@@ -64,8 +64,8 @@ describe('CLI bundle', () => {
             'apify-test-tools.config.json',
             JSON.stringify(
                 groupedConfig([
-                    { folder: 'actors/foo', actorFullName: 'tester/foo', tokenEnvVar: 'FOO_TOKEN' },
-                    { folder: 'actors/bar', actorFullName: 'tester/bar', tokenEnvVar: 'BAR_TOKEN' },
+                    { folder: 'actors/foo', actorFullName: 'tester/foo', buildTokenEnvVar: 'FOO_TOKEN' },
+                    { folder: 'actors/bar', actorFullName: 'tester/bar', buildTokenEnvVar: 'BAR_TOKEN' },
                 ]),
             ),
         );
@@ -107,8 +107,8 @@ describe('CLI bundle', () => {
         const { status, stdout, stderr } = runCli('get-actor-configs');
         expect(status, stderr).toBe(0);
         expect(JSON.parse(stdout)).toMatchObject([
-            { actorFullName: 'tester/foo', tokenEnvVar: 'FOO_TOKEN', testTokenEnvVar: 'FOO_TOKEN' },
-            { actorFullName: 'tester/bar', tokenEnvVar: 'BAR_TOKEN', testTokenEnvVar: 'BAR_TOKEN' },
+            { actorFullName: 'tester/foo', buildTokenEnvVar: 'FOO_TOKEN', testTokenEnvVar: 'FOO_TOKEN' },
+            { actorFullName: 'tester/bar', buildTokenEnvVar: 'BAR_TOKEN', testTokenEnvVar: 'BAR_TOKEN' },
         ]);
     });
 

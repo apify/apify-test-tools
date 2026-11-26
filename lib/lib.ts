@@ -36,7 +36,7 @@ const apifyClients = new Map<string, ApifyClient>();
 
 /**
  * The client an Actor's tests run with: the token in the env var listed with the Actor in `ACTOR_BUILDS`, which `test`
- * takes from `testTokenEnvVar` in `apify-test-tools.config.json` (the Actor's `tokenEnvVar` by default). It throws
+ * takes from `testTokenEnvVar` in `apify-test-tools.config.json` (the Actor's `buildTokenEnvVar` by default). It throws
  * inside the test, so an Actor without its token fails only its own tests, and the other Actors' tests still run.
  */
 const getApifyClient = (actorFullName: string): ApifyClient => {

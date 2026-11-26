@@ -4,9 +4,9 @@
 //     jq ... | node .github/scripts/run-with-apify-tokens.mjs --tokens build apify-test-tools build --version-number 0.99
 //     node .github/scripts/run-with-apify-tokens.mjs --tokens test apify-test-tools test < builds.json
 //
-// `--tokens build` passes the tokens that build the Actors, each Actor's `tokenEnvVar` in the repo's
+// `--tokens build` passes the tokens that build the Actors, each Actor's `buildTokenEnvVar` in the repo's
 // apify-test-tools.config.json. `--tokens test` passes the tokens the platform tests run with, each
-// Actor's `testTokenEnvVar`, which is its `tokenEnvVar` unless the config names another.
+// Actor's `testTokenEnvVar`, which is its `buildTokenEnvVar` unless the config names another.
 //
 // The step passes the reusable workflow's whole secrets map as WORKFLOW_SECRETS. The token names
 // come from the repo's apify-test-tools.config.json, read with apify-test-tools' own parser, so the
@@ -34,7 +34,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const TOKEN_FIELDS = { build: 'tokenEnvVar', test: 'testTokenEnvVar' } as const;
+const TOKEN_FIELDS = { build: 'buildTokenEnvVar', test: 'testTokenEnvVar' } as const;
 type TokenKind = keyof typeof TOKEN_FIELDS;
 const isTokenKind = (value: string | undefined): value is TokenKind => value === 'build' || value === 'test';
 

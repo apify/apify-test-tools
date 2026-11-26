@@ -1,6 +1,10 @@
 import { TO_FINISH_WITH_OPTIONS } from './consts.js';
 import type { RunTestResult } from './run-test-result.js';
 import type { Interval, ToFinishWithOptions } from './types.js';
+import { sleep } from './utils.js';
+
+const CHARGED_EVENTS_POLL_INTERVAL_MS = 5_000;
+const CHARGED_EVENTS_TIMEOUT_MS = 60_000;
 
 type Check = {
     name: string;
@@ -53,6 +57,28 @@ const ppeChecks = (expected: Record<string, Interval>, actual: Record<string, nu
 };
 
 /**
+ * The platform reconciles charged events onto the run some time after it finished, even more so when the run hit
+ * its charge limit, so keep re-fetching the run until the expected counts show up or the timeout passes. Counts only
+ * grow, so one already past its maximum ends the wait. Once the platform's storages become immediately consistent,
+ * the first fetch settles this and the loop never runs, so it can stay.
+ */
+const getRunInfo = async (run: RunTestResult, expected: Record<string, Interval> | undefined) => {
+    let runInfo = await run.getRunInfo();
+    const intervals = Object.entries(expected ?? {});
+    const settled = () =>
+        intervals.every(([event, interval]) => isWithinInterval(runInfo.chargedEventCounts?.[event], interval)) ||
+        intervals.some(([event, interval]) => {
+            const max = typeof interval === 'number' ? interval : interval.max;
+            return max !== undefined && (runInfo.chargedEventCounts?.[event] ?? 0) > max;
+        });
+    for (let waited = 0; !settled() && waited < CHARGED_EVENTS_TIMEOUT_MS; waited += CHARGED_EVENTS_POLL_INTERVAL_MS) {
+        await sleep(CHARGED_EVENTS_POLL_INTERVAL_MS);
+        runInfo = await run.fetchRunInfo();
+    }
+    return runInfo;
+};
+
+/**
  * Evaluates every `toFinishWith` expectation against the run, so a failing assertion reports all of them at once.
  */
 export const checkRun = async <PpeEvent extends string>(
@@ -64,7 +90,7 @@ export const checkRun = async <PpeEvent extends string>(
     // The dataset's item count lags the run by 10-20 seconds, so counting the downloaded items is the only way to
     // be in sync. Don't swap it for the count from the dataset info.
     const [runInfo, { items }, stats, log] = await Promise.all([
-        run.getRunInfo(),
+        getRunInfo(run, options.chargedEventCounts),
         run.getDataset(),
         run.getStatistics(),
         run.getLog(),

@@ -280,7 +280,9 @@ describe('formatTestMessage', () => {
     });
 
     it('links nothing for a failure that started no run', () => {
-        const report = reportOf([testCase('standby', { status: 'failed', failureMessages: ['Error: x'], run: null })]);
+        const report = reportOf([
+            testCase('server interface', { status: 'failed', failureMessages: ['Error: x'], run: null }),
+        ]);
         expect(formatTestMessage({ report, title: 'T' }).text).toMatch(/\n\nError: x$/);
     });
 

@@ -1,7 +1,7 @@
 # Vitest library API
 
 ```ts
-import { describe, testActor, testStandbyActor, RunTestResult, ExpectStatic } from 'apify-test-tools';
+import { describe, testActor, testServerInterfaceActor, RunTestResult, ExpectStatic } from 'apify-test-tools';
 ```
 
 Requires `vitest` `3.2.4` or later as a peer dependency.
@@ -134,27 +134,27 @@ testActor(actorId, 'validate existing run', async ({ expect, run }) => {
 });
 ```
 
-## `testStandbyActor(actorId, testName, fn, options?)`
+## `testServerInterfaceActor(actorId, testName, fn, options?)`
 
-Same as `testActor`, for Actors in standby mode. Instead of `run`, `fn` gets `callStandby`, which sends a
-`POST` request with `input` as the JSON body directly to the Actor's standby URL, plus `path`. It sends
-`Content-Type: application/json` unless `headers` set another type. When `ACTOR_BUILDS` lists a build for the Actor,
-as on a PR, the request selects it with the `X-Actor-Build` header. Otherwise, as in the scheduled platform tests, it
-sends no header and the platform serves the Actor's configured standby build. No temporary tasks are created.
+Same as `testActor`, for an Actor's server interface (formerly standby mode). Instead of `run`, `fn` gets
+`callServerInterface`, which sends a `POST` request with `input` as the JSON body directly to the Actor's server
+interface URL, plus `path`. It sends `Content-Type: application/json` unless `headers` set another type. When
+`ACTOR_BUILDS` lists a build for the Actor, as on a PR, the request selects it with the `X-Actor-Build` header. Otherwise, as in the scheduled platform tests, it
+sends no header and the platform serves the Actor's configured server interface build. No temporary tasks are created.
 It returns `{ data, body, status, headers }`, where `body` is the raw response text and `data` is `body` parsed as
 JSON, or `undefined` when the response isn't JSON, e.g. an HTML error page. Pass `body` as the message of the status
 assertion to see what came back when it fails. `fn` gets `apifyClient` too.
 
 Only the Actor's owner, or an account with write access to it, can select a build with `X-Actor-Build`. The tests run
 with the owner's token by default; if you point `testTokenEnvVar` at another account, give it write access to the
-Actor, or its standby tests can only run on the default build.
+Actor, or its server interface tests can only run on the default build.
 
 ```ts
-import { describe, testStandbyActor } from 'apify-test-tools';
+import { describe, testServerInterfaceActor } from 'apify-test-tools';
 
-describe('standby tests', () => {
-    testStandbyActor(actorId, 'standby request', async ({ expect, callStandby }) => {
-        const { data, body, status } = await callStandby({
+describe('server interface tests', () => {
+    testServerInterfaceActor(actorId, 'search request', async ({ expect, callServerInterface }) => {
+        const { data, body, status } = await callServerInterface({
             input: { query: 'test' },
             path: '/search',
         });
@@ -165,7 +165,9 @@ describe('standby tests', () => {
 });
 ```
 
-It fails if the Actor doesn't support standby mode.
+It fails if the Actor doesn't have a server interface.
+
+`testStandbyActor`, whose `fn` gets `callStandby`, is a deprecated alias of `testServerInterfaceActor`.
 
 ## `RunTestResult`
 
@@ -236,7 +238,7 @@ await expect(runResult).toFinishWith({
 
 ## Custom matchers
 
-`expect` in `testActor` and `testStandbyActor` is extended with:
+`expect` in `testActor` and `testServerInterfaceActor` is extended with:
 
 - `toBeArray()` / `toBeEmptyArray()` / `toBeNonEmptyArray()`
 - `toBeString()` / `toBeNonEmptyString()` / `toStartWith(prefix)`

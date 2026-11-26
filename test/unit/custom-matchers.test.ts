@@ -3,7 +3,7 @@ import process from 'node:process';
 import { ApifyClient } from 'apify-client';
 import { describe } from 'vitest';
 
-import { testStandbyActor, testTestActor } from '../../lib/lib.js';
+import { testServerInterfaceActor, testTestActor } from '../../lib/lib.js';
 import { RunTestResult } from '../../lib/run-test-result.js';
 
 type PpeEventType = 'actor-start' | 'search-page-scraped' | 'ads-scraped';
@@ -58,9 +58,23 @@ describe.skip('custom-matchers', { timeout: 100_000 }, () => {
         expect(10).toEqual(10);
     });
 
-    testStandbyActor('ondrejklinovsky/contact-info', 'CDS standby', async ({ expect, callStandby }) => {
-        {
-            const { data, status } = await callStandby({
+    testServerInterfaceActor(
+        'ondrejklinovsky/contact-info',
+        'CDS server interface',
+        async ({ expect, callServerInterface }) => {
+            {
+                const { data, status } = await callServerInterface({
+                    input: {
+                        startUrls: [{ url: 'https://apify.com' }],
+                        maxRequests: 3,
+                        aggregateContacts: true,
+                    },
+                });
+                expect(status).toBe(200);
+                expect(data[0].domain).toEqual('apify.com');
+            }
+
+            const { data, status } = await callServerInterface({
                 input: {
                     startUrls: [{ url: 'https://apify.com' }],
                     maxRequests: 3,
@@ -69,16 +83,6 @@ describe.skip('custom-matchers', { timeout: 100_000 }, () => {
             });
             expect(status).toBe(200);
             expect(data[0].domain).toEqual('apify.com');
-        }
-
-        const { data, status } = await callStandby({
-            input: {
-                startUrls: [{ url: 'https://apify.com' }],
-                maxRequests: 3,
-                aggregateContacts: true,
-            },
-        });
-        expect(status).toBe(200);
-        expect(data[0].domain).toEqual('apify.com');
-    });
+        },
+    );
 });

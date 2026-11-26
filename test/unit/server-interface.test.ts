@@ -4,24 +4,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { _private } from '../../lib/lib.js';
 
-const { createStartStandbyFn, getStandbyActor } = _private;
-const standbyUrl = 'https://test-actor.apify.actor';
-const apifyClient = new ApifyClient({ token: 'standby-test-token' });
+const { createCallServerInterfaceFn, getServerInterface } = _private;
+const serverInterfaceUrl = 'https://test-actor.apify.actor';
+const apifyClient = new ApifyClient({ token: 'server-interface-test-token' });
 
 afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
 });
 
+// The platform API still calls the server interface URL `standbyUrl`
 const mockActor = (actor: (Partial<Actor> & { standbyUrl?: string }) | undefined) => {
     return vi.spyOn(ApifyClient.prototype, 'actor').mockReturnValue({
         get: vi.fn().mockResolvedValue(actor),
     } as unknown as ActorClient);
 };
 
-describe('standby Actor requests', () => {
+describe('server interface requests', () => {
     it.each(['0.12.34', 'beta'])('targets build %s directly without creating or deleting tasks', async (build) => {
-        const actor = mockActor({ standbyUrl, actorStandby: { isEnabled: true, build: 'latest' } });
+        const actor = mockActor({ standbyUrl: serverInterfaceUrl, actorStandby: { isEnabled: true, build: 'latest' } });
         const tasks = vi.spyOn(ApifyClient.prototype, 'tasks');
         const task = vi.spyOn(ApifyClient.prototype, 'task');
         const response = new Response(JSON.stringify({ results: [1, 2] }), {
@@ -31,11 +32,11 @@ describe('standby Actor requests', () => {
         const fetchMock = vi.fn().mockResolvedValue(response);
         vi.stubGlobal('fetch', fetchMock);
 
-        const callStandby = createStartStandbyFn({
-            ...(await getStandbyActor(apifyClient, 'owner/actor', build)),
+        const callServerInterface = createCallServerInterfaceFn({
+            ...(await getServerInterface(apifyClient, 'owner/actor', build)),
             apifyClient,
         });
-        const result = await callStandby({
+        const result = await callServerInterface({
             input: { query: 'test' },
             path: '/search?limit=2',
             headers: { 'content-type': 'application/x-ndjson', 'x-actor-build': 'wrong-build', 'X-Custom': 'value' },
@@ -44,12 +45,12 @@ describe('standby Actor requests', () => {
         expect(actor).toHaveBeenCalledWith('owner/actor');
         expect(fetchMock).toHaveBeenCalledTimes(1);
         const [url, options] = fetchMock.mock.calls[0];
-        expect(url).toBe(`${standbyUrl}/search?limit=2`);
+        expect(url).toBe(`${serverInterfaceUrl}/search?limit=2`);
         expect(options.method).toBe('POST');
         expect(options.body).toBe(JSON.stringify({ query: 'test' }));
         expect(options.headers.get('X-Actor-Build')).toBe(build);
         expect([...options.headers.keys()].filter((key) => key === 'x-actor-build')).toHaveLength(1);
-        expect(options.headers.get('Authorization')).toBe('Bearer standby-test-token');
+        expect(options.headers.get('Authorization')).toBe('Bearer server-interface-test-token');
         expect(options.headers.get('Content-Type')).toBe('application/x-ndjson');
         expect(options.headers.get('X-Custom')).toBe('value');
         expect(result).toEqual({
@@ -66,30 +67,34 @@ describe('standby Actor requests', () => {
         const fetchMock = vi.fn().mockResolvedValue(new Response('{}'));
         vi.stubGlobal('fetch', fetchMock);
 
-        await createStartStandbyFn({ standbyUrl, apifyClient })({ input: {} });
+        await createCallServerInterfaceFn({ url: serverInterfaceUrl, apifyClient })({ input: {} });
 
         expect(fetchMock.mock.calls[0][1].headers.get('Content-Type')).toBe('application/json');
     });
 
     // The default build needs no header, and a header would need write access to the Actor even for that build
     it.each([
-        ['a configured standby build', { isEnabled: true, build: 'latest' }],
-        ['no configured standby build', undefined],
+        ['a configured server interface build', { isEnabled: true, build: 'latest' }],
+        ['no configured server interface build', undefined],
     ])('sends no build on the default build, with %s', async (_, actorStandby) => {
-        mockActor({ standbyUrl, actorStandby });
+        mockActor({ standbyUrl: serverInterfaceUrl, actorStandby });
         const fetchMock = vi.fn().mockResolvedValue(new Response('{}'));
         vi.stubGlobal('fetch', fetchMock);
 
-        await createStartStandbyFn({ ...(await getStandbyActor(apifyClient, 'actor')), apifyClient })({ input: {} });
+        await createCallServerInterfaceFn({ ...(await getServerInterface(apifyClient, 'actor')), apifyClient })({
+            input: {},
+        });
 
-        expect(fetchMock.mock.calls[0][0]).toBe(standbyUrl);
+        expect(fetchMock.mock.calls[0][0]).toBe(serverInterfaceUrl);
         expect(fetchMock.mock.calls[0][1].headers.has('X-Actor-Build')).toBe(false);
     });
 
     it('returns an error response for the test to assert', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"error":"bad input"}', { status: 400 })));
 
-        const result = await createStartStandbyFn({ standbyUrl, build: 'latest', apifyClient })({ input: {} });
+        const result = await createCallServerInterfaceFn({ url: serverInterfaceUrl, build: 'latest', apifyClient })({
+            input: {},
+        });
 
         expect(result.status).toBe(400);
         expect(result.data).toEqual({ error: 'bad input' });
@@ -101,7 +106,7 @@ describe('standby Actor requests', () => {
     ])('returns %s as the raw body, without data', async (_, text, status) => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(text || null, { status })));
 
-        const result = await createStartStandbyFn({ standbyUrl, apifyClient })({ input: {} });
+        const result = await createCallServerInterfaceFn({ url: serverInterfaceUrl, apifyClient })({ input: {} });
 
         expect(result).toMatchObject({ status, body: text, data: undefined });
     });
@@ -109,22 +114,22 @@ describe('standby Actor requests', () => {
     it('propagates fetch failures', async () => {
         vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('connection failed')));
 
-        await expect(createStartStandbyFn({ standbyUrl, apifyClient })({ input: {} })).rejects.toThrow(
-            'connection failed',
-        );
+        await expect(
+            createCallServerInterfaceFn({ url: serverInterfaceUrl, apifyClient })({ input: {} }),
+        ).rejects.toThrow('connection failed');
     });
 
     it('rejects a missing Actor', async () => {
         mockActor(undefined);
 
-        await expect(getStandbyActor(apifyClient, 'missing')).rejects.toThrow('Actor "missing" not found');
+        await expect(getServerInterface(apifyClient, 'missing')).rejects.toThrow('Actor "missing" not found');
     });
 
-    it('rejects an Actor without a standby URL', async () => {
+    it('rejects an Actor without a server interface', async () => {
         mockActor({});
 
-        await expect(getStandbyActor(apifyClient, 'actor')).rejects.toThrow(
-            'Actor "actor" doesn\'t support standby mode',
+        await expect(getServerInterface(apifyClient, 'actor')).rejects.toThrow(
+            'Actor "actor" doesn\'t have a server interface',
         );
     });
 });

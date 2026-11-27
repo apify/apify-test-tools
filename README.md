@@ -245,14 +245,15 @@ The workflows take every change straight to production, with tests in between:
   their platform tests against those builds. See [Only what changed is retested](#only-what-changed-is-retested).
 - **Every merge to `master`** builds the affected Actors into their default version, whose build users run (usually
   tagged `latest`), and can announce the release on Slack. There is no separate release step.
-- **Scheduled runs** (optional) run the tests against the released builds to catch what breaks without a code change,
+- **Scheduled runs** run the tests against the released builds to catch what breaks without a code change,
   like a website changing its layout.
 
 These are GitHub Actions workflows. On another CI platform, build the same flow with the [CLI](docs/cli.md).
 
-Add these files to `.github/workflows` in your repo. They call the reusable workflows in this repo, pinned at the
-`@workflows-v1` major tag, never at `@master`. The [Workflow API](docs/workflows.md) covers every input, the optional
-Claude workflows, the stale issue closer, and how the tag moves.
+Pick the workflows you need and add them to `.github/workflows` in your repo. Each one works on its own. They call the
+reusable workflows in this repo, pinned at the `@workflows-v1` major tag, never at `@master`. The
+[Workflow API](docs/workflows.md) covers every input, the Claude workflows, the stale issue closer, and how the tag
+moves.
 
 ### `pr-test.yaml`
 
@@ -300,7 +301,7 @@ jobs:
                 }
 ```
 
-### Scheduled tests (optional)
+### Scheduled tests
 
 How often to run which tests is up to you. `test-files-glob` is a glob from the repo root, see
 [Splitting the tests](docs/workflows.md#splitting-the-tests). For example, you can run the daily tests once a day:

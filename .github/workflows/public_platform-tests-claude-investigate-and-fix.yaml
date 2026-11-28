@@ -4,7 +4,7 @@ name: 'Platform tests: Claude failure investigation'
 
 # Reusable workflow that uses Claude Code to investigate a failing E2E platform test.
 #
-# 1. A cheap model works out what broke and whether open issues already cover it, and updates the recurrence
+# 1. A first check works out what broke and whether open issues already cover it, and updates the recurrence
 #    comment on each covering issue. If they cover everything, the job stops there.
 # 2. Otherwise the main model investigates what isn't covered and opens an issue with its findings.
 #
@@ -28,7 +28,7 @@ name: 'Platform tests: Claude failure investigation'
 #     handle-failure:
 #         needs: platformTestsCore
 #         if: ${{ failure() }}
-#         uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate.yaml@workflows-v0
+#         uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate-and-fix.yaml@workflows-v0
 #         secrets:
 #             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 #             # The token the tests ran the Actors with, so Claude can read the failing run
@@ -40,7 +40,7 @@ on:
             model:
                 required: false
                 type: string
-                default: sonnet
+                default: opus
                 description: Claude model to use for the investigation
             effort:
                 required: false
@@ -50,7 +50,7 @@ on:
             dedupe_model:
                 required: false
                 type: string
-                default: haiku
+                default: sonnet
                 description: Claude model that checks whether open issues already cover the failing tests, before the investigation
             max_flakiness_runs:
                 required: false
@@ -127,7 +127,7 @@ jobs:
     investigate:
         runs-on: ubuntu-latest
         permissions:
-            contents: write
+            contents: read
             pull-requests: read
             issues: write
             actions: read
@@ -143,16 +143,12 @@ jobs:
                   echo "agent-skills-token=${{ secrets.AGENT_SKILLS_INTERNAL_GITHUB_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
                   echo "redash-api-key=${{ secrets.REDASH_API_KEY != '' }}" >> "$GITHUB_OUTPUT"
 
-            - uses: actions/setup-node@v6
-              if: steps.optional-secrets.outputs.redash-api-key == 'true'
-              with:
-                  node-version: 24
-
-            - name: Install Redash MCP server
-              if: steps.optional-secrets.outputs.redash-api-key == 'true'
+            - name: Download the test report
               continue-on-error: true
-              working-directory: ${{ runner.temp }}
-              run: npm install --prefix redash-mcp --ignore-scripts --no-audit --no-fund @suthio/redash-mcp@0.1.0
+              uses: actions/download-artifact@v5
+              with:
+                  name: vitest-results
+                  path: vitest-results
 
             # The `tools` query parameter below selects which tools the Apify MCP server
             # exposes: reading an Actor run — its status, exit code, storage ids and log — and
@@ -166,20 +162,23 @@ jobs:
               env:
                   MCP_CONFIG: '{"mcpServers":{"apify":{"type":"http","url":"https://mcp.apify.com/?tools=get-actor-run,get-actor-run-log,get-dataset-list,get-dataset,get-dataset-items,get-key-value-store-list,get-key-value-store,get-key-value-store-keys,get-key-value-store-record","headers":{"Authorization":"Bearer ${TESTER_APIFY_TOKEN}"}},"redash":{"type":"stdio","command":"${{ runner.temp }}/redash-mcp/node_modules/.bin/redash-mcp","env":{"REDASH_URL":"https://charts.apify.com/","REDASH_API_KEY":"${REDASH_API_KEY}"}}}}'
               run: |
-                  echo "config=$MCP_CONFIG" >> "$GITHUB_OUTPUT"
-                  echo 'disallowed-tools=mcp__redash__create_query,mcp__redash__update_query,mcp__redash__update_query_parameters,mcp__redash__archive_query,mcp__redash__fork_query,mcp__redash__add_query_favorite,mcp__redash__remove_query_favorite,mcp__redash__create_visualization,mcp__redash__update_visualization,mcp__redash__update_chart_visualization,mcp__redash__delete_visualization,mcp__redash__create_dashboard,mcp__redash__update_dashboard,mcp__redash__update_dashboard_parameters,mcp__redash__archive_dashboard,mcp__redash__fork_dashboard,mcp__redash__share_dashboard,mcp__redash__unshare_dashboard,mcp__redash__add_dashboard_favorite,mcp__redash__remove_dashboard_favorite,mcp__redash__create_alert,mcp__redash__update_alert,mcp__redash__delete_alert,mcp__redash__mute_alert,mcp__redash__add_alert_subscription,mcp__redash__remove_alert_subscription,mcp__redash__create_widget,mcp__redash__update_widget,mcp__redash__update_widget_layout,mcp__redash__update_dashboard_layout,mcp__redash__update_widget_parameter_mappings,mcp__redash__delete_widget,mcp__redash__create_query_snippet,mcp__redash__update_query_snippet,mcp__redash__delete_query_snippet' >> "$GITHUB_OUTPUT"
+                  {
+                      echo "config=$MCP_CONFIG"
+                      echo "dedupe-config=$(jq -c 'del(.mcpServers.redash)' <<< "$MCP_CONFIG")"
+                      echo 'disallowed-tools=mcp__redash__create_query,mcp__redash__update_query,mcp__redash__update_query_parameters,mcp__redash__archive_query,mcp__redash__fork_query,mcp__redash__add_query_favorite,mcp__redash__remove_query_favorite,mcp__redash__create_visualization,mcp__redash__update_visualization,mcp__redash__update_chart_visualization,mcp__redash__delete_visualization,mcp__redash__create_dashboard,mcp__redash__update_dashboard,mcp__redash__update_dashboard_parameters,mcp__redash__archive_dashboard,mcp__redash__fork_dashboard,mcp__redash__share_dashboard,mcp__redash__unshare_dashboard,mcp__redash__add_dashboard_favorite,mcp__redash__remove_dashboard_favorite,mcp__redash__create_alert,mcp__redash__update_alert,mcp__redash__delete_alert,mcp__redash__mute_alert,mcp__redash__add_alert_subscription,mcp__redash__remove_alert_subscription,mcp__redash__create_widget,mcp__redash__update_widget,mcp__redash__update_widget_layout,mcp__redash__update_dashboard_layout,mcp__redash__update_widget_parameter_mappings,mcp__redash__delete_widget,mcp__redash__create_query_snippet,mcp__redash__update_query_snippet,mcp__redash__delete_query_snippet'
+                  } >> "$GITHUB_OUTPUT"
 
             - name: Check for existing issues
               id: dedupe
+              if: hashFiles('vitest-results/test-report.json') != ''
               continue-on-error: true
               uses: anthropics/claude-code-action@8251c103ac8c1d761882c86aba1412c7f583c844 # v1.0.213
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
-                  REDASH_API_KEY: ${{ secrets.REDASH_API_KEY }}
               with:
                   prompt: |
-                      E2E platform tests failed in workflow run ${{ github.run_id }} of this repo. Get the failures from its test report with `gh run download ${{ github.run_id }} --name vitest-results --dir $RUNNER_TEMP/vitest-results`: test-report.json lists each test with its status and failure messages, plus any errors outside the tests.
+                      E2E platform tests failed in workflow run ${{ github.run_id }} of this repo. Its test report is at $GITHUB_WORKSPACE/vitest-results/test-report.json: it lists each test with its status and failure messages, plus any errors outside the tests.
 
                       The tests overlap a lot, so one bug usually fails several of them. Work out what actually broke, the distinct root causes behind these failures, and whether an open issue in this repo already covers each one. List the open issues with `gh issue list --state open --limit 200 --json number,title,body,labels`, focusing on those labeled `claude`, and read any you need in full with `gh issue view`. An issue covers a failure when it describes the same root cause, no matter which tests it mentions. If the failure messages aren't enough to tell, look at the failing Actor runs with the Apify tools. When unsure, treat the failure as not covered: a missed duplicate costs one investigation, a wrong match hides a bug.
 
@@ -188,9 +187,8 @@ jobs:
                   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
                   claude_args: |
                       --model ${{ inputs.dedupe_model }}
-                      --mcp-config '${{ steps.mcp.outputs.config }}'
-                      --disallowedTools ${{ steps.mcp.outputs.disallowed-tools }}
-                      --allowedTools "Bash(gh run download:*),Bash(gh run view:*),Bash(gh issue list:*),Bash(gh issue view:*),Read,Write,mcp__apify,mcp__redash"
+                      --mcp-config '${{ steps.mcp.outputs.dedupe-config }}'
+                      --allowedTools "Bash(gh run view:*),Bash(gh issue list:*),Bash(gh issue view:*),Read,Write,mcp__apify"
 
             - name: Upload dedupe Claude output (for debugging)
               if: always() && steps.dedupe.outcome != 'skipped'
@@ -199,7 +197,7 @@ jobs:
                   name: claude-output-dedupe
                   path: /home/runner/work/_temp/claude-execution-output.json
 
-            # Reads the cheap model's answer:
+            # Reads the check's answer:
             #
             # 1. Everything covered: skip the investigation.
             # 2. Part covered: tell the main model which part, so it investigates only the rest.
@@ -207,6 +205,8 @@ jobs:
             - name: Decide whether to investigate
               id: duplicates
               if: ${{ !cancelled() }}
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   answer="$GITHUB_WORKSPACE/dedupe.json"
                   issues='[]'
@@ -214,6 +214,19 @@ jobs:
                   if jq -e '(.issues | type == "array") and (.uncovered | type == "string")' "$answer" > /dev/null 2>&1; then
                       issues=$(jq -c '[.issues[] | select(type == "number" and . > 0 and floor == .)] | unique' "$answer") || issues='[]'
                       uncovered=$(jq -r '.uncovered' "$answer")
+                  fi
+
+                  # Filter out invalid issue numbers. The agent could have made a mistake. 
+                  open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 1000 --json number --jq 'map(.number)') || {
+                      echo "::warning::Could not list the open issues"
+                      open='[]'
+                  }
+                  dropped=$(jq -c --argjson open "$open" 'map(select(IN($open[]) | not))' <<< "$issues")
+                  issues=$(jq -c --argjson open "$open" 'map(select(IN($open[])))' <<< "$issues")
+                  if [ "$(jq length <<< "$dropped")" -gt 0 ]; then
+                      dropped_refs=$(jq -r 'map("#\(.)") | join(", ")' <<< "$dropped")
+                      echo "::warning::The check matched the failure to $dropped_refs, which aren't open issues"
+                      uncovered="${uncovered:+$uncovered }Also what the check matched to $dropped_refs, which aren't open issues."
                   fi
                   refs=$(jq -r 'map("#\(.)") | join(", ")' <<< "$issues")
 
@@ -232,10 +245,21 @@ jobs:
                       delimiter="EOF_$(openssl rand -hex 8)"
                       {
                           echo "note<<$delimiter"
-                          echo "A first check found that open issues $refs already cover part of this failure, so don't investigate that part again. What they don't cover: $uncovered"
+                          echo "A first check found that open issues $refs already cover part of this failure. Read them and investigate only what they don't explain."
                           echo "$delimiter"
                       } >> "$GITHUB_OUTPUT"
                   fi
+
+            - uses: actions/setup-node@v6
+              if: steps.duplicates.outputs.all-duplicates != 'true' && steps.optional-secrets.outputs.redash-api-key == 'true'
+              with:
+                  node-version: 24
+
+            - name: Install Redash MCP server
+              if: steps.duplicates.outputs.all-duplicates != 'true' && steps.optional-secrets.outputs.redash-api-key == 'true'
+              continue-on-error: true
+              working-directory: ${{ runner.temp }}
+              run: npm install --prefix redash-mcp --ignore-scripts --no-audit --no-fund @suthio/redash-mcp@0.1.0
 
             - name: Checkout internal agent skills
               id: agent-skills-internal
@@ -335,7 +359,7 @@ jobs:
             #
             #     ### Failed again in later runs
             #
-            #     Platform tests failed on this issue **5** more times after it was opened. Last seen 2026-11-10 14:03 UTC.
+            #     Platform tests failed on this issue **5** times since this comment was added. Last seen 2026-11-10 14:03 UTC.
             #
             #     Most recent 5 runs:
             #     - 2026-11-10 14:03 UTC: [Platform tests (hourly)](<RUN_URL>)
@@ -345,7 +369,7 @@ jobs:
             # Editing a comment doesn't notify the issue's subscribers, so a test failing every hour doesn't flood them.
             # Note: two runs updating the same comment at once can lose one of the counts.
             - name: Record the failure on existing issues
-              if: always()
+              if: ${{ !cancelled() }}
               uses: actions/github-script@v7
               with:
                   github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -406,7 +430,7 @@ jobs:
                                   `${MARKER} ${JSON.stringify(state)} -->`,
                                   '### Failed again in later runs',
                                   '',
-                                  `Platform tests failed on this issue **${state.count}** more ${state.count === 1 ? 'time' : 'times'} after it was opened. Last seen ${formatDate(run.at)}.`,
+                                  `Platform tests failed on this issue **${state.count}** ${state.count === 1 ? 'time' : 'times'} since this comment was added. Last seen ${formatDate(run.at)}.`,
                                   '',
                                   `Most recent ${state.runs.length === 1 ? 'run' : `${state.runs.length} runs`}:`,
                                   ...state.runs.map((r) => `- ${formatDate(r.at)}: [${r.workflow}](${r.url})`),

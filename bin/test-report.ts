@@ -20,7 +20,7 @@ export interface TestCaseReport {
     durationMs: number | null;
     /** The first line of each failure, the rest (diffs, stack traces) is in the vitest output */
     failureMessages: string[];
-    /** Null for tests that didn't start a run: skipped ones, standby tests, or ones that failed before the run */
+    /** Null for tests that didn't start a run: skipped ones, server interface tests, or ones that failed before the run */
     run: TestRun | null;
 }
 
@@ -45,10 +45,13 @@ type VitestStatus = 'passed' | 'failed' | 'skipped' | 'pending' | 'todo' | 'disa
 
 interface VitestAssertionResult {
     fullName: string;
+    /** The test's own name, without its `describe` blocks */
+    title?: string;
     status: VitestStatus;
     duration?: number | null;
     failureMessages: string[] | null;
-    meta?: Partial<TestRun>;
+    // Lib versions 0.5 to 0.8 record the Actor as actorName, 0.2 not at all
+    meta?: Partial<TestRun> & { actorName?: string };
 }
 
 interface VitestFileResult {
@@ -65,8 +68,14 @@ export interface VitestJsonReport {
 
 const firstLine = (text: string) => text.split('\n')[0];
 
-const toRun = (meta: Partial<TestRun> | undefined): TestRun | null => {
-    const { actorId, runId, runLink } = meta ?? {};
+/**
+ * The run a test started. Older lib versions record the Actor as `actorName`, or not at all; every version names its
+ * tests `<actor>: <name>`, so the title gives it then.
+ */
+const toRun = ({ meta, title }: VitestAssertionResult): TestRun | null => {
+    const { runId, runLink } = meta ?? {};
+    const separator = title?.indexOf(': ') ?? -1;
+    const actorId = meta?.actorId ?? meta?.actorName ?? (separator > 0 ? title!.slice(0, separator) : undefined);
     return actorId && runId && runLink ? { actorId, runId, runLink } : null;
 };
 
@@ -96,7 +105,7 @@ export const toTestReport = (
                 status,
                 durationMs: assertion.duration != null ? Math.round(assertion.duration) : null,
                 failureMessages: (assertion.failureMessages ?? []).map(firstLine),
-                run: toRun(assertion.meta),
+                run: toRun(assertion),
             });
         }
     }
@@ -156,4 +165,37 @@ export const logTestReport = ({ summary, tests, errors }: TestReport) => {
     }
     logger.info();
     logger.info(totals);
+};
+
+/**
+ * Fails a report in which no test ran although Actors were given: a run that tested nothing must not pass, and it
+ * usually means the tests name the Actors differently or the glob selects none of their tests. An Actor none of whose
+ * tests ran only gets a warning, since an Actor may have no tests in the selected files. Each Actor is matched by the
+ * IDs it was given with, as the lib names every test `<actorId>: <name>`.
+ */
+export const requireTestsToRun = (
+    report: TestReport,
+    actors: { actorFullName: string; actorRawId?: string }[],
+): TestReport => {
+    if (actors.length === 0) return report;
+    const ran = report.tests.filter((test) => test.status !== 'skipped');
+    if (ran.length === 0) {
+        return {
+            ...report,
+            success: false,
+            errors: [
+                ...report.errors,
+                `No test ran, although ${actors.length} Actor(s) were given. For any set of given Actors, ` +
+                    'at least 1 test must be performed. Check that --test-files-glob selects their tests, and that ' +
+                    'the tests name them by their full name or raw ID.',
+            ],
+        };
+    }
+    for (const { actorFullName, actorRawId } of actors) {
+        const ids = [actorFullName, actorRawId].filter((id): id is string => !!id);
+        if (!ran.some((test) => ids.some((id) => test.name.includes(`${id}: `)))) {
+            logger.warn(`[${actorFullName}]: None of its tests ran`);
+        }
+    }
+    return report;
 };

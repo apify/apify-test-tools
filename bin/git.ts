@@ -1,13 +1,14 @@
 import { logger } from './logger.js';
 import type { Commit } from './types.js';
 import { GitCommandError, runGitCommand } from './utils.js';
+import type { RelativeFile } from './utils/path/repo-relative.js';
 
 export const GIT_FORMAT_SEPARATOR = '»¦«';
 const GIT_LOG_FORMAT = ['%H', '%aN<%aE>', '%aD', '%s'].join(GIT_FORMAT_SEPARATOR);
 
 // Lists the changed paths. With rename detection (on by default) a moved file is listed only under its new path,
 // so the Actor whose context it left wouldn't count as changed. --no-renames lists it as deleted and added instead.
-const LIST_CHANGED_PATHS = ['--name-only', '--no-renames'];
+const LIST_CHANGED_PATHS = ['--name-only', '--no-renames', '-z'];
 
 /**
  * Files that differ between two commits, i.e. changed by the commits in the range (fromRef, toRef]. fromRef's own
@@ -20,7 +21,7 @@ export const getChangedFilesBetween = async (fromRef: string, toRef: string) => 
         operation: 'get the list of changed files between commits',
     });
 
-    const changedFiles = changedFilesString.split('\n').filter(Boolean);
+    const changedFiles = changedFilesString.split('\0').filter(Boolean);
     logger.info(`Changed files (up to 50): ${changedFiles.slice(0, 50).join(', ')}`);
     return changedFiles;
 };
@@ -144,34 +145,27 @@ export const getRepoName = (repoUrl: string): string => {
     return normalizeRepoUrl(repoUrl).split('/').pop()!;
 };
 
-const SHA_REGEX = /^[0-9a-f]{40}$/i;
-
 // Sent by e.g. GitHub as the "before" commit of a push that created the branch
 const ZERO_SHA_REGEX = /^0{40}$/;
 
 /**
  * Validates the base commit of a release: the last commit whose changes are already released.
+ * Accepts any ref Git resolves to a commit (a SHA, a short SHA, `HEAD~1`) and returns the full SHA.
  * Unlike the PR path (getCommits), there is no lenient fallback. Falling back to "everything"
  * would rebuild the latest build of every Actor and post it to Slack, so every problem is an error.
  */
 export const resolveReleaseBaseCommit = async (baseCommit: string, head = 'HEAD'): Promise<string> => {
-    if (!SHA_REGEX.test(baseCommit)) {
+    if (ZERO_SHA_REGEX.test(baseCommit)) {
         throw new Error(
-            `Invalid base commit SHA: "${baseCommit}". It should be a 40-character hexadecimal string. ` +
-                'See the "Releasing Actors" section of docs/cli.md.',
-        );
-    }
-    const sha = baseCommit;
-    if (ZERO_SHA_REGEX.test(sha)) {
-        throw new Error(
-            `Base commit is ${sha}, which means the branch was just created and there is no previous release to diff against. ` +
+            `Base commit is ${baseCommit}, which means the branch was just created and there is no previous release to diff against. ` +
                 `Rerun with the base commit set to the last commit before the changes you want to release.`,
         );
     }
-    if (!(await findCommitSha(sha))) {
+    const sha = await findCommitSha(baseCommit);
+    if (!sha) {
         throw new Error(
-            `Base commit ${sha} is not in the local git history. Either the checkout is shallow ` +
-                `(fetch the full history, e.g. fetch-depth: 0 in actions/checkout) or the branch was force-pushed.`,
+            `Base commit ${baseCommit} is not in the local git history. Either it is not a valid commit, the checkout ` +
+                `is shallow (fetch the full history, e.g. fetch-depth: 0 in actions/checkout) or the branch was force-pushed.`,
         );
     }
     // git merge-base A B outputs the common ancestor. If that equals A, then A is an ancestor of B.
@@ -191,36 +185,28 @@ export const resolveReleaseBaseCommit = async (baseCommit: string, head = 'HEAD'
     return sha;
 };
 
-const CHANGELOG_PATH = 'CHANGELOG.md';
-
-/** Returns the lines added to the root CHANGELOG.md between fromRef and toRef, or null if it didn't change. */
+/** Returns additions to the selected Actors' resolved changelogs, or null if none changed. Shared paths count once. */
 export const getChangelogAdditions = async (
     fromRef: string,
     toRef: string,
     changedFiles: string[],
+    changelogFiles: RelativeFile[],
 ): Promise<string | null> => {
-    if (!changedFiles.includes(CHANGELOG_PATH)) {
+    const paths = [...new Set(changelogFiles.map((file) => file.path))].filter((file) => changedFiles.includes(file));
+    if (!paths.length) {
         return null;
     }
-    const diff = await runGitCommand(['diff', fromRef, toRef, '--', CHANGELOG_PATH], {
+    const diff = await runGitCommand(['--literal-pathspecs', 'diff', '--no-renames', fromRef, toRef, '--', ...paths], {
         operation: 'read changelog changes since the last release',
     });
 
     const added: string[] = [];
-    let startedChangelog = false;
+    let inHunk = false;
     for (const line of diff.split('\n')) {
-        // The diff is already limited to the changelog but better to double check
-        if (line.startsWith('+++') && line.toLowerCase().includes(CHANGELOG_PATH.toLowerCase())) {
-            startedChangelog = true;
-            continue;
-        }
-        if (startedChangelog) {
-            if (line.startsWith('diff')) {
-                break;
-            }
-            if (line.startsWith('+')) {
-                added.push(line.slice(1).trim());
-            }
+        if (line.startsWith('diff --git ')) inHunk = false;
+        if (line.startsWith('@@ ')) inHunk = true;
+        if (inHunk && line.startsWith('+')) {
+            added.push(line.slice(1).trim());
         }
     }
     return added.join('\n').trim();

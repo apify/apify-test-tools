@@ -101,8 +101,8 @@ Consumers pin `@workflows-v0`, not `@master`. See [Versioning and releases](#ver
 `npm run lint` and `actionlint` (via the `Code checks` workflow) both gate master, so run them before
 pushing workflow changes.
 
-The reusable workflows load the composite action with `uses: $/.github/actions/checkout-restore-dependencies`, never
-`apify/apify-test-tools/...@workflows-v0`. `$/` is the
+The reusable workflows load the composite actions with `uses: $/.github/actions/checkout-restore-dependencies` (and
+`$/.github/actions/humanize-duty`), never `apify/apify-test-tools/...@workflows-v0`. `$/` is the
 [self-repository syntax](https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/):
 it resolves to this repo at the commit the workflow was called at. A hardcoded tag would hand a caller pinned to an
 older SHA, or to a branch, the action and CLI from the tag instead of from the commit they asked for.
@@ -133,7 +133,26 @@ that commit. The consumer's own `node_modules` is left alone, so their tests kee
 
 The CLI and the lib in one job can be different versions now, so the formats between them are a contract: the
 `ACTOR_BUILDS` JSON that `build` writes and the lib reads, and the vitest JSON report (with the run each test started on its `meta`) that `test` reads. Add
-fields freely; renaming or removing one needs a new major tag.
+fields freely; renaming or removing one needs a new major tag. When the lib starts depending on a field, bump
+`apifyTestTools.actorBuildsVersion` in `package.json` and `ACTOR_BUILDS_VERSION` in `bin/run-tests.ts` together: `test`
+refuses a lib that declares an older version, instead of letting it skip every test. Version 2 added
+`testTokenEnvVar`.
+
+**The CLI must keep working with every lib version from `OLDEST_SUPPORTED_LIB_VERSION` up** (`bin/lib-compat.ts`,
+0.2.4 as of 2026-11). That is the oldest version a consumer repo locks. Old libs read the contract differently, and a
+mismatch skips every test while the run still passes:
+
+- Before 0.9.0, the lib reads the Actor IDs in `ACTOR_BUILDS` as `actorName` and `actorId`, and records a test's run
+  without `actorId`. `test` writes the IDs under both names, and takes the Actor from the test name.
+- Before 0.10.0, the lib's `describe` runs only with `RUN_PLATFORM_TESTS` set, and `RUN_ALL_PLATFORM_TESTS` runs the
+  tests of every Actor. `test` sets the first and removes the second.
+
+`test/bundle/old-libs.test.ts` runs the bundled `test` with the oldest supported lib and with 0.9.0, installed as npm
+aliases (`apify-test-tools-oldest`, `apify-test-tools-0-9-0`). The e2e suite runs real builds through the oldest one.
+`test` warns when a repository uses a lib older than the oldest supported version.
+
+To raise the oldest supported version, first check the `apify-test-tools` version in each consumer repo's lockfile,
+then change the constant and the `apify-test-tools-oldest` alias together. A test checks they match.
 
 `workflows-v0` moving on every master push means `@workflows-v0` is as live as `@master` was — there's no staging
 step. What the tag buys you is a `workflows-v1` for breaking workflow changes, so repos migrate one at a time instead
@@ -149,9 +168,9 @@ literally, so update them by hand when you bump it.
 ## Testing workflow changes
 
 - Point [testing-repo-for-github-actions](https://github.com/apify-store/testing-repo-for-github-actions) at your
-  branch (`uses: ...@your-branch`). It has real attached Actors and tests. The workflows load the composite action
-  with `$/` and the branch carries its own CLI bundle, so one branch tests the workflows, the action and the CLI
-  together, with nothing to repoint.
+  branch (`uses: ...@your-branch`). It has real attached Actors and tests. The workflows load the composite actions
+  with `$/` and the branch carries its own CLI and workflow script bundles, so one branch tests the workflows, the
+  actions and the CLI together, with nothing to repoint.
 - Make sure the shell code actually works on your laptop first.
 - After merging, watch the workflow on a real project before moving on.
 
@@ -159,12 +178,14 @@ literally, so update them by hand when you bump it.
 
 The public side of this is the [Secrets](./docs/workflows.md#secrets) table.
 
-The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its own token via
-`tokenEnvVar` in `apify-test-tools.config.json`, and a reusable workflow only accepts secrets it declares by name.
-Callers pack them into the `CONFIG_SECRETS` secret. Those steps pass `${{ toJSON(secrets) }}` as `WORKFLOW_SECRETS`
-and run the command through `.github/scripts/run-with-apify-tokens.mjs`, which reads that same config file to decide
-which secrets to pass on. It looks each one up in `CONFIG_SECRETS` first, then among the secrets `secrets: inherit`
-brought:
+The Actor tokens are the one set that cannot be listed in the workflow, because each Actor names its own tokens via
+`tokenEnvVar` (build) and `testTokenEnvVar` (tests, `tokenEnvVar` by default) in `apify-test-tools.config.json`, and a
+reusable workflow only accepts secrets it declares by name. Callers pack them into the `CONFIG_SECRETS` secret. Those
+steps pass `${{ toJSON(secrets) }}` as `WORKFLOW_SECRETS` and run the command through
+`.github/scripts/run-with-apify-tokens.mjs --tokens build|test`, bundled from `workflow-scripts-src/`, which reads
+the token names with the CLI's own config parser, so it resolves them exactly the way the command that uses them does,
+in every config format. It looks each one up in `CONFIG_SECRETS` first, then among the secrets `secrets: inherit` or the workflow's own
+declarations brought:
 
 ```yaml
 - name: Build
@@ -173,14 +194,24 @@ brought:
       WORKFLOW_SECRETS: ${{ toJSON(secrets) }}
   run: |
       jq '{ actors: (.functionallyChangedActors + .testChangedActors) }' affected.json \
-        | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" \
+        | node "${{ steps.setup.outputs.scripts-path }}/run-with-apify-tokens.mjs" --tokens build \
           apify-test-tools build --version-number 0.99
 ```
 
 The wrapper passes only the tokens the config declares and drops `WORKFLOW_SECRETS`, so neither the CLI nor anything
 under `node_modules` sees the blob. Nothing is written to `$GITHUB_ENV`, so the tokens stay inside that one command
-rather than leaking into later steps. Reading the same file `apify-test-tools` reads means the two can't drift, and a
+rather than leaking into later steps. Reading the config with `apify-test-tools`' own parser means the two can't drift, and a
 secret that merely looks like an Actor token is not passed just because of its name.
+
+The test step runs the repo's test code and its whole import graph, so it gets the test tokens only. These are the
+Actor tokens unless the config names others: the tests run as the Actor's owner, because only the owner (or an account
+with write access) can call an Actor's server interface on a non-default build. A repo that wants the tests to hold less can point
+`testTokenEnvVar` at a more restricted token.
+
+For now the test steps also get `TESTER_APIFY_TOKEN`, and both the CLI and the lib fall back to it for an Actor whose
+own test token isn't set. The lib and the workflows ship separately, so this keeps a repo on an older lib (which reads
+only `TESTER_APIFY_TOKEN`) and a caller that doesn't pass the Actors' tokens yet working. Drop the fallback once every
+repository is on a lib with `actorBuildsVersion` 2 and passes its test tokens.
 
 A token the config declares but the repo hasn't set is a warning, not a failure: a repo can carry an Actor whose
 token isn't configured and still build fine as long as that Actor never changes, and `apify-test-tools` raises a
@@ -198,7 +229,7 @@ Two tidier-looking alternatives don't work, so don't reach for them:
 
 - **Exporting to `$GITHUB_ENV`** would let the steps call the CLI directly with no wrapper, but `$GITHUB_ENV`
   applies to every later step in the job. In `pr-build-test` the test step runs after the build, so it would
-  inherit Actor tokens it has no use for.
+  inherit build tokens it has no use for when the config gives the tests their own.
 - **Returning the tokens as a step output** would be scoped correctly, but the runner refuses to set an output whose
   value contains a registered secret. It logs `Skip output <name> since it may contain secret` and leaves the output
   empty, so anything reading it downstream gets nothing.

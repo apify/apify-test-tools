@@ -2,10 +2,14 @@ import type { ActorCallOptions } from 'apify-client';
 import type { Assertion, TestOptions } from 'vitest';
 
 export type ActorBuild = {
-    buildId: string;
+    /** Absent when testing the Actor's default build */
+    buildId?: string;
     actorRawId: string;
-    buildNumber: string;
+    /** Absent when testing the Actor's default build */
+    buildNumber?: string;
     actorFullName: string;
+    /** The env var holding the token the Actor's tests run with */
+    testTokenEnvVar?: string;
 };
 
 export type RunOptions<T> = {

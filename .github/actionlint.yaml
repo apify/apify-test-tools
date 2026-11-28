@@ -21,3 +21,10 @@ paths:
         ignore:
             - 'specifying action "\$/[^"]*" in invalid format because ref is missing'
             - 'property "workflow_(repository|sha)" is not defined in object type'
+
+    # actionlint (v1.7.11) predates `queue: max` in `concurrency`, which keeps up to 100 jobs pending instead of
+    # cancelling all but one.
+    #   https://github.blog/changelog/2026-05-07-github-actions-concurrency-groups-now-allow-larger-queues
+    .github/workflows/public_platform-tests-claude-investigate-and-fix.yaml:
+        ignore:
+            - 'unexpected key "queue" for "concurrency" section'

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     findCommitSha,
     getChangedFilesBetween,
+    getChangelogAdditions,
     getCommitsBetween,
     getCurrentBranch,
     getRepoName,
@@ -12,6 +13,75 @@ import {
     resolveRepoUrl,
 } from '../../../bin/git.js';
 import * as Utils from '../../../bin/utils.js';
+import { RelativeFile } from '../../../bin/utils/path/repo-relative.js';
+
+describe('getChangelogAdditions', () => {
+    beforeEach(() => vi.restoreAllMocks());
+
+    it('combines additions from changed linked changelogs, counting shared paths once', async () => {
+        const gitCommandSpy = vi
+            .spyOn(Utils, 'runGitCommand')
+            .mockResolvedValue(
+                [
+                    'diff --git a/docs/releases.md b/docs/releases.md',
+                    '--- a/docs/releases.md',
+                    '+++ b/docs/releases.md',
+                    '@@ -1 +1 @@',
+                    '-Old',
+                    '+New entry',
+                    'diff --git a/actors/a/history b/actors/a/history',
+                    '--- a/actors/a/history',
+                    '+++ b/actors/a/history',
+                    '@@ -0,0 +1,2 @@',
+                    '+Actor entry',
+                    '+++ Literal plus signs',
+                ].join('\n'),
+            );
+        await expect(
+            getChangelogAdditions(
+                'base',
+                'head',
+                ['docs/releases.md', 'actors/a/history', 'CHANGELOG.md'],
+                ['docs/releases.md', './docs/releases.md', 'actors/a/history', 'unchanged.md'].map(
+                    (file) => new RelativeFile(file),
+                ),
+            ),
+        ).resolves.toBe('New entry\nActor entry\n++ Literal plus signs');
+        expect(gitCommandSpy).toHaveBeenCalledExactlyOnceWith(
+            [
+                '--literal-pathspecs',
+                'diff',
+                '--no-renames',
+                'base',
+                'head',
+                '--',
+                'docs/releases.md',
+                'actors/a/history',
+            ],
+            { operation: 'read changelog changes since the last release' },
+        );
+    });
+
+    it.each([{ files: [] }, { files: [new RelativeFile('docs/unchanged.md')] }])(
+        'returns null without reading Git when no linked changelog changed ($files)',
+        async ({ files }) => {
+            const gitCommandSpy = vi.spyOn(Utils, 'runGitCommand');
+            await expect(getChangelogAdditions('base', 'head', ['CHANGELOG.md'], files)).resolves.toBeNull();
+            expect(gitCommandSpy).not.toHaveBeenCalled();
+        },
+    );
+
+    it('returns an empty string when a linked changelog has only deletions', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(
+            ['diff --git a/history b/history', '--- a/history', '+++ /dev/null', '@@ -1 +0,0 @@', '-Old entry'].join(
+                '\n',
+            ),
+        );
+        await expect(getChangelogAdditions('base', 'head', ['history'], [new RelativeFile('history')])).resolves.toBe(
+            '',
+        );
+    });
+});
 
 describe('getCurrentBranch', () => {
     it('should return the checked-out branch', async () => {
@@ -98,6 +168,15 @@ describe('resolveReleaseBaseCommit', () => {
         });
     });
 
+    it('should resolve a ref such as HEAD^1 to the commit SHA', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockImplementation(async (args: string[]) => {
+            if (args[0] === 'rev-parse' && args[3] === 'HEAD^1^{commit}') return baseSha;
+            if (args[0] === 'merge-base' && args[1] === baseSha) return baseSha;
+            return '';
+        });
+        await expect(resolveReleaseBaseCommit('HEAD^1')).resolves.toBe(baseSha);
+    });
+
     it('should throw on the all-zeros SHA of a newly created branch', async () => {
         const spy = vi.spyOn(Utils, 'runGitCommand');
         await expect(resolveReleaseBaseCommit('0'.repeat(40))).rejects.toThrow('the branch was just created');
@@ -169,8 +248,16 @@ describe('resolveReleaseBaseCommit', () => {
         );
     });
 
-    it('should throw on an invalid SHA', async () => {
-        await expect(resolveReleaseBaseCommit('not-a-sha')).rejects.toThrow('Invalid base commit SHA');
+    it('should throw on a ref that does not resolve to a commit', async () => {
+        vi.spyOn(Utils, 'runGitCommand').mockRejectedValue(
+            new Utils.GitCommandError(
+                ['rev-parse', '--verify', '--quiet', 'not-a-ref^{commit}'],
+                Object.assign(new Error('missing'), { code: 1 }),
+            ),
+        );
+        await expect(resolveReleaseBaseCommit('not-a-ref')).rejects.toThrow(
+            'Base commit not-a-ref is not in the local git history',
+        );
     });
 
     it('checks ancestry against a custom head', async () => {
@@ -215,15 +302,22 @@ describe('empty commit ranges', () => {
 
 describe('getChangedFilesBetween', () => {
     it('diffs the two endpoints directly', async () => {
-        const spy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('src/main.ts\nCHANGELOG.md');
+        const spy = vi.spyOn(Utils, 'runGitCommand').mockResolvedValue('src/main.ts\0CHANGELOG.md\0');
 
         await expect(getChangedFilesBetween('base-sha', 'head-sha')).resolves.toStrictEqual([
             'src/main.ts',
             'CHANGELOG.md',
         ]);
-        expect(spy).toHaveBeenCalledWith(['diff', '--name-only', '--no-renames', 'base-sha..head-sha'], {
+        expect(spy).toHaveBeenCalledWith(['diff', '--name-only', '--no-renames', '-z', 'base-sha..head-sha'], {
             operation: 'get the list of changed files between commits',
         });
+    });
+
+    it('preserves Unicode, whitespace, quotes, and newlines in changed paths', async () => {
+        const files = ['space name.md', 'docs/café.md', 'quote"name', 'tab\tname', 'line\nbreak'];
+        vi.spyOn(Utils, 'runGitCommand').mockResolvedValue(`${files.join('\0')}\0`);
+
+        await expect(getChangedFilesBetween('base', 'head')).resolves.toEqual(files);
     });
 });
 

@@ -19,6 +19,13 @@ const ActorJsonFieldsSchema = z.object({
     output: inlineOrPath,
     outputSchema: inlineOrPath,
     webServerSchema: inlineOrPath,
+    storages: z
+        .object({
+            dataset: inlineOrPath,
+            datasets: z.record(z.string(), inlineOrPath).nullish(),
+            keyValueStore: inlineOrPath,
+        })
+        .nullish(),
 });
 
 export interface ActorJsonPaths {
@@ -30,6 +37,8 @@ export interface ActorJsonPaths {
     inputSchema?: RelativeFile;
     outputSchema?: RelativeFile;
     webServerSchema?: RelativeFile;
+    datasetSchemas?: RelativeFile[];
+    keyValueStoreSchema?: RelativeFile;
 }
 
 const resolveFile = (actorJsonFile: ExistingFile, field: string, value: unknown): RelativeFile | undefined => {
@@ -84,6 +93,7 @@ export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
     if (!parsed.success) throw new Error(`Invalid "${actorJsonFile}": ${z.prettifyError(parsed.error)}`);
 
     const fields = parsed.data;
+    const inputSchema = fields.input ?? fields.inputSchema;
     let dockerContextDir: RelativeDir;
     try {
         dockerContextDir = actorJsonFile.joinDir(fields.dockerContextDir);
@@ -108,11 +118,9 @@ export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
             resolveFile(actorJsonFile, 'changelog', fields.changelog) ??
             resolveDefaultFileLocations(actorJsonFile, ['./CHANGELOG.md', '../CHANGELOG.md']),
         inputSchema:
-            resolveFile(
-                actorJsonFile,
-                fields.input != null ? 'input' : 'inputSchema',
-                fields.input ?? fields.inputSchema,
-            ) ?? resolveDefaultFileLocations(actorJsonFile, ['./INPUT_SCHEMA.json', '../INPUT_SCHEMA.json']),
+            inputSchema == null
+                ? resolveDefaultFileLocations(actorJsonFile, ['./INPUT_SCHEMA.json', '../INPUT_SCHEMA.json'])
+                : resolveFile(actorJsonFile, fields.input != null ? 'input' : 'inputSchema', inputSchema),
 
         // these other schemas came after .actor was invented, so they have no fallbacks in platform
         outputSchema: resolveFile(
@@ -121,5 +129,12 @@ export function readActorJson(config: ValidatedActorConfig): ActorJsonPaths {
             fields.output ?? fields.outputSchema,
         ),
         webServerSchema: resolveFile(actorJsonFile, 'webServerSchema', fields.webServerSchema),
+        datasetSchemas: [
+            resolveFile(actorJsonFile, 'storages.dataset', fields.storages?.dataset),
+            ...Object.entries(fields.storages?.datasets ?? {}).map(([alias, schema]) =>
+                resolveFile(actorJsonFile, `storages.datasets.${alias}`, schema),
+            ),
+        ].filter((file) => file !== undefined),
+        keyValueStoreSchema: resolveFile(actorJsonFile, 'storages.keyValueStore', fields.storages?.keyValueStore),
     };
 }

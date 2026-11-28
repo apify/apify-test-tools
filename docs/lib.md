@@ -1,7 +1,7 @@
 # Vitest library API
 
 ```ts
-import { describe, testActor, testStandbyActor, RunTestResult, ExpectStatic } from 'apify-test-tools';
+import { describe, testActor, testServerInterfaceActor, RunTestResult, ExpectStatic } from 'apify-test-tools';
 ```
 
 Requires `vitest` `3.2.4` or later as a peer dependency.
@@ -10,20 +10,34 @@ Requires `vitest` `3.2.4` or later as a peer dependency.
 
 The library reads these when the test file is loaded:
 
-| Variable             | Description                                                                                                                                                                                                                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `TESTER_APIFY_TOKEN` | Token the tests start runs and read their data with. Without it, every `describe` block is skipped, so a plain `npm test` stays unaffected.                                                                                                                                                            |
-| `ACTOR_BUILDS`       | JSON array of Actors to test, e.g. the builds the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local) print. Only tests of Actors listed here run, against the listed build, or the default build for an Actor listed without one. |
+| Variable             | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ACTOR_BUILDS`       | JSON array of Actors to test, e.g. the builds the CLI's [`build`](cli.md#building-actors-build) and [`build-from-local`](cli.md#build-from-local-source-build-from-local) print. Only tests of Actors listed here run, against the listed build, or the default build for an Actor listed without one. Each entry names the env var holding the token its tests run with, see below. Without any Actors, every `describe` block is skipped, so a plain `npm test` stays unaffected. |
+| `TESTER_APIFY_TOKEN` | Fallback token, for now: the tests of an Actor listed in `ACTOR_BUILDS` without its own `testTokenEnvVar`, or whose variable isn't set, run with it. Set on its own, it also enables the `describe` blocks, as before per-Actor tokens.                                                                                                                                                                                                                                             |
 
 `ACTOR_BUILDS` entries look like this, and are matched to tests by `actorFullName` or `actorRawId`:
 
 ```json
-[{ "buildId": "...", "actorRawId": "...", "buildNumber": "1.2.3", "actorFullName": "john.doe/my-actor" }]
+[
+    {
+        "buildId": "...",
+        "actorRawId": "...",
+        "buildNumber": "1.2.3",
+        "actorFullName": "john.doe/my-actor",
+        "testTokenEnvVar": "APIFY_TOKEN_JOHN_DOE"
+    }
+]
 ```
+
+The tests of an Actor start runs and read their data with the token in the environment variable `testTokenEnvVar`
+names. [`test`](cli.md#running-tests-test) fills it in from the Actor's `testTokenEnvVar` in
+`apify-test-tools.config.json`, which is its `tokenEnvVar` unless the config names another. An Actor listed without
+one, or whose variable isn't set, falls back to `TESTER_APIFY_TOKEN` for now, with a warning. Without that either, it
+fails its own tests, and the other Actors' tests still run.
 
 ## `describe(name, fn, options?)`
 
-Same as vitest's `describe`, but skipped unless `TESTER_APIFY_TOKEN` is set. Its tests
+Same as vitest's `describe`, but skipped unless `ACTOR_BUILDS` lists any Actors or `TESTER_APIFY_TOKEN` is set. Its tests
 run concurrently by default. Use it instead of vitest's `describe` for platform tests.
 
 ## `testActor(actorId, testName, fn, options?)`
@@ -32,8 +46,9 @@ Registers a test for an Actor. `actorId` is the Actor's full name (`owner/name`)
 only runs when the Actor is in `ACTOR_BUILDS`. Its name is
 `<actorId>: <testName>`.
 
-`fn` gets the vitest test context, with `expect` extended by the [custom matchers](#custom-matchers), and a `run`
-function.
+`fn` gets the vitest test context, with `expect` extended by the [custom matchers](#custom-matchers), a `run`
+function, and `apifyClient`: an `ApifyClient` with the token the Actor's tests run with, e.g. to read storages the run
+left elsewhere. Use it rather than a client of your own, whose token may not see the runs.
 
 `expect` is soft: a failed assertion marks the test as failed but the test keeps going, so one run reports every
 failed check at once. Use `expect.hard(...)` for an assertion that must stop the test, e.g. before indexing into a
@@ -119,31 +134,40 @@ testActor(actorId, 'validate existing run', async ({ expect, run }) => {
 });
 ```
 
-## `testStandbyActor(actorId, testName, fn, options?)`
+## `testServerInterfaceActor(actorId, testName, fn, options?)`
 
-Same as `testActor`, for Actors in standby mode. It creates a temporary task with the build from `ACTOR_BUILDS` (or
-the Actor's standby build) and deletes it after the test. Instead of `run`, `fn` gets `callStandby`, which sends a
-`POST` request with `input` as the JSON body to the task's standby URL, plus `path`, and returns
-`{ data, status, headers }`, where `data` is the parsed JSON response.
+Same as `testActor`, for an Actor's server interface (formerly standby mode). Instead of `run`, `fn` gets
+`callServerInterface`, which sends a `POST` request with `input` as the JSON body directly to the Actor's server
+interface URL, plus `path`. It sends `Content-Type: application/json` unless `headers` set another type. When
+`ACTOR_BUILDS` lists a build for the Actor, as on a PR, the request selects it with the `X-Actor-Build` header. Otherwise, as in the scheduled platform tests, it
+sends no header and the platform serves the Actor's configured server interface build. No temporary tasks are created.
+It returns `{ data, body, status, headers }`, where `body` is the raw response text and `data` is `body` parsed as
+JSON, or `undefined` when the response isn't JSON, e.g. an HTML error page. Pass `body` as the message of the status
+assertion to see what came back when it fails. `fn` gets `apifyClient` too.
+
+Only the Actor's owner, or an account with write access to it, can select a build with `X-Actor-Build`. The tests run
+with the owner's token by default; if you point `testTokenEnvVar` at another account, give it write access to the
+Actor, or its server interface tests can only run on the default build.
 
 ```ts
-import { describe, testStandbyActor } from 'apify-test-tools';
+import { describe, testServerInterfaceActor } from 'apify-test-tools';
 
-describe('standby tests', () => {
-    testStandbyActor(actorId, 'standby request', async ({ expect, callStandby }) => {
-        const { data, status } = await callStandby({
+describe('server interface tests', () => {
+    testServerInterfaceActor(actorId, 'search request', async ({ expect, callServerInterface }) => {
+        const { data, body, status } = await callServerInterface({
             input: { query: 'test' },
             path: '/search',
-            headers: { 'Content-Type': 'application/json' },
         });
 
-        expect(status).toBe(200);
+        expect(status, body).toBe(200);
         expect(data.results).toBeNonEmptyArray();
     });
 });
 ```
 
-It fails if the Actor doesn't support standby mode.
+It fails if the Actor doesn't have a server interface.
+
+`testStandbyActor`, whose `fn` gets `callStandby`, is a deprecated alias of `testServerInterfaceActor`.
 
 ## `RunTestResult`
 
@@ -214,7 +238,7 @@ await expect(runResult).toFinishWith({
 
 ## Custom matchers
 
-`expect` in `testActor` and `testStandbyActor` is extended with:
+`expect` in `testActor` and `testServerInterfaceActor` is extended with:
 
 - `toBeArray()` / `toBeEmptyArray()` / `toBeNonEmptyArray()`
 - `toBeString()` / `toBeNonEmptyString()` / `toStartWith(prefix)`
@@ -251,7 +275,7 @@ Run every command from the root of the Actor repository.
 [`test`](cli.md#running-tests-test), which tests each on its default build:
 
 ```bash
-npx apify-test-tools get-actor-configs --actors john.doe/my-actor | TESTER_APIFY_TOKEN=<token> npx apify-test-tools test
+npx apify-test-tools get-actor-configs --actors john.doe/my-actor | APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools test
 ```
 
 This also runs a test that reuses an existing run with [`runId`](#testing-an-existing-run), as long as its Actor is
@@ -264,13 +288,14 @@ listed.
 ```bash
 APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools build-from-local --actors john.doe/my-actor > builds.json
 
-TESTER_APIFY_TOKEN=<token> npx apify-test-tools test < builds.json
+APIFY_TOKEN_JOHN_DOE=<token> npx apify-test-tools test < builds.json
 ```
 
-`test` passes the builds to vitest as `ACTOR_BUILDS`, so plain vitest works too:
-`ACTOR_BUILDS="$(cat builds.json)" TESTER_APIFY_TOKEN=<token> npx vitest run test/platform`.
+`test` passes the builds to vitest as `ACTOR_BUILDS`, with each Actor's `testTokenEnvVar`. To run plain vitest, add
+`testTokenEnvVar` to each build yourself:
+`ACTOR_BUILDS='[{"actorFullName":"john.doe/my-actor","testTokenEnvVar":"APIFY_TOKEN_JOHN_DOE"}]' APIFY_TOKEN_JOHN_DOE=<token> npx vitest run test/platform`.
 
 You can change the tests and re-run them against the same builds.
 
-`TESTER_APIFY_TOKEN` can be the token of any account with enough memory for the runs. To run only some tests, pass a specific file instead of `test/platform`, or filter by
+The same token builds and tests an Actor unless the config names a `testTokenEnvVar`. To run only some tests, pass a specific file instead of `test/platform`, or filter by
 name with vitest's `-t <name>` when running vitest directly. See [Running locally](cli.md#running-locally) for the full flow.

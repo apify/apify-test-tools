@@ -1,4 +1,4 @@
-import type { Actor, ActorRun, ActorRunListItem, ActorStandby, Task } from 'apify-client';
+import type { Actor, ActorRun, ActorRunListItem } from 'apify-client';
 import { ApifyClient } from 'apify-client';
 import type { SuiteFactory, TestContext, TestFunction } from 'vitest';
 import { describe as vitestDescribe, ExpectStatic, test as vitestTest } from 'vitest';
@@ -31,8 +31,41 @@ const config = actorBuilds.reduce<Map<string, ActorBuild>>((map, cfg) => {
 
 export { ExpectStatic };
 
-const { TESTER_APIFY_TOKEN } = process.env;
-const apifyClient = new ApifyClient({ token: TESTER_APIFY_TOKEN });
+const apifyClients = new Map<string, ApifyClient>();
+
+/**
+ * The token the tests fall back to. A CLI older than per-Actor tokens names none, and a caller may not pass the
+ * Actors' own tokens yet, so it stays until every repository and caller has moved over.
+ */
+const FALLBACK_TOKEN_ENV_VAR = 'TESTER_APIFY_TOKEN';
+const warnedFallbacks = new Set<string>();
+
+/**
+ * The client an Actor's tests run with: the token in the env var listed with the Actor in `ACTOR_BUILDS`, which `test`
+ * takes from `testTokenEnvVar` in `apify-test-tools.config.json` (the Actor's `tokenEnvVar` by default). Without one,
+ * or when it isn't set, `TESTER_APIFY_TOKEN`. It throws inside the test, so an Actor without any token fails only its
+ * own tests, and the other Actors' tests still run.
+ */
+const getApifyClient = (actorId: string): ApifyClient => {
+    const testTokenEnvVar = config.get(actorId)?.testTokenEnvVar;
+    let tokenEnvVar = testTokenEnvVar;
+    if (!tokenEnvVar || !process.env[tokenEnvVar]) {
+        tokenEnvVar = FALLBACK_TOKEN_ENV_VAR;
+        if (testTokenEnvVar && !warnedFallbacks.has(testTokenEnvVar) && process.env[FALLBACK_TOKEN_ENV_VAR]) {
+            warnedFallbacks.add(testTokenEnvVar);
+            console.warn(`${testTokenEnvVar} is not set, testing with ${FALLBACK_TOKEN_ENV_VAR} instead.`);
+        }
+    }
+    const token = process.env[tokenEnvVar];
+    if (!token) {
+        const own = testTokenEnvVar ? `${testTokenEnvVar} nor ` : '';
+        throw new Error(
+            `Neither ${own}${FALLBACK_TOKEN_ENV_VAR} is set. The tests of Actor "${actorId}" need a token.`,
+        );
+    }
+    if (!apifyClients.has(token)) apifyClients.set(token, new ApifyClient({ token }));
+    return apifyClients.get(token)!;
+};
 
 const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
     // we want to run tests concurrently
@@ -43,10 +76,11 @@ const DEFAULT_TEST_OPTIONS: ActorTestOptions = {
 };
 
 /**
- * Platform tests need `TESTER_APIFY_TOKEN` to talk to the platform, so without it we skip them altogether.
+ * Platform tests only run on the Actors listed in `ACTOR_BUILDS`, so without any we skip them altogether. A plain
+ * `npm test` stays unaffected. `TESTER_APIFY_TOKEN` alone still enables them, as it did before per-Actor tokens.
  */
 export const describe = (name: string, fn?: SuiteFactory<object>, options: ActorTestOptions = DEFAULT_TEST_OPTIONS) => {
-    vitestDescribe.runIf(!!TESTER_APIFY_TOKEN)(name, options, fn);
+    vitestDescribe.runIf(actorBuilds.length > 0 || !!process.env[FALLBACK_TOKEN_ENV_VAR])(name, options, fn);
 };
 
 /**
@@ -68,51 +102,70 @@ const defineActorTest = (
 };
 
 /**
+ * `fn` gets `run`, which starts the Actor, and `apifyClient`, the client with the token the Actor's tests run with,
+ * e.g. to read storages the run left elsewhere.
+ *
  * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
  */
 export const testActor = <T>(
     actorId: string,
     testName: string,
-    fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>> }>,
+    fn: TestFunction<{ run: ReturnType<typeof createStartRunFn<T>>; apifyClient: ApifyClient }>,
     testOptions?: ActorTestOptions,
 ) => {
     defineActorTest(actorId, testName, testOptions, async (context) => {
-        await fn({ ...context, run: createStartRunFn(actorId, context) });
+        const apifyClient = getApifyClient(actorId);
+        await fn({ ...context, apifyClient, run: createStartRunFn(apifyClient, actorId, context) });
     });
 };
 
 /**
- * This wrapper creates a new task with specific `build` of the standby actor and provides
- * `callStandby` function, which calls the task's `standbyUrl`.
- *
- * Using task is just current shortcoming of standby feature but ideally we would use Actor directly
+ * Tests an Actor's server interface directly. A build listed in `ACTOR_BUILDS` is targeted with the X-Actor-Build
+ * header, otherwise the platform serves the Actor's configured server interface build.
  *
  * @param actorId - The actor's raw platform ID or its full name (`owner/name`, e.g. `"apify/web-scraper"`).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const testServerInterfaceActor = <I = any, O = any>(
+    actorId: string,
+    testName: string,
+    fn: TestFunction<{
+        callServerInterface: ReturnType<typeof createCallServerInterfaceFn<I, O>>;
+        apifyClient: ApifyClient;
+    }>,
+    testOptions?: ActorTestOptions,
+) => {
+    defineActorTest(actorId, testName, testOptions, async (context) => {
+        const apifyClient = getApifyClient(actorId);
+        const serverInterface = await getServerInterface(apifyClient, actorId, config.get(actorId)?.buildNumber);
+        await fn({
+            ...context,
+            callServerInterface: createCallServerInterfaceFn<I, O>({ ...serverInterface, apifyClient }),
+            apifyClient,
+        });
+    });
+};
+
+/**
+ * @deprecated Use `testServerInterfaceActor`, whose `fn` gets `callServerInterface` instead of `callStandby`. The
+ * platform renamed standby mode to server interface.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const testStandbyActor = <I = any, O = any>(
     actorId: string,
     testName: string,
-    fn: TestFunction<{ callStandby: ReturnType<typeof createStartStandbyFn<I, O>> }>,
+    fn: TestFunction<{
+        callStandby: ReturnType<typeof createCallServerInterfaceFn<I, O>>;
+        apifyClient: ApifyClient;
+    }>,
     testOptions?: ActorTestOptions,
 ) => {
-    defineActorTest(actorId, testName, testOptions, async (context, name) => {
-        const standbyTask = await createStandbyTask(actorId, config.get(actorId)?.buildNumber);
-
-        // NOTE: we wrap `fn` in try/finally so cleanup (deleting the task) always runs afterwards
-        try {
-            await fn({ ...context, callStandby: createStartStandbyFn(standbyTask, context, name) });
-        } finally {
-            const { taskId } = standbyTask;
-            // we want to delete the task at the end of the test
-            await apifyClient
-                .task(taskId)
-                .delete()
-                .catch((error) => {
-                    console.error(`Failed to delete standby task "${taskId}": ${error}`);
-                });
-        }
-    });
+    testServerInterfaceActor<I, O>(
+        actorId,
+        testName,
+        (context) => fn({ ...context, callStandby: context.callServerInterface }),
+        testOptions,
+    );
 };
 
 export const testTestActor = <T>(
@@ -134,118 +187,81 @@ export const testTestActor = <T>(
 export const it = testActor;
 
 /**
- * Creates a function that accepts input for a standby actor and sends a request containing the input
- * to the task's standby url.
+ * Sends JSON input directly to the Actor's server interface URL, as `application/json` unless `headers` set another type.
+ * Returns the raw response `body` too. `data` is the body parsed as JSON, or `undefined` when it isn't JSON (e.g. an
+ * HTML error page), so a test can still assert the status and show what came back.
  */
-const createStartStandbyFn = <I, O>(standbyTask: StandbyTask, { annotate }: TestContext, testName: string) => {
-    const { standbyUrl, taskId } = standbyTask;
-    const annotatedRuns = new Set<string>();
-
-    // We annotate all the runs of the task, though it will be only one run
-    // for most of the tests. To avoid annotating the same run multiple times
-    // (in case the test calls the standby more than once), we use `annotatedRuns`
-    // set to keep track of which runs have already been annotated.
-    const annotateStandbyRuns = async () => {
-        const runs = (await apifyClient.task(taskId).runs().list()).items;
-        for (const run of runs) {
-            if (!annotatedRuns.has(run.id)) {
-                const runLink = generateRunLink(run);
-                await annotate(`${testName} - ${runLink}`, 'run_link');
-            }
-            annotatedRuns.add(run.id);
-        }
-    };
-
+const createCallServerInterfaceFn = <I, O>({
+    url,
+    build,
+    apifyClient,
+}: ServerInterface & { apifyClient: ApifyClient }) => {
     return async ({
         input,
         path = '',
         headers = {},
     }: Pick<RunOptions<I>, 'input'> & { path?: string; headers?: Record<string, string> }) => {
-        const response = await fetch(standbyUrl + path, {
-            headers: {
-                ...headers,
-                Authorization: `Bearer ${apifyClient.token}`,
-            },
+        const requestHeaders = new Headers(headers);
+        if (!requestHeaders.has('Content-Type')) {
+            requestHeaders.set('Content-Type', 'application/json');
+        }
+        requestHeaders.set('Authorization', `Bearer ${apifyClient.token}`);
+        if (build !== undefined) {
+            requestHeaders.set('X-Actor-Build', build);
+        }
+        const response = await fetch(url + path, {
+            headers: requestHeaders,
             method: 'POST',
             body: JSON.stringify(input),
         });
 
-        await annotateStandbyRuns();
-
-        const data = (await response.json()) as O;
+        const body = await response.text();
+        let data: O;
+        try {
+            data = JSON.parse(body) as O;
+        } catch {
+            data = undefined as O;
+        }
         return {
             data,
+            body,
             status: response.status,
             headers: response.headers,
         };
     };
 };
 
-interface StandbyTask {
-    standbyUrl: string;
-    taskId: string;
+interface ServerInterface {
+    url: string;
+    build?: string;
 }
 
 /**
- * Creates a task with specific `build` - either `buildNumber` or default.
- *
- * @throws if actor doesn't exist or it doesn't support standby mode.
+ * Resolves the Actor's server interface URL, and the build from `ACTOR_BUILDS` to target with `X-Actor-Build`. Without
+ * one, the tests run on the Actor's default build, so no header is sent and the platform serves its configured server
+ * interface build. The platform API still calls the server interface standby (`standbyUrl`, `actorStandby`).
+ * That keeps default-build runs working for testers without write access to the Actor.
  */
-const createStandbyTask = async (actorId: string, buildNumber?: string): Promise<StandbyTask> => {
-    const actor = apifyClient.actor(actorId);
-
-    const actorInfo = (await actor.get()) as Actor & { standbyUrl?: string };
+const getServerInterface = async (
+    apifyClient: ApifyClient,
+    actorId: string,
+    buildNumber?: string,
+): Promise<ServerInterface> => {
+    const actorInfo = (await apifyClient.actor(actorId).get()) as (Actor & { standbyUrl?: string }) | undefined;
     if (!actorInfo) {
         throw new Error(`Actor "${actorId}" not found`);
     }
-
     if (!actorInfo.standbyUrl) {
-        throw new Error(`Actor "${actorId}" doesn't support standby mode`);
+        throw new Error(`Actor "${actorId}" doesn't have a server interface`);
     }
 
-    if (!actorInfo.actorStandby) {
-        throw new Error(`Actor "${actorId} doesn't contain actorStandby options`);
-    }
-    const { isEnabled, ...defaultActorStandby } = actorInfo.actorStandby;
-    delete defaultActorStandby.disableStandbyFieldsOverride;
-
-    const build = buildNumber ?? defaultActorStandby.build;
-
-    const actorStandbyOptions: ActorStandby = {
-        ...defaultActorStandby,
-        build,
+    return {
+        url: actorInfo.standbyUrl,
+        build: buildNumber,
     };
-
-    try {
-        const title = `Test task - ${build}`.slice(0, 62);
-        const randomValueLength = 15;
-        // we try to create unique task name containing only `a-z0-9-` characters and at most 63 characters long
-        const randomValue = Math.random().toString(10).slice(2).padEnd(randomValueLength, '0');
-        const name = `test-${randomValue.slice(0, randomValueLength)}`;
-        const newTask = (await apifyClient.tasks().create({
-            actId: actorId,
-            actorStandby: actorStandbyOptions,
-            description: `Task for testing standby version ${build} of actor "${actorId}"`,
-            title,
-            name,
-        })) as Task & { standbyUrl?: string };
-
-        const { id, standbyUrl } = newTask;
-
-        if (!standbyUrl) {
-            throw new Error(`Task "${id} doesn't contain standbyUrl property`);
-        }
-
-        return {
-            standbyUrl,
-            taskId: id,
-        };
-    } catch (error) {
-        throw new Error(`Failed to create task: ${error}`);
-    }
 };
 
-const createStartRunFn = <T>(actorId: string, testContext: TestContext) => {
+const createStartRunFn = <T>(apifyClient: ApifyClient, actorId: string, testContext: TestContext) => {
     const { annotate, task } = testContext;
     const actorConfig = config.get(actorId);
     const build = actorConfig?.buildNumber;
@@ -298,4 +314,4 @@ const generateRunLink = (run: ActorRun | ActorRunListItem): string => {
 
 /** Used for unit testing */
 // eslint-disable-next-line no-underscore-dangle
-export const _private = { createStartRunFn } as const;
+export const _private = { createStartRunFn, createCallServerInterfaceFn, getServerInterface } as const;

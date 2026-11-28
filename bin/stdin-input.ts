@@ -2,6 +2,8 @@ import process from 'node:process';
 
 import z, { prettifyError, type ZodType } from 'zod';
 
+import { ACTOR_FULL_NAME_REGEX } from './utils/config/structures/base.js';
+
 export const readStdin = async (): Promise<string> => {
     // Nothing piped in: fail right away instead of waiting for someone to type
     if (process.stdin.isTTY) {
@@ -45,13 +47,27 @@ const validateStdinJson = <T>(
 };
 
 /**
- * What `build` reads: the Actors to build. Only their names are read, the config file stays the source of truth
- * for everything else about them. Other fields are ignored, so a get-affected-actors document only needs its Actor
- * list picked, e.g. `jq '{ actors: .functionallyChangedActors }'`.
+ * What `build` reads: the Actors to build. Their names and an optional existing `build` to reuse are read, the config
+ * file stays the source of truth for everything else about them. Other fields are ignored, so a get-affected-actors
+ * document only needs its Actor lists picked, e.g.
+ * `jq '{ actors: (.functionallyChangedActors + .testChangedActors) }'`.
  */
+const existingBuildSchema = z.union([
+    z.literal('default'),
+    z.object({ buildId: z.string(), actorRawId: z.string(), buildNumber: z.string() }),
+]);
+
 const buildInputSchema = z.object({
-    actors: z.array(z.object({ actorFullName: z.string() })),
+    actors: z.array(
+        z.object({
+            actorFullName: z.string(),
+            // From testChangedActors: an existing build that runs the tests instead of a new one
+            build: existingBuildSchema.optional(),
+        }),
+    ),
 });
+
+export type BuildTarget = z.infer<typeof buildInputSchema>['actors'][number];
 
 export const parseBuildInput = (raw: string) =>
     parseStdinJson(raw, buildInputSchema, {
@@ -60,22 +76,17 @@ export const parseBuildInput = (raw: string) =>
     });
 
 /**
- * What `test` reads: the Actors to test, each with the build to test or, without one, its default build. The builds
- * `build` and `build-from-local` print fit, and so does `get-actor-configs`, whose other fields are ignored. An Actor
- * needs its full name or its raw ID, `test` looks up the other. A dry-run plan is an object on purpose, so it is
- * rejected here rather than tested as if it were built.
+ * What `test` reads: the Actors to test by full name, each with the build to test or, without one, its default build.
+ * The builds `build` and `build-from-local` print fit, and so does `get-actor-configs`, whose other fields are ignored,
+ * also a raw ID: `test` looks it up itself. A dry-run plan is an object on purpose, so it is rejected here rather than
+ * tested as if it were built.
  */
 const testTargetsSchema = z.array(
-    z
-        .object({
-            actorFullName: z.string().optional(),
-            buildId: z.string().optional(),
-            actorRawId: z.string().optional(),
-            buildNumber: z.string().optional(),
-        })
-        .refine(({ actorFullName, actorRawId }) => !!actorFullName || !!actorRawId, {
-            message: 'An Actor needs actorFullName or actorRawId',
-        }),
+    z.object({
+        actorFullName: z.string().regex(ACTOR_FULL_NAME_REGEX, "Expected the Actor's full name, as owner/name"),
+        buildId: z.string().optional(),
+        buildNumber: z.string().optional(),
+    }),
 );
 
 export type TestTarget = z.infer<typeof testTargetsSchema>[number];

@@ -8,6 +8,10 @@ name: 'Platform tests: Claude failure investigation'
 #    comment on each covering issue. If they cover everything, the job stops there.
 # 2. Otherwise the main model investigates what isn't covered and opens an issue with its findings.
 #
+# With `humanize_duty` set, a new issue also records the developer who rewrites it in plain language: the
+# next individual user on the `*` rule of the repo's CODEOWNERS, in turn. `label` labels the issue
+# `needs-humanize:<login>`. It runs in its own job, one at a time per repo, so it never holds up the investigation.
+#
 # Example usage:
 #
 # jobs:
@@ -17,8 +21,9 @@ name: 'Platform tests: Claude failure investigation'
 #             test-files-glob: 'test/platform/hourly/**'
 #             report-slack-channel: '#notif-my-repo'
 #         secrets:
-#             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
 #             SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+#             CONFIG_SECRETS: |
+#                 { "APIFY_TOKEN_MYTEAM": "${{ secrets.APIFY_TOKEN_MYTEAM }}" }
 #
 #     handle-failure:
 #         needs: platformTestsCore
@@ -26,7 +31,8 @@ name: 'Platform tests: Claude failure investigation'
 #         uses: apify/apify-test-tools/.github/workflows/public_platform-tests-claude-investigate.yaml@workflows-v0
 #         secrets:
 #             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-#             TESTER_APIFY_TOKEN: ${{ secrets.TESTER_APIFY_TOKEN }}
+#             # The token the tests ran the Actors with, so Claude can read the failing run
+#             TESTER_APIFY_TOKEN: ${{ secrets.APIFY_TOKEN_MYTEAM }}
 
 on:
     workflow_call:
@@ -94,13 +100,22 @@ on:
 
                     Priority is an organization-level issue field. If the revenue actually at risk can't be determined, e.g. the Impact section says "Cannot be determined", leave Priority unset, unless the relative severity is Invisible to the user or Test.
                 description: Prompt given to Claude for setting a new issue's Priority field from its impact and flakiness. Override to customize how priority is judged, e.g. to set revenue thresholds.
+            humanize_duty:
+                required: false
+                type: string
+                default: ''
+                description: Where to record the developer who rewrites each new issue in plain language, taking turns through the individual users on the `*` rule of the repo's CODEOWNERS. `label` labels the issue `needs-humanize:<login>`, the only supported value. Off when empty.
         secrets:
             ANTHROPIC_API_KEY:
                 required: true
                 description: Claude API key
             TESTER_APIFY_TOKEN:
                 required: true
-                description: Apify token for investigating the failing run — reading it, its log and its storages — and re-running it to measure how often the failure happens.
+                description: >-
+                    Apify token for investigating the failing run — reading it, its log and its storages — and
+                    re-running it to measure how often the failure happens. Runs are private to the account that
+                    started them, so pass the token the tests ran the Actor with: its `testTokenEnvVar` from
+                    apify-test-tools.config.json, which is its `tokenEnvVar` unless the config names another.
             REDASH_API_KEY:
                 required: false
                 description: Redash API key for measuring the failure's impact — affected runs, high-touch customers and revenue — from Snowflake.
@@ -116,6 +131,8 @@ jobs:
             pull-requests: read
             issues: write
             actions: read
+        outputs:
+            issue_number: ${{ steps.issue.outputs.number }}
         steps:
             - name: Checkout repository
               uses: actions/checkout@v5
@@ -405,3 +422,23 @@ jobs:
                               core.warning(`Could not record the failure on #${issueNumber}: ${error.message}`);
                           }
                       }
+
+    humanize-duty:
+        needs: investigate
+        if: inputs.humanize_duty != '' && needs.investigate.outputs.issue_number != ''
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        permissions:
+            contents: read
+            issues: write
+        # Two issues handled at once would pick the same developer.
+        concurrency:
+            group: humanize-duty-${{ github.repository }}
+            cancel-in-progress: false
+            queue: max
+        steps:
+            - name: Record who humanizes the issue
+              uses: $/.github/actions/humanize-duty
+              with:
+                  duty: ${{ inputs.humanize_duty }}
+                  issue-number: ${{ needs.investigate.outputs.issue_number }}
